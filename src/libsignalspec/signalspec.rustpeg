@@ -1,0 +1,146 @@
+{
+	use expr::*;
+	use std::num::from_str_radix;
+	use bitv;
+}
+
+// #[export]
+// typeexpr
+// 	= enum
+// 	/ bitstype
+// 	/ numbertype
+// 	/ entityinst
+// 
+// enum -> Type
+// 	= "enum" _ "(" vs:symbol_list ")" _
+// 	{ EnumType(vs) }
+// 
+// symbol_list -> ~[SymbolValue]
+// 	= __ vs:((i:symbolliteral commasep){ i })*
+// 	{ vs }
+// 
+// bitstype -> Type
+// 	= "bits" _ "(" _ val:integer ")" _
+// 	{ BitsType(val) }
+// 
+// numbertype -> Type
+// 	="number" _ "(" units:unitsliteral ")" _
+// 	{ NumberType(val) }
+// entityinst -> Type = tp:identifier _ "(" vs:call_args ")" _
+// 	{ return p(new n.EntityType(tp, vs)) }
+// 
+
+
+// Expressions
+
+#[export]
+valexpr -> Expr
+	= valexpr_flip
+
+valexpr_flip -> Expr
+	= l:valexpr_range "!" _ r:valexpr_range { FlipExpr(~l, ~r) }
+	/ "<:" _ x:valexpr_range { FlipExpr(~x, ~IgnoreExpr) }
+	/ ":>" _ x:valexpr_range { FlipExpr(~IgnoreExpr, ~x) }
+	/ valexpr_range
+
+valexpr_range -> Expr
+	= rangeexpr
+	/ valexpr_sum
+
+	rangeexpr -> Expr
+		= l:valexpr_sum ".." _ r:valexpr_sum 
+		{ RangeExpr(~l, ~r) }
+
+valexpr_sum -> Expr
+	= l:valexpr_product op:[+] _ r:valexpr_sum
+		{ AddExpr(~l, ~r) }
+	/ valexpr_product
+
+valexpr_product -> Expr
+	= l:valexpr_choose op:[*] _ r:valexpr_product
+		{ MulExpr(~l, ~r) }
+	/ valexpr_choose
+
+valexpr_choose -> Expr
+	= e:valexpr_atom "[" vs:(k:valexpr "=" _ v:valexpr commasep { (k,v) })* "]"
+		{ ChooseExpr(~e, vs) }
+	/ valexpr_atom
+
+valexpr_atom -> Expr
+	= literal
+	/ ignoreliteral
+	/ concatexpr
+	/ ("(" _ v:valexpr ")" _ {v})
+
+ignoreliteral -> Expr
+	= "ignore" _
+	{ IgnoreExpr }
+
+concatexpr -> Expr
+	= "[" vs:(v:valexpr commasep {v})+ "]" _
+	{ ConcatExpr(vs) }
+
+literal -> Expr
+	= v: (
+		  symbolliteral
+		/ bitsliteral
+		/ numberliteral
+	)
+	{ ValueExpr(v) }
+
+symbolliteral -> Value
+	= "$" i:identifier _
+	{ SymbolValue(i) }
+
+bitsliteral -> Value
+	= "'h" v:(hexbyte+) _ { BitsValue(bitv::from_bytes(v)) }
+	/ "'" "b"? v:(binbit+) _    { BitsValue(bitv::from_bools(v)) }
+
+	hexbyte -> u8
+		= [0-9a-fA-F][0-9a-fA-F]
+		{ from_str_radix::<u8>(match_str, 16).unwrap() }
+
+	binbit -> bool
+		= "0" {false} / "1" {true}
+
+#[export]
+numberliteral -> Value
+	= v:floatnumber _ u:unit _
+	{ NumberValue(v) }
+
+//unitliteral = u:unit
+//	{ UnitValue }
+
+unit -> ~str
+	= [a-zA-Z]+ { match_str.to_owned() }
+    / "" { ~"" }
+
+// Lexer
+
+commasep = ( "," / TERMINATOR / &(__ [)\]]) ) __
+
+WHITESPACE
+  = [\u0009\u000B\u000C\u0020\u00A0\uFEFF\u1680\u180E\u2000-\u200A\u202F\u205F\u3000]
+  / "\\" TERM
+
+TERM
+  = "\r"? "\n"
+
+TERMINATOR
+  = (comment? TERM)+
+
+BREAK = _ TERMINATOR __
+
+comment = "//" (!TERM .)*
+
+_ = WHITESPACE*
+__ = (WHITESPACE / TERMINATOR)*
+
+identifier -> ~str = [a-zA-Z_][0-9a-zA-Z_]*
+	{ match_str.to_owned() }
+
+integer -> int = "-"?[0-9]+
+	{ from_str::<int>(match_str).unwrap() }
+
+floatnumber -> f64 = "-"?[0-9]+("."[0-9]+)?
+	{ from_str::<f64>(match_str).unwrap() }
