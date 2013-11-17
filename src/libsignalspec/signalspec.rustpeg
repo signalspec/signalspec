@@ -4,31 +4,32 @@
 	use bitv;
 }
 
-// #[export]
-// typeexpr
-// 	= enum
-// 	/ bitstype
-// 	/ numbertype
-// 	/ entityinst
-// 
-// enum -> Type
-// 	= "enum" _ "(" vs:symbol_list ")" _
-// 	{ EnumType(vs) }
-// 
-// symbol_list -> ~[SymbolValue]
-// 	= __ vs:((i:symbolliteral commasep){ i })*
-// 	{ vs }
-// 
-// bitstype -> Type
-// 	= "bits" _ "(" _ val:integer ")" _
-// 	{ BitsType(val) }
-// 
-// numbertype -> Type
-// 	="number" _ "(" units:unitsliteral ")" _
-// 	{ NumberType(val) }
-// entityinst -> Type = tp:identifier _ "(" vs:call_args ")" _
-// 	{ return p(new n.EntityType(tp, vs)) }
-// 
+#[export]
+typeexpr -> Type
+	= symboltype
+	/ bitstype
+	/ numbertype
+//	/ entityinst
+
+	symboltype -> Type
+		= "enum" _ "(" vs:symbol_list ")" _
+		{ SymbolType }
+
+		symbol_list -> ~[Value]
+			= __ vs:(i:symbolliteral commasep { i })*
+			{ vs }
+
+	bitstype -> Type
+		= "bits" _ "(" _ val:integer ")" _
+		{ BitsType(val as uint) }
+
+	numbertype -> Type
+		= "number" _ "(" units:unitliteral ")" _
+		{ NumberType }
+
+//	entityinst -> Type = tp:identifier _ "(" vs:call_args ")" _
+//		{ return p(new n.EntityType(tp, vs)) }
+
 
 
 // Expressions
@@ -108,8 +109,7 @@ numberliteral -> Value
 	= v:floatnumber _ u:unit _
 	{ NumberValue(v) }
 
-//unitliteral = u:unit
-//	{ UnitValue }
+unitliteral = unit { () }
 
 unit -> ~str
 	= [a-zA-Z]+ { match_str.to_owned() }
