@@ -50,7 +50,7 @@ impl Expr {
 			IgnoreExpr => TopType,
 			ValueExpr(ref val) => val.get_type(),
 			FlipExpr(ref l, ref r) => common_type(l.get_type(), r.get_type()),
-			RangeExpr(*) => NumberType,
+			RangeExpr(..) => NumberType,
 			ChooseExpr(ref e, ref c) => {
 				let ls = common_type_all(&mut c.iter().map(|&(ref a,_)| a.get_type()));
 				let rs = common_type_all(&mut c.iter().map(|&(_,ref b)| b.get_type()));
@@ -90,7 +90,7 @@ impl Expr {
 			IgnoreExpr => None,
 			ValueExpr(ref v) => Some((*v).clone()),
 			FlipExpr(ref l, _) => l.const_down(),
-			RangeExpr(*) => None,
+			RangeExpr(..) => None,
 			ChooseExpr(ref e, ref c) => {
 				match e.const_down() {
 					Some(ev) => {
@@ -164,7 +164,7 @@ impl Expr {
 				}
 				true
 			}
-			AddExpr(*) | MulExpr(*) => self.const_down().map_default(false, |x| x.matches(value)),
+			AddExpr(..) | MulExpr(..) => self.const_down().map_default(false, |x| x.matches(value)),
 		}
 	}
 }
@@ -172,8 +172,8 @@ impl Expr {
 impl Value {
 	pub fn get_type(&self) -> Type {
 		match (*self) {
-			NumberValue(*) => NumberType,
-			SymbolValue(*) => SymbolType,
+			NumberValue(..) => NumberType,
+			SymbolValue(..) => SymbolType,
 			BitsValue(ref n) => BitsType(n.len()),
 		}
 	}
