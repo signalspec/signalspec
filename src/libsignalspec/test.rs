@@ -1,19 +1,28 @@
 #[feature(globs)];
+#[feature(managed_boxes)];
+#[allow(dead_code)];
+
 extern mod extra;
 
 use std::os;
 use expr::{Expr, Value};
+use std::str;
+use std::io::{stdout,stderr};
+use std::io::fs::File;
 
 mod expr;
 mod grammar;
 mod bitv;
+mod ast;
 
 
 fn main() {
 	let args = os::args();
-	let expr = grammar::valexpr(args[1]).unwrap();
-	let tp: expr::Type = expr.get_type();
-	println!("{:?} of type {:?}", expr, tp);
+	let source_utf8 = File::open(&Path::new(args[1])).read_to_end();
+	let source = str::from_utf8(source_utf8);
+	let module = grammar::module(source);
+
+	println!("{:?}", module);
 }
 
 fn E(s: &str) -> Expr {
@@ -36,7 +45,7 @@ fn test_parse_number() {
 
 #[test]
 fn test_parse_symbol() {
-	let e = E("$foo");
+	let e = E("#foo");
 	assert_eq!(e.get_type(), expr::SymbolType);
 	assert_eq!(e.const_down(), Some(S("foo")));
 	assert_eq!(e.const_up(&S("foo")), true);
@@ -60,7 +69,7 @@ fn test_add_ignore() {
 
 #[test]
 fn test_add_wrongtype() {
-	let e = E("2 + $test");
+	let e = E("2 + #test");
 	assert_eq!(e.get_type(), expr::InvalidType);
 	assert_eq!(e.const_down(), None);
 }
@@ -74,7 +83,7 @@ fn test_bit_literals() {
 
 #[test]
 fn test_choice_expr() {
-	let e = E("($bar)[$foo=$a, $bar=$b, $baz=$c]");
+	let e = E("(#bar)[#foo=#a, #bar=#b, #baz=#c]");
 	assert_eq!(e.const_down(), Some(S("b")));
 	assert_eq!(e.const_up(&S("c")), false);
 	assert_eq!(e.const_up(&S("x")), false);
@@ -83,7 +92,7 @@ fn test_choice_expr() {
 
 #[test]
 fn test_flip() {
-	let e = E("$l!$r");
+	let e = E("#l!#r");
 	assert_eq!(e.const_down(), Some(S("l")));
 	assert_eq!(e.const_up(&S("l")), false);
 	assert_eq!(e.const_up(&S("r")), true);

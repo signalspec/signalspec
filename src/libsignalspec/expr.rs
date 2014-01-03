@@ -22,6 +22,9 @@ pub enum Expr {
 
 	AddExpr(~Expr, ~Expr),
 	MulExpr(~Expr, ~Expr),
+
+	VarExpr(~str),
+	DotExpr(~Expr, ~str),
 }
 
 #[deriving(Clone, Eq)]
@@ -73,7 +76,9 @@ impl Expr {
 				}
 				BitsType(len)
 			}
-			AddExpr(ref a, ref b) | MulExpr(ref a, ref b) => common_type(a.get_type(), b.get_type())
+			AddExpr(ref a, ref b) | MulExpr(ref a, ref b) => common_type(a.get_type(), b.get_type()),
+			VarExpr(..) | DotExpr(..) => InvalidType, // TODO: need context lookup
+
 		}
 	}
 
@@ -118,6 +123,7 @@ impl Expr {
 			}
 			AddExpr(ref l, ref r) => binop(*l, *r, |a, b| a+b),
 			MulExpr(ref l, ref r) => binop(*l, *r, |a, b| a*b),
+			VarExpr(..) | DotExpr(..) => None,
 		}
 	}
 
@@ -165,6 +171,7 @@ impl Expr {
 				true
 			}
 			AddExpr(..) | MulExpr(..) => self.const_down().map_default(false, |x| x.matches(value)),
+			VarExpr(..) | DotExpr(..) => false,
 		}
 	}
 }

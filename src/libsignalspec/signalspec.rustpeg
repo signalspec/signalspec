@@ -1,15 +1,52 @@
 {
 	use expr::*;
+	use ast::*;
 	use std::num::from_str_radix;
 	use bitv;
 }
+
+#[export]
+module -> Module
+  = __ imports:include* lets:letstmt* defs:def* !.
+  { Module{ imports: imports, lets: lets, defs: defs } }
+
+include  -> UseDef
+	= "use" _ name:identifier __
+	{ UseDef(name) }
+
+varinit -> Expr
+	= _ "=" _ e:valexpr { e }
+
+letstmt -> LetDef
+	= "let" _ name:identifier value:varinit BREAK
+	{ LetDef(name, value) }
+
+def -> Def
+	= "def" _ name:identifier _ "(" params: paramdef* ")" _ block:block
+	{ Def{ name:name, params:params, block:block } }
+
+	block -> Block
+		= "{" __ lets:letstmt* actions:action* "}" __
+		{ Block{ lets:lets, actions:actions } }
+
+	paramdef -> ParamDef
+		= name:identifier _ ":" _ tp:typeexpr init:varinit? commasep
+		{ ParamDef(name, tp, init) }
+
+	action -> Action
+		= entity:varexpr _ "(" arg:valexpr? ")" __ body: actionbody?
+		{ Action { entity: entity, posarg: arg, body: body } }
+
+		actionbody -> ActionBody
+			= "|" args: (n:identifier commasep {n})* "|" __ block: block
+			{ ActionBody{ argnames: args, block: block } }
 
 #[export]
 typeexpr -> Type
 	= symboltype
 	/ bitstype
 	/ numbertype
-//	/ entityinst
+	/ entitytype
 
 	symboltype -> Type
 		= "enum" _ "(" vs:symbol_list ")" _
@@ -27,10 +64,9 @@ typeexpr -> Type
 		= "number" _ "(" units:unitliteral ")" _
 		{ NumberType }
 
-//	entityinst -> Type = tp:identifier _ "(" vs:call_args ")" _
-//		{ return p(new n.EntityType(tp, vs)) }
-
-
+	entitytype -> Type
+		= tp:identifier _
+		{ EntityType }
 
 // Expressions
 
@@ -38,82 +74,86 @@ typeexpr -> Type
 valexpr -> Expr
 	= valexpr_flip
 
-valexpr_flip -> Expr
-	= l:valexpr_range "!" _ r:valexpr_range { FlipExpr(~l, ~r) }
-	/ "<:" _ x:valexpr_range { FlipExpr(~x, ~IgnoreExpr) }
-	/ ":>" _ x:valexpr_range { FlipExpr(~IgnoreExpr, ~x) }
-	/ valexpr_range
+	valexpr_flip -> Expr
+		= l:valexpr_range "!" _ r:valexpr_range { FlipExpr(~l, ~r) }
+		/ "<:" _ x:valexpr_range { FlipExpr(~x, ~IgnoreExpr) }
+		/ ":>" _ x:valexpr_range { FlipExpr(~IgnoreExpr, ~x) }
+		/ valexpr_range
 
-valexpr_range -> Expr
-	= rangeexpr
-	/ valexpr_sum
+	valexpr_range -> Expr
+		= rangeexpr
+		/ valexpr_sum
 
-	rangeexpr -> Expr
-		= l:valexpr_sum ".." _ r:valexpr_sum 
-		{ RangeExpr(~l, ~r) }
+		rangeexpr -> Expr
+			= l:valexpr_sum ".." _ r:valexpr_sum
+			{ RangeExpr(~l, ~r) }
 
-valexpr_sum -> Expr
-	= l:valexpr_product op:[+] _ r:valexpr_sum
-		{ AddExpr(~l, ~r) }
-	/ valexpr_product
+	valexpr_sum -> Expr
+		= l:valexpr_product op:[+] _ r:valexpr_sum
+			{ AddExpr(~l, ~r) }
+		/ valexpr_product
 
-valexpr_product -> Expr
-	= l:valexpr_choose op:[*] _ r:valexpr_product
-		{ MulExpr(~l, ~r) }
-	/ valexpr_choose
+	valexpr_product -> Expr
+		= l:valexpr_choose op:[*] _ r:valexpr_product
+			{ MulExpr(~l, ~r) }
+		/ valexpr_choose
 
-valexpr_choose -> Expr
-	= e:valexpr_atom "[" vs:(k:valexpr "=" _ v:valexpr commasep { (k,v) })* "]"
-		{ ChooseExpr(~e, vs) }
-	/ valexpr_atom
+	valexpr_choose -> Expr
+		= e:valexpr_atom "[" vs:(k:valexpr "=" _ v:valexpr commasep { (k,v) })* "]"
+			{ ChooseExpr(~e, vs) }
+		/ valexpr_atom
 
-valexpr_atom -> Expr
-	= literal
-	/ ignoreliteral
-	/ concatexpr
-	/ ("(" _ v:valexpr ")" _ {v})
+	valexpr_atom -> Expr
+		= literal
+		/ ignoreliteral
+		/ concatexpr
+		/ varexpr
+		/ ("(" _ v:valexpr ")" _ {v})
 
-ignoreliteral -> Expr
-	= "ignore" _
-	{ IgnoreExpr }
+	concatexpr -> Expr
+		= "[" vs:(v:valexpr commasep {v})+ "]" _
+		{ ConcatExpr(vs) }
 
-concatexpr -> Expr
-	= "[" vs:(v:valexpr commasep {v})+ "]" _
-	{ ConcatExpr(vs) }
+	varexpr -> Expr
+		= i:identifier accessors:("." i:identifier {i} )*
+		{ accessors.move_iter().fold(VarExpr(i), |base, accessor| DotExpr(~base, accessor)) }
 
-literal -> Expr
-	= v: (
-		  symbolliteral
-		/ bitsliteral
-		/ numberliteral
-	)
-	{ ValueExpr(v) }
+	literal -> Expr
+		= v: (
+			  symbolliteral
+			/ bitsliteral
+			/ numberliteral
+		)
+		{ ValueExpr(v) }
 
-symbolliteral -> Value
-	= "$" i:identifier _
-	{ SymbolValue(i) }
+			ignoreliteral -> Expr
+				= "ignore" _
+				{ IgnoreExpr }
 
-bitsliteral -> Value
-	= "'h" v:(hexbyte+) _ { BitsValue(bitv::from_bytes(v)) }
-	/ "'" "b"? v:(binbit+) _    { BitsValue(bitv::from_bools(v)) }
+			symbolliteral -> Value
+				= "#" i:identifier _
+				{ SymbolValue(i) }
 
-	hexbyte -> u8
-		= [0-9a-fA-F][0-9a-fA-F]
-		{ from_str_radix::<u8>(match_str, 16).unwrap() }
+			bitsliteral -> Value
+				= "'h" v:(hexbyte+) _ { BitsValue(bitv::from_bytes(v)) }
+				/ "'" "b"? v:(binbit+) _    { BitsValue(bitv::from_bools(v)) }
 
-	binbit -> bool
-		= "0" {false} / "1" {true}
+				hexbyte -> u8
+					= [0-9a-fA-F][0-9a-fA-F]
+					{ from_str_radix::<u8>(match_str, 16).unwrap() }
 
-#[export]
-numberliteral -> Value
-	= v:floatnumber _ u:unit _
-	{ NumberValue(v) }
+				binbit -> bool
+					= "0" {false} / "1" {true}
 
-unitliteral = unit { () }
+			numberliteral -> Value
+				= v:floatnumber _ u:unit _
+				{ NumberValue(v) }
 
-unit -> ~str
-	= [a-zA-Z]+ { match_str.to_owned() }
-    / "" { ~"" }
+			unitliteral = unit { () }
+
+				unit -> ~str
+					= [a-zA-Z]+ { match_str.to_owned() }
+				    / "" { ~"" }
 
 // Lexer
 
