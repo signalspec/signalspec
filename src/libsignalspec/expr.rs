@@ -143,7 +143,7 @@ impl Expr {
 			ChooseExpr(ref e, ref c) => {
 				for &(ref l, ref r) in c.iter() {
 					if r.const_up(value) {
-						return l.const_down().map_default(false, |lv| e.const_up(&lv))
+						return l.const_down().map_or(false, |lv| e.const_up(&lv))
 					}
 				}
 				false
@@ -170,7 +170,7 @@ impl Expr {
 				}
 				true
 			}
-			AddExpr(..) | MulExpr(..) => self.const_down().map_default(false, |x| x.matches(value)),
+			AddExpr(..) | MulExpr(..) => self.const_down().map_or(false, |x| x.matches(value)),
 			VarExpr(..) | DotExpr(..) => false,
 		}
 	}
