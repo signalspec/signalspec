@@ -1,5 +1,3 @@
-#[feature(globs)];
-#[feature(managed_boxes)];
 #[allow(dead_code)];
 
 extern mod extra;

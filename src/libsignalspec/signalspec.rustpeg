@@ -1,142 +1,141 @@
 {
-	use expr::*;
-	use ast::*;
+	use ast;
 	use std::num::from_str_radix;
 	use bitv;
 }
 
 #[export]
-module -> Module
+module -> ast::Module
   = __ imports:include* lets:letstmt* defs:def* !.
-  { Module{ imports: imports, lets: lets, defs: defs } }
+  { ast::Module{ imports: imports, lets: lets, defs: defs } }
 
-include  -> UseDef
+include  -> ast::UseDef
 	= "use" _ name:identifier __
-	{ UseDef(name) }
+	{ ast::UseDef(name) }
 
-varinit -> Expr
+varinit -> ast::Expr
 	= _ "=" _ e:valexpr { e }
 
-letstmt -> LetDef
+letstmt -> ast::LetDef
 	= "let" _ name:identifier value:varinit BREAK
-	{ LetDef(name, value) }
+	{ ast::LetDef(name, value) }
 
-def -> Def
+def -> ast::Def
 	= "def" _ name:identifier _ "(" params: paramdef* ")" _ block:block
-	{ Def{ name:name, params:params, block:block } }
+	{ ast::Def{ name:name, params:params, block:block } }
 
-	block -> Block
+	block -> ast::Block
 		= "{" __ lets:letstmt* actions:action* "}" __
-		{ Block{ lets:lets, actions:actions } }
+		{ ast::Block{ lets:lets, actions:actions } }
 
-	paramdef -> ParamDef
+	paramdef -> ast::ParamDef
 		= name:identifier _ ":" _ tp:typeexpr init:varinit? commasep
-		{ ParamDef(name, tp, init) }
+		{ ast::ParamDef{name:name, tp:tp, default:init} }
 
-	action -> Action
+	action -> ast::Action
 		= entity:varexpr _ "(" arg:valexpr? ")" __ body: actionbody?
-		{ Action { entity: entity, posarg: arg, body: body } }
+		{ ast::Action { entity: entity, posarg: arg, body: body } }
 
-		actionbody -> ActionBody
+		actionbody -> ast::ActionBody
 			= "|" args: (n:identifier commasep {n})* "|" __ block: block
-			{ ActionBody{ argnames: args, block: block } }
+			{ ast::ActionBody{ argnames: args, block: block } }
 
 #[export]
-typeexpr -> Type
+typeexpr -> ast::Type
 	= symboltype
 	/ bitstype
 	/ numbertype
 	/ entitytype
 
-	symboltype -> Type
+	symboltype -> ast::Type
 		= "enum" _ "(" vs:symbol_list ")" _
-		{ SymbolType }
+		{ ast::SymbolType }
 
-		symbol_list -> ~[Value]
+		symbol_list -> ~[ast::Value]
 			= __ vs:(i:symbolliteral commasep { i })*
 			{ vs }
 
-	bitstype -> Type
+	bitstype -> ast::Type
 		= "bits" _ "(" _ val:integer ")" _
-		{ BitsType(val as uint) }
+		{ ast::BitsType(val as uint) }
 
-	numbertype -> Type
+	numbertype -> ast::Type
 		= "number" _ "(" units:unitliteral ")" _
-		{ NumberType }
+		{ ast::NumberType }
 
-	entitytype -> Type
+	entitytype -> ast::Type
 		= tp:identifier _
-		{ EntityType }
+		{ ast::EntityType }
 
 // Expressions
 
 #[export]
-valexpr -> Expr
+valexpr -> ast::Expr
 	= valexpr_flip
 
-	valexpr_flip -> Expr
-		= l:valexpr_range "!" _ r:valexpr_range { FlipExpr(~l, ~r) }
-		/ "<:" _ x:valexpr_range { FlipExpr(~x, ~IgnoreExpr) }
-		/ ":>" _ x:valexpr_range { FlipExpr(~IgnoreExpr, ~x) }
+	valexpr_flip -> ast::Expr
+		= l:valexpr_range "!" _ r:valexpr_range { ast::FlipExpr(~l, ~r) }
+		/ "<:" _ x:valexpr_range { ast::FlipExpr(~x, ~ast::IgnoreExpr) }
+		/ ":>" _ x:valexpr_range { ast::FlipExpr(~ast::IgnoreExpr, ~x) }
 		/ valexpr_range
 
-	valexpr_range -> Expr
+	valexpr_range -> ast::Expr
 		= rangeexpr
 		/ valexpr_sum
 
-		rangeexpr -> Expr
+		rangeexpr -> ast::Expr
 			= l:valexpr_sum ".." _ r:valexpr_sum
-			{ RangeExpr(~l, ~r) }
+			{ ast::RangeExpr(~l, ~r) }
 
-	valexpr_sum -> Expr
+	valexpr_sum -> ast::Expr
 		= l:valexpr_product op:[+] _ r:valexpr_sum
-			{ AddExpr(~l, ~r) }
+			{ ast::AddExpr(~l, ~r) }
 		/ valexpr_product
 
-	valexpr_product -> Expr
+	valexpr_product -> ast::Expr
 		= l:valexpr_choose op:[*] _ r:valexpr_product
-			{ MulExpr(~l, ~r) }
+			{ ast::MulExpr(~l, ~r) }
 		/ valexpr_choose
 
-	valexpr_choose -> Expr
+	valexpr_choose -> ast::Expr
 		= e:valexpr_atom "[" vs:(k:valexpr "=" _ v:valexpr commasep { (k,v) })* "]"
-			{ ChooseExpr(~e, vs) }
+			{ ast::ChooseExpr(~e, vs) }
 		/ valexpr_atom
 
-	valexpr_atom -> Expr
+	valexpr_atom -> ast::Expr
 		= literal
 		/ ignoreliteral
 		/ concatexpr
 		/ varexpr
 		/ ("(" _ v:valexpr ")" _ {v})
 
-	concatexpr -> Expr
+	concatexpr -> ast::Expr
 		= "[" vs:(v:valexpr commasep {v})+ "]" _
-		{ ConcatExpr(vs) }
+		{ ast::ConcatExpr(vs) }
 
-	varexpr -> Expr
+	varexpr -> ast::Expr
 		= i:identifier accessors:("." i:identifier {i} )*
-		{ accessors.move_iter().fold(VarExpr(i), |base, accessor| DotExpr(~base, accessor)) }
+		{ accessors.move_iter().fold(ast::VarExpr(i), |base, accessor| ast::DotExpr(~base, accessor)) }
 
-	literal -> Expr
+	literal -> ast::Expr
 		= v: (
 			  symbolliteral
 			/ bitsliteral
 			/ numberliteral
 		)
-		{ ValueExpr(v) }
+		{ ast::ValueExpr(v) }
 
-			ignoreliteral -> Expr
+			ignoreliteral -> ast::Expr
 				= "ignore" _
-				{ IgnoreExpr }
+				{ ast::IgnoreExpr }
 
-			symbolliteral -> Value
+			symbolliteral -> ast::Value
 				= "#" i:identifier _
-				{ SymbolValue(i) }
+				{ ast::SymbolValue(i) }
 
-			bitsliteral -> Value
-				= "'h" v:(hexbyte+) _ { BitsValue(bitv::from_bytes(v)) }
-				/ "'" "b"? v:(binbit+) _    { BitsValue(bitv::from_bools(v)) }
+			bitsliteral -> ast::Value
+				= "'h" v:(hexbyte+) _ { ast::BitsValue(bitv::from_bytes(v)) }
+				/ "'" "b"? v:(binbit+) _    { ast::BitsValue(bitv::from_bools(v)) }
 
 				hexbyte -> u8
 					= [0-9a-fA-F][0-9a-fA-F]
@@ -145,9 +144,9 @@ valexpr -> Expr
 				binbit -> bool
 					= "0" {false} / "1" {true}
 
-			numberliteral -> Value
+			numberliteral -> ast::Value
 				= v:floatnumber _ u:unit _
-				{ NumberValue(v) }
+				{ ast::NumberValue(v) }
 
 			unitliteral = unit { () }
 
