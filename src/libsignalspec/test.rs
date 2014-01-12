@@ -12,6 +12,7 @@ mod expr;
 mod grammar;
 mod bitv;
 mod ast;
+mod resolve;
 
 
 fn main() {
@@ -20,7 +21,20 @@ fn main() {
 	let source = str::from_utf8(source_utf8);
 	let module = grammar::module(source);
 
-	println!("{:?}", module);
+	println!("ast: {:?}\n", module);
+
+	let module = module.unwrap();
+
+	let ses = resolve::Session::new();
+	let modtree = resolve::resolve_module(&ses, &module);
+	println!("modtree: {:?}\n", modtree);
+
+	let main = match modtree.scope.get("main").unwrap() {
+		resolve::Event(s) => s,
+		_ => fail!("Main is not an event"),
+	};
+	let event = main.resolve_call(&ses, &[resolve::Value(S("a"))]);
+	println!("main: {:?}\n", event);
 }
 
 fn E(s: &str) -> Expr {
