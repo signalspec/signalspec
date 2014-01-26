@@ -38,7 +38,7 @@ def -> ast::Def
 
 		actionbody -> ast::ActionBody
 			= "|" args: (n:identifier commasep {n})* "|" __ block: block
-			{ ast::ActionBody{ argnames: args, block: block } }
+			{ ast::ActionBody{ param_names: args, block: block } }
 
 #[export]
 typeexpr -> ast::Type

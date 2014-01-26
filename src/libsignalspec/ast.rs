@@ -48,7 +48,7 @@ pub struct Action {
 }
 
 pub struct ActionBody {
-	argnames: ~[~str],
+	param_names: ~[~str],
 	block: Block,
 }
 

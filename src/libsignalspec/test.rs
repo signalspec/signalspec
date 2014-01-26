@@ -13,28 +13,37 @@ mod grammar;
 mod bitv;
 mod ast;
 mod resolve;
+mod clock_event;
 
 
 fn main() {
 	let args = os::args();
 	let source_utf8 = File::open(&Path::new(args[1])).read_to_end();
 	let source = str::from_utf8(source_utf8);
-	let module = grammar::module(source);
+	let module = grammar::module(source.unwrap());
 
 	println!("ast: {:?}\n", module);
 
 	let module = module.unwrap();
 
-	let ses = resolve::Session::new();
-	let modtree = resolve::resolve_module(&ses, &module);
-	println!("modtree: {:?}\n", modtree);
+	let mut prelude = resolve::Scope::new();
+	let timer = clock_event::timer();
+	prelude.names.insert(~"time", resolve::EventItem(timer));
 
-	let main = match modtree.scope.get("main").unwrap() {
-		resolve::Event(s) => s,
+	let ses = resolve::ModuleLoader::new();
+	let mut modscope = ses.resolve_module(&prelude, &module);
+	println!("modscope: {:?}\n", modscope);
+
+	let main = match modscope.get("main").unwrap() {
+		resolve::EventItem(s) => s,
 		_ => fail!("Main is not an event"),
 	};
-	let event = main.resolve_call(&ses, &[resolve::Value(S("a"))]);
+
+	let w = clock_event::wire_config();
+	let event = main.resolve_call(&[resolve::EntityItem(&w)], None);
 	println!("main: {:?}\n", event);
+
+	resolve::print_step_tree(&event, 0);
 }
 
 fn E(s: &str) -> Expr {

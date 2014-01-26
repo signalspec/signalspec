@@ -1,109 +1,62 @@
 use ast;
 use std::hashmap::HashMap;
-use extra::arena::TypedArena;
+use extra::arena::{Arena,TypedArena};
 
-pub struct Session<'ast, 'ses> {
-	defArena: TypedArena<EventDef<'ast, 'ses>>,
+pub struct ModuleLoader<'s> {
+	defArena: TypedArena<EventClosure<'s>>,
 }
 
-impl<'ast, 'ses> Session<'ast, 'ses> {
-	pub fn new() -> Session {
-		Session {
+impl<'s> ModuleLoader<'s> {
+	pub fn new() -> ModuleLoader {
+		ModuleLoader {
 			defArena: TypedArena::new(),
 		}
 	}
-}
 
-struct Module<'ast, 'ses>{
-	ast: &'ast ast::Module,
-	scope: Scope<'ast, 'ses>,
-}
+	pub fn resolve_module(&'s self, scope: &'s Scope<'s>, ast: &'s ast::Module) -> Scope<'s> {
+		let mut scope: Scope<'s> = scope.clone();
 
-trait EventCallable<'ast, 'ses> {
-	fn resolve_call(&self, session: &'ses Session, params: &[ScopeItem<'ast, 'ses>]) -> Step ;
-}
-
-// A user-defined event
-struct EventDef<'ast, 'ses> {
-	ast: &'ast ast::Def,
-	parentScope: Scope<'ast, 'ses>,
-}
-
-fn eval_callable_expr<'ast, 'ses>(expr: &ast::Expr, scope: &Scope<'ast, 'ses>) -> Option<ScopeItem<'ast, 'ses>> {
-	match *expr {
-		ast::ValueExpr(ref val) => Some(Value(val.clone())),
-		ast::VarExpr(ref name) => scope.get(name.as_slice()),
-		ast::DotExpr(ref lexpr, ref name) => {
-			let l = eval_callable_expr(*lexpr, scope);
-			match l {
-				Some(Entity(ref e)) => e.events.find_equiv(&name.as_slice()).map(|x| Event(*x)),
-				_ => None,
-			}
+		for import in ast.imports.iter() {
+			fail!("Imports unimplemented");
 		}
-		_ => None,
+
+		scope.add_lets(ast.lets);
+
+		for def in ast.defs.iter() {
+			let ed = self.defArena.alloc(EventClosure{ ast:def, parentScope: scope.clone()});
+			scope.names.insert(def.name.to_owned(), EventItem(ed));
+		}
+
+		scope
 	}
 }
 
-impl<'ast, 'ses> EventCallable<'ast, 'ses> for EventDef<'ast, 'ses> {
-	fn resolve_call(&self, session: &'ses Session, params: &[ScopeItem<'ast, 'ses>]) -> Step {
-		let mut scope = self.parentScope.clone(); // Base on lexical parent
-		scope.add_params(self.ast.params, params);
-		scope.add_lets(self.ast.block.lets);
-
-		let mut steps = ~[];
-
-		for action in self.ast.block.actions.iter() {
-			let entity = eval_callable_expr(&action.entity, &scope);
-			println!("entity: {:?}, {:?}", &action.entity, &entity);
-
-			match entity {
-				Some(Event(ref e)) => {
-					steps.push(e.resolve_call(session, &[]));
-				}
-				None => fail!("Event not found"),
-				_ => fail!("Not an event"),
-			}
-		}
-
-		BlockStep(~SeqStep(steps))
-	}
-}
-
-impl<'ast, 'ses> Clone for &'ses EventCallable<'ast, 'ses> {
-	fn clone(&self) -> &'ses EventCallable<'ast, 'ses> { *self }
+#[deriving(Clone)]
+pub enum ScopeItem<'s> {
+	ValueItem(ast::Value),
+	EventItem(&'s EventCallable<'s>),
+	EntityItem(&'s Entity<'s>),
 }
 
 #[deriving(Clone)]
-struct Entity<'ast, 'ses> {
-	events: HashMap<~str, &'ses EventCallable<'ast, 'ses>>,
+pub struct Scope<'s>{
+	names: HashMap<~str, ScopeItem<'s>>,
 }
 
-#[deriving(Clone)]
-pub enum ScopeItem<'ast, 'ses> {
-	Value(ast::Value),
-	Event(&'ses EventCallable<'ast, 'ses>),
-	Entity(Entity<'ast, 'ses>),
-}
-
-#[deriving(Clone)]
-struct Scope<'ast, 'ses>{
-	names: HashMap<~str, ScopeItem<'ast, 'ses>>,
-}
-
-impl<'ast, 'ses> Scope<'ast, 'ses> {
-	fn new() -> Scope<'ast, 'ses> {
+impl<'s> Scope<'s> {
+	pub fn new() -> Scope<'s> {
 		Scope {
 			names: HashMap::new(),
 		}
 	}
 
-	fn add_lets(&mut self, lets: &'ast [ast::LetDef]) {
+	fn add_lets(&mut self, lets: &'s [ast::LetDef]) {
 		for letdef in lets.iter() {
 			fail!("Let unimplemented");
 		}
 	}
 
-	fn add_params(&mut self, param_defs: &'ast [ast::ParamDef], param_values: &[ScopeItem<'ast, 'ses>]) {
+	fn add_params(&mut self, param_defs: &'s [ast::ParamDef], param_values: &[ScopeItem<'s>]) {
 		// TODO: keyword args, defaults
 		if param_defs.len() != param_values.len() {
 			fail!("Wrong number of parameters passed")
@@ -116,38 +69,120 @@ impl<'ast, 'ses> Scope<'ast, 'ses> {
 		}
 	}
 
-	pub fn get(&self, name: &str) -> Option<ScopeItem<'ast, 'ses>> {
+	pub fn get(&self, name: &str) -> Option<ScopeItem<'s>> {
 		self.names.find_equiv(&name).map(|x| x.clone())
 	}
 }
 
-pub fn resolve_module<'ast, 'ses>(session: &'ses Session<'ast, 'ses>, ast: &'ast ast::Module) -> Module<'ast, 'ses> {
-	let mut scope = Scope::new();
 
-	for import in ast.imports.iter() {
-		fail!("Imports unimplemented");
-	}
+pub trait EventCallable<'s> {
+	fn resolve_call(&self, params: &[ScopeItem<'s>], body: Option<&EventBodyClosure<'s>>) -> Step ;
+}
 
-	scope.add_lets(ast.lets);
+// A user-defined event
+pub struct EventClosure<'s> {
+	ast: &'s ast::Def,
+	parentScope: Scope<'s>,
+}
 
-	for def in ast.defs.iter() {
-		let ed = session.defArena.alloc(EventDef{ ast:def, parentScope: scope.clone()});
-		scope.names.insert(def.name.to_owned(), Event(ed));
-	}
+// A body associated with an event call
+pub struct EventBodyClosure<'s> {
+	ast: &'s ast::ActionBody,
+	parentScope: Scope<'s>,
+}
 
-	Module {
-		ast: ast,
-		scope: scope,
+fn eval_callable_expr<'s>(expr: &ast::Expr, scope: &Scope<'s>) -> Option<ScopeItem<'s>> {
+	match *expr {
+		ast::ValueExpr(ref val) => Some(ValueItem(val.clone())),
+		ast::VarExpr(ref name) => scope.get(name.as_slice()),
+		ast::DotExpr(ref lexpr, ref name) => {
+			let l = eval_callable_expr(*lexpr, scope);
+			match l {
+				Some(EntityItem(ref e)) => e.events.find_equiv(&name.as_slice()).map(|x| EventItem(*x)),
+				_ => None,
+			}
+		}
+		_ => None,
 	}
 }
 
-trait StepHandler {
+fn resolve_seq<'s>(scope: &Scope<'s>, block: &'s ast::Block) -> Step {
+	let mut scope = scope.clone();
+	scope.add_lets(block.lets);
+
+	let steps = block.actions.iter().map(|action| {
+		let entity = eval_callable_expr(&action.entity, &scope);
+
+		let body = action.body.as_ref().map(|x| 
+			EventBodyClosure { ast: x, parentScope: scope.clone()
+		});
+
+
+		match entity {
+			Some(EventItem(ref e)) => {
+				e.resolve_call(&[], body.as_ref())
+			}
+			None => fail!("Event not found: {:?} in {:?}", action.entity, scope.names.keys().collect::<~[&~str]>()),
+			_ => fail!("Not an event"),
+		}
+	}).collect();
+
+	SeqStep(steps)
+}
+
+impl<'s> EventCallable<'s> for EventClosure<'s> {
+	fn resolve_call(&self, params: &[ScopeItem<'s>], body: Option<&EventBodyClosure<'s>>) -> Step {
+		let mut scope = self.parentScope.clone(); // Base on lexical parent
+		scope.add_params(self.ast.params, params);
+		CallStep(~resolve_seq(&scope, &self.ast.block))
+	}
+}
+
+pub fn resolve_body_call<'s>(body: &'s EventBodyClosure, params: &[ScopeItem<'s>]) -> Step {
+	// TODO: parameters
+	CallStep(~resolve_seq(&body.parentScope, &body.ast.block))
+}
+
+impl<'s> Clone for &'s EventCallable<'s> {
+	fn clone(&self) -> &'s EventCallable<'s> { *self }
+}
+
+pub struct Entity<'s> {
+	events: HashMap<~str, ~EventCallable:<'s> >,
+}
+
+pub trait StepHandler {
 
 }
 
-enum Step {
-	BlockStep(~Step),
+pub enum Step {
+	NopStep,
+	CallStep(~Step),
 	SeqStep(~[Step]),
-	PrimitiveStep(~StepHandler),
+	PrimitiveStep(~StepHandler, Option<~Step>),
+}
+
+pub fn print_step_tree(s: &Step, indent: uint) {
+	let i = " ".repeat(indent);
+	match *s {
+		NopStep => println!("{}NOP", i),
+		CallStep(~ref c) => {
+			println!("{}Call", i);
+			print_step_tree(c, indent+1);
+		}
+		SeqStep(ref steps) => {
+			println!("{}Seq", i)
+			for c in steps.iter() {
+				print_step_tree(c, indent+1);
+			}
+		}
+		PrimitiveStep(_, ref body) => {
+			println!("{}Primitive", i);
+			match *body {
+				Some(~ref body) => print_step_tree(body, indent+1),
+				None => ()
+			}
+		}
+	}
 }
 
