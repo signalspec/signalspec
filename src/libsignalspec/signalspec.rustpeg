@@ -89,12 +89,12 @@ valexpr -> ast::Expr
 
 	valexpr_sum -> ast::Expr
 		= l:valexpr_product op:[+] _ r:valexpr_sum
-			{ ast::AddExpr(~l, ~r) }
+			{ ast::BinExpr(~l, ast::BiAdd, ~r) }
 		/ valexpr_product
 
 	valexpr_product -> ast::Expr
 		= l:valexpr_choose op:[*] _ r:valexpr_product
-			{ ast::MulExpr(~l, ~r) }
+			{ ast::BinExpr(~l, ast::BiMul, ~r) }
 		/ valexpr_choose
 
 	valexpr_choose -> ast::Expr

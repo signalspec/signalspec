@@ -7,8 +7,7 @@ pub use expr::{
 		RangeExpr,
 		ChooseExpr,
 		ConcatExpr,
-		AddExpr,
-		MulExpr,
+		BinExpr,
 		VarExpr,
 		DotExpr,
 	Value,
@@ -22,6 +21,9 @@ pub use expr::{
 		EntityType,
 		InvalidType,
 		TopType,
+	BinOp,
+		BiAdd,
+		BiMul,
 };
 
 pub struct Module {

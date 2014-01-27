@@ -11,6 +11,17 @@ pub enum Type {
 	TopType
 }
 
+pub enum BinOp {
+	BiAdd,
+	BiMul,
+	BiSub,
+	BiDiv,
+
+	BiAnd,
+	BiOr,
+	BiXor,
+}
+
 pub enum Expr {
 	ValueExpr(Value),
 	IgnoreExpr,
@@ -20,8 +31,7 @@ pub enum Expr {
 	ChooseExpr(~Expr, ~[(Expr, Expr)]),
 	ConcatExpr(~[Expr]),
 
-	AddExpr(~Expr, ~Expr),
-	MulExpr(~Expr, ~Expr),
+	BinExpr(~Expr, BinOp, ~Expr),
 
 	VarExpr(~str),
 	DotExpr(~Expr, ~str),
@@ -76,7 +86,7 @@ impl Expr {
 				}
 				BitsType(len)
 			}
-			AddExpr(ref a, ref b) | MulExpr(ref a, ref b) => common_type(a.get_type(), b.get_type()),
+			BinExpr(~ref a, _, ~ref b) => common_type(a.get_type(), b.get_type()),
 			VarExpr(..) | DotExpr(..) => InvalidType, // TODO: need context lookup
 
 		}
@@ -121,8 +131,10 @@ impl Expr {
 					None
 				}
 			}
-			AddExpr(ref l, ref r) => binop(*l, *r, |a, b| a+b),
-			MulExpr(ref l, ref r) => binop(*l, *r, |a, b| a*b),
+			BinExpr(~ref l, BiAdd, ~ref r) => binop(l, r, |a, b| a+b),
+			BinExpr(~ref l, BiMul, ~ref r) => binop(l, r, |a, b| a*b),
+			BinExpr(..) => None,
+
 			VarExpr(..) | DotExpr(..) => None,
 		}
 	}
@@ -170,7 +182,7 @@ impl Expr {
 				}
 				true
 			}
-			AddExpr(..) | MulExpr(..) => self.const_down().map_or(false, |x| x.matches(value)),
+			BinExpr(..) => self.const_down().map_or(false, |x| x.matches(value)),
 			VarExpr(..) | DotExpr(..) => false,
 		}
 	}
