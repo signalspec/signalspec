@@ -1,6 +1,6 @@
 use ast;
 use std::hashmap::HashMap;
-use extra::arena::{Arena,TypedArena};
+use arena::{Arena,TypedArena};
 
 pub struct ModuleLoader<'s> {
 	defArena: TypedArena<EventClosure<'s>>,

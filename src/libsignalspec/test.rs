@@ -1,6 +1,7 @@
 #[allow(dead_code)];
 
 extern mod extra;
+extern mod arena;
 
 use std::os;
 use expr::{Expr, Value};
