@@ -9,6 +9,7 @@ use std::str;
 use std::io::{stdout,stderr};
 use std::io::fs::File;
 
+mod session;
 mod expr;
 mod grammar;
 mod bitv;
@@ -16,8 +17,9 @@ mod ast;
 mod resolve;
 mod clock_event;
 
-
 fn main() {
+	let mut sess = session::Session::new();
+
 	let args = os::args();
 	let source_utf8 = File::open(&Path::new(args[1])).read_to_end();
 	let source = str::from_utf8(source_utf8);
@@ -31,8 +33,9 @@ fn main() {
 	let timer = clock_event::timer();
 	prelude.names.insert(~"time", resolve::EventItem(timer));
 
-	let ses = resolve::ModuleLoader::new();
-	let mut modscope = ses.resolve_module(&prelude, &module);
+	let mut ctx = session::Context::new(&sess);
+
+	let mut modscope = resolve::resolve_module(&mut ctx, &prelude, &module);
 	println!("modscope: {:?}\n", modscope);
 
 	let main = match modscope.get("main").unwrap() {
@@ -41,7 +44,7 @@ fn main() {
 	};
 
 	let w = clock_event::wire_config();
-	let event = main.resolve_call(&[resolve::EntityItem(&w)], None);
+	let event = main.resolve_call(&mut ctx, &[resolve::EntityItem(&w)], None);
 	println!("main: {:?}\n", event);
 
 	resolve::print_step_tree(&event, 0);

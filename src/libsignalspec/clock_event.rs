@@ -1,4 +1,5 @@
 use std::hashmap::HashMap;
+use session::{Context, Session};
 
 use resolve::{ScopeItem, Entity, EventCallable,Step,PrimitiveStep,StepHandler,EventBodyClosure, resolve_body_call};
 
@@ -32,7 +33,7 @@ struct WireLevel {
 
 ///
 
-type PrimitiveResolveFn<'s, T> = fn (device: &'s T, params: &[ScopeItem<'s>], body: Option<&EventBodyClosure<'s>>) -> Step;
+type PrimitiveResolveFn<'s, T> = fn (ctx: &mut Context<'s>, device: &'s T, params: &[ScopeItem<'s>], body: Option<&EventBodyClosure<'s>>) -> Step;
 
 struct PrimitiveCallable<'s, T> {
 	device: &'s T,
@@ -49,8 +50,8 @@ impl<'s, T> PrimitiveCallable<'s, T> {
 }
 
 impl<'s, T> EventCallable<'s> for PrimitiveCallable<'s, T> {
-	fn resolve_call(&self, params: &[ScopeItem<'s>], body: Option<&EventBodyClosure<'s>>) -> Step {
-		(self.resolvefn)(self.device, params, body)
+	fn resolve_call(&self, ctx: &mut Context<'s>, params: &[ScopeItem<'s>], body: Option<&EventBodyClosure<'s>>) -> Step {
+		(self.resolvefn)(ctx, self.device, params, body)
 	}
 }
 
@@ -64,8 +65,8 @@ fn make_entity<'s, T:'static>(device: &'s T, events: &[(&'static str, PrimitiveR
 
 ///
 
-fn resolve_wire_level<'s>(_: &(), params: &[ScopeItem<'s>], body: Option<&EventBodyClosure<'s>>) -> Step {
-	PrimitiveStep(~WireLevelHandler{dummy: 0}, body.map(|b| ~resolve_body_call(b, &[])))
+fn resolve_wire_level<'s>(ctx: &mut Context<'s>, _: &(), params: &[ScopeItem<'s>], body: Option<&EventBodyClosure<'s>>) -> Step {
+	PrimitiveStep(~WireLevelHandler{dummy: 0}, body.map(|b| ~resolve_body_call(ctx, b, &[])))
 }
 
 struct WireLevelHandler {
@@ -75,7 +76,7 @@ struct WireLevelHandler {
 
 impl StepHandler for WireLevelHandler {}
 
-fn resolve_time<'s>(_: &(), params: &[ScopeItem<'s>], body: Option<&EventBodyClosure<'s>>) -> Step {
+fn resolve_time<'s>(ctx: &mut Context<'s>, _: &(), params: &[ScopeItem<'s>], body: Option<&EventBodyClosure<'s>>) -> Step {
 	PrimitiveStep(~TimerHandler, None)
 }
 

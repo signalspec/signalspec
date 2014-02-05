@@ -1,35 +1,7 @@
 use ast;
 use std::hashmap::HashMap;
+use session::{Session, Context};
 use arena::{Arena,TypedArena};
-
-pub struct ModuleLoader<'s> {
-	defArena: TypedArena<EventClosure<'s>>,
-}
-
-impl<'s> ModuleLoader<'s> {
-	pub fn new() -> ModuleLoader {
-		ModuleLoader {
-			defArena: TypedArena::new(),
-		}
-	}
-
-	pub fn resolve_module(&'s self, scope: &'s Scope<'s>, ast: &'s ast::Module) -> Scope<'s> {
-		let mut scope: Scope<'s> = scope.clone();
-
-		for import in ast.imports.iter() {
-			fail!("Imports unimplemented");
-		}
-
-		scope.add_lets(ast.lets);
-
-		for def in ast.defs.iter() {
-			let ed = self.defArena.alloc(EventClosure{ ast:def, parentScope: scope.clone()});
-			scope.names.insert(def.name.to_owned(), EventItem(ed));
-		}
-
-		scope
-	}
-}
 
 #[deriving(Clone)]
 pub enum ScopeItem<'s> {
@@ -76,7 +48,7 @@ impl<'s> Scope<'s> {
 
 
 pub trait EventCallable<'s> {
-	fn resolve_call(&self, params: &[ScopeItem<'s>], body: Option<&EventBodyClosure<'s>>) -> Step ;
+	fn resolve_call(&self, ctx: &mut Context<'s>, params: &[ScopeItem<'s>], body: Option<&EventBodyClosure<'s>>) -> Step ;
 }
 
 // A user-defined event
@@ -89,6 +61,24 @@ pub struct EventClosure<'s> {
 pub struct EventBodyClosure<'s> {
 	ast: &'s ast::ActionBody,
 	parentScope: Scope<'s>,
+}
+
+pub fn resolve_module<'s>(pctx: &mut Context<'s>, scope: &Scope<'s>, ast: &'s ast::Module) -> Scope<'s> {
+	let mut ctx = pctx.child();
+	let mut scope: Scope<'s> = scope.clone();
+
+	for import in ast.imports.iter() {
+		fail!("Imports unimplemented");
+	}
+
+	scope.add_lets(ast.lets);
+
+	for def in ast.defs.iter() {
+		let ed = ctx.session.moduleDefArena.alloc(EventClosure{ ast:def, parentScope: scope.clone()});
+		scope.names.insert(def.name.to_owned(), EventItem(ed));
+	}
+
+	scope
 }
 
 fn eval_callable_expr<'s>(expr: &ast::Expr, scope: &Scope<'s>) -> Option<ScopeItem<'s>> {
@@ -106,7 +96,8 @@ fn eval_callable_expr<'s>(expr: &ast::Expr, scope: &Scope<'s>) -> Option<ScopeIt
 	}
 }
 
-fn resolve_seq<'s>(scope: &Scope<'s>, block: &'s ast::Block) -> Step {
+fn resolve_seq<'s>(pctx: &mut Context<'s>, scope: &Scope<'s>, block: &'s ast::Block) -> Step {
+	let mut ctx = pctx.child();
 	let mut scope = scope.clone();
 	scope.add_lets(block.lets);
 
@@ -120,7 +111,7 @@ fn resolve_seq<'s>(scope: &Scope<'s>, block: &'s ast::Block) -> Step {
 
 		match entity {
 			Some(EventItem(ref e)) => {
-				e.resolve_call(&[], body.as_ref())
+				e.resolve_call(&mut ctx, &[], body.as_ref())
 			}
 			None => fail!("Event not found: {:?} in {:?}", action.entity, scope.names.keys().collect::<~[&~str]>()),
 			_ => fail!("Not an event"),
@@ -131,20 +122,22 @@ fn resolve_seq<'s>(scope: &Scope<'s>, block: &'s ast::Block) -> Step {
 }
 
 impl<'s> EventCallable<'s> for EventClosure<'s> {
-	fn resolve_call(&self, params: &[ScopeItem<'s>], body: Option<&EventBodyClosure<'s>>) -> Step {
+	fn resolve_call(&self, pctx: &mut Context<'s>, params: &[ScopeItem<'s>], body: Option<&EventBodyClosure<'s>>) -> Step {
+		let mut ctx = pctx.child();
 		let mut scope = self.parentScope.clone(); // Base on lexical parent
+
 		scope.add_params(self.ast.params, params);
-		CallStep(~resolve_seq(&scope, &self.ast.block))
+		CallStep(~resolve_seq(&mut ctx, &scope, &self.ast.block))
 	}
 }
 
-pub fn resolve_body_call<'s>(body: &'s EventBodyClosure, params: &[ScopeItem<'s>]) -> Step {
+pub fn resolve_body_call<'s>(ctx: &mut Context<'s>, body: &EventBodyClosure<'s>, params: &[ScopeItem<'s>]) -> Step {
 	// TODO: parameters
-	CallStep(~resolve_seq(&body.parentScope, &body.ast.block))
+	CallStep(~resolve_seq(ctx, &body.parentScope, &body.ast.block))
 }
 
-impl<'s> Clone for &'s EventCallable<'s> {
-	fn clone(&self) -> &'s EventCallable<'s> { *self }
+impl<'s, 'r> Clone for &'r EventCallable<'s> {
+	fn clone(&self) -> &'r EventCallable<'s> { *self }
 }
 
 pub struct Entity<'s> {
