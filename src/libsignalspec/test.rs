@@ -21,7 +21,7 @@ fn main() {
 	let mut sess = session::Session::new();
 
 	let args = os::args();
-	let source_utf8 = File::open(&Path::new(args[1])).read_to_end();
+	let source_utf8 = File::open(&Path::new(args[1])).read_to_end().unwrap();
 	let source = str::from_utf8(source_utf8);
 	let module = grammar::module(source.unwrap());
 
