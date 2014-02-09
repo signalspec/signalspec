@@ -1,5 +1,6 @@
 use std::hashmap::HashMap;
-use session::{Context, Session};
+use session::Session;
+use context::Context;
 
 use resolve::{ScopeItem, Entity, EventCallable,Step,PrimitiveStep,StepHandler,EventBodyClosure, resolve_body_call};
 

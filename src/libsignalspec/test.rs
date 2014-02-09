@@ -4,12 +4,12 @@ extern mod extra;
 extern mod arena;
 
 use std::os;
-use expr::{Expr, Value};
 use std::str;
 use std::io::{stdout,stderr};
 use std::io::fs::File;
 
 mod session;
+mod context;
 mod expr;
 mod grammar;
 mod bitv;
@@ -33,7 +33,7 @@ fn main() {
 	let timer = clock_event::timer();
 	prelude.names.insert(~"time", resolve::EventItem(timer));
 
-	let mut ctx = session::Context::new(&sess);
+	let mut ctx = context::Context::new(&sess);
 
 	let mut modscope = resolve::resolve_module(&mut ctx, &prelude, &module);
 	println!("modscope: {:?}\n", modscope);

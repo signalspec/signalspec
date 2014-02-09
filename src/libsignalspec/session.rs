@@ -15,21 +15,3 @@ impl<'session> Session<'session> {
 		}
 	}
 }
-
-pub struct Context<'session> {
-	session: &'session Session<'session>,
-}
-
-impl<'session> Context<'session> {
-	pub fn new(session: &'session Session<'session>) -> Context<'session> {
-		Context {
-			session: session,
-		}
-	}
-
-	pub fn child<'ctx>(&mut self) -> Context<'session> {
-		Context {
-			session: self.session,
-		}
-	}
-}

@@ -1,6 +1,7 @@
 use ast;
 use std::hashmap::HashMap;
-use session::{Session, Context};
+use session::Session;
+use context::Context;
 use arena::{Arena,TypedArena};
 
 #[deriving(Clone)]
