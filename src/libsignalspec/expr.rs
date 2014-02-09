@@ -1,47 +1,32 @@
-use bitv;
-use bitv::Bitv;
+use context::{
+	Context,
+	DCell,
+	ValueRef,
+		Ignored,
+		Constant,
+		Dynamic,
+};
 
-#[deriving(Eq)]
-pub enum Type {
-	SymbolType, // TODO: include variants?
-	BitsType(uint),
-	NumberType,
-	EntityType,
+use ast;
+use ast::{
+	TopType,
 	InvalidType,
-	TopType
-}
+};
+use resolve;
+use eval::{
+	ValOp,
+};
 
-pub enum BinOp {
-	BiAdd,
-	BiMul,
-	BiSub,
-	BiDiv,
+// For now, types have nothing to resolve.
+// Eventually, some type parameters will be expressions.
+pub type Type = ast::TypeExpr;
+fn resolve_type(t: ast::TypeExpr) -> Type { t }
 
-	BiAnd,
-	BiOr,
-	BiXor,
-}
-
-pub enum Expr {
-	ValueExpr(Value),
-	IgnoreExpr,
-	
-	FlipExpr(~Expr, ~Expr),
-	RangeExpr(~Expr, ~Expr),
-	ChooseExpr(~Expr, ~[(Expr, Expr)]),
-	ConcatExpr(~[Expr]),
-
-	BinExpr(~Expr, BinOp, ~Expr),
-
-	VarExpr(~str),
-	DotExpr(~Expr, ~str),
-}
-
-#[deriving(Clone, Eq)]
-pub enum Value {
-	NumberValue(f64),
-	SymbolValue(~str),
-	BitsValue(Bitv),
+#[deriving(Clone)]
+pub enum Item<'s> {
+	EventItem(&'s resolve::EventCallable<'s>),
+	EntityItem(&'s resolve::Entity<'s>),
+	ValueItem(Type, ValueRef /*Down*/, ValueRef /*Up*/)
 }
 
 fn common_type(a: Type, b: Type) -> Type{
@@ -57,157 +42,30 @@ fn common_type_all<T:Iterator<Type>>(l: &mut T) -> Type{
 	l.fold(TopType, common_type)
 }
 
-impl Expr {
-	pub fn get_type(&self) -> Type {
-		match (*self) {
-			IgnoreExpr => TopType,
-			ValueExpr(ref val) => val.get_type(),
-			FlipExpr(ref l, ref r) => common_type(l.get_type(), r.get_type()),
-			RangeExpr(..) => NumberType,
-			ChooseExpr(ref e, ref c) => {
-				let ls = common_type_all(&mut c.iter().map(|&(ref a,_)| a.get_type()));
-				let rs = common_type_all(&mut c.iter().map(|&(_,ref b)| b.get_type()));
-				match common_type(e.get_type(), ls) {
-					InvalidType => InvalidType,
-					_ => rs
-				}
-			}
-			ConcatExpr(ref v) =>  {
-				let mut len: uint = 0;
-				for e in v.iter() {
-					match e.get_type() {
-						BitsType(n) => {
-							len += n;
-						}
-						_ => {
-							return InvalidType;
-						}
-					}
-				}
-				BitsType(len)
-			}
-			BinExpr(~ref a, _, ~ref b) => common_type(a.get_type(), b.get_type()),
-			VarExpr(..) | DotExpr(..) => InvalidType, // TODO: need context lookup
-
-		}
-	}
-
-	pub fn const_down(&self) -> Option<Value> {
-		fn binop(l: &Expr, r: &Expr, f: |a: f64, b: f64| -> f64) -> Option<Value>{
-			match (l.const_down(), r.const_down()) {
-				(Some(NumberValue(lv)), Some(NumberValue(rv))) =>
-					Some(NumberValue(f(lv, rv))),
-				_ => None,
-			}
-		}
-
-		match (*self) {
-			IgnoreExpr => None,
-			ValueExpr(ref v) => Some((*v).clone()),
-			FlipExpr(ref l, _) => l.const_down(),
-			RangeExpr(..) => None,
-			ChooseExpr(ref e, ref c) => {
-				match e.const_down() {
-					Some(ev) => {
-						for &(ref l, ref r) in c.iter() {
-							if l.const_up(&ev) {
-								return r.const_down();
-							}
-						}
-						None
-					}
-					None => None
-				}
-			}
-			ConcatExpr(ref subexprs) => {
-				let values: ~[Bitv] = subexprs.iter()
-					.filter_map(|e| e.const_down())
-					.filter_map(|v| match v { BitsValue(r) => Some(r), _ => None })
-					.collect();
-
-				if values.len() == subexprs.len() {
-					Some(BitsValue(bitv::concat(values)))
-				} else {
-					None
-				}
-			}
-			BinExpr(~ref l, BiAdd, ~ref r) => binop(l, r, |a, b| a+b),
-			BinExpr(~ref l, BiMul, ~ref r) => binop(l, r, |a, b| a*b),
-			BinExpr(..) => None,
-
-			VarExpr(..) | DotExpr(..) => None,
-		}
-	}
-
-	pub fn const_up(&self, value: &Value) -> bool {
-		match (*self) {
-			IgnoreExpr => true,
-			ValueExpr(ref v) => v.matches(value),
-			FlipExpr(_, ref r) => r.const_up(value),
-			RangeExpr (ref min, ref max) => {
-				match (value, min.const_down(), max.const_down()) {
-					(&NumberValue(v), Some(NumberValue(minv)), Some(NumberValue(maxv))) => {
-						v >= minv && v < maxv
-					}
-					_ => false
-				}
-			}
-			ChooseExpr(ref e, ref c) => {
-				for &(ref l, ref r) in c.iter() {
-					if r.const_up(value) {
-						return l.const_down().map_or(false, |lv| e.const_up(&lv))
-					}
-				}
-				false
-			}
-			ConcatExpr(ref subexprs) => {
-				let mut pos = 0u;
-
-				let val = match *value {
-					BitsValue(ref v) => v,
-					_ => return false
-				};
-
-				for subexpr in subexprs.iter() {
-					match subexpr.get_type() {
-						BitsType(width) => {
-							let slice = BitsValue(val.slice(pos, pos+width));
-							pos += width;
-							if subexpr.const_up(&slice) == false {
-								return false;
-							}
-						}
-						_ => return false
-					}
-				}
-				true
-			}
-			BinExpr(..) => self.const_down().map_or(false, |x| x.matches(value)),
-			VarExpr(..) | DotExpr(..) => false,
-		}
+fn resolve_value_expr<'s>(ctx: &mut Context<'s>, scope: &resolve::Scope<'s>, e: &ast::Expr) ->  (Type, ValueRef /*Down*/, ValueRef /*Up*/) {
+	match resolve_expr(ctx, scope, e) {
+		ValueItem(t, du, uu) => (t, du, uu),
+		_ => fail!("Expected a value expression"),
 	}
 }
 
-impl Value {
-	pub fn get_type(&self) -> Type {
-		match (*self) {
-			NumberValue(..) => NumberType,
-			SymbolValue(..) => SymbolType,
-			BitsValue(ref n) => BitsType(n.len()),
-		}
-	}
+pub fn resolve_expr<'s>(ctx: &mut Context<'s>, scope: &resolve::Scope<'s>, e: &ast::Expr) -> Item<'s> {
+	match (*e) {
+		ast::IgnoreExpr => ValueItem(TopType, Ignored, Ignored),
 
-	pub fn matches(&self, other: &Value) -> bool {
-		*self == *other
-	}
-}
-
-impl ToStr for Value {
-	fn to_str(&self) -> ~str {
-		match (*self) {
-			NumberValue(n) => n.to_str(),
-			SymbolValue(ref s) => "$" + *s,
-			BitsValue(ref n) => "'b" + n.to_str(),
+		ast::VarExpr(ref name) => {
+			scope.get(name.as_slice()).expect("Undefined variable")
 		}
+
+		ast::DotExpr(~ref lexpr, ref name) => {
+			match resolve_expr(ctx, scope, lexpr) {
+				EntityItem(ref e) => e.events.find_equiv(&name.as_slice()).map(|x| EventItem(*x)).expect("Undefined property"),
+				_ => fail!("dot only works on entities"),
+			}
+		}
+
+		ast::ValueExpr(ref val) => ValueItem(val.get_type(), Constant(val.clone()), Constant(val.clone())),
+
+		_ => fail!("unimplemented"),
 	}
 }

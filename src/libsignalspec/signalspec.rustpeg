@@ -41,13 +41,13 @@ def -> ast::Def
 			{ ast::ActionBody{ param_names: args, block: block } }
 
 #[export]
-typeexpr -> ast::Type
+typeexpr -> ast::TypeExpr
 	= symboltype
 	/ bitstype
 	/ numbertype
 	/ entitytype
 
-	symboltype -> ast::Type
+	symboltype -> ast::TypeExpr
 		= "enum" _ "(" vs:symbol_list ")" _
 		{ ast::SymbolType }
 
@@ -55,15 +55,15 @@ typeexpr -> ast::Type
 			= __ vs:(i:symbolliteral commasep { i })*
 			{ vs }
 
-	bitstype -> ast::Type
+	bitstype -> ast::TypeExpr
 		= "bits" _ "(" _ val:integer ")" _
 		{ ast::BitsType(val as uint) }
 
-	numbertype -> ast::Type
+	numbertype -> ast::TypeExpr
 		= "number" _ "(" units:unitliteral ")" _
 		{ ast::NumberType }
 
-	entitytype -> ast::Type
+	entitytype -> ast::TypeExpr
 		= tp:identifier _
 		{ ast::EntityType }
 

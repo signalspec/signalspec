@@ -4,12 +4,13 @@ use session::Session;
 use context::Context;
 use arena::{Arena,TypedArena};
 
-#[deriving(Clone)]
-pub enum ScopeItem<'s> {
-	ValueItem(ast::Value),
-	EventItem(&'s EventCallable<'s>),
-	EntityItem(&'s Entity<'s>),
-}
+pub use ScopeItem = expr::Item;
+pub use expr::{
+	ValueItem,
+	EventItem,
+	EntityItem,
+	resolve_expr,
+};
 
 #[deriving(Clone)]
 pub struct Scope<'s>{
@@ -82,28 +83,13 @@ pub fn resolve_module<'s>(pctx: &mut Context<'s>, scope: &Scope<'s>, ast: &'s as
 	scope
 }
 
-fn eval_callable_expr<'s>(expr: &ast::Expr, scope: &Scope<'s>) -> Option<ScopeItem<'s>> {
-	match *expr {
-		ast::ValueExpr(ref val) => Some(ValueItem(val.clone())),
-		ast::VarExpr(ref name) => scope.get(name.as_slice()),
-		ast::DotExpr(ref lexpr, ref name) => {
-			let l = eval_callable_expr(*lexpr, scope);
-			match l {
-				Some(EntityItem(ref e)) => e.events.find_equiv(&name.as_slice()).map(|x| EventItem(*x)),
-				_ => None,
-			}
-		}
-		_ => None,
-	}
-}
-
 fn resolve_seq<'s>(pctx: &mut Context<'s>, scope: &Scope<'s>, block: &'s ast::Block) -> Step {
 	let mut ctx = pctx.child();
 	let mut scope = scope.clone();
 	scope.add_lets(block.lets);
 
 	let steps = block.actions.iter().map(|action| {
-		let entity = eval_callable_expr(&action.entity, &scope);
+		let entity = resolve_expr(&mut ctx, &scope, &action.entity);
 
 		let body = action.body.as_ref().map(|x| 
 			EventBodyClosure { ast: x, parentScope: scope.clone()
@@ -111,10 +97,9 @@ fn resolve_seq<'s>(pctx: &mut Context<'s>, scope: &Scope<'s>, block: &'s ast::Bl
 
 
 		match entity {
-			Some(EventItem(ref e)) => {
+			EventItem(ref e) => {
 				e.resolve_call(&mut ctx, &[], body.as_ref())
 			}
-			None => fail!("Event not found: {:?} in {:?}", action.entity, scope.names.keys().collect::<~[&~str]>()),
 			_ => fail!("Not an event"),
 		}
 	}).collect();

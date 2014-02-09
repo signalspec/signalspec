@@ -1,5 +1,16 @@
 use session::Session;
-use eval::{ValOp, ValueRef};
+use eval::{ValOp};
+use ast::Value;
+
+#[deriving(Eq, Clone)]
+pub enum ValueRef {
+	Ignored,
+	Constant(Value),
+	Dynamic(DCell),
+}
+
+/// Dynamic Cell
+pub type DCell = uint;
 
 pub struct Context<'session> {
 	session: &'session Session<'session>,
