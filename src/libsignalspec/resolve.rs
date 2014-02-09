@@ -49,7 +49,7 @@ impl<'s> Scope<'s> {
 
 
 pub trait EventCallable<'s> {
-	fn resolve_call(&self, ctx: &mut Context, params: &[ScopeItem<'s>], body: Option<&EventBodyClosure>) -> Step ;
+	fn resolve_call(&self, ctx: &mut Context<'s>, params: &[ScopeItem<'s>], body: Option<&EventBodyClosure<'s>>) -> Step ;
 }
 
 // A user-defined event
@@ -97,7 +97,7 @@ fn eval_callable_expr<'s>(expr: &ast::Expr, scope: &Scope<'s>) -> Option<ScopeIt
 	}
 }
 
-fn resolve_seq<'s>(pctx: &mut Context, scope: &Scope<'s>, block: &'s ast::Block) -> Step {
+fn resolve_seq<'s>(pctx: &mut Context<'s>, scope: &Scope<'s>, block: &'s ast::Block) -> Step {
 	let mut ctx = pctx.child();
 	let mut scope = scope.clone();
 	scope.add_lets(block.lets);
@@ -123,7 +123,7 @@ fn resolve_seq<'s>(pctx: &mut Context, scope: &Scope<'s>, block: &'s ast::Block)
 }
 
 impl<'s> EventCallable<'s> for EventClosure<'s> {
-	fn resolve_call(&self, pctx: &mut Context, params: &[ScopeItem<'s>], body: Option<&EventBodyClosure>) -> Step {
+	fn resolve_call(&self, pctx: &mut Context<'s>, params: &[ScopeItem<'s>], body: Option<&EventBodyClosure<'s>>) -> Step {
 		let mut ctx = pctx.child();
 		let mut scope = self.parentScope.clone(); // Base on lexical parent
 
@@ -132,7 +132,7 @@ impl<'s> EventCallable<'s> for EventClosure<'s> {
 	}
 }
 
-pub fn resolve_body_call(ctx: &mut Context, body: &EventBodyClosure, params: &[ScopeItem]) -> Step {
+pub fn resolve_body_call<'s>(ctx: &mut Context<'s>, body: &EventBodyClosure<'s>, params: &[ScopeItem<'s>]) -> Step {
 	// TODO: parameters
 	CallStep(~resolve_seq(ctx, &body.parentScope, &body.ast.block))
 }

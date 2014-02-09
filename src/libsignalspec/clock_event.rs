@@ -34,7 +34,7 @@ struct WireLevel {
 
 ///
 
-type PrimitiveResolveFn<T> = fn <'s> (ctx: &mut Context, device: &'s T, params: &[ScopeItem<'s>], body: Option<&EventBodyClosure>) -> Step;
+type PrimitiveResolveFn<T> = fn <'s> (ctx: &mut Context<'s>, device: &'s T, params: &[ScopeItem<'s>], body: Option<&EventBodyClosure<'s>>) -> Step;
 
 struct PrimitiveCallable<'s, T> {
 	device: &'s T,
@@ -51,7 +51,7 @@ impl<'s, T> PrimitiveCallable<'s, T> {
 }
 
 impl<'s, T> EventCallable<'s> for PrimitiveCallable<'s, T> {
-	fn resolve_call(&self, ctx: &mut Context, params: &[ScopeItem<'s>], body: Option<&EventBodyClosure>) -> Step {
+	fn resolve_call(&self, ctx: &mut Context<'s>, params: &[ScopeItem<'s>], body: Option<&EventBodyClosure<'s>>) -> Step {
 		(self.resolvefn)(ctx, self.device, params, body)
 	}
 }
@@ -66,7 +66,7 @@ fn make_entity<'s, T:'static>(device: &'s T, events: &[(&'static str, PrimitiveR
 
 ///
 
-fn resolve_wire_level<'s>(ctx: &mut Context, _: &(), params: &[ScopeItem<'s>], body: Option<&EventBodyClosure>) -> Step {
+fn resolve_wire_level<'s>(ctx: &mut Context<'s>, _: &(), params: &[ScopeItem<'s>], body: Option<&EventBodyClosure<'s>>) -> Step {
 	PrimitiveStep(~WireLevelHandler{dummy: 0}, body.map(|b| ~resolve_body_call(ctx, b, &[])))
 }
 
@@ -77,7 +77,7 @@ struct WireLevelHandler {
 
 impl StepHandler for WireLevelHandler {}
 
-fn resolve_time<'s>(ctx: &mut Context, _: &(), params: &[ScopeItem<'s>], body: Option<&EventBodyClosure>) -> Step {
+fn resolve_time<'s>(ctx: &mut Context<'s>, _: &(), params: &[ScopeItem<'s>], body: Option<&EventBodyClosure>) -> Step {
 	PrimitiveStep(~TimerHandler, None)
 }
 
