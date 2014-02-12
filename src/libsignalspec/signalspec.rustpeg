@@ -1,5 +1,6 @@
 {
 	use ast;
+	use eval;
 	use std::num::from_str_radix;
 	use bitv;
 }
@@ -89,12 +90,12 @@ valexpr -> ast::Expr
 
 	valexpr_sum -> ast::Expr
 		= l:valexpr_product op:[+] _ r:valexpr_sum
-			{ ast::BinExpr(~l, ast::BiAdd, ~r) }
+			{ ast::BinExpr(~l, eval::BiAdd, ~r) }
 		/ valexpr_product
 
 	valexpr_product -> ast::Expr
 		= l:valexpr_choose op:[*] _ r:valexpr_product
-			{ ast::BinExpr(~l, ast::BiMul, ~r) }
+			{ ast::BinExpr(~l, eval::BiMul, ~r) }
 		/ valexpr_choose
 
 	valexpr_choose -> ast::Expr

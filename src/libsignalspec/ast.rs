@@ -1,4 +1,5 @@
 use bitv::Bitv;
+use eval::BinOp;
 
 pub struct Module {
 	imports: ~[UseDef],
@@ -76,17 +77,6 @@ impl ToStr for Value {
 			BitsValue(ref n) => "'b" + n.to_str(),
 		}
 	}
-}
-
-pub enum BinOp {
-	BiAdd,
-	BiMul,
-	BiSub,
-	BiDiv,
-
-	BiAnd,
-	BiOr,
-	BiXor,
 }
 
 pub enum Expr {
