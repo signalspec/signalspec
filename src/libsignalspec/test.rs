@@ -16,7 +16,7 @@ mod grammar;
 mod bitv;
 mod ast;
 mod resolve;
-mod clock_event;
+mod virtual_clock;
 
 fn main() {
 	let mut sess = session::Session::new();
@@ -31,7 +31,7 @@ fn main() {
 	let module = module.unwrap();
 
 	let mut prelude = resolve::Scope::new();
-	let timer = clock_event::timer();
+	let timer = virtual_clock::timer();
 	prelude.names.insert(~"time", resolve::EventItem(timer));
 
 	let mut ctx = context::Context::new(&sess);
@@ -44,7 +44,7 @@ fn main() {
 		_ => fail!("Main is not an event"),
 	};
 
-	let w = clock_event::wire_config();
+	let w = virtual_clock::wire_config();
 	let event = main.resolve_call(&mut ctx, &[resolve::EntityItem(&w)], None);
 	println!("main: {:?}\n", event);
 
