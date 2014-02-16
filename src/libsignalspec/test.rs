@@ -1,7 +1,7 @@
 #[allow(dead_code)];
 
-extern mod extra;
-extern mod arena;
+extern crate extra;
+extern crate arena;
 
 use std::os;
 use std::str;
