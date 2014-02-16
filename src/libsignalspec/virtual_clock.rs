@@ -1,8 +1,23 @@
 use std::hashmap::HashMap;
 use session::Session;
-use context::Context;
-
-use resolve::{ScopeItem, Entity, EventCallable,Step,PrimitiveStep,StepHandler,EventBodyClosure, resolve_body_call};
+use ast;
+use context;
+use context::{
+	Context,
+	ValueRef,
+	Domain,
+};
+use resolve::{
+	ScopeItem,
+	Entity,
+	EventCallable,
+	Step,
+		NopStep,
+		PrimitiveStep,
+	StepHandler,
+	EventBodyClosure,
+	resolve_body_call,
+};
 
 pub trait DigitalSource {
 	/// Vector of wire names. Indicies in this array are the IDs used in other methods.
@@ -26,10 +41,6 @@ struct Wire {
 
 struct WireGroup {
 	wire_ids: ~[~str],
-}
-
-struct WireLevel {
-	dummy: uint,
 }
 
 ///
@@ -66,8 +77,18 @@ fn make_entity<'s, T:'static>(device: &'s T, events: &[(&'static str, PrimitiveR
 
 ///
 
-fn resolve_wire_level<'s>(ctx: &mut Context<'s>, _: &(), params: &[ScopeItem<'s>], body: Option<&EventBodyClosure<'s>>) -> Step {
-	PrimitiveStep(~WireLevelHandler{dummy: 0}, body.map(|b| ~resolve_body_call(ctx, b, &[])))
+fn resolve_wire_level<'s>(pctx: &mut Context<'s>, _: &(), params: &[ScopeItem<'s>], body: Option<&EventBodyClosure<'s>>) -> Step {
+	let mut ctx = pctx.child();
+	ctx.domain = match pctx.domain.as_any().as_ref::<VirtualClockDomain>() {
+		// TODO: check that they come from the same parent
+		Some(d) => pctx.session.arena.alloc(|| {
+			let mut domain = d.clone();
+			domain.constraints.push((0, context::Constant(ast::SymbolValue(~"h"))));
+			domain
+		}),
+		None => fail!("wire.level in the wrong clock domain")
+	} as &Domain;
+	body.map_or(NopStep, |b| resolve_body_call(&mut ctx, b, &[]))
 }
 
 struct WireLevelHandler {
@@ -77,26 +98,40 @@ struct WireLevelHandler {
 
 impl StepHandler for WireLevelHandler {}
 
-fn resolve_time<'s>(ctx: &mut Context<'s>, _: &(), params: &[ScopeItem<'s>], body: Option<&EventBodyClosure>) -> Step {
-	PrimitiveStep(~TimerHandler, None)
+struct TimerHandler {
+	constraints: ~[(uint, ValueRef)],
 }
 
-struct TimerHandler;
-impl StepHandler for TimerHandler {}
+impl StepHandler for TimerHandler {
+	fn display(&self) -> ~str{
+		format!("Time ({})", self.constraints.len())
+	}
+}
 
-struct ClockDomain {
-	dummy: uint,
+#[deriving(Clone)]
+pub struct VirtualClockDomain {
+	constraints: ~[(uint, ValueRef)],
+}
+
+impl VirtualClockDomain {
+	pub fn new() -> VirtualClockDomain {
+		VirtualClockDomain {
+			constraints: ~[],
+		}
+	}
+}
+
+impl Domain for VirtualClockDomain {
+	fn as_any<'a>(&'a self) -> &'a Any { self as &Any }
+	fn resolve_time<'s>(&self, ctx: &mut Context<'s>, params: &[ScopeItem<'s>]) -> Step {
+		PrimitiveStep(~TimerHandler{ constraints: self.constraints.clone() }, None)
+	}
 }
 
 static dummy_device: () = ();
-
-pub fn timer<'s>() -> ~EventCallable:<'s> {
-	~PrimitiveCallable::new(&dummy_device, resolve_time) as ~EventCallable:<'s>
-}
 
 pub fn wire_config() -> Entity {
 	make_entity(&dummy_device, &[
 		("level", resolve_wire_level),
 	])
 }
-

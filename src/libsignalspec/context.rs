@@ -1,6 +1,7 @@
 use session::Session;
 use eval;
 use ast::Value;
+use resolve;
 
 #[deriving(Eq, Clone)]
 pub enum ValueRef {
@@ -13,11 +14,18 @@ pub enum ValueRef {
 /// Dynamic Cell
 pub type DCell = uint;
 
+pub trait Domain: Any {
+	// TODO: this method exists as a workaround for mozilla/rust#5665
+	fn as_any<'a>(&'a self) -> &'a Any;
+	fn resolve_time<'s>(&self, ctx: &mut Context<'s>, params: &[resolve::ScopeItem<'s>]) -> resolve::Step;
+}
+
 pub struct Context<'session> {
 	session: &'session Session<'session>,
 	depth: uint,
 	downs: ~[eval::ValOp],
 	ups:   ~[eval::ValOp],
+	domain: &'session Domain,
 }
 
 impl<'session> Context<'session> {
@@ -27,15 +35,17 @@ impl<'session> Context<'session> {
 			depth: 0,
 			downs: ~[],
 			ups: ~[],
+			domain: &default_domain,
 		}
 	}
 
-	pub fn child<'ctx>(&mut self) -> Context<'session> {
+	pub fn child(&mut self) -> Context<'session> {
 		Context {
 			session: self.session,
 			depth: self.depth + 1,
 			downs: ~[],
 			ups: ~[],
+			domain: self.domain,
 		}
 	}
 }
@@ -70,3 +80,12 @@ impl<'s> Context<'s> {
 		Dynamic(cell)
 	}
 }
+
+struct DefaultDomain;
+impl Domain for DefaultDomain {
+	fn as_any<'a>(&'a self) -> &'a Any { self as &Any }
+	fn resolve_time<'s>(&self, ctx: &mut Context<'s>, params: &[resolve::ScopeItem<'s>]) -> resolve::Step {
+		fail!("No active clock domain. What are you timing?");
+	}
+}
+static default_domain: DefaultDomain = DefaultDomain;

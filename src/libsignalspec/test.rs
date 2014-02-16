@@ -31,10 +31,10 @@ fn main() {
 	let module = module.unwrap();
 
 	let mut prelude = resolve::Scope::new();
-	let timer = virtual_clock::timer();
-	prelude.names.insert(~"time", resolve::EventItem(timer));
+	prelude.names.insert(~"time", resolve::EventItem(&resolve::time_callable));
 
 	let mut ctx = context::Context::new(&sess);
+	ctx.domain = sess.arena.alloc(|| virtual_clock::VirtualClockDomain::new()) as &context::Domain;
 
 	let mut modscope = resolve::resolve_module(&mut ctx, &prelude, &module);
 	println!("modscope: {:?}\n", modscope);

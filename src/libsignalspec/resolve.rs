@@ -1,7 +1,7 @@
 use ast;
 use std::hashmap::HashMap;
 use session::Session;
-use context::Context;
+use context::{Context};
 use arena::{Arena,TypedArena};
 
 pub use ScopeItem = expr::Item;
@@ -130,8 +130,18 @@ pub struct Entity<'s> {
 	events: HashMap<~str, ~EventCallable:<'s> >,
 }
 
-pub trait StepHandler {
+pub struct TimeCallable;
+impl<'s> EventCallable<'s> for TimeCallable {
+	fn resolve_call(&self, pctx: &mut Context<'s>, params: &[ScopeItem<'s>], body: Option<&EventBodyClosure<'s>>) -> Step {
+		pctx.domain.resolve_time(pctx, params)
+	}
+}
+pub static time_callable: TimeCallable = TimeCallable;
 
+pub trait StepHandler {
+	fn display(&self) -> ~str {
+		~"Primitive"
+	}
 }
 
 pub enum Step {
@@ -155,8 +165,8 @@ pub fn print_step_tree(s: &Step, indent: uint) {
 				print_step_tree(c, indent+1);
 			}
 		}
-		PrimitiveStep(_, ref body) => {
-			println!("{}Primitive", i);
+		PrimitiveStep(ref h, ref body) => {
+			println!("{}{}", i, h.display());
 			match *body {
 				Some(~ref body) => print_step_tree(body, indent+1),
 				None => ()
