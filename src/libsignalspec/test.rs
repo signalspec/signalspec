@@ -17,6 +17,7 @@ mod bitv;
 mod ast;
 mod resolve;
 mod virtual_clock;
+mod exec;
 
 fn main() {
 	let mut sess = session::Session::new();
@@ -48,5 +49,5 @@ fn main() {
 	let event = main.resolve_call(&mut ctx, &[resolve::EntityItem(&w)], None);
 	println!("main: {:?}\n", event);
 
-	resolve::print_step_tree(&event, 0);
+	exec::print_step_tree(&event, 0);
 }
