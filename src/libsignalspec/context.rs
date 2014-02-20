@@ -17,7 +17,7 @@ pub type DCell = uint;
 pub trait Domain: Any {
 	// TODO: this method exists as a workaround for mozilla/rust#5665
 	fn as_any<'a>(&'a self) -> &'a Any;
-	fn resolve_time<'s>(&self, ctx: &mut Context<'s>, params: &[resolve::ScopeItem<'s>]) -> resolve::Step;
+	fn resolve_time<'s>(&self, ctx: &mut Context<'s>, params: &resolve::Params<'s>) -> resolve::Step;
 }
 
 pub struct Context<'session> {
@@ -84,7 +84,7 @@ impl<'s> Context<'s> {
 struct DefaultDomain;
 impl Domain for DefaultDomain {
 	fn as_any<'a>(&'a self) -> &'a Any { self as &Any }
-	fn resolve_time<'s>(&self, ctx: &mut Context<'s>, params: &[resolve::ScopeItem<'s>]) -> resolve::Step {
+	fn resolve_time<'s>(&self, ctx: &mut Context<'s>, params: &resolve::Params) -> resolve::Step {
 		fail!("No active clock domain. What are you timing?");
 	}
 }

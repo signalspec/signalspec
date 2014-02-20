@@ -38,13 +38,13 @@ impl<'s> Scope<'s> {
 		}
 	}
 
-	fn add_params(&mut self, param_defs: &[ast::ParamDef], param_values: &[ScopeItem<'s>]) {
+	fn add_params(&mut self, param_defs: &[ast::ParamDef], param_values: &Params<'s>) {
 		// TODO: keyword args, defaults
-		if param_defs.len() != param_values.len() {
+		if param_defs.len() != param_values.positional.len() {
 			fail!("Wrong number of parameters passed")
 		}
 
-		for (def, val) in param_defs.iter().zip(param_values.iter()) {
+		for (def, val) in param_defs.iter().zip(param_values.positional.iter()) {
 			// TODO: type check
 			let v = val.clone();
 			self.names.insert(def.name.to_owned(), v);
@@ -56,9 +56,23 @@ impl<'s> Scope<'s> {
 	}
 }
 
+pub struct Params<'s> {
+	positional: ~[ScopeItem<'s>],
+	body: Option<EventBodyClosure<'s>>,
+}
+
+impl<'s> Params<'s> {
+	pub fn empty() -> Params {
+		Params {
+			positional: ~[],
+			body: None,
+		}
+	}
+}
+
 
 pub trait EventCallable<'s> {
-	fn resolve_call(&self, ctx: &mut Context<'s>, params: &[ScopeItem<'s>], body: Option<&EventBodyClosure<'s>>) -> Step ;
+	fn resolve_call(&self, ctx: &mut Context<'s>, params: &Params<'s>) -> Step ;
 }
 
 // A user-defined event
@@ -99,14 +113,14 @@ fn resolve_seq<'s>(pctx: &mut Context<'s>, scope: &Scope<'s>, block: &'s ast::Bl
 	let steps = block.actions.iter().map(|action| {
 		let entity = resolve_expr(&mut ctx, &scope, &action.entity);
 
-		let body = action.body.as_ref().map(|x| 
-			EventBodyClosure { ast: x, parentScope: scope.clone()
-		});
-
-
 		match entity {
 			EventItem(ref e) => {
-				e.resolve_call(&mut ctx, &[], body.as_ref())
+				e.resolve_call(&mut ctx, &Params {
+					positional: ~[],
+					body: action.body.as_ref().map(|x| {
+						EventBodyClosure { ast: x, parentScope: scope.clone()
+					}}),
+				})
 			}
 			_ => fail!("Not an event"),
 		}
@@ -116,7 +130,7 @@ fn resolve_seq<'s>(pctx: &mut Context<'s>, scope: &Scope<'s>, block: &'s ast::Bl
 }
 
 impl<'s> EventCallable<'s> for EventClosure<'s> {
-	fn resolve_call(&self, pctx: &mut Context<'s>, params: &[ScopeItem<'s>], body: Option<&EventBodyClosure<'s>>) -> Step {
+	fn resolve_call(&self, pctx: &mut Context<'s>, params: &Params<'s>) -> Step {
 		let mut ctx = pctx.child();
 		let mut scope = self.parentScope.clone(); // Base on lexical parent
 
@@ -125,8 +139,11 @@ impl<'s> EventCallable<'s> for EventClosure<'s> {
 	}
 }
 
-pub fn resolve_body_call<'s>(ctx: &mut Context<'s>, body: &EventBodyClosure<'s>, params: &[ScopeItem<'s>]) -> Step {
+pub fn resolve_body_call<'s>(ctx: &mut Context<'s>, body: &EventBodyClosure<'s>, params: &Params<'s>) -> Step {
 	// TODO: parameters
+	if params.body.is_some() {
+		fail!("bug: body closure called with body");
+	}
 	CallStep(~resolve_seq(ctx, &body.parentScope, &body.ast.block))
 }
 
@@ -140,7 +157,10 @@ pub struct Entity<'s> {
 
 pub struct TimeCallable;
 impl<'s> EventCallable<'s> for TimeCallable {
-	fn resolve_call(&self, pctx: &mut Context<'s>, params: &[ScopeItem<'s>], body: Option<&EventBodyClosure<'s>>) -> Step {
+	fn resolve_call(&self, pctx: &mut Context<'s>, params: &Params<'s>) -> Step {
+		if params.body.is_some() {
+			fail!("time() does not accept a body");
+		}
 		pctx.domain.resolve_time(pctx, params)
 	}
 }

@@ -46,7 +46,7 @@ fn main() {
 	};
 
 	let w = virtual_clock::wire_config();
-	let event = main.resolve_call(&mut ctx, &[resolve::EntityItem(&w)], None);
+	let event = main.resolve_call(&mut ctx, &resolve::Params{ positional: ~[resolve::EntityItem(&w)], body: None});
 	println!("main: {:?}\n", event);
 
 	exec::print_step_tree(&event, 0);

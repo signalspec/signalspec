@@ -9,6 +9,7 @@ use context::{
 };
 use resolve::{
 	ScopeItem,
+	Params,
 	Entity,
 	EventCallable,
 	Step,
@@ -45,7 +46,7 @@ struct WireGroup {
 
 ///
 
-type PrimitiveResolveFn<T> = fn <'s> (ctx: &mut Context<'s>, device: &'s T, params: &[ScopeItem<'s>], body: Option<&EventBodyClosure<'s>>) -> Step;
+type PrimitiveResolveFn<T> = fn <'s> (ctx: &mut Context<'s>, device: &'s T, params: &Params<'s>) -> Step;
 
 struct PrimitiveCallable<'s, T> {
 	device: &'s T,
@@ -62,8 +63,8 @@ impl<'s, T> PrimitiveCallable<'s, T> {
 }
 
 impl<'s, T> EventCallable<'s> for PrimitiveCallable<'s, T> {
-	fn resolve_call(&self, ctx: &mut Context<'s>, params: &[ScopeItem<'s>], body: Option<&EventBodyClosure<'s>>) -> Step {
-		(self.resolvefn)(ctx, self.device, params, body)
+	fn resolve_call(&self, ctx: &mut Context<'s>, params: &Params<'s>) -> Step {
+		(self.resolvefn)(ctx, self.device, params)
 	}
 }
 
@@ -77,7 +78,7 @@ fn make_entity<'s, T:'static>(device: &'s T, events: &[(&'static str, PrimitiveR
 
 ///
 
-fn resolve_wire_level<'s>(pctx: &mut Context<'s>, _: &(), params: &[ScopeItem<'s>], body: Option<&EventBodyClosure<'s>>) -> Step {
+fn resolve_wire_level<'s>(pctx: &mut Context<'s>, _: &(), params: &Params<'s>) -> Step {
 	let mut ctx = pctx.child();
 	ctx.domain = match pctx.domain.as_any().as_ref::<VirtualClockDomain>() {
 		// TODO: check that they come from the same parent
@@ -88,7 +89,7 @@ fn resolve_wire_level<'s>(pctx: &mut Context<'s>, _: &(), params: &[ScopeItem<'s
 		}),
 		None => fail!("wire.level in the wrong clock domain")
 	} as &Domain;
-	body.map_or(NopStep, |b| resolve_body_call(&mut ctx, b, &[]))
+	params.body.as_ref().map_or(NopStep, |b| resolve_body_call(&mut ctx, b, &Params::empty()))
 }
 
 struct WireLevelHandler {
@@ -123,7 +124,7 @@ impl VirtualClockDomain {
 
 impl Domain for VirtualClockDomain {
 	fn as_any<'a>(&'a self) -> &'a Any { self as &Any }
-	fn resolve_time<'s>(&self, ctx: &mut Context<'s>, params: &[ScopeItem<'s>]) -> Step {
+	fn resolve_time<'s>(&self, ctx: &mut Context<'s>, params: &Params<'s>) -> Step {
 		PrimitiveStep(~TimerHandler{ constraints: self.constraints.clone() }, None)
 	}
 }
