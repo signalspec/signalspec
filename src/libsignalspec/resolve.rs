@@ -11,7 +11,6 @@ pub use expr::{
 	resolve_expr,
 };
 pub use exec::{
-	StepHandler,
 	Step,
 		NopStep,
 		CallStep,

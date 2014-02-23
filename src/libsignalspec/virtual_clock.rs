@@ -13,7 +13,7 @@ use resolve::{
 	Step,
 		NopStep,
 		PrimitiveStep,
-	StepHandler,
+	PrimitiveStep,
 	EventBodyClosure,
 	resolve_body_call,
 };
@@ -75,7 +75,7 @@ struct TimerHandler {
 	constraints: ~[(uint, ValueRef)],
 }
 
-impl StepHandler for TimerHandler {
+impl PrimitiveStep for TimerHandler {
 	fn display(&self) -> ~str{
 		format!("Time ({})", self.constraints.len())
 	}

@@ -1,9 +1,6 @@
 
-pub trait StepHandler {
-	fn display(&self) -> ~str {
-		~"Unknown Primitive"
-	}
-
+pub trait PrimitiveStep {
+	fn display(&self) -> ~str;
 	fn body<'a>(&'a self) -> Option<&'a Step> { None }
 }
 
@@ -11,7 +8,7 @@ pub enum Step {
 	NopStep,
 	CallStep(~Step),
 	SeqStep(~[Step]),
-	PrimitiveStep(~StepHandler),
+	PrimitiveStep(~PrimitiveStep),
 }
 
 pub fn print_step_tree(s: &Step, indent: uint) {
