@@ -74,6 +74,10 @@ impl PrimitiveStep for TimerHandler {
 	fn display(&self) -> ~str{
 		format!("Time ({})", self.constraints.len())
 	}
+
+	fn exec(&self) {
+		println!("Time!");
+	}
 }
 
 #[deriving(Clone)]

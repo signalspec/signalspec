@@ -2,6 +2,7 @@
 pub trait PrimitiveStep {
 	fn display(&self) -> ~str;
 	fn body<'a>(&'a self) -> Option<&'a Step> { None }
+	fn exec(&self);
 }
 
 pub enum Step {
@@ -30,6 +31,23 @@ pub fn print_step_tree(s: &Step, indent: uint) {
 			h.body().map(|body| {
 				print_step_tree(body, indent+1)
 			});
+		}
+	}
+}
+
+pub fn exec(s: &Step) {
+	match *s {
+		NopStep => (),
+		CallStep(~ref c) => {
+			exec(c);
+		}
+		SeqStep(ref steps) => {
+			for c in steps.iter() {
+				exec(c);
+			}
+		}
+		PrimitiveStep(ref h) => {
+			h.exec();
 		}
 	}
 }
