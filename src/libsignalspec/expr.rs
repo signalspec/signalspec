@@ -1,7 +1,6 @@
 use std::iter::AdditiveIterator;
 use context::{
 	Context,
-	DCell,
 	ValueRef,
 		Ignored,
 		Constant,
@@ -12,7 +11,6 @@ use context::{
 use ast;
 use ast::{
 	TopType,
-	InvalidType,
 	NumberType,
 	BitsType,
 	Value,
@@ -22,9 +20,6 @@ use ast::{
 use resolve;
 use entity::Entity;
 use eval;
-use eval::{
-	ValOp,
-};
 
 use bitv;
 
@@ -86,7 +81,7 @@ fn resolve_value_expr<'s>(ctx: &mut Context<'s>, scope: &resolve::Scope<'s>, e: 
 }
 
 pub fn resolve_expr<'s>(ctx: &mut Context<'s>, scope: &resolve::Scope<'s>, e: &ast::Expr) -> Item<'s> {
-	match (*e) {
+	match *e {
 		ast::IgnoreExpr => ValueItem(TopType, Ignored, Ignored),
 
 		ast::VarExpr(ref name) => {
@@ -204,9 +199,9 @@ pub fn resolve_expr<'s>(ctx: &mut Context<'s>, scope: &resolve::Scope<'s>, e: &a
 			let down_refs = res.iter().map(|&(_, ref d, _ )| d.clone()).to_owned_vec();
 			let down = match count_ref_types(down_refs.as_slice()) {
 				Err(x) => x,
-				Ok((i, 0, 0)) => Ignored,
-				Ok((0, c, 0)) => Constant(concat_const(down_refs.as_slice())),
-				Ok((0, c, d)) => {
+				Ok((_i, 0, 0 )) => Ignored,
+				Ok((0, _c, 0 )) => Constant(concat_const(down_refs.as_slice())),
+				Ok((0, _c, _d)) => {
 					let args = down_refs.iter().map(|r| {
 						match *r {
 							Constant(BitsValue(ref b)) => eval::BitsConst(b.clone()),
@@ -216,19 +211,19 @@ pub fn resolve_expr<'s>(ctx: &mut Context<'s>, scope: &resolve::Scope<'s>, e: &a
 					}).to_owned_vec();
 					ctx.down_op(eval::ConcatOp(args))
 				}
-				Ok((i, c, d)) => Poison("Some bits are ignored in down evaluation")
+				Ok((_i, _c, _d)) => Poison("Some bits are ignored in down evaluation")
 			};
 
 			let up_refs = res.iter().map(|&(_, _, ref u)| u.clone()).to_owned_vec();
 			let up = match count_ref_types(up_refs.as_slice()) {
 				Err(x) => x,
-				Ok((i, 0, 0)) => Ignored,
-				Ok((0, c, 0)) => Constant(concat_const(up_refs.as_slice())),
+				Ok((_i, 0, 0)) => Ignored,
+				Ok((0, _c, 0)) => Constant(concat_const(up_refs.as_slice())),
 				// TODO: constant + ignore should be able to be used in constant places like Choose arms
-				Ok((i, c, d)) => {
+				Ok((_i, _c, _d)) => {
 					let cell = ctx.up_cell();
 					let mut pos = 0;
-					let args = res.iter().map(|&(ref t, _, ref r)| {
+					res.iter().map(|&(ref t, _, ref r)| {
 						match *t {
 							BitsType(l) => {
 								match *r {
@@ -278,7 +273,7 @@ pub fn resolve_expr<'s>(ctx: &mut Context<'s>, scope: &resolve::Scope<'s>, e: &a
 					ctx.up_op_cell(a, |cell| eval::BinaryConstOp(cell, op.invert(), b)),
 				(Constant(NumberValue(a)), Dynamic(b)) =>
 					ctx.up_op_cell(b, |cell| eval::BinaryConstOp(cell, op.swap().invert(), a)),
-				(Dynamic(a), Dynamic(b)) =>
+				(Dynamic(_), Dynamic(_)) =>
 					Poison("At least one side of an up-evaluated binary operator must be constant"),
 				(Constant(..), _) | (_, Constant(..)) => fail!("number constant is not a number?"),
 				(Poison(e), _) | (_, Poison(e)) => Poison(e),
@@ -292,31 +287,24 @@ pub fn resolve_expr<'s>(ctx: &mut Context<'s>, scope: &resolve::Scope<'s>, e: &a
 #[cfg(test)]
 mod test {
 	use bitv;
-	use expr::{Item, ValueItem, resolve_expr};
+	use expr::{ValueItem, resolve_expr};
 	use session::Session;
 	use context::{
 		Context,
 		ValueRef,
 			Ignored,
 			Constant,
-			Dynamic,
-			Poison,
 	};
-	use ast;
 	use ast::{
 		TypeExpr,
-			InvalidType,
 			NumberType,
 			SymbolType,
 			BitsType,
-		Value,
-			NumberValue,
-			BitsValue,
-			SymbolValue,
+		NumberValue,
+		BitsValue,
+		SymbolValue,
 	};
-	use ast::{Value, Expr};
 	use resolve::Scope;
-
 	use grammar;
 
 	fn check_const_value(s: &str, t: TypeExpr, down: ValueRef, up: ValueRef) {

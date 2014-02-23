@@ -1,5 +1,5 @@
 use arena::{Arena,TypedArena};
-use resolve::{Scope, EventClosure};
+use resolve::{EventClosure};
 
 /// The data common to an entire resolve pass
 pub struct Session<'session> {

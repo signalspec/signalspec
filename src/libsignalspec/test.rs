@@ -5,7 +5,6 @@ extern crate arena;
 
 use std::os;
 use std::str;
-use std::io::{stdout,stderr};
 use std::io::fs::File;
 
 mod session;
@@ -21,7 +20,7 @@ mod virtual_clock;
 mod exec;
 
 fn main() {
-	let mut sess = session::Session::new();
+	let sess = session::Session::new();
 
 	let args = os::args();
 	let source_utf8 = File::open(&Path::new(args[1])).read_to_end().unwrap();
@@ -38,7 +37,7 @@ fn main() {
 	let mut ctx = context::Context::new(&sess);
 	ctx.domain = sess.arena.alloc(|| virtual_clock::VirtualClockDomain::new()) as &context::Domain;
 
-	let mut modscope = resolve::resolve_module(&mut ctx, &prelude, &module);
+	let modscope = resolve::resolve_module(&mut ctx, &prelude, &module);
 	println!("modscope: {:?}\n", modscope);
 
 	let main = match modscope.get("main").unwrap() {

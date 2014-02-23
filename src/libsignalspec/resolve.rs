@@ -1,8 +1,6 @@
 use ast;
 use std::hashmap::HashMap;
-use session::Session;
 use context::{Context};
-use arena::{Arena,TypedArena};
 
 pub use ScopeItem = expr::Item;
 pub use expr::{
@@ -19,7 +17,6 @@ pub use exec::{
 };
 use entity::{
 	Entity,
-	PrimitiveCallable
 };
 
 #[deriving(Clone)]
@@ -79,7 +76,7 @@ pub struct EventBodyClosure<'s> {
 }
 
 pub fn resolve_module<'s>(pctx: &mut Context<'s>, scope: &Scope<'s>, ast: &'s ast::Module) -> Scope<'s> {
-	let mut ctx = pctx.child();
+	let ctx = pctx.child();
 	let mut scope: Scope<'s> = scope.clone();
 
 	for import in ast.imports.iter() {

@@ -4,12 +4,12 @@ use exec::Step;
 use expr::Item;
 
 pub trait Entity<'s> {
-	fn resolve_call(&self, ctx: &mut Context<'s>, params: &Params<'s>) -> Step {
+	fn resolve_call(&self, _ctx: &mut Context<'s>, _params: &Params<'s>) -> Step {
 		fail!("Entity is not callable");
 	}
 
 	//TODO: this should be &'s self, but that's broken (mozilla/rust#5121)
-	fn get_property(&self, ctx: &Context<'s>, property: &str) -> Option<Item<'s>> {
+	fn get_property(&self, _ctx: &Context<'s>, _property: &str) -> Option<Item<'s>> {
 		None
 	}
 	// fn as_stream(&self, ctx: &mut Context<'s>) -> Stream;

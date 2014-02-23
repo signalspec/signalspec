@@ -1,10 +1,8 @@
 use bitv::Bitv;
 use ast::{
 	Value,
-		NumberValue,
-		BitsValue,
 };
-use context::{Context, ValueRef, DCell};
+use context::{DCell};
 
 pub enum BitsRef {
 	BitsConst(Bitv),

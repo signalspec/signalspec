@@ -1,5 +1,3 @@
-use std::hashmap::HashMap;
-use session::Session;
 use ast;
 use context;
 use context::{
@@ -8,13 +6,10 @@ use context::{
 	Domain,
 };
 use resolve::{
-	ScopeItem,
 	Params,
 	Step,
 		NopStep,
 		PrimitiveStep,
-	PrimitiveStep,
-	EventBodyClosure,
 	resolve_body_call,
 };
 use entity::{

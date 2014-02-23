@@ -57,7 +57,7 @@ pub enum Value {
 
 impl Value {
 	pub fn get_type(&self) -> TypeExpr {
-		match (*self) {
+		match *self {
 			NumberValue(..) => NumberType,
 			SymbolValue(..) => SymbolType,
 			BitsValue(ref n) => BitsType(n.len()),
@@ -71,7 +71,7 @@ impl Value {
 
 impl ToStr for Value {
 	fn to_str(&self) -> ~str {
-		match (*self) {
+		match *self {
 			NumberValue(n) => n.to_str(),
 			SymbolValue(ref s) => "$" + *s,
 			BitsValue(ref n) => "'b" + n.to_str(),

@@ -58,11 +58,7 @@ impl<'s> Context<'s> {
 		}
 	}
 
-	pub fn get_const_default(&self, v: &ValueRef, d:Value) -> Value {
-		fail!("not implemented");
-	}
-
-	pub fn down_op(&mut self, v: eval::ValOp) -> ValueRef {
+	pub fn down_op(&mut self, _v: eval::ValOp) -> ValueRef {
 		Dynamic(0)
 	}
 
@@ -84,7 +80,7 @@ impl<'s> Context<'s> {
 struct DefaultDomain;
 impl Domain for DefaultDomain {
 	fn as_any<'a>(&'a self) -> &'a Any { self as &Any }
-	fn resolve_time<'s>(&self, ctx: &mut Context<'s>, params: &resolve::Params) -> resolve::Step {
+	fn resolve_time<'s>(&self, _ctx: &mut Context<'s>, _params: &resolve::Params) -> resolve::Step {
 		fail!("No active clock domain. What are you timing?");
 	}
 }
