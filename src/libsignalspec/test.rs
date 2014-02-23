@@ -16,6 +16,7 @@ mod grammar;
 mod bitv;
 mod ast;
 mod resolve;
+mod entity;
 mod virtual_clock;
 mod exec;
 
@@ -32,7 +33,7 @@ fn main() {
 	let module = module.unwrap();
 
 	let mut prelude = resolve::Scope::new();
-	prelude.names.insert(~"time", resolve::EventItem(&resolve::time_callable));
+	prelude.names.insert(~"time", expr::EntityItem(&resolve::time_call_fn as &entity::Entity));
 
 	let mut ctx = context::Context::new(&sess);
 	ctx.domain = sess.arena.alloc(|| virtual_clock::VirtualClockDomain::new()) as &context::Domain;
@@ -41,11 +42,11 @@ fn main() {
 	println!("modscope: {:?}\n", modscope);
 
 	let main = match modscope.get("main").unwrap() {
-		resolve::EventItem(s) => s,
+		expr::EntityItem(s) => s,
 		_ => fail!("Main is not an event"),
 	};
 
-	let w = virtual_clock::wire_config();
+	let w = virtual_clock::Wire::new();
 	let event = main.resolve_call(&mut ctx, &resolve::Params{ positional: ~[resolve::EntityItem(&w)], body: None});
 	println!("main: {:?}\n", event);
 

@@ -10,14 +10,20 @@ use context::{
 use resolve::{
 	ScopeItem,
 	Params,
-	Entity,
-	EventCallable,
 	Step,
 		NopStep,
 		PrimitiveStep,
 	StepHandler,
 	EventBodyClosure,
 	resolve_body_call,
+};
+use entity::{
+	Entity,
+	PrimitiveClosure,
+};
+use expr::{
+	Item,
+		EntityItem,
 };
 
 pub trait DigitalSource {
@@ -36,49 +42,22 @@ pub trait DigitalSink {
 	fn event(&mut self, time: u64, wire: uint, state: bool);
 }
 
-struct Wire {
+pub struct Wire {
 	id: uint,
+}
+
+impl Wire {
+	pub fn new() -> Wire {
+		Wire { id: 0 }
+	}
 }
 
 struct WireGroup {
 	wire_ids: ~[~str],
 }
 
-///
 
-type PrimitiveResolveFn<T> = fn <'s> (ctx: &mut Context<'s>, device: &'s T, params: &Params<'s>) -> Step;
-
-struct PrimitiveCallable<'s, T> {
-	device: &'s T,
-	resolvefn: PrimitiveResolveFn<T>,
-}
-
-impl<'s, T> PrimitiveCallable<'s, T> {
-	fn new(device: &'s T, resolvefn: PrimitiveResolveFn<T>) -> PrimitiveCallable<'s, T>{
-		PrimitiveCallable {
-			device: device,
-			resolvefn: resolvefn,
-		}
-	}
-}
-
-impl<'s, T> EventCallable<'s> for PrimitiveCallable<'s, T> {
-	fn resolve_call(&self, ctx: &mut Context<'s>, params: &Params<'s>) -> Step {
-		(self.resolvefn)(ctx, self.device, params)
-	}
-}
-
-fn make_entity<'s, T:'static>(device: &'s T, events: &[(&'static str, PrimitiveResolveFn<T>)]) -> Entity<'s> {
-	Entity {
-		events: events.iter().map(|&(n, f)| {
-			(n.to_owned(), ~PrimitiveCallable::new(device, f) as ~EventCallable:<'s>)
-		}).collect()
-	}
-}
-
-///
-
-fn resolve_wire_level<'s>(pctx: &mut Context<'s>, _: &(), params: &Params<'s>) -> Step {
+fn resolve_wire_level<'s>(pctx: &mut Context<'s>, device: &Wire, params: &Params<'s>) -> Step {
 	let mut ctx = pctx.child();
 	ctx.domain = match pctx.domain.as_any().as_ref::<VirtualClockDomain>() {
 		// TODO: check that they come from the same parent
@@ -129,10 +108,20 @@ impl Domain for VirtualClockDomain {
 	}
 }
 
-static dummy_device: () = ();
+impl<'s> Entity<'s> for Wire {
+	fn get_property(&self, ctx: &Context<'s>, prop: &str) -> Option<Item<'s>> {
+		// TODO: I wish this could return by value instead of allocating
+		// This should at least be cached
 
-pub fn wire_config() -> Entity {
-	make_entity(&dummy_device, &[
-		("level", resolve_wire_level),
-	])
+		// mozilla/rust#5121 (see comment on the Entity trait)
+		let sself: &'s Wire = unsafe{ ::std::cast::transmute_region(self) };
+
+		match prop {
+			&"level" => {
+				let p = ctx.session.arena.alloc(|| PrimitiveClosure::new(sself, resolve_wire_level));
+				Some(EntityItem(p))
+			}
+			_ => None
+		}
+	}
 }

@@ -7,7 +7,6 @@ use arena::{Arena,TypedArena};
 pub use ScopeItem = expr::Item;
 pub use expr::{
 	ValueItem,
-	EventItem,
 	EntityItem,
 	resolve_expr,
 };
@@ -18,6 +17,10 @@ pub use exec::{
 		CallStep,
 		SeqStep,
 		PrimitiveStep,
+};
+use entity::{
+	Entity,
+	PrimitiveCallable
 };
 
 #[deriving(Clone)]
@@ -70,17 +73,6 @@ impl<'s> Params<'s> {
 	}
 }
 
-
-pub trait EventCallable<'s> {
-	fn resolve_call(&self, ctx: &mut Context<'s>, params: &Params<'s>) -> Step ;
-}
-
-// A user-defined event
-pub struct EventClosure<'s> {
-	ast: &'s ast::Def,
-	parentScope: Scope<'s>,
-}
-
 // A body associated with an event call
 pub struct EventBodyClosure<'s> {
 	ast: &'s ast::ActionBody,
@@ -99,7 +91,7 @@ pub fn resolve_module<'s>(pctx: &mut Context<'s>, scope: &Scope<'s>, ast: &'s as
 
 	for def in ast.defs.iter() {
 		let ed = ctx.session.moduleDefArena.alloc(EventClosure{ ast:def, parentScope: scope.clone()});
-		scope.names.insert(def.name.to_owned(), EventItem(ed));
+		scope.names.insert(def.name.to_owned(), EntityItem(ed));
 	}
 
 	scope
@@ -114,7 +106,7 @@ fn resolve_seq<'s>(pctx: &mut Context<'s>, scope: &Scope<'s>, block: &'s ast::Bl
 		let entity = resolve_expr(&mut ctx, &scope, &action.entity);
 
 		match entity {
-			EventItem(ref e) => {
+			EntityItem(ref e) => {
 				e.resolve_call(&mut ctx, &Params {
 					positional: ~[],
 					body: action.body.as_ref().map(|x| {
@@ -129,7 +121,13 @@ fn resolve_seq<'s>(pctx: &mut Context<'s>, scope: &Scope<'s>, block: &'s ast::Bl
 	SeqStep(steps)
 }
 
-impl<'s> EventCallable<'s> for EventClosure<'s> {
+// A user-defined event
+pub struct EventClosure<'s> {
+	ast: &'s ast::Def,
+	parentScope: Scope<'s>,
+}
+
+impl<'s> Entity<'s> for EventClosure<'s> {
 	fn resolve_call(&self, pctx: &mut Context<'s>, params: &Params<'s>) -> Step {
 		let mut ctx = pctx.child();
 		let mut scope = self.parentScope.clone(); // Base on lexical parent
@@ -147,21 +145,11 @@ pub fn resolve_body_call<'s>(ctx: &mut Context<'s>, body: &EventBodyClosure<'s>,
 	CallStep(~resolve_seq(ctx, &body.parentScope, &body.ast.block))
 }
 
-impl<'s, 'r> Clone for &'r EventCallable<'s> {
-	fn clone(&self) -> &'r EventCallable<'s> { *self }
-}
 
-pub struct Entity<'s> {
-	events: HashMap<~str, ~EventCallable:<'s> >,
-}
-
-pub struct TimeCallable;
-impl<'s> EventCallable<'s> for TimeCallable {
-	fn resolve_call(&self, pctx: &mut Context<'s>, params: &Params<'s>) -> Step {
-		if params.body.is_some() {
-			fail!("time() does not accept a body");
-		}
-		pctx.domain.resolve_time(pctx, params)
+pub fn time_call_fn<'s>(pctx: &mut Context<'s>, params: &Params<'s>) -> Step {
+	if params.body.is_some() {
+		fail!("time() does not accept a body");
 	}
+	pctx.domain.resolve_time(pctx, params)
 }
-pub static time_callable: TimeCallable = TimeCallable;
+

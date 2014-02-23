@@ -20,6 +20,7 @@ use ast::{
 		BitsValue,
 };
 use resolve;
+use entity::Entity;
 use eval;
 use eval::{
 	ValOp,
@@ -34,8 +35,7 @@ fn resolve_type(t: ast::TypeExpr) -> Type { t }
 
 #[deriving(Clone)]
 pub enum Item<'s> {
-	EventItem(&'s resolve::EventCallable<'s>),
-	EntityItem(&'s resolve::Entity<'s>),
+	EntityItem(&'s Entity<'s>),
 	ValueItem(Type, ValueRef /*Down*/, ValueRef /*Up*/)
 }
 
@@ -95,7 +95,7 @@ pub fn resolve_expr<'s>(ctx: &mut Context<'s>, scope: &resolve::Scope<'s>, e: &a
 
 		ast::DotExpr(~ref lexpr, ref name) => {
 			match resolve_expr(ctx, scope, lexpr) {
-				EntityItem(ref e) => e.events.find_equiv(&name.as_slice()).map(|x| EventItem(*x)).expect("Undefined property"),
+				EntityItem(ref e) => e.get_property(ctx, name.as_slice()).expect("Undefined property"),
 				_ => fail!("dot only works on entities"),
 			}
 		}
