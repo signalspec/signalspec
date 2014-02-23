@@ -71,13 +71,6 @@ fn resolve_wire_level<'s>(pctx: &mut Context<'s>, device: &Wire, params: &Params
 	params.body.as_ref().map_or(NopStep, |b| resolve_body_call(&mut ctx, b, &Params::empty()))
 }
 
-struct WireLevelHandler {
-	dummy: uint,
-}
-
-
-impl StepHandler for WireLevelHandler {}
-
 struct TimerHandler {
 	constraints: ~[(uint, ValueRef)],
 }
@@ -104,7 +97,7 @@ impl VirtualClockDomain {
 impl Domain for VirtualClockDomain {
 	fn as_any<'a>(&'a self) -> &'a Any { self as &Any }
 	fn resolve_time<'s>(&self, ctx: &mut Context<'s>, params: &Params<'s>) -> Step {
-		PrimitiveStep(~TimerHandler{ constraints: self.constraints.clone() }, None)
+		PrimitiveStep(~TimerHandler{ constraints: self.constraints.clone() })
 	}
 }
 

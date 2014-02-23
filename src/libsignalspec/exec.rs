@@ -3,13 +3,15 @@ pub trait StepHandler {
 	fn display(&self) -> ~str {
 		~"Unknown Primitive"
 	}
+
+	fn body<'a>(&'a self) -> Option<&'a Step> { None }
 }
 
 pub enum Step {
 	NopStep,
 	CallStep(~Step),
 	SeqStep(~[Step]),
-	PrimitiveStep(~StepHandler, Option<~Step>),
+	PrimitiveStep(~StepHandler),
 }
 
 pub fn print_step_tree(s: &Step, indent: uint) {
@@ -26,12 +28,11 @@ pub fn print_step_tree(s: &Step, indent: uint) {
 				print_step_tree(c, indent+1);
 			}
 		}
-		PrimitiveStep(ref h, ref body) => {
+		PrimitiveStep(ref h) => {
 			println!("{}{}", i, h.display());
-			match *body {
-				Some(~ref body) => print_step_tree(body, indent+1),
-				None => ()
-			}
+			h.body().map(|body| {
+				print_step_tree(body, indent+1)
+			});
 		}
 	}
 }
