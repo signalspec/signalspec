@@ -17,10 +17,10 @@ pub type DCell = uint;
 pub trait Domain: Any {
 	// TODO: this method exists as a workaround for mozilla/rust#5665
 	fn as_any<'a>(&'a self) -> &'a Any;
-	fn resolve_time<'s>(&self, ctx: &mut Context<'s>, params: &resolve::Params<'s>) -> resolve::Step;
+	fn resolve_time(&self, ctx: &mut Context, params: &resolve::Params) -> resolve::Step;
 }
 
-pub struct Context<'session> {
+pub struct Context<'session, 'parent> {
 	session: &'session Session<'session>,
 	depth: uint,
 	downs: ~[eval::ValOp],
@@ -28,8 +28,8 @@ pub struct Context<'session> {
 	domain: &'session Domain,
 }
 
-impl<'session> Context<'session> {
-	pub fn new(session: &'session Session<'session>) -> Context<'session> {
+impl<'session, 'parent> Context<'session, 'parent> {
+	pub fn new<'s, 'p>(session: &'s Session<'s>) -> Context<'s, 'p> {
 		Context {
 			session: session,
 			depth: 0,
@@ -39,7 +39,7 @@ impl<'session> Context<'session> {
 		}
 	}
 
-	pub fn child(&mut self) -> Context<'session> {
+	pub fn child<'p>(&'p mut self) -> Context<'session, 'p> {
 		Context {
 			session: self.session,
 			depth: self.depth + 1,
@@ -48,9 +48,7 @@ impl<'session> Context<'session> {
 			domain: self.domain,
 		}
 	}
-}
 
-impl<'s> Context<'s> {
 	pub fn get_const(&self, v: &ValueRef) -> Value {
 		match *v {
 			Constant(ref x) => x.clone(),
@@ -80,7 +78,7 @@ impl<'s> Context<'s> {
 struct DefaultDomain;
 impl Domain for DefaultDomain {
 	fn as_any<'a>(&'a self) -> &'a Any { self as &Any }
-	fn resolve_time<'s>(&self, _ctx: &mut Context<'s>, _params: &resolve::Params) -> resolve::Step {
+	fn resolve_time(&self, _ctx: &mut Context, _params: &resolve::Params) -> resolve::Step {
 		fail!("No active clock domain. What are you timing?");
 	}
 }

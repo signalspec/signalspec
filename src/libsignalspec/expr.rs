@@ -73,14 +73,14 @@ fn count_ref_types(l: &[ValueRef]) -> Result<(uint, uint, uint), ValueRef> {
 	return Ok((ignores, constants, dynamics));
 }
 
-fn resolve_value_expr<'s>(ctx: &mut Context<'s>, scope: &resolve::Scope<'s>, e: &ast::Expr) ->  (Type, ValueRef /*Down*/, ValueRef /*Up*/) {
+fn resolve_value_expr<'s>(ctx: &mut Context, scope: &resolve::Scope, e: &ast::Expr) ->  (Type, ValueRef /*Down*/, ValueRef /*Up*/) {
 	match resolve_expr(ctx, scope, e) {
 		ValueItem(t, du, uu) => (t, du, uu),
 		_ => fail!("Expected a value expression"),
 	}
 }
 
-pub fn resolve_expr<'s>(ctx: &mut Context<'s>, scope: &resolve::Scope<'s>, e: &ast::Expr) -> Item<'s> {
+pub fn resolve_expr<'s>(ctx: &mut Context, scope: &resolve::Scope<'s>, e: &ast::Expr) -> Item<'s> {
 	match *e {
 		ast::IgnoreExpr => ValueItem(TopType, Ignored, Ignored),
 

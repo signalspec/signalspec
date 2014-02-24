@@ -52,7 +52,7 @@ struct WireGroup {
 }
 
 
-fn resolve_wire_level<'s>(pctx: &mut Context<'s>, device: &Wire, params: &Params<'s>) -> Step {
+fn resolve_wire_level(pctx: &mut Context, device: &Wire, params: &Params) -> Step {
 	let mut ctx = pctx.child();
 	ctx.domain = match pctx.domain.as_any().as_ref::<VirtualClockDomain>() {
 		// TODO: check that they come from the same parent
@@ -95,13 +95,13 @@ impl VirtualClockDomain {
 
 impl Domain for VirtualClockDomain {
 	fn as_any<'a>(&'a self) -> &'a Any { self as &Any }
-	fn resolve_time<'s>(&self, ctx: &mut Context<'s>, params: &Params<'s>) -> Step {
+	fn resolve_time(&self, ctx: &mut Context, params: &Params) -> Step {
 		PrimitiveStep(~TimerHandler{ constraints: self.constraints.clone() })
 	}
 }
 
 impl<'s> Entity<'s> for Wire {
-	fn get_property(&self, ctx: &Context<'s>, prop: &str) -> Option<Item<'s>> {
+	fn get_property(&self, ctx: &Context, prop: &str) -> Option<Item<'s>> {
 		// TODO: I wish this could return by value instead of allocating
 		// This should at least be cached
 

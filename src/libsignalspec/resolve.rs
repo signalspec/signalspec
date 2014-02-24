@@ -37,7 +37,7 @@ impl<'s> Scope<'s> {
 		}
 	}
 
-	fn add_params(&mut self, param_defs: &[ast::ParamDef], param_values: &Params<'s>) {
+	fn add_params(&mut self, param_defs: &[ast::ParamDef], param_values: &'s Params) {
 		// TODO: keyword args, defaults
 		if param_defs.len() != param_values.positional.len() {
 			fail!("Wrong number of parameters passed")
@@ -52,6 +52,17 @@ impl<'s> Scope<'s> {
 
 	pub fn get(&self, name: &str) -> Option<ScopeItem<'s>> {
 		self.names.find_equiv(&name).map(|x| x.clone())
+	}
+
+	fn child_lifetime<'a>(&'a self) -> &'a Scope<'a> {
+		// Hack around https://github.com/mozilla/rust/issues/3598
+		unsafe { ::std::cast::transmute(self) }
+	}
+
+	pub fn child<'a>(&'a self) -> Scope<'a> {
+		Scope {
+			names: self.child_lifetime().names.clone(),
+		}
 	}
 }
 
@@ -75,9 +86,9 @@ pub struct EventBodyClosure<'s> {
 	parentScope: Scope<'s>,
 }
 
-pub fn resolve_module<'s>(pctx: &mut Context<'s>, scope: &Scope<'s>, ast: &'s ast::Module) -> Scope<'s> {
+pub fn resolve_module<'s, 'a>(pctx: &mut Context<'s, 'a>, pscope: &Scope<'s>, ast: &'s ast::Module) -> Scope<'s> {
 	let ctx = pctx.child();
-	let mut scope: Scope<'s> = scope.clone();
+	let mut scope = pscope.clone();
 
 	for import in ast.imports.iter() {
 		fail!("Imports unimplemented");
@@ -86,16 +97,16 @@ pub fn resolve_module<'s>(pctx: &mut Context<'s>, scope: &Scope<'s>, ast: &'s as
 	scope.add_lets(ast.lets);
 
 	for def in ast.defs.iter() {
-		let ed = ctx.session.moduleDefArena.alloc(EventClosure{ ast:def, parentScope: scope.clone()});
+		let ed = ctx.session.moduleDefArena.alloc(EventClosure{ ast:def, parentScope: scope.clone() });
 		scope.names.insert(def.name.to_owned(), EntityItem(ed));
 	}
 
 	scope
 }
 
-fn resolve_seq<'s>(pctx: &mut Context<'s>, scope: &Scope<'s>, block: &'s ast::Block) -> Step {
+fn resolve_seq(pctx: &mut Context, pscope: &Scope, block: &ast::Block) -> Step {
 	let mut ctx = pctx.child();
-	let mut scope = scope.clone();
+	let mut scope = pscope.child();
 	scope.add_lets(block.lets);
 
 	let steps = block.actions.iter().map(|action| {
@@ -106,7 +117,7 @@ fn resolve_seq<'s>(pctx: &mut Context<'s>, scope: &Scope<'s>, block: &'s ast::Bl
 				e.resolve_call(&mut ctx, &Params {
 					positional: ~[],
 					body: action.body.as_ref().map(|x| {
-						EventBodyClosure { ast: x, parentScope: scope.clone()
+						EventBodyClosure { ast: x, parentScope: scope.child()
 					}}),
 				})
 			}
@@ -124,16 +135,16 @@ pub struct EventClosure<'s> {
 }
 
 impl<'s> Entity<'s> for EventClosure<'s> {
-	fn resolve_call(&self, pctx: &mut Context<'s>, params: &Params<'s>) -> Step {
+	fn resolve_call(&self, pctx: &mut Context, params: &Params) -> Step {
 		let mut ctx = pctx.child();
-		let mut scope = self.parentScope.clone(); // Base on lexical parent
+		let mut scope = self.parentScope.child(); // Base on lexical parent
 
 		scope.add_params(self.ast.params, params);
 		CallStep(~resolve_seq(&mut ctx, &scope, &self.ast.block))
 	}
 }
 
-pub fn resolve_body_call<'s>(ctx: &mut Context<'s>, body: &EventBodyClosure<'s>, params: &Params<'s>) -> Step {
+pub fn resolve_body_call<'s>(ctx: &mut Context, body: &EventBodyClosure<'s>, params: &Params<'s>) -> Step {
 	// TODO: parameters
 	if params.body.is_some() {
 		fail!("bug: body closure called with body");
@@ -142,7 +153,7 @@ pub fn resolve_body_call<'s>(ctx: &mut Context<'s>, body: &EventBodyClosure<'s>,
 }
 
 
-pub fn time_call_fn<'s>(pctx: &mut Context<'s>, params: &Params<'s>) -> Step {
+pub fn time_call_fn(pctx: &mut Context, params: &Params) -> Step {
 	if params.body.is_some() {
 		fail!("time() does not accept a body");
 	}
