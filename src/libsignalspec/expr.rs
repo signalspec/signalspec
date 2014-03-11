@@ -1,4 +1,6 @@
 use std::iter::AdditiveIterator;
+use std::fmt;
+
 use context::{
 	Context,
 	ValueRef,
@@ -41,6 +43,12 @@ impl<'s> Eq for Item<'s> {
 				if ta==tb && da==db && ua==ub => true,
 			_ => false
 		}
+	}
+}
+
+impl<'s> fmt::Show for Item<'s> {
+	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+		write!(f.buf, "{:?}", self)
 	}
 }
 

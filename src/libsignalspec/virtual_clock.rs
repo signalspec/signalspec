@@ -1,3 +1,5 @@
+use std::any::{Any, AnyRefExt};
+
 use ast;
 use context;
 use context::{

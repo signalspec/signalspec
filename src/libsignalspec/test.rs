@@ -2,6 +2,7 @@
 
 extern crate extra;
 extern crate arena;
+extern crate collections;
 
 use std::os;
 use std::str;

@@ -1602,7 +1602,7 @@ mod tests {
 
         let mut b = a.clone();
 
-        assert_eq!(&a, &b);
+        assert!(a == b);
 
         assert!(b.remove(&1));
         assert!(a.contains(&1));
@@ -1621,7 +1621,7 @@ mod tests {
         let mut r = rng();
         let mut bitv = 0 as uint;
         b.iter(|| {
-            bitv |= (1 << ((r.next_u32() as uint) % uint::BITS));
+            bitv |= 1 << ((r.next_u32() as uint) % uint::BITS);
             &bitv
         })
     }

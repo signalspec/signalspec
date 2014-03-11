@@ -1,5 +1,5 @@
 use ast;
-use std::hashmap::HashMap;
+use collections::HashMap;
 use context::{Context};
 
 pub use ScopeItem = expr::Item;

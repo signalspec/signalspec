@@ -1,3 +1,5 @@
+use std::any::Any;
+
 use session::Session;
 use eval;
 use ast::Value;

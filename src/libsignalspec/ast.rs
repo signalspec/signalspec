@@ -1,3 +1,5 @@
+use std::fmt;
+
 use bitv::Bitv;
 use eval::BinOp;
 
@@ -69,12 +71,12 @@ impl Value {
 	}
 }
 
-impl ToStr for Value {
-	fn to_str(&self) -> ~str {
+impl fmt::Show for Value {
+	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 		match *self {
-			NumberValue(n) => n.to_str(),
-			SymbolValue(ref s) => "$" + *s,
-			BitsValue(ref n) => "'b" + n.to_str(),
+			NumberValue(n) => write!(f.buf, "{}", n),
+			SymbolValue(ref s) => write!(f.buf, "${}", *s),
+			BitsValue(ref n) => write!(f.buf, "'b{}", n.to_str()),
 		}
 	}
 }
