@@ -1,11 +1,10 @@
-use bitv::Bitv;
 use ast::{
 	Value,
 };
 use context::{DCell};
 
 pub enum BitsRef {
-	BitsConst(Bitv),
+	BitsConst(~[bool]),
 	BitsDyn(DCell)
 }
 

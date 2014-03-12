@@ -13,7 +13,6 @@ mod context;
 mod expr;
 mod eval;
 mod grammar;
-mod bitv;
 mod ast;
 mod resolve;
 mod entity;

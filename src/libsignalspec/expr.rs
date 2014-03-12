@@ -23,8 +23,6 @@ use resolve;
 use entity::Entity;
 use eval;
 
-use bitv;
-
 // For now, types have nothing to resolve.
 // Eventually, some type parameters will be expressions.
 pub type Type = ast::TypeExpr;
@@ -195,13 +193,12 @@ pub fn resolve_expr<'s>(ctx: &mut Context, scope: &resolve::Scope<'s>, e: &ast::
 			}).sum();
 
 			fn concat_const(l: &[ValueRef]) -> Value {
-				let bitvs = l.iter().map(|r| {
+				BitsValue(l.iter().flat_map(|r| {
 					match *r {
-						Constant(BitsValue(ref b)) => b.clone(),
+						Constant(BitsValue(ref b)) => b.iter().map(|x| *x),
 						_ => fail!("Counted wrong"),
 					}
-				}).to_owned_vec();
-				BitsValue(bitv::concat(bitvs))
+				}).collect())
 			}
 
 			let down_refs = res.iter().map(|&(_, ref d, _ )| d.clone()).to_owned_vec();
@@ -294,7 +291,6 @@ pub fn resolve_expr<'s>(ctx: &mut Context, scope: &resolve::Scope<'s>, e: &ast::
 
 #[cfg(test)]
 mod test {
-	use bitv;
 	use expr::{ValueItem, resolve_expr};
 	use session::Session;
 	use context::{
@@ -362,7 +358,7 @@ mod test {
 
 	#[test]
 	fn test_const_concat_expr() {
-		let b = bitv::from_bools(&[true, false, true, true, true, false]);
+		let b = ~[true, false, true, true, true, false];
 		check_const_value("['101, '11, '0]", BitsType(6), Constant(BitsValue(b.clone())), Constant(BitsValue(b.clone())));
 	}
 }

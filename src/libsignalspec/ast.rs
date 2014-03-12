@@ -1,6 +1,5 @@
 use std::fmt;
 
-use bitv::Bitv;
 use eval::BinOp;
 
 pub struct Module {
@@ -54,7 +53,7 @@ pub enum TypeExpr {
 pub enum Value {
 	NumberValue(f64),
 	SymbolValue(~str),
-	BitsValue(Bitv),
+	BitsValue(~[bool]),
 }
 
 impl Value {

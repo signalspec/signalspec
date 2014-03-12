@@ -2,7 +2,6 @@
 	use ast;
 	use eval;
 	use std::num::from_str_radix;
-	use bitv;
 }
 
 #[export]
@@ -135,8 +134,8 @@ valexpr -> ast::Expr
 				{ ast::SymbolValue(i) }
 
 			bitsliteral -> ast::Value
-				= "'h" v:(hexbyte+) _ { ast::BitsValue(bitv::from_bytes(v)) }
-				/ "'" "b"? v:(binbit+) _    { ast::BitsValue(bitv::from_bools(v)) }
+				= "'h" v:(hexbyte+) _ { ast::BitsValue(v.flat_map(|byte| range(0, 8).map(|n| byte & (1 << (8-n))==0).collect()))  }
+				/ "'" "b"? v:(binbit+) _    { ast::BitsValue(v) }
 
 				hexbyte -> u8
 					= [0-9a-fA-F][0-9a-fA-F]
