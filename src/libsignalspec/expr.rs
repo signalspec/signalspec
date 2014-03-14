@@ -64,11 +64,11 @@ fn common_type_all<T:Iterator<Type>>(mut l: T) -> Option<Type> {
 }
 
 // This would take an iterator if it weren't for mozilla/rust#5121
-fn count_ref_types(l: &[ValueRef]) -> Result<(uint, uint, uint), ValueRef> {
+fn count_ref_types<'a, T: Iterator<&'a ValueRef>>(mut l: T) -> Result<(uint, uint, uint), ValueRef> {
 	let mut ignores = 0;
 	let mut constants = 0;
 	let mut dynamics = 0;
-	for i in l.iter() {
+	for i in l {
 		match *i {
 			Ignored      => ignores   += 1,
 			Constant(..) => constants += 1,
@@ -192,8 +192,8 @@ pub fn resolve_expr<'s>(ctx: &mut Context, scope: &resolve::Scope<'s>, e: &ast::
 				}
 			}).sum();
 
-			fn concat_const(l: &[ValueRef]) -> Value {
-				BitsValue(l.iter().flat_map(|r| {
+			fn concat_const<'a, T: Iterator<&'a ValueRef>> (mut l: T) -> Value {
+				BitsValue(l.flat_map(|r| {
 					match *r {
 						Constant(BitsValue(ref b)) => b.iter().map(|x| *x),
 						_ => fail!("Counted wrong"),
@@ -201,13 +201,13 @@ pub fn resolve_expr<'s>(ctx: &mut Context, scope: &resolve::Scope<'s>, e: &ast::
 				}).collect())
 			}
 
-			let down_refs = res.iter().map(|&(_, ref d, _ )| d.clone()).to_owned_vec();
-			let down = match count_ref_types(down_refs.as_slice()) {
+			let down_refs = || res.iter().map(|&(_, ref d, _ )| d);
+			let down = match count_ref_types(down_refs()) {
 				Err(x) => x,
 				Ok((_i, 0, 0 )) => Ignored,
-				Ok((0, _c, 0 )) => Constant(concat_const(down_refs.as_slice())),
+				Ok((0, _c, 0 )) => Constant(concat_const(down_refs())),
 				Ok((0, _c, _d)) => {
-					let args = down_refs.iter().map(|r| {
+					let args = down_refs().map(|r| {
 						match *r {
 							Constant(BitsValue(ref b)) => eval::BitsConst(b.clone()),
 							Dynamic(cell) => eval::BitsDyn(cell),
@@ -219,11 +219,11 @@ pub fn resolve_expr<'s>(ctx: &mut Context, scope: &resolve::Scope<'s>, e: &ast::
 				Ok((_i, _c, _d)) => Poison("Some bits are ignored in down evaluation")
 			};
 
-			let up_refs = res.iter().map(|&(_, _, ref u)| u.clone()).to_owned_vec();
-			let up = match count_ref_types(up_refs.as_slice()) {
+			let up_refs = || res.iter().map(|&(_, _, ref u)| u);
+			let up = match count_ref_types(up_refs()) {
 				Err(x) => x,
 				Ok((_i, 0, 0)) => Ignored,
-				Ok((0, _c, 0)) => Constant(concat_const(up_refs.as_slice())),
+				Ok((0, _c, 0)) => Constant(concat_const(up_refs())),
 				// TODO: constant + ignore should be able to be used in constant places like Choose arms
 				Ok((_i, _c, _d)) => {
 					let cell = ctx.up_cell();

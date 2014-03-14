@@ -103,16 +103,13 @@ impl Domain for VirtualClockDomain {
 }
 
 impl<'s> Entity<'s> for Wire {
-	fn get_property(&self, ctx: &Context, prop: &str) -> Option<Item<'s>> {
+	fn get_property<'a>(&'a self, ctx: &Context, prop: &str) -> Option<Item<'a>> {
 		// TODO: I wish this could return by value instead of allocating
 		// This should at least be cached
 
-		// mozilla/rust#5121 (see comment on the Entity trait)
-		let sself: &'s Wire = unsafe{ ::std::cast::transmute_region(self) };
-
 		match prop {
 			&"level" => {
-				let p = ctx.session.arena.alloc(|| PrimitiveClosure::new(sself, resolve_wire_level));
+				let p = ctx.session.arena.alloc(|| PrimitiveClosure::new(self, resolve_wire_level));
 				Some(EntityItem(p))
 			}
 			_ => None

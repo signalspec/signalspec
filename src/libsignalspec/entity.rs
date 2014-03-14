@@ -8,8 +8,7 @@ pub trait Entity<'s> {
 		fail!("Entity is not callable");
 	}
 
-	//TODO: this should be &'s self, but that's broken (mozilla/rust#5121)
-	fn get_property(&self, _ctx: &Context, _property: &str) -> Option<Item<'s>> {
+	fn get_property<'a>(&'a self, _ctx: &Context, _property: &str) -> Option<Item<'a>> {
 		None
 	}
 	// fn as_stream(&self, ctx: &mut Context<'s>) -> Stream;
