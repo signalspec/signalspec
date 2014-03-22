@@ -1,6 +1,5 @@
 #[allow(dead_code)];
 
-extern crate extra;
 extern crate arena;
 extern crate collections;
 
