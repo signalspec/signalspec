@@ -86,7 +86,7 @@ pub struct EventBodyClosure<'s> {
 	parentScope: Scope<'s>,
 }
 
-pub fn resolve_module<'s, 'a>(pctx: &mut Context<'s, 'a>, pscope: &Scope<'s>, ast: &'s ast::Module) -> Scope<'s> {
+pub fn resolve_module<'s, 'a>(pctx: &Context<'s, 'a>, pscope: &Scope<'s>, ast: &'s ast::Module) -> Scope<'s> {
 	let ctx = pctx.child();
 	let mut scope = pscope.clone();
 
@@ -104,7 +104,7 @@ pub fn resolve_module<'s, 'a>(pctx: &mut Context<'s, 'a>, pscope: &Scope<'s>, as
 	scope
 }
 
-fn resolve_seq(pctx: &mut Context, pscope: &Scope, block: &ast::Block) -> Step {
+fn resolve_seq(pctx: &Context, pscope: &Scope, block: &ast::Block) -> Step {
 	let mut ctx = pctx.child();
 	let mut scope = pscope.child();
 	scope.add_lets(block.lets);
@@ -114,7 +114,7 @@ fn resolve_seq(pctx: &mut Context, pscope: &Scope, block: &ast::Block) -> Step {
 
 		match entity {
 			EntityItem(ref e) => {
-				e.resolve_call(&mut ctx, &Params {
+				e.resolve_call(&ctx, &Params {
 					positional: ~[],
 					body: action.body.as_ref().map(|x| {
 						EventBodyClosure { ast: x, parentScope: scope.child()
@@ -135,16 +135,16 @@ pub struct EventClosure<'s> {
 }
 
 impl<'s> Entity<'s> for EventClosure<'s> {
-	fn resolve_call(&self, pctx: &mut Context, params: &Params) -> Step {
+	fn resolve_call(&self, pctx: &Context, params: &Params) -> Step {
 		let mut ctx = pctx.child();
 		let mut scope = self.parentScope.child(); // Base on lexical parent
 
 		scope.add_params(self.ast.params, params);
-		CallStep(~resolve_seq(&mut ctx, &scope, &self.ast.block))
+		CallStep(~resolve_seq(&ctx, &scope, &self.ast.block))
 	}
 }
 
-pub fn resolve_body_call<'s>(ctx: &mut Context, body: &EventBodyClosure<'s>, params: &Params<'s>) -> Step {
+pub fn resolve_body_call<'s>(ctx: &Context, body: &EventBodyClosure<'s>, params: &Params<'s>) -> Step {
 	// TODO: parameters
 	if params.body.is_some() {
 		fail!("bug: body closure called with body");
@@ -153,7 +153,7 @@ pub fn resolve_body_call<'s>(ctx: &mut Context, body: &EventBodyClosure<'s>, par
 }
 
 
-pub fn time_call_fn(pctx: &mut Context, params: &Params) -> Step {
+pub fn time_call_fn(pctx: &Context, params: &Params) -> Step {
 	if params.body.is_some() {
 		fail!("time() does not accept a body");
 	}

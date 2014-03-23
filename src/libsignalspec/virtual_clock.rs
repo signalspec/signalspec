@@ -54,7 +54,7 @@ struct WireGroup {
 }
 
 
-fn resolve_wire_level(pctx: &mut Context, device: &Wire, params: &Params) -> Step {
+fn resolve_wire_level(pctx: &Context, device: &Wire, params: &Params) -> Step {
 	let mut ctx = pctx.child();
 	ctx.domain = match pctx.domain.as_any().as_ref::<VirtualClockDomain>() {
 		// TODO: check that they come from the same parent
@@ -97,19 +97,19 @@ impl VirtualClockDomain {
 
 impl Domain for VirtualClockDomain {
 	fn as_any<'a>(&'a self) -> &'a Any { self as &Any }
-	fn resolve_time(&self, ctx: &mut Context, params: &Params) -> Step {
+	fn resolve_time(&self, pctx: &Context, params: &Params) -> Step {
 		PrimitiveStep(~TimerHandler{ constraints: self.constraints.clone() })
 	}
 }
 
 impl<'s> Entity<'s> for Wire {
-	fn get_property<'a>(&'a self, ctx: &Context, prop: &str) -> Option<Item<'a>> {
+	fn get_property<'a>(&'a self, pctx: &Context, prop: &str) -> Option<Item<'a>> {
 		// TODO: I wish this could return by value instead of allocating
 		// This should at least be cached
 
 		match prop {
 			&"level" => {
-				let p = ctx.session.arena.alloc(|| PrimitiveClosure::new(self, resolve_wire_level));
+				let p = pctx.session.arena.alloc(|| PrimitiveClosure::new(self, resolve_wire_level));
 				Some(EntityItem(p))
 			}
 			_ => None
