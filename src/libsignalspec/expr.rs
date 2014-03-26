@@ -143,7 +143,7 @@ pub fn resolve_expr<'s>(ctx: &mut Context, scope: &resolve::Scope<'s>, e: &ast::
 
 			let res = c.iter().map(|&(ref l, ref r)| {
 				(resolve_value_expr(ctx, scope, l), resolve_value_expr(ctx, scope, r))
-			}).to_owned_vec();
+			}).collect::<Vec<((Type, ValueRef, ValueRef), (Type, ValueRef, ValueRef))>>();
 
 			let l_type = common_type_all(res.iter().map(|&((ref t, _, _), _)| *t))
 				.expect("Choose expression left arms not of common type");
@@ -155,7 +155,7 @@ pub fn resolve_expr<'s>(ctx: &mut Context, scope: &resolve::Scope<'s>, e: &ast::
 
 			let down_pairs = res.iter().map(|&((_, ref l, _), (_, ref r, _))| {
 				(ctx.get_const(l), ctx.get_const(r))
-			}).to_owned_vec();
+			}).collect::<~[_]>();
 
 			let down = match e_down {
 				Ignored => Ignored,
@@ -166,15 +166,15 @@ pub fn resolve_expr<'s>(ctx: &mut Context, scope: &resolve::Scope<'s>, e: &ast::
 
 			let up_pairs = res.iter().map(|&((_, _, ref l), (_, _, ref r))| {
 				(ctx.get_const(l), ctx.get_const(r))
-			}).to_owned_vec();
+			}).collect::<Vec<_>>();
 
 			let up = match e_up {
 				Ignored => Ignored,
 				Poison(e) => Poison(e),
-				Constant(ref v) => Constant(eval::eval_choose(v, up_pairs).expect("Choice up not complete")),
+				Constant(ref v) => Constant(eval::eval_choose(v, up_pairs.as_slice()).expect("Choice up not complete")),
 				Dynamic(d) => ctx.up_op_cell(d, |cell| eval::ChooseOp(cell,
 					// Swap the pair because the value coming in to the op is the right side here
-					up_pairs.iter().map(|&(ref a, ref b)| (b.clone(), a.clone())).to_owned_vec()
+					up_pairs.iter().map(|&(ref a, ref b)| (b.clone(), a.clone())).collect()
 				)),
 			};
 
@@ -183,7 +183,7 @@ pub fn resolve_expr<'s>(ctx: &mut Context, scope: &resolve::Scope<'s>, e: &ast::
 		}
 
 		ast::ConcatExpr(ref v) =>  {
-			let res = v.iter().map(|e| resolve_value_expr(ctx, scope, e)).to_owned_vec();
+			let res = v.iter().map(|e| resolve_value_expr(ctx, scope, e)).collect::<Vec<(Type, ValueRef, ValueRef)>>();
 
 			let len = res.iter().map(|&(ref t, _, _)| {
 				match *t {
@@ -213,7 +213,7 @@ pub fn resolve_expr<'s>(ctx: &mut Context, scope: &resolve::Scope<'s>, e: &ast::
 							Dynamic(cell) => eval::BitsDyn(cell),
 							_ => fail!("Typechecker didn't do its job"),
 						}
-					}).to_owned_vec();
+					}).collect();
 					ctx.down_op(eval::ConcatOp(args))
 				}
 				Ok((_i, _c, _d)) => Poison("Some bits are ignored in down evaluation")
@@ -228,7 +228,7 @@ pub fn resolve_expr<'s>(ctx: &mut Context, scope: &resolve::Scope<'s>, e: &ast::
 				Ok((_i, _c, _d)) => {
 					let cell = ctx.up_cell();
 					let mut pos = 0;
-					res.iter().map(|&(ref t, _, ref r)| {
+					for &(ref t, _, ref r) in res.iter() {
 						match *t {
 							BitsType(l) => {
 								match *r {
@@ -246,7 +246,7 @@ pub fn resolve_expr<'s>(ctx: &mut Context, scope: &resolve::Scope<'s>, e: &ast::
 							_ => fail!(),
 						}
 	
-					}).to_owned_vec();
+					}
 					Dynamic(cell)
 				}
 			};
