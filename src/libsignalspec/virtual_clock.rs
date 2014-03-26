@@ -23,38 +23,17 @@ use expr::{
 		EntityItem,
 };
 
-pub trait DigitalSource {
-	/// Vector of wire names. Indicies in this array are the IDs used in other methods.
-	fn wires(&self) -> &[&str];
-
-	/// Iterator of (time, wire, state) events
-	fn events<'s>(&'s self) -> &'s Iterator<(u64, uint, bool)>;
-}
-
-pub trait DigitalSink {
-	/// Set wire names. This must be called only once
-	fn init(&mut self, wires: &[&str]);
-
-	/// Append an event. Time must be non-decreasing
-	fn event(&mut self, time: u64, wire: uint, state: bool);
-}
-
-pub struct Wire {
+pub struct Signal {
 	id: uint,
 }
 
-impl Wire {
-	pub fn new() -> Wire {
-		Wire { id: 0 }
+impl Signal {
+	pub fn new() -> Signal {
+		Signal { id: 0 }
 	}
 }
 
-struct WireGroup {
-	wire_ids: ~[~str],
-}
-
-
-fn resolve_wire_level(pctx: &Context, device: &Wire, params: &Params) -> Step {
+fn resolve_signal_level(pctx: &Context, device: &Signal, params: &Params) -> Step {
 	let mut ctx = pctx.child();
 	ctx.domain = match pctx.domain.as_any().as_ref::<VirtualClockDomain>() {
 		// TODO: check that they come from the same parent
@@ -63,7 +42,7 @@ fn resolve_wire_level(pctx: &Context, device: &Wire, params: &Params) -> Step {
 			domain.constraints.push((0, context::Constant(ast::SymbolValue(~"h"))));
 			domain
 		}),
-		None => fail!("wire.level in the wrong clock domain")
+		None => fail!("Signal.level in the wrong clock domain")
 	} as &Domain;
 	params.body.as_ref().map_or(NopStep, |b| resolve_body_call(&mut ctx, b, &Params::empty()))
 }
@@ -102,14 +81,14 @@ impl Domain for VirtualClockDomain {
 	}
 }
 
-impl<'s> Entity<'s> for Wire {
+impl<'s> Entity<'s> for Signal {
 	fn get_property<'a>(&'a self, pctx: &Context, prop: &str) -> Option<Item<'a>> {
 		// TODO: I wish this could return by value instead of allocating
 		// This should at least be cached
 
 		match prop {
 			&"level" => {
-				let p = pctx.session.arena.alloc(|| PrimitiveClosure::new(self, resolve_wire_level));
+				let p = pctx.session.arena.alloc(|| PrimitiveClosure::new(self, resolve_signal_level));
 				Some(EntityItem(p))
 			}
 			_ => None

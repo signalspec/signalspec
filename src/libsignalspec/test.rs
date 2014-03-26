@@ -41,7 +41,7 @@ fn main() {
 		_ => fail!("Main is not an event"),
 	};
 
-	let w = virtual_clock::Wire::new();
+	let w = virtual_clock::Signal::new();
 	let event = main.resolve_call(&mut ctx, &resolve::Params{ positional: ~[resolve::EntityItem(&w)], body: None});
 
 	exec::print_step_tree(&event, 0);
