@@ -22,7 +22,7 @@ pub trait Domain: Any {
 	fn resolve_time(&self, pctx: &Context, params: &resolve::Params) -> resolve::Step;
 }
 
-pub struct Context<'session, 'parent> {
+pub struct Context<'session> {
 	session: &'session Session<'session>,
 	depth: uint,
 	downs: ~[eval::ValOp],
@@ -30,8 +30,8 @@ pub struct Context<'session, 'parent> {
 	domain: &'session Domain,
 }
 
-impl<'session, 'parent> Context<'session, 'parent> {
-	pub fn new<'s, 'p>(session: &'s Session<'s>) -> Context<'s, 'p> {
+impl<'session> Context<'session> {
+	pub fn new<'s>(session: &'s Session<'s>) -> Context<'s> {
 		Context {
 			session: session,
 			depth: 0,
@@ -41,7 +41,7 @@ impl<'session, 'parent> Context<'session, 'parent> {
 		}
 	}
 
-	pub fn child<'p>(&'p self) -> Context<'session, 'p> {
+	pub fn child<'p>(&self) -> Context<'session> {
 		Context {
 			session: self.session,
 			depth: self.depth + 1,

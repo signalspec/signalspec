@@ -86,7 +86,7 @@ pub struct EventBodyClosure<'s> {
 	parentScope: Scope<'s>,
 }
 
-pub fn resolve_module<'s, 'a>(pctx: &Context<'s, 'a>, pscope: &Scope<'s>, ast: &'s ast::Module) -> Scope<'s> {
+pub fn resolve_module<'s>(pctx: &Context<'s>, pscope: &Scope<'s>, ast: &'s ast::Module) -> Scope<'s> {
 	let ctx = pctx.child();
 	let mut scope = pscope.clone();
 
