@@ -110,18 +110,26 @@ fn resolve_seq(pctx: &Context, pscope: &Scope, block: &ast::Block) -> Step {
 	scope.add_lets(block.lets);
 
 	let steps = block.actions.iter().map(|action| {
-		let entity = resolve_expr(&mut ctx, &scope, &action.entity);
+		let params = &Params {
+			positional: ~[],
+			body: action.body.as_ref().map(|x| {
+				EventBodyClosure { ast: x, parentScope: scope.child()
+			}}),
+		};
 
-		match entity {
-			EntityItem(ref e) => {
-				e.resolve_call(&ctx, &Params {
-					positional: ~[],
-					body: action.body.as_ref().map(|x| {
-						EventBodyClosure { ast: x, parentScope: scope.child()
-					}}),
-				})
+		match action.action {
+			ast::ActionDef(ref entityitem) => {
+				match resolve_expr(&mut ctx, &scope, entityitem) {
+					EntityItem(ref entity) => entity.resolve_call(&ctx, params),
+					_ => fail!("Not an action"),
+				}
 			}
-			_ => fail!("Not an event"),
+			ast::ActionEntity(ref entityitem, ref method) => {
+				match resolve_expr(&mut ctx, &scope, entityitem) {
+					EntityItem(ref entity) => entity.resolve_method_call(&ctx, method.as_slice(), params),
+					_ => fail!("Not an entity"),
+				}
+			}
 		}
 	}).collect();
 

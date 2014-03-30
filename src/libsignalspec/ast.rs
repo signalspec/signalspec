@@ -19,8 +19,13 @@ pub struct Def {
 	block: Block,
 }
 
+pub enum ActionTarget {
+	ActionDef(Expr),
+	ActionEntity(Expr, ~str)
+}
+
 pub struct Action {
-	entity: Expr,
+	action: ActionTarget,
 	posarg: Option<Expr>,
 	body: Option<ActionBody>,
 }

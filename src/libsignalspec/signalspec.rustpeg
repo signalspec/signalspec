@@ -34,8 +34,14 @@ def -> ast::Def
 		{ ast::ParamDef{name:name, tp:tp, default:init} }
 
 	action -> ast::Action
-		= entity:varexpr _ "(" arg:valexpr? ")" __ body: actionbody?
-		{ ast::Action { entity: entity, posarg: arg, body: body } }
+		= action:actiontarget _ "(" arg:valexpr? ")" __ body: actionbody?
+			{ ast::Action { action:action, posarg: arg, body: body } }
+
+		// TODO: multiple arguments, keyword arguments
+
+		actiontarget -> ast::ActionTarget
+			= entity:varexpr ":" name:identifier { ast::ActionEntity(entity, name) }
+			/ def:varexpr { ast::ActionDef(def) }
 
 		actionbody -> ast::ActionBody
 			= "|" args: (n:identifier commasep {n})* "|" __ block: block

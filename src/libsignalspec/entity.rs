@@ -8,6 +8,10 @@ pub trait Entity<'s> {
 		fail!("Entity is not callable");
 	}
 
+	fn resolve_method_call(&self, _pctx: &Context, _name: &str, _params: &Params) -> Step {
+		fail!("Entity has no methods");
+	}
+
 	fn get_property<'a>(&'a self, _ctx: &Context, _property: &str) -> Option<Item<'a>> {
 		None
 	}
@@ -25,24 +29,3 @@ impl<'s> Entity<'s> for PrimitiveCallable {
 		(*self)(pctx, params)
 	}
 }
-
-
-type PrimitiveClosureFn<T> = fn (pctx: &Context, device: &T, params: &Params) -> Step;
-pub struct PrimitiveClosure<'s, T> {
-	device: &'s T,
-	resolvefn: PrimitiveClosureFn<T>,
-}
-impl<'s, T> PrimitiveClosure<'s, T> {
-	pub fn new(device: &'s T, resolvefn: PrimitiveClosureFn<T>) -> PrimitiveClosure<'s, T>{
-		PrimitiveClosure {
-			device: device,
-			resolvefn: resolvefn,
-		}
-	}
-}
-impl<'s, T> Entity<'s> for PrimitiveClosure<'s, T> {
-	fn resolve_call(&self, pctx: &Context, params: &Params) -> Step {
-		(self.resolvefn)(pctx, self.device, params)
-	}
-}
-
