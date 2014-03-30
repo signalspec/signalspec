@@ -1,6 +1,6 @@
 use ast;
 use collections::HashMap;
-use context::{Context};
+use context::{Context, Constant};
 
 pub use ScopeItem = expr::Item;
 pub use expr::{
@@ -112,7 +112,7 @@ fn resolve_seq(pctx: &Context, pscope: &Scope, block: &ast::Block) -> Step {
 
 	let steps = block.actions.iter().map(|action| {
 		let params = &Params {
-			positional: ~[],
+			positional: action.positional.iter().map(|a| resolve_expr(&mut ctx, &scope, a)).collect(),
 			body: action.body.as_ref().map(|x| {
 				EventBodyClosure { ast: x, parentScope: scope.child()
 			}}),
@@ -166,6 +166,10 @@ pub fn time_call_fn(pctx: &Context, params: &Params) -> Step {
 	if params.body.is_some() {
 		fail!("time() does not accept a body");
 	}
-	TimeStep(0.0)
+	let t = match params.positional[0] {
+		ValueItem(_, Constant(ast::NumberValue(v)), _) => v,
+		_ => fail!("Time must (currently) be a constant number")
+	};
+	TimeStep(t)
 }
 

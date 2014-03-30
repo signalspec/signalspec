@@ -34,8 +34,8 @@ def -> ast::Def
 		{ ast::ParamDef{name:name, tp:tp, default:init} }
 
 	action -> ast::Action
-		= action:actiontarget _ "(" arg:valexpr? ")" __ body: actionbody?
-			{ ast::Action { action:action, posarg: arg, body: body } }
+		= action:actiontarget _ "(" params:valexpr* ")" __ body: actionbody?
+			{ ast::Action { action:action, positional:params, body: body } }
 
 		// TODO: multiple arguments, keyword arguments
 

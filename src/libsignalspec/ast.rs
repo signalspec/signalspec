@@ -26,7 +26,7 @@ pub enum ActionTarget {
 
 pub struct Action {
 	action: ActionTarget,
-	posarg: Option<Expr>,
+	positional: ~[Expr],
 	body: Option<ActionBody>,
 }
 

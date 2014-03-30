@@ -3,6 +3,7 @@ use context;
 use context::{
 	Context,
 	ValueRef,
+	Constant,
 };
 use resolve::{
 	Params,
@@ -16,6 +17,7 @@ use exec::{
 use entity::{
 	Entity,
 };
+use expr::ValueItem;
 
 pub struct Signal {
 	id: uint,
@@ -32,8 +34,12 @@ impl<'s> Entity<'s> for Signal {
 		match name {
 			&"level" => {
 				// TODO: check that it's from the right clock domain
+				let value = match params.positional[0] {
+					ValueItem(_, Constant(ast::SymbolValue(ref v)), _) => (v.as_slice() == &"h"),
+					_ => fail!("Level arg must currently be constant")
+				};
 				let body = params.body.as_ref().map_or(NopStep, |b| resolve_body_call(pctx, b, &Params::empty()));
-				SignalLevelStep(self.id, false, ~body)
+				SignalLevelStep(self.id, value, ~body)
 			},
 			_ => fail!("Signal has no method `{}`", name)
 		}
