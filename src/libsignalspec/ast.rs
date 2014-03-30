@@ -47,6 +47,7 @@ pub struct LetDef(~str, Expr);
 #[deriving(Eq, Clone)]
 pub enum TypeExpr {
 	SymbolType, // TODO: include variants?
+	IntegerType, // TODO: range
 	BitsType(uint),
 	NumberType,
 	EntityType,
@@ -57,6 +58,7 @@ pub enum TypeExpr {
 #[deriving(Clone, Eq)]
 pub enum Value {
 	NumberValue(f64),
+	IntegerValue(i64),
 	SymbolValue(~str),
 	BitsValue(~[bool]),
 }
@@ -65,6 +67,7 @@ impl Value {
 	pub fn get_type(&self) -> TypeExpr {
 		match *self {
 			NumberValue(..) => NumberType,
+			IntegerValue(..) => IntegerType,
 			SymbolValue(..) => SymbolType,
 			BitsValue(ref n) => BitsType(n.len()),
 		}
@@ -79,6 +82,7 @@ impl fmt::Show for Value {
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 		match *self {
 			NumberValue(n) => write!(f.buf, "{}", n),
+			IntegerValue(n) => write!(f.buf, "{}", n),
 			SymbolValue(ref s) => write!(f.buf, "${}", *s),
 			BitsValue(ref n) => write!(f.buf, "'b{}", n.to_str()),
 		}

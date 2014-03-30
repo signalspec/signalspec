@@ -304,7 +304,9 @@ mod test {
 			NumberType,
 			SymbolType,
 			BitsType,
+			IntegerType,
 		NumberValue,
+		IntegerValue,
 		BitsValue,
 		SymbolValue,
 	};
@@ -328,6 +330,11 @@ mod test {
 	#[test]
 	fn test_const_symbol() {
 		check_const_value("#foo", SymbolType, Constant(SymbolValue(~"foo")), Constant(SymbolValue(~"foo")));
+	}
+
+	#[test]
+	fn test_const_int() {
+		check_const_value("#10", IntegerType, Constant(IntegerValue(10)), Constant(IntegerValue(10)));
 	}
 
 	#[test]
