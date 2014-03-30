@@ -17,12 +17,13 @@ mod resolve;
 mod entity;
 mod virtual_clock;
 mod exec;
+mod vcd;
 
 fn main() {
 	let sess = session::Session::new();
 
 	let args = os::args();
-	let source_utf8 = File::open(&Path::new(args[1])).read_to_end().unwrap();
+	let source_utf8 = File::open(&Path::new(args[1].as_slice())).read_to_end().unwrap();
 	let source = str::from_utf8(source_utf8);
 	let module = grammar::module(source.unwrap());
 
@@ -44,5 +45,9 @@ fn main() {
 	let event = main.resolve_call(&mut ctx, &resolve::Params{ positional: ~[resolve::EntityItem(&w)], body: None});
 
 	exec::print_step_tree(&event, 0);
-	exec::exec(&event);
+
+	let mut dest = File::create(&Path::new(args[2].as_slice()));
+	let mut vcdwriter = vcd::VCDWriter::new(&mut dest);
+	vcdwriter.init(&[&"w"]);
+	exec::exec_to_vcd(&event, &mut vcdwriter);
 }

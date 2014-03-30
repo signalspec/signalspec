@@ -1,3 +1,4 @@
+use vcd::VCDWriter;
 
 pub trait PrimitiveStep {
 	fn display(&self) -> ~str;
@@ -44,22 +45,23 @@ pub fn print_step_tree(s: &Step, indent: uint) {
 	}
 }
 
-pub fn exec(s: &Step) {
+pub fn exec_to_vcd(s: &Step, vcd: &mut VCDWriter) {
 	match *s {
 		NopStep => (),
 		CallStep(~ref c) => {
-			exec(c);
+			exec_to_vcd(c, vcd);
 		}
 		SeqStep(ref steps) => {
 			for c in steps.iter() {
-				exec(c);
+				exec_to_vcd(c, vcd);
 			}
 		}
 		TimeStep(t) => {
-			println!("Time {}", t);
+			vcd.time((t*1.0e9) as u64);
 		}
 		SignalLevelStep(id, val, ~ref body) => {
-			exec(body);
+			vcd.value(id, val);
+			exec_to_vcd(body, vcd);
 		}
 		PrimitiveStep(ref h) => {
 			h.exec();
