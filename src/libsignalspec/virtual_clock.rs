@@ -32,20 +32,6 @@ impl Signal {
 	}
 }
 
-struct TimerHandler {
-	constraints: ~[(uint, ValueRef)],
-}
-
-impl PrimitiveStep for TimerHandler {
-	fn display(&self) -> ~str{
-		format!("Time ({})", self.constraints.len())
-	}
-
-	fn exec(&self) {
-		println!("Time!");
-	}
-}
-
 #[deriving(Clone)]
 pub struct VirtualClockDomain {
 	constraints: ~[(uint, ValueRef)],
@@ -61,9 +47,6 @@ impl VirtualClockDomain {
 
 impl Domain for VirtualClockDomain {
 	fn as_any<'a>(&'a self) -> &'a Any { self as &Any }
-	fn resolve_time(&self, pctx: &Context, params: &Params) -> Step {
-		PrimitiveStep(~TimerHandler{ constraints: self.constraints.clone() })
-	}
 }
 
 impl<'s> Entity<'s> for Signal {

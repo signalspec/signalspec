@@ -9,6 +9,7 @@ pub enum Step {
 	NopStep,
 	CallStep(~Step),
 	SeqStep(~[Step]),
+	TimeStep(f64), //TODO: valueref
 	PrimitiveStep(~PrimitiveStep),
 }
 
@@ -25,6 +26,9 @@ pub fn print_step_tree(s: &Step, indent: uint) {
 			for c in steps.iter() {
 				print_step_tree(c, indent+1);
 			}
+		}
+		TimeStep(t) => {
+			println!("{}Time", i)
 		}
 		PrimitiveStep(ref h) => {
 			println!("{}{}", i, h.display());
@@ -45,6 +49,9 @@ pub fn exec(s: &Step) {
 			for c in steps.iter() {
 				exec(c);
 			}
+		}
+		TimeStep(t) => {
+			println!("Time {}", t);
 		}
 		PrimitiveStep(ref h) => {
 			h.exec();

@@ -13,6 +13,7 @@ pub use exec::{
 		NopStep,
 		CallStep,
 		SeqStep,
+		TimeStep,
 		PrimitiveStep,
 };
 use entity::{
@@ -165,6 +166,6 @@ pub fn time_call_fn(pctx: &Context, params: &Params) -> Step {
 	if params.body.is_some() {
 		fail!("time() does not accept a body");
 	}
-	pctx.domain.resolve_time(pctx, params)
+	TimeStep(0.0)
 }
 
