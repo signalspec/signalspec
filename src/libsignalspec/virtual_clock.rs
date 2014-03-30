@@ -9,10 +9,12 @@ use context::{
 };
 use resolve::{
 	Params,
+	resolve_body_call,
+};
+use exec::{
 	Step,
 		NopStep,
-		PrimitiveStep,
-	resolve_body_call,
+		SignalLevelStep,
 };
 use entity::{
 	Entity,
@@ -53,17 +55,9 @@ impl<'s> Entity<'s> for Signal {
 	fn resolve_method_call(&self, pctx: &Context, name: &str, params: &Params) -> Step {
 		match name {
 			&"level" => {
-				let mut ctx = pctx.child();
-				ctx.domain = match pctx.domain.as_any().as_ref::<VirtualClockDomain>() {
-					// TODO: check that they come from the same parent
-					Some(d) => pctx.session.arena.alloc(|| {
-						let mut domain = d.clone();
-						domain.constraints.push((0, context::Constant(ast::SymbolValue(~"h"))));
-						domain
-					}),
-					None => fail!("Signal.level in the wrong clock domain")
-				} as &Domain;
-				params.body.as_ref().map_or(NopStep, |b| resolve_body_call(&mut ctx, b, &Params::empty()))
+				// TODO: check that it's from the right clock domain
+				let body = params.body.as_ref().map_or(NopStep, |b| resolve_body_call(pctx, b, &Params::empty()));
+				SignalLevelStep(self.id, false, ~body)
 			},
 			_ => fail!("Signal has no method `{}`", name)
 		}

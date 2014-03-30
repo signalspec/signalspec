@@ -10,6 +10,7 @@ pub enum Step {
 	CallStep(~Step),
 	SeqStep(~[Step]),
 	TimeStep(f64), //TODO: valueref
+	SignalLevelStep(uint, bool, ~Step),
 	PrimitiveStep(~PrimitiveStep),
 }
 
@@ -29,6 +30,10 @@ pub fn print_step_tree(s: &Step, indent: uint) {
 		}
 		TimeStep(t) => {
 			println!("{}Time", i)
+		}
+		SignalLevelStep(id, v, ~ref body) => {
+			println!("{}{} Level {}", i, id, v);
+			print_step_tree(body, indent+1);
 		}
 		PrimitiveStep(ref h) => {
 			println!("{}{}", i, h.display());
@@ -52,6 +57,9 @@ pub fn exec(s: &Step) {
 		}
 		TimeStep(t) => {
 			println!("Time {}", t);
+		}
+		SignalLevelStep(id, val, ~ref body) => {
+			exec(body);
 		}
 		PrimitiveStep(ref h) => {
 			h.exec();
