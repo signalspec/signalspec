@@ -3,9 +3,9 @@ use ast::{
 };
 use context::{DCell};
 
-pub enum BitsRef {
-	BitsConst(~[bool]),
-	BitsDyn(DCell)
+pub enum ValueSrc {
+	Const(~[Value]),
+	Dyn(DCell)
 }
 
 pub enum ValOp {
@@ -16,7 +16,7 @@ pub enum ValOp {
 	CheckOp(DCell, Value),
 
 	SliceOp(DCell, /*offset*/ uint, /*length*/ uint),
-	ConcatOp(~[BitsRef]),
+	ConcatOp(~[ValueSrc]),
 
 	BinaryOp(DCell, BinOp, DCell),
 	BinaryConstOp(DCell, BinOp, f64),

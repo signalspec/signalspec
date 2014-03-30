@@ -14,10 +14,10 @@ use ast;
 use ast::{
 	TopType,
 	NumberType,
-	BitsType,
+	VectorType,
 	Value,
 		NumberValue,
-		BitsValue,
+		VectorValue,
 };
 use resolve;
 use entity::Entity;
@@ -187,15 +187,15 @@ pub fn resolve_expr<'s>(ctx: &mut Context, scope: &resolve::Scope<'s>, e: &ast::
 
 			let len = res.iter().map(|&(ref t, _, _)| {
 				match *t {
-					BitsType(len) => len,
-					_ => fail!("Concatinating values that are not bits")
+					VectorType(len) => len,
+					_ => fail!("Concatinating values that are not vectors")
 				}
 			}).sum();
 
 			fn concat_const<'a, T: Iterator<&'a ValueRef>> (mut l: T) -> Value {
-				BitsValue(l.flat_map(|r| {
+				VectorValue(l.flat_map(|r| {
 					match *r {
-						Constant(BitsValue(ref b)) => b.iter().map(|x| *x),
+						Constant(VectorValue(ref b)) => b.iter().map(|x| x.clone()),
 						_ => fail!("Counted wrong"),
 					}
 				}).collect())
@@ -209,8 +209,8 @@ pub fn resolve_expr<'s>(ctx: &mut Context, scope: &resolve::Scope<'s>, e: &ast::
 				Ok((0, _c, _d)) => {
 					let args = down_refs().map(|r| {
 						match *r {
-							Constant(BitsValue(ref b)) => eval::BitsConst(b.clone()),
-							Dynamic(cell) => eval::BitsDyn(cell),
+							Constant(VectorValue(ref b)) => eval::Const(b.clone()),
+							Dynamic(cell) => eval::Dyn(cell),
 							_ => fail!("Typechecker didn't do its job"),
 						}
 					}).collect();
@@ -230,11 +230,11 @@ pub fn resolve_expr<'s>(ctx: &mut Context, scope: &resolve::Scope<'s>, e: &ast::
 					let mut pos = 0;
 					for &(ref t, _, ref r) in res.iter() {
 						match *t {
-							BitsType(l) => {
+							VectorType(l) => {
 								match *r {
-									Constant(BitsValue(ref b)) => {
+									Constant(VectorValue(ref b)) => {
 										let check = ctx.up_cell();
-										ctx.up_op(0, eval::CheckOp(check, BitsValue(b.clone())));
+										ctx.up_op(0, eval::CheckOp(check, VectorValue(b.clone())));
 										ctx.up_op(check, eval::SliceOp(cell, pos, l));
 									}
 									Dynamic(c) => ctx.up_op(c, eval::SliceOp(cell, pos, l)),
@@ -251,7 +251,7 @@ pub fn resolve_expr<'s>(ctx: &mut Context, scope: &resolve::Scope<'s>, e: &ast::
 				}
 			};
 
-			ValueItem(BitsType(len), down, up)
+			ValueItem(VectorType(len), down, up)
 		}
 
 		ast::BinExpr(~ref a, op, ~ref b) => {
@@ -303,12 +303,13 @@ mod test {
 		TypeExpr,
 			NumberType,
 			SymbolType,
-			BitsType,
+			VectorType,
 			IntegerType,
-		NumberValue,
-		IntegerValue,
-		BitsValue,
-		SymbolValue,
+		Value,
+			NumberValue,
+			IntegerValue,
+			VectorValue,
+			SymbolValue,
 	};
 	use resolve::Scope;
 	use grammar;
@@ -365,7 +366,7 @@ mod test {
 
 	#[test]
 	fn test_const_concat_expr() {
-		let b = ~[true, false, true, true, true, false];
-		check_const_value("['101, '11, '0]", BitsType(6), Constant(BitsValue(b.clone())), Constant(BitsValue(b.clone())));
+		let b = &[1i64, 0, 1, 1, 1, 0].iter().map(|&i| IntegerValue(i)).collect::<~[Value]>();
+		check_const_value("['101, '11, '0]", VectorType(6), Constant(VectorValue(b.clone())), Constant(VectorValue(b.clone())));
 	}
 }

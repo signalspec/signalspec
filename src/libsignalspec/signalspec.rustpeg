@@ -50,7 +50,6 @@ def -> ast::Def
 #[export]
 typeexpr -> ast::TypeExpr
 	= symboltype
-	/ bitstype
 	/ numbertype
 	/ entitytype
 
@@ -61,10 +60,6 @@ typeexpr -> ast::TypeExpr
 		symbol_list -> ~[ast::Value]
 			= __ vs:(i:symbolliteral commasep { i })*
 			{ vs }
-
-	bitstype -> ast::TypeExpr
-		= "bits" _ "(" _ val:integer ")" _
-		{ ast::BitsType(val as uint) }
 
 	numbertype -> ast::TypeExpr
 		= "number" _ "(" units:unitliteral ")" _
@@ -146,13 +141,14 @@ valexpr -> ast::Expr
 
 			bitsliteral -> ast::Value
 				= "'h" v:(hexchar+) _ {
-					ast::BitsValue(std::slice::from_fn(v.len()*4, |i| {
+					ast::VectorValue(std::slice::from_fn(v.len()*4, |i| {
 						let n = i/4;
 						let b = i%4;
-						v[n] & (1 << (4-b)) != 0
+						ast::IntegerValue((v[n] & (1 << (4-b))) as i64)
 					}))
 				}
-				/ "'" "b"? v:(binbit+) _    { ast::BitsValue(v) }
+				/ "'" "b"? v:(binbit+) _ 
+					{ ast::VectorValue(v.iter().map(|&b| ast::IntegerValue(b as i64)).collect()) }
 
 				hexchar -> u8
 					= [0-9a-fA-F]

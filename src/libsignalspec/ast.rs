@@ -49,6 +49,7 @@ pub enum TypeExpr {
 	SymbolType, // TODO: include variants?
 	IntegerType, // TODO: range
 	BitsType(uint),
+	VectorType(uint), //TODO: element type
 	NumberType,
 	EntityType,
 	InvalidType,
@@ -60,7 +61,7 @@ pub enum Value {
 	NumberValue(f64),
 	IntegerValue(i64),
 	SymbolValue(~str),
-	BitsValue(~[bool]),
+	VectorValue(~[Value]),
 }
 
 impl Value {
@@ -69,7 +70,7 @@ impl Value {
 			NumberValue(..) => NumberType,
 			IntegerValue(..) => IntegerType,
 			SymbolValue(..) => SymbolType,
-			BitsValue(ref n) => BitsType(n.len()),
+			VectorValue(ref n) => VectorType(n.len()),
 		}
 	}
 
@@ -84,7 +85,7 @@ impl fmt::Show for Value {
 			NumberValue(n) => write!(f.buf, "{}", n),
 			IntegerValue(n) => write!(f.buf, "{}", n),
 			SymbolValue(ref s) => write!(f.buf, "${}", *s),
-			BitsValue(ref n) => write!(f.buf, "'b{}", n.to_str()),
+			VectorValue(ref n) => write!(f.buf, "[{}]", n.to_str()),
 		}
 	}
 }
