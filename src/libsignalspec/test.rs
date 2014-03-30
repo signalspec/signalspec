@@ -32,7 +32,6 @@ fn main() {
 	prelude.names.insert(~"time", expr::EntityItem(&resolve::time_call_fn as &entity::Entity));
 
 	let mut ctx = context::Context::new(&sess);
-	ctx.domain = sess.arena.alloc(|| virtual_clock::VirtualClockDomain::new()) as &context::Domain;
 
 	let modscope = resolve::resolve_module(&mut ctx, &prelude, &module);
 

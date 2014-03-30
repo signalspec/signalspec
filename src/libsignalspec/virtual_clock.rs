@@ -1,11 +1,8 @@
-use std::any::{Any, AnyRefExt};
-
 use ast;
 use context;
 use context::{
 	Context,
 	ValueRef,
-	Domain,
 };
 use resolve::{
 	Params,
@@ -19,10 +16,6 @@ use exec::{
 use entity::{
 	Entity,
 };
-use expr::{
-	Item,
-		EntityItem,
-};
 
 pub struct Signal {
 	id: uint,
@@ -32,23 +25,6 @@ impl Signal {
 	pub fn new() -> Signal {
 		Signal { id: 0 }
 	}
-}
-
-#[deriving(Clone)]
-pub struct VirtualClockDomain {
-	constraints: ~[(uint, ValueRef)],
-}
-
-impl VirtualClockDomain {
-	pub fn new() -> VirtualClockDomain {
-		VirtualClockDomain {
-			constraints: ~[],
-		}
-	}
-}
-
-impl Domain for VirtualClockDomain {
-	fn as_any<'a>(&'a self) -> &'a Any { self as &Any }
 }
 
 impl<'s> Entity<'s> for Signal {

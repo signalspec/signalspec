@@ -16,17 +16,11 @@ pub enum ValueRef {
 /// Dynamic Cell
 pub type DCell = uint;
 
-pub trait Domain: Any {
-	// TODO: this method exists as a workaround for mozilla/rust#5665
-	fn as_any<'a>(&'a self) -> &'a Any;
-}
-
 pub struct Context<'session> {
 	session: &'session Session<'session>,
 	depth: uint,
 	downs: ~[eval::ValOp],
 	ups:   ~[eval::ValOp],
-	domain: &'session Domain,
 }
 
 impl<'session> Context<'session> {
@@ -36,7 +30,6 @@ impl<'session> Context<'session> {
 			depth: 0,
 			downs: ~[],
 			ups: ~[],
-			domain: &default_domain,
 		}
 	}
 
@@ -46,7 +39,6 @@ impl<'session> Context<'session> {
 			depth: self.depth + 1,
 			downs: ~[],
 			ups: ~[],
-			domain: self.domain,
 		}
 	}
 
@@ -75,9 +67,3 @@ impl<'session> Context<'session> {
 		Dynamic(cell)
 	}
 }
-
-struct DefaultDomain;
-impl Domain for DefaultDomain {
-	fn as_any<'a>(&'a self) -> &'a Any { self as &Any }
-}
-static default_domain: DefaultDomain = DefaultDomain;
