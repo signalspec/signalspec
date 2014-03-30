@@ -1,4 +1,5 @@
 {
+	use std;
 	use ast;
 	use eval;
 	use std::num::from_str_radix;
@@ -134,11 +135,17 @@ valexpr -> ast::Expr
 				{ ast::SymbolValue(i) }
 
 			bitsliteral -> ast::Value
-				= "'h" v:(hexbyte+) _ { ast::BitsValue(v.flat_map(|byte| range(0, 8).map(|n| byte & (1 << (8-n))==0).collect()))  }
+				= "'h" v:(hexchar+) _ {
+					ast::BitsValue(std::slice::from_fn(v.len()*4, |i| {
+						let n = i/4;
+						let b = i%4;
+						v[n] & (1 << (4-b)) != 0
+					}))
+				}
 				/ "'" "b"? v:(binbit+) _    { ast::BitsValue(v) }
 
-				hexbyte -> u8
-					= [0-9a-fA-F][0-9a-fA-F]
+				hexchar -> u8
+					= [0-9a-fA-F]
 					{ from_str_radix::<u8>(match_str, 16).unwrap() }
 
 				binbit -> bool

@@ -1,4 +1,4 @@
-#[allow(dead_code)];
+#![allow(dead_code)]
 
 extern crate arena;
 extern crate collections;
