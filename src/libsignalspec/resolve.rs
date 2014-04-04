@@ -22,7 +22,7 @@ use entity::{
 
 #[deriving(Clone)]
 pub struct Scope<'s>{
-	names: HashMap<~str, ScopeItem<'s>>,
+	pub names: HashMap<~str, ScopeItem<'s>>,
 }
 
 impl<'s> Scope<'s> {
@@ -68,8 +68,8 @@ impl<'s> Scope<'s> {
 }
 
 pub struct Params<'s> {
-	positional: ~[ScopeItem<'s>],
-	body: Option<EventBodyClosure<'s>>,
+	pub positional: ~[ScopeItem<'s>],
+	pub body: Option<EventBodyClosure<'s>>,
 }
 
 impl<'s> Params<'s> {

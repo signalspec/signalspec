@@ -17,10 +17,10 @@ pub enum ValueRef {
 pub type DCell = uint;
 
 pub struct Context<'session> {
-	session: &'session Session<'session>,
-	depth: uint,
-	downs: ~[eval::ValOp],
-	ups:   ~[eval::ValOp],
+	pub session: &'session Session<'session>,
+	pub depth: uint,
+	pub downs: ~[eval::ValOp],
+	pub ups:   ~[eval::ValOp],
 }
 
 impl<'session> Context<'session> {

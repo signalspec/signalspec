@@ -3,8 +3,8 @@ use resolve::{EventClosure};
 
 /// The data common to an entire resolve pass
 pub struct Session<'session> {
-	arena: Arena,
-	moduleDefArena: TypedArena<EventClosure<'session>>,
+	pub arena: Arena,
+	pub moduleDefArena: TypedArena<EventClosure<'session>>,
 	//cells: DCellDescriptor,
 }
 

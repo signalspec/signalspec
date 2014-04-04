@@ -3,20 +3,20 @@ use std::fmt;
 use eval::BinOp;
 
 pub struct Module {
-	imports: ~[UseDef],
-	lets: ~[LetDef],
-	defs: ~[Def],
+	pub imports: ~[UseDef],
+	pub lets: ~[LetDef],
+	pub defs: ~[Def],
 }
 
 pub struct Block {
-	lets: ~[LetDef],
-	actions: ~[Action],
+	pub lets: ~[LetDef],
+	pub actions: ~[Action],
 }
 
 pub struct Def {
-	name: ~str,
-	params: ~[ParamDef],
-	block: Block,
+	pub name: ~str,
+	pub params: ~[ParamDef],
+	pub block: Block,
 }
 
 pub enum ActionTarget {
@@ -25,21 +25,21 @@ pub enum ActionTarget {
 }
 
 pub struct Action {
-	action: ActionTarget,
-	positional: ~[Expr],
-	body: Option<ActionBody>,
+	pub action: ActionTarget,
+	pub positional: ~[Expr],
+	pub body: Option<ActionBody>,
 }
 
 pub struct ActionBody {
-	param_names: ~[~str],
-	block: Block,
+	pub param_names: ~[~str],
+	pub block: Block,
 }
 
 pub struct UseDef(~str);
 pub struct ParamDef {
-	name: ~str,
-	tp: TypeExpr,
-	default: Option<Expr>
+	pub name: ~str,
+	pub tp: TypeExpr,
+	pub default: Option<Expr>
 }
 
 pub struct LetDef(~str, Expr);
