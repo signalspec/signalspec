@@ -35,14 +35,14 @@ pub struct ActionBody {
 	pub block: Block,
 }
 
-pub struct UseDef(~str);
+pub struct UseDef(pub ~str);
 pub struct ParamDef {
 	pub name: ~str,
 	pub tp: TypeExpr,
 	pub default: Option<Expr>
 }
 
-pub struct LetDef(~str, Expr);
+pub struct LetDef(pub ~str, pub Expr);
 
 #[deriving(Eq, Clone)]
 pub enum TypeExpr {
