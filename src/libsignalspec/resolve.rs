@@ -95,7 +95,7 @@ pub fn resolve_module<'s>(pctx: &Context<'s>, pscope: &Scope<'s>, ast: &'s ast::
 		fail!("Imports unimplemented");
 	}
 
-	scope.add_lets(ast.lets);
+	scope.add_lets(ast.lets.as_slice());
 
 	for def in ast.defs.iter() {
 		let ed = ctx.session.moduleDefArena.alloc(EventClosure{ ast:def, parentScope: scope.clone() });
@@ -108,7 +108,7 @@ pub fn resolve_module<'s>(pctx: &Context<'s>, pscope: &Scope<'s>, ast: &'s ast::
 fn resolve_seq(pctx: &Context, pscope: &Scope, block: &ast::Block) -> Step {
 	let mut ctx = pctx.child();
 	let mut scope = pscope.child();
-	scope.add_lets(block.lets);
+	scope.add_lets(block.lets.as_slice());
 
 	let steps = block.actions.iter().map(|action| {
 		let params = &Params {
@@ -148,7 +148,7 @@ impl<'s> Entity<'s> for EventClosure<'s> {
 		let mut ctx = pctx.child();
 		let mut scope = self.parentScope.child(); // Base on lexical parent
 
-		scope.add_params(self.ast.params, params);
+		scope.add_params(self.ast.params.as_slice(), params);
 		CallStep(~resolve_seq(&ctx, &scope, &self.ast.block))
 	}
 }

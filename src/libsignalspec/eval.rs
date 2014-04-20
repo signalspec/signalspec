@@ -4,7 +4,7 @@ use ast::{
 use context::{DCell};
 
 pub enum ValueSrc {
-	Const(~[Value]),
+	Const(Vec<Value>),
 	Dyn(DCell)
 }
 

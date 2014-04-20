@@ -3,19 +3,19 @@ use std::fmt;
 use eval::BinOp;
 
 pub struct Module {
-	pub imports: ~[UseDef],
-	pub lets: ~[LetDef],
-	pub defs: ~[Def],
+	pub imports: Vec<UseDef>,
+	pub lets: Vec<LetDef>,
+	pub defs: Vec<Def>,
 }
 
 pub struct Block {
-	pub lets: ~[LetDef],
-	pub actions: ~[Action],
+	pub lets: Vec<LetDef>,
+	pub actions: Vec<Action>,
 }
 
 pub struct Def {
 	pub name: ~str,
-	pub params: ~[ParamDef],
+	pub params: Vec<ParamDef>,
 	pub block: Block,
 }
 
@@ -26,12 +26,12 @@ pub enum ActionTarget {
 
 pub struct Action {
 	pub action: ActionTarget,
-	pub positional: ~[Expr],
+	pub positional: Vec<Expr>,
 	pub body: Option<ActionBody>,
 }
 
 pub struct ActionBody {
-	pub param_names: ~[~str],
+	pub param_names: Vec<~str>,
 	pub block: Block,
 }
 
@@ -61,7 +61,7 @@ pub enum Value {
 	NumberValue(f64),
 	IntegerValue(i64),
 	SymbolValue(~str),
-	VectorValue(~[Value]),
+	VectorValue(Vec<Value>),
 }
 
 impl Value {
@@ -96,8 +96,8 @@ pub enum Expr {
 	
 	FlipExpr(~Expr, ~Expr),
 	RangeExpr(~Expr, ~Expr),
-	ChooseExpr(~Expr, ~[(Expr, Expr)]),
-	ConcatExpr(~[Expr]),
+	ChooseExpr(~Expr, Vec<(Expr, Expr)>),
+	ConcatExpr(Vec<Expr>),
 
 	BinExpr(~Expr, BinOp, ~Expr),
 

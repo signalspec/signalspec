@@ -366,7 +366,7 @@ mod test {
 
 	#[test]
 	fn test_const_concat_expr() {
-		let b = &[1i64, 0, 1, 1, 1, 0].iter().map(|&i| IntegerValue(i)).collect::<~[Value]>();
+		let b = &[1i64, 0, 1, 1, 1, 0].iter().map(|&i| IntegerValue(i)).collect::<Vec<Value>>();
 		check_const_value("['101, '11, '0]", VectorType(6), Constant(VectorValue(b.clone())), Constant(VectorValue(b.clone())));
 	}
 }

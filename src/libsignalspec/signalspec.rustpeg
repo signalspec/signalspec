@@ -57,7 +57,7 @@ typeexpr -> ast::TypeExpr
 		= "enum" _ "(" vs:symbol_list ")" _
 		{ ast::SymbolType }
 
-		symbol_list -> ~[ast::Value]
+		symbol_list -> Vec<ast::Value>
 			= __ vs:(i:symbolliteral commasep { i })*
 			{ vs }
 
@@ -141,10 +141,10 @@ valexpr -> ast::Expr
 
 			bitsliteral -> ast::Value
 				= "'h" v:(hexchar+) _ {
-					ast::VectorValue(std::slice::from_fn(v.len()*4, |i| {
+					ast::VectorValue(Vec::from_fn(v.len()*4, |i| {
 						let n = i/4;
 						let b = i%4;
-						ast::IntegerValue((v[n] & (1 << (4-b))) as i64)
+						ast::IntegerValue((v.as_slice()[n] & (1 << (4-b))) as i64)
 					}))
 				}
 				/ "'" "b"? v:(binbit+) _ 
