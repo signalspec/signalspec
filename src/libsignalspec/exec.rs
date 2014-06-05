@@ -1,25 +1,25 @@
 use vcd::VCDWriter;
 
 pub trait PrimitiveStep {
-	fn display(&self) -> ~str;
+	fn display(&self) -> String;
 	fn body<'a>(&'a self) -> Option<&'a Step> { None }
 	fn exec(&self);
 }
 
 pub enum Step {
 	NopStep,
-	CallStep(~Step),
-	SeqStep(~[Step]),
+	CallStep(Box<Step>),
+	SeqStep(Vec<Step>),
 	TimeStep(f64), //TODO: valueref
-	SignalLevelStep(uint, bool, ~Step),
-	PrimitiveStep(~PrimitiveStep),
+	SignalLevelStep(uint, bool, Box<Step>),
+	PrimitiveStep(Box<PrimitiveStep>),
 }
 
 pub fn print_step_tree(s: &Step, indent: uint) {
 	let i = " ".repeat(indent);
 	match *s {
 		NopStep => println!("{}NOP", i),
-		CallStep(~ref c) => {
+		CallStep(box ref c) => {
 			println!("{}Call", i);
 			print_step_tree(c, indent+1);
 		}
@@ -32,7 +32,7 @@ pub fn print_step_tree(s: &Step, indent: uint) {
 		TimeStep(t) => {
 			println!("{}Time", i)
 		}
-		SignalLevelStep(id, v, ~ref body) => {
+		SignalLevelStep(id, v, box ref body) => {
 			println!("{}{} Level {}", i, id, v);
 			print_step_tree(body, indent+1);
 		}
@@ -48,7 +48,7 @@ pub fn print_step_tree(s: &Step, indent: uint) {
 pub fn exec_to_vcd(s: &Step, vcd: &mut VCDWriter) {
 	match *s {
 		NopStep => (),
-		CallStep(~ref c) => {
+		CallStep(box ref c) => {
 			exec_to_vcd(c, vcd);
 		}
 		SeqStep(ref steps) => {
@@ -59,7 +59,7 @@ pub fn exec_to_vcd(s: &Step, vcd: &mut VCDWriter) {
 		TimeStep(t) => {
 			vcd.time((t*1.0e9) as u64);
 		}
-		SignalLevelStep(id, val, ~ref body) => {
+		SignalLevelStep(id, val, box ref body) => {
 			vcd.value(id, val);
 			exec_to_vcd(body, vcd);
 		}

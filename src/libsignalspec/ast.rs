@@ -14,14 +14,14 @@ pub struct Block {
 }
 
 pub struct Def {
-	pub name: ~str,
+	pub name: String,
 	pub params: Vec<ParamDef>,
 	pub block: Block,
 }
 
 pub enum ActionTarget {
 	ActionDef(Expr),
-	ActionEntity(Expr, ~str)
+	ActionEntity(Expr, String)
 }
 
 pub struct Action {
@@ -31,20 +31,20 @@ pub struct Action {
 }
 
 pub struct ActionBody {
-	pub param_names: Vec<~str>,
+	pub param_names: Vec<String>,
 	pub block: Block,
 }
 
-pub struct UseDef(pub ~str);
+pub struct UseDef(pub String);
 pub struct ParamDef {
-	pub name: ~str,
+	pub name: String,
 	pub tp: TypeExpr,
 	pub default: Option<Expr>
 }
 
-pub struct LetDef(pub ~str, pub Expr);
+pub struct LetDef(pub String, pub Expr);
 
-#[deriving(Eq, Clone)]
+#[deriving(PartialEq, Clone)]
 pub enum TypeExpr {
 	SymbolType, // TODO: include variants?
 	IntegerType, // TODO: range
@@ -56,11 +56,11 @@ pub enum TypeExpr {
 	TopType
 }
 
-#[deriving(Clone, Eq)]
+#[deriving(PartialEq, Clone)]
 pub enum Value {
 	NumberValue(f64),
 	IntegerValue(i64),
-	SymbolValue(~str),
+	SymbolValue(String),
 	VectorValue(Vec<Value>),
 }
 
@@ -82,10 +82,10 @@ impl Value {
 impl fmt::Show for Value {
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 		match *self {
-			NumberValue(n) => write!(f.buf, "{}", n),
-			IntegerValue(n) => write!(f.buf, "{}", n),
-			SymbolValue(ref s) => write!(f.buf, "${}", *s),
-			VectorValue(ref n) => write!(f.buf, "[{}]", n.to_str()),
+			NumberValue(n) => write!(f, "{}", n),
+			IntegerValue(n) => write!(f, "{}", n),
+			SymbolValue(ref s) => write!(f, "${}", *s),
+			VectorValue(ref n) => write!(f, "[{}]", n.to_str()),
 		}
 	}
 }
@@ -94,13 +94,13 @@ pub enum Expr {
 	ValueExpr(Value),
 	IgnoreExpr,
 	
-	FlipExpr(~Expr, ~Expr),
-	RangeExpr(~Expr, ~Expr),
-	ChooseExpr(~Expr, Vec<(Expr, Expr)>),
+	FlipExpr(Box<Expr>, Box<Expr>),
+	RangeExpr(Box<Expr>, Box<Expr>),
+	ChooseExpr(Box<Expr>, Vec<(Expr, Expr)>),
 	ConcatExpr(Vec<Expr>),
 
-	BinExpr(~Expr, BinOp, ~Expr),
+	BinExpr(Box<Expr>, BinOp, Box<Expr>),
 
-	VarExpr(~str),
-	DotExpr(~Expr, ~str),
+	VarExpr(String),
+	DotExpr(Box<Expr>, String),
 }

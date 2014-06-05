@@ -1,11 +1,8 @@
-use std::any::Any;
-
 use session::Session;
 use eval;
 use ast::Value;
-use resolve;
 
-#[deriving(Eq, Clone)]
+#[deriving(PartialEq, Clone)]
 pub enum ValueRef {
 	Ignored,
 	Constant(Value),

@@ -11,19 +11,19 @@ pub enum ValueSrc {
 pub enum ValOp {
 	RangeCheckOp(DCell, f64, f64),
 
-	ChooseOp(DCell, ~[(Value, Value)]),
+	ChooseOp(DCell, Vec<(Value, Value)>),
 
 	CheckOp(DCell, Value),
 
 	SliceOp(DCell, /*offset*/ uint, /*length*/ uint),
-	ConcatOp(~[ValueSrc]),
+	ConcatOp(Vec<ValueSrc>),
 
 	BinaryOp(DCell, BinOp, DCell),
 	BinaryConstOp(DCell, BinOp, f64),
 }
 
 /// Binary numeric operators
-#[deriving(Eq)]
+#[deriving(PartialEq, Eq)]
 pub enum BinOp {
 	BiAdd,       // a + b
 	BiSub,       // a - b

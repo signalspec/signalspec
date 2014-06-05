@@ -22,7 +22,7 @@ use entity::{
 
 #[deriving(Clone)]
 pub struct Scope<'s>{
-	pub names: HashMap<~str, ScopeItem<'s>>,
+	pub names: HashMap<String, ScopeItem<'s>>,
 }
 
 impl<'s> Scope<'s> {
@@ -47,7 +47,7 @@ impl<'s> Scope<'s> {
 		for (def, val) in param_defs.iter().zip(param_values.positional.iter()) {
 			// TODO: type check
 			let v = val.clone();
-			self.names.insert(def.name.to_owned(), v);
+			self.names.insert(def.name.to_string(), v);
 		}
 	}
 
@@ -57,7 +57,7 @@ impl<'s> Scope<'s> {
 
 	fn child_lifetime<'a>(&'a self) -> &'a Scope<'a> {
 		// Hack around https://github.com/mozilla/rust/issues/3598
-		unsafe { ::std::cast::transmute(self) }
+		unsafe { ::std::mem::transmute(self) }
 	}
 
 	pub fn child<'a>(&'a self) -> Scope<'a> {
@@ -68,14 +68,14 @@ impl<'s> Scope<'s> {
 }
 
 pub struct Params<'s> {
-	pub positional: ~[ScopeItem<'s>],
+	pub positional: Vec<ScopeItem<'s>>,
 	pub body: Option<EventBodyClosure<'s>>,
 }
 
 impl<'s> Params<'s> {
 	pub fn empty() -> Params {
 		Params {
-			positional: ~[],
+			positional: Vec::new(),
 			body: None,
 		}
 	}
@@ -99,7 +99,7 @@ pub fn resolve_module<'s>(pctx: &Context<'s>, pscope: &Scope<'s>, ast: &'s ast::
 
 	for def in ast.defs.iter() {
 		let ed = ctx.session.moduleDefArena.alloc(EventClosure{ ast:def, parentScope: scope.clone() });
-		scope.names.insert(def.name.to_owned(), EntityItem(ed));
+		scope.names.insert(def.name.to_string(), EntityItem(ed));
 	}
 
 	scope
@@ -149,7 +149,7 @@ impl<'s> Entity<'s> for EventClosure<'s> {
 		let mut scope = self.parentScope.child(); // Base on lexical parent
 
 		scope.add_params(self.ast.params.as_slice(), params);
-		CallStep(~resolve_seq(&ctx, &scope, &self.ast.block))
+		CallStep(box resolve_seq(&ctx, &scope, &self.ast.block))
 	}
 }
 
@@ -158,7 +158,7 @@ pub fn resolve_body_call<'s>(ctx: &Context, body: &EventBodyClosure<'s>, params:
 	if params.body.is_some() {
 		fail!("bug: body closure called with body");
 	}
-	CallStep(~resolve_seq(ctx, &body.parentScope, &body.ast.block))
+	CallStep(box resolve_seq(ctx, &body.parentScope, &body.ast.block))
 }
 
 
@@ -166,7 +166,7 @@ pub fn time_call_fn(pctx: &Context, params: &Params) -> Step {
 	if params.body.is_some() {
 		fail!("time() does not accept a body");
 	}
-	let t = match params.positional[0] {
+	let t = match *params.positional.get(0) {
 		ValueItem(_, Constant(ast::NumberValue(v)), _) => v,
 		_ => fail!("Time must (currently) be a constant number")
 	};

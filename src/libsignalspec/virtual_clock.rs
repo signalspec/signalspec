@@ -32,14 +32,14 @@ impl Signal {
 impl<'s> Entity<'s> for Signal {
 	fn resolve_method_call(&self, pctx: &Context, name: &str, params: &Params) -> Step {
 		match name {
-			&"level" => {
+			"level" => {
 				// TODO: check that it's from the right clock domain
-				let value = match params.positional[0] {
-					ValueItem(_, Constant(ast::SymbolValue(ref v)), _) => (v.as_slice() == &"h"),
+				let value = match *params.positional.get(0) {
+					ValueItem(_, Constant(ast::SymbolValue(ref v)), _) => (v.as_slice() == "h"),
 					_ => fail!("Level arg must currently be constant")
 				};
 				let body = params.body.as_ref().map_or(NopStep, |b| resolve_body_call(pctx, b, &Params::empty()));
-				SignalLevelStep(self.id, value, ~body)
+				SignalLevelStep(self.id, value, box body)
 			},
 			_ => fail!("Signal has no method `{}`", name)
 		}

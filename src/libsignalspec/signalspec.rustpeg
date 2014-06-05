@@ -1,5 +1,4 @@
 {
-	use std;
 	use ast;
 	use eval;
 	use std::num::from_str_radix;
@@ -76,9 +75,9 @@ valexpr -> ast::Expr
 	= valexpr_flip
 
 	valexpr_flip -> ast::Expr
-		= l:valexpr_range "!" _ r:valexpr_range { ast::FlipExpr(~l, ~r) }
-		/ "<:" _ x:valexpr_range { ast::FlipExpr(~x, ~ast::IgnoreExpr) }
-		/ ":>" _ x:valexpr_range { ast::FlipExpr(~ast::IgnoreExpr, ~x) }
+		= l:valexpr_range "!" _ r:valexpr_range { ast::FlipExpr(box l, box r) }
+		/ "<:" _ x:valexpr_range { ast::FlipExpr(box x, box ast::IgnoreExpr) }
+		/ ":>" _ x:valexpr_range { ast::FlipExpr(box ast::IgnoreExpr, box x) }
 		/ valexpr_range
 
 	valexpr_range -> ast::Expr
@@ -87,21 +86,21 @@ valexpr -> ast::Expr
 
 		rangeexpr -> ast::Expr
 			= l:valexpr_sum ".." _ r:valexpr_sum
-			{ ast::RangeExpr(~l, ~r) }
+			{ ast::RangeExpr(box l, box r) }
 
 	valexpr_sum -> ast::Expr
 		= l:valexpr_product op:[+] _ r:valexpr_sum
-			{ ast::BinExpr(~l, eval::BiAdd, ~r) }
+			{ ast::BinExpr(box l, eval::BiAdd, box r) }
 		/ valexpr_product
 
 	valexpr_product -> ast::Expr
 		= l:valexpr_choose op:[*] _ r:valexpr_product
-			{ ast::BinExpr(~l, eval::BiMul, ~r) }
+			{ ast::BinExpr(box l, eval::BiMul, box r) }
 		/ valexpr_choose
 
 	valexpr_choose -> ast::Expr
 		= e:valexpr_atom "[" vs:(k:valexpr "=" _ v:valexpr commasep { (k,v) })* "]"
-			{ ast::ChooseExpr(~e, vs) }
+			{ ast::ChooseExpr(box e, vs) }
 		/ valexpr_atom
 
 	valexpr_atom -> ast::Expr
@@ -117,7 +116,7 @@ valexpr -> ast::Expr
 
 	varexpr -> ast::Expr
 		= i:identifier accessors:("." i:identifier {i} )*
-		{ accessors.move_iter().fold(ast::VarExpr(i), |base, accessor| ast::DotExpr(~base, accessor)) }
+		{ accessors.move_iter().fold(ast::VarExpr(i), |base, accessor| ast::DotExpr(box base, accessor)) }
 
 	literal -> ast::Expr
 		= v: (
@@ -163,9 +162,9 @@ valexpr -> ast::Expr
 
 			unitliteral = unit { () }
 
-				unit -> ~str
-					= [a-zA-Z]+ { match_str.to_owned() }
-				    / "" { ~"" }
+				unit -> String
+					= [a-zA-Z]+ { match_str.to_string() }
+				    / "" { "".to_string() }
 
 // Lexer
 
@@ -188,8 +187,8 @@ comment = "//" (!TERM .)*
 _ = WHITESPACE*
 __ = (WHITESPACE / TERMINATOR)*
 
-identifier -> ~str = [a-zA-Z_][0-9a-zA-Z_]*
-	{ match_str.to_owned() }
+identifier -> String = [a-zA-Z_][0-9a-zA-Z_]*
+	{ match_str.to_string() }
 
 integer -> i64 = "-"?[0-9]+
 	{ from_str::<i64>(match_str).unwrap() }

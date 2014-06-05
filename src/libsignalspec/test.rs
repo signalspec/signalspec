@@ -2,6 +2,7 @@
 
 extern crate arena;
 extern crate collections;
+extern crate debug;
 
 use std::os;
 use std::str;
@@ -23,14 +24,14 @@ fn main() {
 	let sess = session::Session::new();
 
 	let args = os::args();
-	let source_utf8 = File::open(&Path::new(args[1].as_slice())).read_to_end().unwrap();
+	let source_utf8 = File::open(&Path::new(args.get(1).as_slice())).read_to_end().unwrap();
 	let source = str::from_utf8(source_utf8.as_slice());
 	let module = grammar::module(source.unwrap());
 
 	let module = module.unwrap();
 
 	let mut prelude = resolve::Scope::new();
-	prelude.names.insert(~"time", expr::EntityItem(&resolve::time_call_fn as &entity::Entity));
+	prelude.names.insert("time".to_string(), expr::EntityItem(&resolve::time_call_fn as &entity::Entity));
 
 	let mut ctx = context::Context::new(&sess);
 
@@ -42,12 +43,12 @@ fn main() {
 	};
 
 	let w = virtual_clock::Signal::new();
-	let event = main.resolve_call(&mut ctx, &resolve::Params{ positional: ~[resolve::EntityItem(&w)], body: None});
+	let event = main.resolve_call(&mut ctx, &resolve::Params{ positional: vec!(resolve::EntityItem(&w)), body: None});
 
 	exec::print_step_tree(&event, 0);
 
-	let mut dest = File::create(&Path::new(args[2].as_slice()));
+	let mut dest = File::create(&Path::new(args.get(2).as_slice()));
 	let mut vcdwriter = vcd::VCDWriter::new(&mut dest);
-	vcdwriter.init(&[&"w"]);
+	vcdwriter.init(&["w"]);
 	exec::exec_to_vcd(&event, &mut vcdwriter);
 }

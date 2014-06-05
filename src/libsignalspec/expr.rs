@@ -34,7 +34,7 @@ pub enum Item<'s> {
 	ValueItem(Type, ValueRef /*Down*/, ValueRef /*Up*/)
 }
 
-impl<'s> Eq for Item<'s> {
+impl<'s> PartialEq for Item<'s> {
 	fn eq(&self, other: &Item<'s>) -> bool {
 		match (self, other) {
 			(&ValueItem(ref ta, ref da, ref ua), &ValueItem(ref tb, ref db, ref ub))
@@ -46,7 +46,7 @@ impl<'s> Eq for Item<'s> {
 
 impl<'s> fmt::Show for Item<'s> {
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-		write!(f.buf, "{:?}", self)
+		write!(f, "{:?}", self)
 	}
 }
 
@@ -94,7 +94,7 @@ pub fn resolve_expr<'s>(ctx: &mut Context, scope: &resolve::Scope<'s>, e: &ast::
 			scope.get(name.as_slice()).expect("Undefined variable")
 		}
 
-		ast::DotExpr(~ref lexpr, ref name) => {
+		ast::DotExpr(box ref lexpr, ref name) => {
 			match resolve_expr(ctx, scope, lexpr) {
 				EntityItem(ref e) => e.get_property(ctx, name.as_slice()).expect("Undefined property"),
 				_ => fail!("dot only works on entities"),
@@ -103,7 +103,7 @@ pub fn resolve_expr<'s>(ctx: &mut Context, scope: &resolve::Scope<'s>, e: &ast::
 
 		ast::ValueExpr(ref val) => ValueItem(val.get_type(), Constant(val.clone()), Constant(val.clone())),
 
-		ast::FlipExpr(~ref down, ~ref up) => {
+		ast::FlipExpr(box ref down, box ref up) => {
 			let (down_type, down_ref, _     ) = resolve_value_expr(ctx, scope, down);
 			let (up_type,   _,        up_ref) = resolve_value_expr(ctx, scope, up);
 
@@ -112,7 +112,7 @@ pub fn resolve_expr<'s>(ctx: &mut Context, scope: &resolve::Scope<'s>, e: &ast::
 			ValueItem(common_type, down_ref, up_ref)
 		}
 
-		ast::RangeExpr(~ref min_expr, ~ref max_expr) => {
+		ast::RangeExpr(box ref min_expr, box ref max_expr) => {
 			let (min_type, min_ref, _) = resolve_value_expr(ctx, scope, min_expr);
 			let (max_type, max_ref, _) = resolve_value_expr(ctx, scope, max_expr);
 
@@ -138,7 +138,7 @@ pub fn resolve_expr<'s>(ctx: &mut Context, scope: &resolve::Scope<'s>, e: &ast::
 			ValueItem(NumberType, Poison("Range can only be up-evaluated"), up)
 		}
 
-		ast::ChooseExpr(~ref e, ref c) => {
+		ast::ChooseExpr(box ref e, ref c) => {
 			let (e_type, e_down, e_up) = resolve_value_expr(ctx, scope, e);
 
 			let res = c.iter().map(|&(ref l, ref r)| {
@@ -155,12 +155,12 @@ pub fn resolve_expr<'s>(ctx: &mut Context, scope: &resolve::Scope<'s>, e: &ast::
 
 			let down_pairs = res.iter().map(|&((_, ref l, _), (_, ref r, _))| {
 				(ctx.get_const(l), ctx.get_const(r))
-			}).collect::<~[_]>();
+			}).collect::<Vec<_>>();
 
 			let down = match e_down {
 				Ignored => Ignored,
 				Poison(e) => Poison(e),
-				Constant(ref v) => Constant(eval::eval_choose(v, down_pairs).expect("Choice down not complete")),
+				Constant(ref v) => Constant(eval::eval_choose(v, down_pairs.as_slice()).expect("Choice down not complete")),
 				Dynamic(d) => ctx.down_op(eval::ChooseOp(d, down_pairs)),
 			};
 
@@ -254,7 +254,7 @@ pub fn resolve_expr<'s>(ctx: &mut Context, scope: &resolve::Scope<'s>, e: &ast::
 			ValueItem(VectorType(len), down, up)
 		}
 
-		ast::BinExpr(~ref a, op, ~ref b) => {
+		ast::BinExpr(box ref a, op, box ref b) => {
 			let (a_type, a_down, a_up) = resolve_value_expr(ctx, scope, a);
 			let (b_type, b_down, b_up) = resolve_value_expr(ctx, scope, b);
 
@@ -330,7 +330,7 @@ mod test {
 
 	#[test]
 	fn test_const_symbol() {
-		check_const_value("#foo", SymbolType, Constant(SymbolValue(~"foo")), Constant(SymbolValue(~"foo")));
+		check_const_value("#foo", SymbolType, Constant(SymbolValue("foo".to_string())), Constant(SymbolValue("foo".to_string())));
 	}
 
 	#[test]
@@ -356,12 +356,12 @@ mod test {
 
 	#[test]
 	fn test_const_flip() {
-		check_const_value("#l!#r", SymbolType, Constant(SymbolValue(~"l")), Constant(SymbolValue(~"r")));
+		check_const_value("#l!#r", SymbolType, Constant(SymbolValue("l".to_string())), Constant(SymbolValue("r".to_string())));
 	}
 
 	#[test]
 	fn test_const_choice_expr() {
-		check_const_value("(#bar)[#foo=#a, #bar=#b, #baz=#c]", SymbolType, Constant(SymbolValue(~"b")), Constant(SymbolValue(~"b")));
+		check_const_value("(#bar)[#foo=#a, #bar=#b, #baz=#c]", SymbolType, Constant(SymbolValue("b".to_string())), Constant(SymbolValue("b".to_string())));
 	}
 
 	#[test]
