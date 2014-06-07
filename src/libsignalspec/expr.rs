@@ -20,7 +20,7 @@ use ast::{
 		VectorValue,
 };
 use resolve;
-use entity::Entity;
+use signal::Signal;
 use eval;
 
 // For now, types have nothing to resolve.
@@ -30,8 +30,16 @@ fn resolve_type(t: ast::TypeExpr) -> Type { t }
 
 #[deriving(Clone)]
 pub enum Item<'s> {
-	EntityItem(&'s Entity<'s>),
+	SignalItem(&'s Signal),
+	DefItem(&'s resolve::EventClosure<'s>),
 	ValueItem(Type, ValueRef /*Down*/, ValueRef /*Up*/)
+}
+
+impl<'s> Item<'s> {
+	pub fn clone_child_lifetime<'a>(&'a self) -> Item<'a> {
+		// Hack around https://github.com/mozilla/rust/issues/3598
+		unsafe { ::std::mem::transmute(self.clone()) }
+	}
 }
 
 impl<'s> PartialEq for Item<'s> {
@@ -96,7 +104,7 @@ pub fn resolve_expr<'s>(ctx: &mut Context, scope: &resolve::Scope<'s>, e: &ast::
 
 		ast::DotExpr(box ref lexpr, ref name) => {
 			match resolve_expr(ctx, scope, lexpr) {
-				EntityItem(ref e) => e.get_property(ctx, name.as_slice()).expect("Undefined property"),
+				SignalItem(ref e) => e.get_property(ctx, name.as_slice()).expect("Undefined property"),
 				_ => fail!("dot only works on entities"),
 			}
 		}

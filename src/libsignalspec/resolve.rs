@@ -2,10 +2,11 @@ use ast;
 use collections::HashMap;
 use context::{Context, Constant};
 
-pub use ScopeItem = expr::Item;
 pub use expr::{
+	Item,
 	ValueItem,
-	EntityItem,
+	SignalItem,
+	DefItem,
 	resolve_expr,
 };
 pub use exec::{
@@ -16,13 +17,11 @@ pub use exec::{
 		TimeStep,
 		PrimitiveStep,
 };
-use entity::{
-	Entity,
-};
+use signal::Signal;
 
 #[deriving(Clone)]
 pub struct Scope<'s>{
-	pub names: HashMap<String, ScopeItem<'s>>,
+	pub names: HashMap<String, Item<'s>>,
 }
 
 impl<'s> Scope<'s> {
@@ -46,12 +45,11 @@ impl<'s> Scope<'s> {
 
 		for (def, val) in param_defs.iter().zip(param_values.positional.iter()) {
 			// TODO: type check
-			let v = val.clone();
-			self.names.insert(def.name.to_string(), v);
+			self.names.insert(def.name.to_string(), val.clone_child_lifetime());
 		}
 	}
 
-	pub fn get(&self, name: &str) -> Option<ScopeItem<'s>> {
+	pub fn get(&self, name: &str) -> Option<Item<'s>> {
 		self.names.find_equiv(&name).map(|x| x.clone())
 	}
 
@@ -68,7 +66,7 @@ impl<'s> Scope<'s> {
 }
 
 pub struct Params<'s> {
-	pub positional: Vec<ScopeItem<'s>>,
+	pub positional: Vec<Item<'s>>,
 	pub body: Option<EventBodyClosure<'s>>,
 }
 
@@ -99,7 +97,7 @@ pub fn resolve_module<'s>(pctx: &Context<'s>, pscope: &Scope<'s>, ast: &'s ast::
 
 	for def in ast.defs.iter() {
 		let ed = ctx.session.moduleDefArena.alloc(EventClosure{ ast:def, parentScope: scope.clone() });
-		scope.names.insert(def.name.to_string(), EntityItem(ed));
+		scope.names.insert(def.name.to_string(), DefItem(ed));
 	}
 
 	scope
@@ -113,22 +111,22 @@ fn resolve_seq(pctx: &Context, pscope: &Scope, block: &ast::Block) -> Step {
 	let steps = block.actions.iter().map(|action| {
 		let params = &Params {
 			positional: action.positional.iter().map(|a| resolve_expr(&mut ctx, &scope, a)).collect(),
-			body: action.body.as_ref().map(|x| {
-				EventBodyClosure { ast: x, parentScope: scope.child()
-			}}),
+			body: None, /*action.body.as_ref().map(|x| {
+				EventBodyClosure { ast: x, parentScope: scope.child() }
+			})*/
 		};
 
 		match action.action {
 			ast::ActionDef(ref entityitem) => {
 				match resolve_expr(&mut ctx, &scope, entityitem) {
-					EntityItem(ref entity) => entity.resolve_call(&ctx, params),
+					DefItem(entity) => entity.resolve_call(&ctx, params),
 					_ => fail!("Not an action"),
 				}
 			}
 			ast::ActionEntity(ref entityitem, ref method) => {
 				match resolve_expr(&mut ctx, &scope, entityitem) {
-					EntityItem(ref entity) => entity.resolve_method_call(&ctx, method.as_slice(), params),
-					_ => fail!("Not an entity"),
+					SignalItem(signal) => signal.resolve_method_call(&ctx, method.as_slice(), params),
+					_ => fail!("Not a signal"),
 				}
 			}
 		}
@@ -143,8 +141,8 @@ pub struct EventClosure<'s> {
 	parentScope: Scope<'s>,
 }
 
-impl<'s> Entity<'s> for EventClosure<'s> {
-	fn resolve_call(&self, pctx: &Context, params: &Params) -> Step {
+impl<'s> EventClosure<'s> {
+	pub fn resolve_call(&self, pctx: &Context, params: &Params) -> Step {
 		let mut ctx = pctx.child();
 		let mut scope = self.parentScope.child(); // Base on lexical parent
 
@@ -153,6 +151,7 @@ impl<'s> Entity<'s> for EventClosure<'s> {
 	}
 }
 
+
 pub fn resolve_body_call<'s>(ctx: &Context, body: &EventBodyClosure<'s>, params: &Params<'s>) -> Step {
 	// TODO: parameters
 	if params.body.is_some() {
@@ -160,16 +159,3 @@ pub fn resolve_body_call<'s>(ctx: &Context, body: &EventBodyClosure<'s>, params:
 	}
 	CallStep(box resolve_seq(ctx, &body.parentScope, &body.ast.block))
 }
-
-
-pub fn time_call_fn(pctx: &Context, params: &Params) -> Step {
-	if params.body.is_some() {
-		fail!("time() does not accept a body");
-	}
-	let t = match *params.positional.get(0) {
-		ValueItem(_, Constant(ast::NumberValue(v)), _) => v,
-		_ => fail!("Time must (currently) be a constant number")
-	};
-	TimeStep(t)
-}
-

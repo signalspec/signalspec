@@ -15,8 +15,7 @@ mod eval;
 mod grammar;
 mod ast;
 mod resolve;
-mod entity;
-mod virtual_clock;
+mod signal;
 mod exec;
 mod vcd;
 
@@ -31,19 +30,18 @@ fn main() {
 	let module = module.unwrap();
 
 	let mut prelude = resolve::Scope::new();
-	prelude.names.insert("time".to_string(), expr::EntityItem(&resolve::time_call_fn as &entity::Entity));
 
 	let mut ctx = context::Context::new(&sess);
 
 	let modscope = resolve::resolve_module(&mut ctx, &prelude, &module);
 
 	let main = match modscope.get("main").unwrap() {
-		expr::EntityItem(s) => s,
+		expr::DefItem(s) => s,
 		_ => fail!("Main is not an event"),
 	};
 
-	let w = virtual_clock::Signal::new();
-	let event = main.resolve_call(&mut ctx, &resolve::Params{ positional: vec!(resolve::EntityItem(&w)), body: None});
+	let w = signal::Signal::new();
+	let event = main.resolve_call(&mut ctx, &resolve::Params{ positional: vec!(resolve::SignalItem(&w)), body: None});
 
 	exec::print_step_tree(&event, 0);
 
