@@ -1,4 +1,3 @@
-use vcd::VCDWriter;
 
 pub trait PrimitiveStep {
 	fn display(&self) -> String;
@@ -32,23 +31,6 @@ pub fn print_step_tree(s: &Step, indent: uint) {
 			h.body().map(|body| {
 				print_step_tree(body, indent+1)
 			});
-		}
-	}
-}
-
-pub fn exec_to_vcd(s: &Step, vcd: &mut VCDWriter) {
-	match *s {
-		NopStep => (),
-		CallStep(box ref c) => {
-			exec_to_vcd(c, vcd);
-		}
-		SeqStep(ref steps) => {
-			for c in steps.iter() {
-				exec_to_vcd(c, vcd);
-			}
-		}
-		PrimitiveStep(ref h) => {
-			h.exec();
 		}
 	}
 }

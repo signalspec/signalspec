@@ -17,7 +17,6 @@ mod ast;
 mod resolve;
 mod signal;
 mod exec;
-mod vcd;
 
 fn main() {
 	let sess = session::Session::new();
@@ -44,9 +43,4 @@ fn main() {
 	let event = main.resolve_call(&mut ctx, &resolve::Params{ positional: vec!(&w), body: None});
 
 	exec::print_step_tree(&event, 0);
-
-	let mut dest = File::create(&Path::new(args.get(2).as_slice()));
-	let mut vcdwriter = vcd::VCDWriter::new(&mut dest);
-	vcdwriter.init(&["w"]);
-	exec::exec_to_vcd(&event, &mut vcdwriter);
 }
