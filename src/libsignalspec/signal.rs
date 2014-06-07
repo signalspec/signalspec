@@ -1,20 +1,7 @@
-use ast;
-use context;
-use context::{
-	Context,
-	ValueRef,
-	Constant,
-};
-use resolve::{
-	Params,
-	resolve_body_call,
-};
-use exec::{
-	Step,
-		NopStep,
-		SignalLevelStep,
-};
-use expr::{Item, ValueItem};
+use context::Context;
+use resolve::Params;
+use expr::Item;
+use exec::Step;
 
 pub struct Signal {
 	id: uint,

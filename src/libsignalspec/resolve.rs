@@ -1,6 +1,6 @@
 use ast;
 use collections::HashMap;
-use context::{Context, Constant};
+use context::Context;
 
 pub use expr::{
 	Item,
@@ -14,10 +14,8 @@ pub use exec::{
 		NopStep,
 		CallStep,
 		SeqStep,
-		TimeStep,
 		PrimitiveStep,
 };
-use signal::Signal;
 
 #[deriving(Clone)]
 pub struct Scope<'s>{
@@ -138,7 +136,7 @@ pub struct EventClosure<'s> {
 
 impl<'s> EventClosure<'s> {
 	pub fn resolve_call(&self, pctx: &Context<'s>, params: &Params<'s>) -> Step {
-		let mut ctx = pctx.child();
+		let ctx = pctx.child();
 		let mut scope = self.parentScope.child(); // Base on lexical parent
 
 		scope.add_params(self.ast.params.as_slice(), params);

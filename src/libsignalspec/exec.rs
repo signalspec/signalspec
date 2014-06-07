@@ -10,8 +10,6 @@ pub enum Step {
 	NopStep,
 	CallStep(Box<Step>),
 	SeqStep(Vec<Step>),
-	TimeStep(f64), //TODO: valueref
-	SignalLevelStep(uint, bool, Box<Step>),
 	PrimitiveStep(Box<PrimitiveStep>),
 }
 
@@ -28,13 +26,6 @@ pub fn print_step_tree(s: &Step, indent: uint) {
 			for c in steps.iter() {
 				print_step_tree(c, indent+1);
 			}
-		}
-		TimeStep(t) => {
-			println!("{}Time", i)
-		}
-		SignalLevelStep(id, v, box ref body) => {
-			println!("{}{} Level {}", i, id, v);
-			print_step_tree(body, indent+1);
 		}
 		PrimitiveStep(ref h) => {
 			println!("{}{}", i, h.display());
@@ -55,13 +46,6 @@ pub fn exec_to_vcd(s: &Step, vcd: &mut VCDWriter) {
 			for c in steps.iter() {
 				exec_to_vcd(c, vcd);
 			}
-		}
-		TimeStep(t) => {
-			vcd.time((t*1.0e9) as u64);
-		}
-		SignalLevelStep(id, val, box ref body) => {
-			vcd.value(id, val);
-			exec_to_vcd(body, vcd);
 		}
 		PrimitiveStep(ref h) => {
 			h.exec();

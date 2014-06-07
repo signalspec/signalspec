@@ -174,7 +174,7 @@ fn resolve_value_expr<'s>(ctx: &mut Context<'s>, scope: &resolve::Scope<'s>, e: 
 				}
 			}).sum();
 
-			fn concat_const<'a, T: Iterator<&'a ValueRef>> (mut l: T) -> Value {
+			fn concat_const<'a, T: Iterator<&'a ValueRef>> (l: T) -> Value {
 				VectorValue(l.flat_map(|r| {
 					match *r {
 						Constant(VectorValue(ref b)) => b.iter().map(|x| x.clone()),
