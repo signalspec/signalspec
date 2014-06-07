@@ -21,7 +21,7 @@ use signal::Signal;
 
 #[deriving(Clone)]
 pub struct Scope<'s>{
-	pub names: HashMap<String, Item<'s>>,
+	pub names: HashMap<String, &'s Item<'s>>,
 }
 
 impl<'s> Scope<'s> {
@@ -37,36 +37,31 @@ impl<'s> Scope<'s> {
 		}
 	}
 
-	fn add_params(&mut self, param_defs: &[ast::ParamDef], param_values: &'s Params) {
+	fn add_params(&mut self, param_defs: &[ast::ParamDef], param_values: &Params<'s>) {
 		// TODO: keyword args, defaults
 		if param_defs.len() != param_values.positional.len() {
 			fail!("Wrong number of parameters passed")
 		}
 
-		for (def, val) in param_defs.iter().zip(param_values.positional.iter()) {
+		for (def, &val) in param_defs.iter().zip(param_values.positional.iter()) {
 			// TODO: type check
-			self.names.insert(def.name.to_string(), val.clone_child_lifetime());
+			self.names.insert(def.name.to_string(), val);
 		}
 	}
 
-	pub fn get(&self, name: &str) -> Option<Item<'s>> {
+	pub fn get(&self, name: &str) -> Option<&'s Item<'s>> {
 		self.names.find_equiv(&name).map(|x| x.clone())
 	}
 
-	fn child_lifetime<'a>(&'a self) -> &'a Scope<'a> {
-		// Hack around https://github.com/mozilla/rust/issues/3598
-		unsafe { ::std::mem::transmute(self) }
-	}
-
-	pub fn child<'a>(&'a self) -> Scope<'a> {
+	pub fn child(&self) -> Scope<'s> {
 		Scope {
-			names: self.child_lifetime().names.clone(),
+			names: self.names.clone(),
 		}
 	}
 }
 
 pub struct Params<'s> {
-	pub positional: Vec<Item<'s>>,
+	pub positional: Vec<&'s Item<'s>>,
 	pub body: Option<EventBodyClosure<'s>>,
 }
 
@@ -96,14 +91,14 @@ pub fn resolve_module<'s>(pctx: &Context<'s>, pscope: &Scope<'s>, ast: &'s ast::
 	scope.add_lets(ast.lets.as_slice());
 
 	for def in ast.defs.iter() {
-		let ed = ctx.session.moduleDefArena.alloc(EventClosure{ ast:def, parentScope: scope.clone() });
-		scope.names.insert(def.name.to_string(), DefItem(ed));
+		let ed = ctx.session.itemArena.alloc(DefItem(EventClosure{ ast:def, parentScope: scope.clone() }));
+		scope.names.insert(def.name.to_string(), ed);
 	}
 
 	scope
 }
 
-fn resolve_seq(pctx: &Context, pscope: &Scope, block: &ast::Block) -> Step {
+fn resolve_seq<'s>(pctx: &Context<'s>, pscope: &Scope<'s>, block: &'s ast::Block) -> Step {
 	let mut ctx = pctx.child();
 	let mut scope = pscope.child();
 	scope.add_lets(block.lets.as_slice());
@@ -111,21 +106,21 @@ fn resolve_seq(pctx: &Context, pscope: &Scope, block: &ast::Block) -> Step {
 	let steps = block.actions.iter().map(|action| {
 		let params = &Params {
 			positional: action.positional.iter().map(|a| resolve_expr(&mut ctx, &scope, a)).collect(),
-			body: None, /*action.body.as_ref().map(|x| {
+			body: action.body.as_ref().map(|x| {
 				EventBodyClosure { ast: x, parentScope: scope.child() }
-			})*/
+			})
 		};
 
 		match action.action {
 			ast::ActionDef(ref entityitem) => {
-				match resolve_expr(&mut ctx, &scope, entityitem) {
-					DefItem(entity) => entity.resolve_call(&ctx, params),
+				match *resolve_expr(&mut ctx, &scope, entityitem) {
+					DefItem(ref entity) => entity.resolve_call(&ctx, params),
 					_ => fail!("Not an action"),
 				}
 			}
 			ast::ActionEntity(ref entityitem, ref method) => {
-				match resolve_expr(&mut ctx, &scope, entityitem) {
-					SignalItem(signal) => signal.resolve_method_call(&ctx, method.as_slice(), params),
+				match *resolve_expr(&mut ctx, &scope, entityitem) {
+					SignalItem(ref signal) => signal.resolve_method_call(&ctx, method.as_slice(), params),
 					_ => fail!("Not a signal"),
 				}
 			}
@@ -142,7 +137,7 @@ pub struct EventClosure<'s> {
 }
 
 impl<'s> EventClosure<'s> {
-	pub fn resolve_call(&self, pctx: &Context, params: &Params) -> Step {
+	pub fn resolve_call(&self, pctx: &Context<'s>, params: &Params<'s>) -> Step {
 		let mut ctx = pctx.child();
 		let mut scope = self.parentScope.child(); // Base on lexical parent
 
@@ -152,7 +147,7 @@ impl<'s> EventClosure<'s> {
 }
 
 
-pub fn resolve_body_call<'s>(ctx: &Context, body: &EventBodyClosure<'s>, params: &Params<'s>) -> Step {
+pub fn resolve_body_call<'s>(ctx: &Context<'s>, body: &EventBodyClosure<'s>, params: &Params<'s>) -> Step {
 	// TODO: parameters
 	if params.body.is_some() {
 		fail!("bug: body closure called with body");

@@ -28,18 +28,10 @@ use eval;
 pub type Type = ast::TypeExpr;
 fn resolve_type(t: ast::TypeExpr) -> Type { t }
 
-#[deriving(Clone)]
 pub enum Item<'s> {
-	SignalItem(&'s Signal),
-	DefItem(&'s resolve::EventClosure<'s>),
+	SignalItem(Signal),
+	DefItem(resolve::EventClosure<'s>),
 	ValueItem(Type, ValueRef /*Down*/, ValueRef /*Up*/)
-}
-
-impl<'s> Item<'s> {
-	pub fn clone_child_lifetime<'a>(&'a self) -> Item<'a> {
-		// Hack around https://github.com/mozilla/rust/issues/3598
-		unsafe { ::std::mem::transmute(self.clone()) }
-	}
 }
 
 impl<'s> PartialEq for Item<'s> {
@@ -87,29 +79,11 @@ fn count_ref_types<'a, T: Iterator<&'a ValueRef>>(mut l: T) -> Result<(uint, uin
 	return Ok((ignores, constants, dynamics));
 }
 
-fn resolve_value_expr<'s>(ctx: &mut Context, scope: &resolve::Scope, e: &ast::Expr) ->  (Type, ValueRef /*Down*/, ValueRef /*Up*/) {
-	match resolve_expr(ctx, scope, e) {
-		ValueItem(t, du, uu) => (t, du, uu),
-		_ => fail!("Expected a value expression"),
-	}
-}
-
-pub fn resolve_expr<'s>(ctx: &mut Context, scope: &resolve::Scope<'s>, e: &ast::Expr) -> Item<'s> {
+fn resolve_value_expr<'s>(ctx: &mut Context<'s>, scope: &resolve::Scope<'s>, e: &ast::Expr) ->  (Type, ValueRef /*Down*/, ValueRef /*Up*/) {
 	match *e {
-		ast::IgnoreExpr => ValueItem(TopType, Ignored, Ignored),
+		ast::IgnoreExpr => (TopType, Ignored, Ignored),
 
-		ast::VarExpr(ref name) => {
-			scope.get(name.as_slice()).expect("Undefined variable")
-		}
-
-		ast::DotExpr(box ref lexpr, ref name) => {
-			match resolve_expr(ctx, scope, lexpr) {
-				SignalItem(ref e) => e.get_property(ctx, name.as_slice()).expect("Undefined property"),
-				_ => fail!("dot only works on entities"),
-			}
-		}
-
-		ast::ValueExpr(ref val) => ValueItem(val.get_type(), Constant(val.clone()), Constant(val.clone())),
+		ast::ValueExpr(ref val) => (val.get_type(), Constant(val.clone()), Constant(val.clone())),
 
 		ast::FlipExpr(box ref down, box ref up) => {
 			let (down_type, down_ref, _     ) = resolve_value_expr(ctx, scope, down);
@@ -117,7 +91,7 @@ pub fn resolve_expr<'s>(ctx: &mut Context, scope: &resolve::Scope<'s>, e: &ast::
 
 			let common_type = common_type(down_type, up_type).expect("Flip expr sides must be of common type");
 
-			ValueItem(common_type, down_ref, up_ref)
+			(common_type, down_ref, up_ref)
 		}
 
 		ast::RangeExpr(box ref min_expr, box ref max_expr) => {
@@ -143,7 +117,7 @@ pub fn resolve_expr<'s>(ctx: &mut Context, scope: &resolve::Scope<'s>, e: &ast::
 			let up = ctx.up_op_cell(0, |cell| eval::RangeCheckOp(cell, min, max));
 
 			//TODO: up is not quite dynamic; specifically should be able to be used in a Choose arm
-			ValueItem(NumberType, Poison("Range can only be up-evaluated"), up)
+			(NumberType, Poison("Range can only be up-evaluated"), up)
 		}
 
 		ast::ChooseExpr(box ref e, ref c) => {
@@ -187,7 +161,7 @@ pub fn resolve_expr<'s>(ctx: &mut Context, scope: &resolve::Scope<'s>, e: &ast::
 			};
 
 			// TODO: ignores, check types for case coverage
-			ValueItem(r_type, down, up)
+			(r_type, down, up)
 		}
 
 		ast::ConcatExpr(ref v) =>  {
@@ -259,7 +233,7 @@ pub fn resolve_expr<'s>(ctx: &mut Context, scope: &resolve::Scope<'s>, e: &ast::
 				}
 			};
 
-			ValueItem(VectorType(len), down, up)
+			(VectorType(len), down, up)
 		}
 
 		ast::BinExpr(box ref a, op, box ref b) => {
@@ -292,7 +266,34 @@ pub fn resolve_expr<'s>(ctx: &mut Context, scope: &resolve::Scope<'s>, e: &ast::
 				(Poison(e), _) | (_, Poison(e)) => Poison(e),
 			};
 
-			ValueItem(tp, down, up)
+			(tp, down, up)
+		}
+
+		ast::VarExpr(..) | ast::DotExpr(..) => {
+			match resolve_expr(ctx, scope, e) {
+				&ValueItem(ref t, ref du, ref uu) => (t.clone(), du.clone(), uu.clone()),
+				_ => fail!("Expected a value expression")
+			}
+		}
+	}
+}
+
+pub fn resolve_expr<'s>(ctx: &mut Context<'s>, scope: &resolve::Scope<'s>, e: &ast::Expr) -> &'s Item<'s> {
+	match *e {
+		ast::VarExpr(ref name) => {
+			scope.get(name.as_slice()).expect("Undefined variable")
+		}
+
+		ast::DotExpr(box ref lexpr, ref name) => {
+			match *resolve_expr(ctx, scope, lexpr) {
+				SignalItem(ref e) => e.get_property(ctx, name.as_slice()).expect("Undefined property"),
+				_ => fail!("dot only works on entities"),
+			}
+		}
+
+		_ => {
+			let (tp, down, up) = resolve_value_expr(ctx, scope, e);
+			ctx.session.itemArena.alloc(ValueItem(tp, down, up))
 		}
 	}
 }
@@ -328,7 +329,7 @@ mod test {
 		let scope = Scope::new();
 		let e = grammar::valexpr(s).unwrap();
 		let r = resolve_expr(&mut ctx, &scope, &e);
-		assert_eq!(r, ValueItem(t, down, up));
+		assert_eq!(r, &ValueItem(t, down, up));
 	}
 
 	#[test]

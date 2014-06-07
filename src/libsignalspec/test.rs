@@ -35,13 +35,13 @@ fn main() {
 
 	let modscope = resolve::resolve_module(&mut ctx, &prelude, &module);
 
-	let main = match modscope.get("main").unwrap() {
-		expr::DefItem(s) => s,
+	let main = match *modscope.get("main").unwrap() {
+		expr::DefItem(ref s) => s,
 		_ => fail!("Main is not an event"),
 	};
 
-	let w = signal::Signal::new();
-	let event = main.resolve_call(&mut ctx, &resolve::Params{ positional: vec!(resolve::SignalItem(&w)), body: None});
+	let w = resolve::SignalItem(signal::Signal::new());
+	let event = main.resolve_call(&mut ctx, &resolve::Params{ positional: vec!(&w), body: None});
 
 	exec::print_step_tree(&event, 0);
 

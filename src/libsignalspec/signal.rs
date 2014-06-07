@@ -29,7 +29,7 @@ impl Signal {
 		fail!("Entity has no methods");
 	}
 
-	pub fn get_property<'a>(&'a self, _ctx: &Context, _property: &str) -> Option<Item<'a>> {
+	pub fn get_property<'a>(&'a self, _ctx: &Context, _property: &str) -> Option<&'a Item<'a>> {
 		None
 	}
 }

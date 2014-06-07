@@ -1,19 +1,17 @@
 use arena::{Arena,TypedArena};
-use resolve::{EventClosure};
+use expr::Item;
 
 /// The data common to an entire resolve pass
 pub struct Session<'session> {
 	pub arena: Arena,
-	pub moduleDefArena: TypedArena<EventClosure<'session>>,
-	//cells: DCellDescriptor,
+	pub itemArena: TypedArena<Item<'session>>,
 }
 
 impl<'session> Session<'session> {
 	pub fn new() -> Session {
 		Session {
 			arena: Arena::new(),
-			moduleDefArena: TypedArena::new(),
-			//cells: DCellDescriptor::new(),
+			itemArena: TypedArena::new(),
 		}
 	}
 }
