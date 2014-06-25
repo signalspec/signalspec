@@ -16,8 +16,8 @@ pub type DCell = uint;
 pub struct Context<'session> {
 	pub session: &'session Session<'session>,
 	pub depth: uint,
-	pub downs: ~[eval::ValOp],
-	pub ups:   ~[eval::ValOp],
+	pub downs: Vec<eval::ValOp>,
+	pub ups:   Vec<eval::ValOp>,
 }
 
 impl<'session> Context<'session> {
@@ -25,8 +25,8 @@ impl<'session> Context<'session> {
 		Context {
 			session: session,
 			depth: 0,
-			downs: ~[],
-			ups: ~[],
+			downs: Vec::new(),
+			ups: Vec::new(),
 		}
 	}
 
@@ -34,8 +34,8 @@ impl<'session> Context<'session> {
 		Context {
 			session: self.session,
 			depth: self.depth + 1,
-			downs: ~[],
-			ups: ~[],
+			downs: Vec::new(),
+			ups: Vec::new(),
 		}
 	}
 

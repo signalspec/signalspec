@@ -1,5 +1,5 @@
 use ast;
-use collections::HashMap;
+use std::collections::hashmap::HashMap;
 use context::Context;
 
 pub use expr::{
