@@ -28,7 +28,7 @@ fn main() {
 
 	let module = module.unwrap();
 
-	let mut prelude = resolve::Scope::new();
+	let prelude = resolve::Scope::new();
 
 	let mut ctx = context::Context::new(&sess);
 

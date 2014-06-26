@@ -30,7 +30,7 @@ impl<'s> Scope<'s> {
 	}
 
 	fn add_lets(&mut self, lets: &[ast::LetDef]) {
-		for letdef in lets.iter() {
+		for _letdef in lets.iter() {
 			fail!("Let unimplemented");
 		}
 	}
@@ -82,7 +82,7 @@ pub fn resolve_module<'s>(pctx: &Context<'s>, pscope: &Scope<'s>, ast: &'s ast::
 	let ctx = pctx.child();
 	let mut scope = pscope.clone();
 
-	for import in ast.imports.iter() {
+	for _import in ast.imports.iter() {
 		fail!("Imports unimplemented");
 	}
 
@@ -142,13 +142,4 @@ impl<'s> EventClosure<'s> {
 		scope.add_params(self.ast.params.as_slice(), params);
 		CallStep(box resolve_seq(&ctx, &scope, &self.ast.block))
 	}
-}
-
-
-pub fn resolve_body_call<'s>(ctx: &Context<'s>, body: &EventBodyClosure<'s>, params: &Params<'s>) -> Step {
-	// TODO: parameters
-	if params.body.is_some() {
-		fail!("bug: body closure called with body");
-	}
-	CallStep(box resolve_seq(ctx, &body.parentScope, &body.ast.block))
 }

@@ -66,11 +66,11 @@ impl<'session> Context<'session> {
 		return 0;
 	}
 
-	pub fn up_op(&mut self, cell:DCell, o: eval::ValOp) {
+	pub fn up_op(&mut self, _cell:DCell, _o: eval::ValOp) {
 
 	}
 
-	pub fn up_op_cell(&mut self, res: DCell, v: |DCell| -> eval::ValOp) -> ValueRef {
+	pub fn up_op_cell(&mut self, _res: DCell, v: |DCell| -> eval::ValOp) -> ValueRef {
 		let cell = 0;
 		v(cell);
 		Dynamic(cell)
