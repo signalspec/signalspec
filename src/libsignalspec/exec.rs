@@ -1,3 +1,4 @@
+use context::ValueRef;
 
 pub trait PrimitiveStep {
 	fn display(&self) -> String;
@@ -7,7 +8,7 @@ pub trait PrimitiveStep {
 
 pub enum Step {
 	NopStep,
-	EventStep(String),
+	EventStep(String, Vec<(ValueRef, ValueRef)>),
 	CallStep(Box<Step>),
 	SeqStep(Vec<Step>),
 	PrimitiveStep(Box<PrimitiveStep>),
@@ -17,8 +18,8 @@ pub fn print_step_tree(s: &Step, indent: uint) {
 	let i = " ".repeat(indent);
 	match *s {
 		NopStep => println!("{}NOP", i),
-		EventStep(ref s) => {
-			println!("{}Event: {}", i, s);
+		EventStep(ref s, ref args) => {
+			println!("{}Event: {} {}", i, s, args);
 		}
 		CallStep(box ref c) => {
 			println!("{}Call", i);
@@ -38,4 +39,3 @@ pub fn print_step_tree(s: &Step, indent: uint) {
 		}
 	}
 }
-

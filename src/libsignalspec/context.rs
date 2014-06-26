@@ -1,6 +1,7 @@
 use session::Session;
 use eval;
 use ast::Value;
+use std::fmt;
 
 #[deriving(PartialEq, Clone)]
 pub enum ValueRef {
@@ -8,6 +9,17 @@ pub enum ValueRef {
 	Constant(Value),
 	Dynamic(DCell),
 	Poison(&'static str),
+}
+
+impl fmt::Show for ValueRef {
+	fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::FormatError> {
+		match *self {
+			Ignored => write!(f, "ignore"),
+			Constant(ref v) => write!(f, "{}", v),
+			Dynamic(c) => write!(f, "%{}", c),
+			Poison(s) => write!(f, "poison: {}", s),
+		}
+	}
 }
 
 /// Dynamic Cell
