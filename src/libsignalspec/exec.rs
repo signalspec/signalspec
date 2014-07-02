@@ -1,4 +1,5 @@
 use context::ValueRef;
+use signal::SignalId;
 
 pub trait PrimitiveStep {
 	fn display(&self) -> String;
@@ -8,7 +9,7 @@ pub trait PrimitiveStep {
 
 pub enum Step {
 	NopStep,
-	EventStep(String, Vec<(ValueRef, ValueRef)>),
+	EventStep(SignalId, String, Vec<(ValueRef, ValueRef)>),
 	CallStep(Box<Step>),
 	SeqStep(Vec<Step>),
 	PrimitiveStep(Box<PrimitiveStep>),
@@ -18,8 +19,8 @@ pub fn print_step_tree(s: &Step, indent: uint) {
 	let i = " ".repeat(indent);
 	match *s {
 		NopStep => println!("{}NOP", i),
-		EventStep(ref s, ref args) => {
-			println!("{}Event: {} {}", i, s, args);
+		EventStep(id, ref s, ref args) => {
+			println!("{}Event: {} {} {}", i, id, s, args);
 		}
 		CallStep(box ref c) => {
 			println!("{}Call", i);

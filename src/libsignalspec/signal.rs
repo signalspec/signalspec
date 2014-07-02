@@ -2,14 +2,18 @@ use context::Context;
 use resolve::Params;
 use expr::{Item, ValueItem};
 use exec::{Step, EventStep};
+use session::Id;
+
+pub enum SignalIdPhantom{}
+pub type SignalId = Id<SignalIdPhantom>;
 
 pub struct Signal {
-	id: uint,
+	id: SignalId,
 }
 
 impl Signal {
-	pub fn new() -> Signal {
-		Signal { id: 0 }
+	pub fn new(id: SignalId) -> Signal {
+		Signal { id: id}
 	}
 
 	pub fn resolve_method_call(&self, _pctx: &Context, name: &str, params: &Params) -> Step {
@@ -21,7 +25,7 @@ impl Signal {
 				}
 		}).collect();
 
-		EventStep(name.to_string(), param_values)
+		EventStep(self.id, name.to_string(), param_values)
 	}
 
 	pub fn get_property<'a>(&'a self, _ctx: &Context, _property: &str) -> Option<&'a Item<'a>> {
