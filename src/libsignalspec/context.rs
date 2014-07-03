@@ -22,6 +22,31 @@ impl fmt::Show for ValueRef {
 	}
 }
 
+impl ValueRef {
+	pub fn const_down(&self) -> Option<Value> {
+		match *self {
+			Ignored => None,
+			Constant(ref v) => Some(v.clone()),
+			Dynamic(..) => fail!("const_down of a dynamic!"),
+			Poison(s) => fail!("const_down of a poison: {}", s),
+		}
+	}
+
+	pub fn const_up(&self, vo: Option<Value>) -> bool {
+		match vo {
+				Some(ref v) => {
+					match *self {
+						Ignored => true,
+						Constant(ref p) => v == p,
+						Dynamic(..) => fail!("const_up of a dynamic!"),
+						Poison(s) => fail!("const_up of a poison: {}", s),
+					}
+				}
+				None => true
+		}
+	}
+}
+
 /// Dynamic Cell
 pub type DCell = uint;
 

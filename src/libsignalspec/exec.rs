@@ -1,5 +1,7 @@
 use context::ValueRef;
 use signal::SignalId;
+use ast::Value;
+use std::comm;
 
 pub trait PrimitiveStep {
 	fn display(&self) -> String;
@@ -12,7 +14,7 @@ pub enum Step {
 	EventStep(SignalId, String, Vec<(ValueRef, ValueRef)>),
 	CallStep(Box<Step>),
 	SeqStep(Vec<Step>),
-	PrimitiveStep(Box<PrimitiveStep>),
+	//PrimitiveStep(Box<PrimitiveStep>),
 }
 
 pub fn print_step_tree(s: &Step, indent: uint) {
@@ -32,11 +34,34 @@ pub fn print_step_tree(s: &Step, indent: uint) {
 				print_step_tree(c, indent+1);
 			}
 		}
-		PrimitiveStep(ref h) => {
+		/*PrimitiveStep(ref h) => {
 			println!("{}{}", i, h.display());
 			h.body().map(|body| {
 				print_step_tree(body, indent+1)
 			});
-		}
+		}*/
 	}
+}
+
+pub fn exec(s: &Step, parent: &comm::DuplexStream<Option<Value>, Option<Value>>) -> bool {
+		match *s {
+			NopStep => true,
+			EventStep(id, ref tokName, ref args) => {
+				// TODO: check name and id
+				let &(ref down, ref up) = args.get(0);
+				parent.send(down.const_down());
+				up.const_up(parent.recv())
+			}
+			CallStep(box ref c) => exec(c, parent),
+			SeqStep(ref steps) => {
+				for c in steps.iter() {
+					match exec(c, parent) {
+						true => (),
+						false => return false,
+					}
+				}
+				true
+			}
+			//PrimitiveStep(..) => unimplemented!()
+		}
 }
