@@ -108,7 +108,7 @@ valexpr -> ast::Expr
 		/ valexpr_atom
 
 	valexpr_atom -> ast::Expr
-		= literal
+		= literal_expr
 		/ ignoreliteral
 		/ concatexpr
 		/ varexpr
@@ -122,14 +122,15 @@ valexpr -> ast::Expr
 		= i:identifier accessors:("." i:identifier {i} )*
 		{ accessors.move_iter().fold(ast::VarExpr(i), |base, accessor| ast::DotExpr(box base, accessor)) }
 
-	literal -> ast::Expr
-		= v: (
-			  symbolliteral
-			/ integerliteral
-			/ bitsliteral
-			/ numberliteral
-		)
-		{ ast::ValueExpr(v) }
+	literal_expr -> ast::Expr
+		= v:literal { ast::ValueExpr(v) }
+
+	#[export]
+	literal -> ast::Value
+		= symbolliteral
+		/ integerliteral
+		/ bitsliteral
+		/ numberliteral
 
 			ignoreliteral -> ast::Expr
 				= "ignore" _

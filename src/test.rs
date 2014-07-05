@@ -22,6 +22,7 @@ mod ast;
 mod resolve;
 mod signal;
 mod exec;
+mod dumpfile;
 
 peg_file! grammar("signalspec.rustpeg")
 
@@ -63,10 +64,6 @@ fn main() {
 		}
 	});
 
-	println!("{}", s2.recv());
-	s2.send(None);
-	println!("{}", s2.recv());
-	s2.send(None);
-	println!("{}", s2.recv());
-	s2.send(None);
+	//dumpfile::write_values(&mut File::create(&Path::new("out.sd")).unwrap(), &s2);
+	dumpfile::read_values(&mut File::open(&Path::new("out.sd")).unwrap(), &s2);
 }
