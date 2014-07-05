@@ -4,6 +4,10 @@
 	use std::num::from_str_radix;
 }
 
+use ast;
+use eval;
+use std::num::from_str_radix;
+
 #[export]
 module -> ast::Module
   = __ imports:include* lets:letstmt* defs:def* !.

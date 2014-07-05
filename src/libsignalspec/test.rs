@@ -1,8 +1,12 @@
 #![allow(dead_code)]
+#![feature(phase)]
 
 extern crate arena;
 extern crate collections;
 extern crate debug;
+
+#[phase(plugin)]
+extern crate peg_syntax_ext;
 
 use std::os;
 use std::str;
@@ -14,11 +18,12 @@ mod session;
 mod context;
 mod expr;
 mod eval;
-mod grammar;
 mod ast;
 mod resolve;
 mod signal;
 mod exec;
+
+peg_file! grammar("signalspec.rustpeg")
 
 fn main() {
 	let sess = session::Session::new();
