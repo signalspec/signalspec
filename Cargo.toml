@@ -1,0 +1,12 @@
+[package]
+
+name = "signalspec"
+version = "0.1.0"
+authors = [ "km@kevinmehall.net" ]
+
+[dependencies.peg]
+git = "https://github.com/kevinmehall/rust-peg.git"
+
+[[bin]]
+name = "test"
+path = "src/test.rs"
