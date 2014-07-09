@@ -15,14 +15,9 @@ use std::comm;
 use std::task;
 
 mod session;
-mod scope;
-mod context;
-mod types;
-mod expr;
+mod resolve;
 mod eval;
 mod ast;
-mod resolve;
-mod signal;
 mod exec;
 mod dumpfile;
 
@@ -40,16 +35,16 @@ fn main() {
 
 	let prelude = resolve::Scope::new();
 
-	let mut ctx = context::Context::new(&sess);
+	let mut ctx = resolve::Context::new(&sess);
 
 	let modscope = resolve::resolve_module(&mut ctx, &prelude, &module);
 
 	let main = match *modscope.get("main").unwrap() {
-		scope::DefItem(ref s) => s,
+		resolve::scope::DefItem(ref s) => s,
 		_ => fail!("Main is not an event"),
 	};
 
-	let w = resolve::SignalItem(signal::Signal::new(sess.make_id()));
+	let w = resolve::scope::SignalItem(resolve::Signal::new(sess.make_id()));
 	let event = main.resolve_call(&mut ctx, &resolve::Params{ positional: vec!(&w), body: None});
 
 	exec::print_step_tree(&event, 0);

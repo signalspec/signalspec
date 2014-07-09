@@ -1,5 +1,5 @@
-use context::Context;
-use scope::{Item, ValueItem, Params};
+use resolve::context::Context;
+use resolve::scope::{Item, ValueItem, Params};
 use exec::{Step, EventStep};
 use session::Id;
 

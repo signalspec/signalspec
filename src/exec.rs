@@ -1,7 +1,8 @@
-use scope::ValueRef;
-use signal::SignalId;
-use ast::Value;
 use std::comm;
+
+use resolve::scope::ValueRef;
+use resolve::signal::SignalId;
+use ast::Value;
 
 pub trait PrimitiveStep {
 	fn display(&self) -> String;

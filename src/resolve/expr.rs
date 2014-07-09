@@ -1,6 +1,5 @@
 use std::iter::AdditiveIterator;
 
-use context::Context;
 use ast;
 use ast::{
 	NumberType,
@@ -9,9 +8,10 @@ use ast::{
 		NumberValue,
 		VectorValue,
 };
-use scope::{ Scope, Item, ValueItem, SignalItem, ValueRef, Constant, Dynamic, Ignored, Poison};
 use eval;
-use types::{Type, TopType, common_type, common_type_all };
+use resolve::context::Context;
+use resolve::scope::{ Scope, Item, ValueItem, SignalItem, ValueRef, Constant, Dynamic, Ignored, Poison};
+use resolve::types::{Type, TopType, common_type, common_type_all };
 
 // This would take an iterator if it weren't for mozilla/rust#5121
 fn count_ref_types<'a, T: Iterator<&'a ValueRef>>(mut l: T) -> Result<(uint, uint, uint), ValueRef> {
@@ -250,9 +250,9 @@ pub fn resolve_expr<'s>(ctx: &mut Context<'s>, scope: &Scope<'s>, e: &ast::Expr)
 
 #[cfg(test)]
 mod test {
-	use expr::resolve_expr;
+	use super::resolve_expr;
 	use session::Session;
-	use context::Context;
+	use resolve::context::Context;
 	use ast::{
 		TypeExpr,
 			NumberType,
@@ -265,7 +265,7 @@ mod test {
 			VectorValue,
 			SymbolValue,
 	};
-	use scope::{
+	use resolve::scope::{
 		Scope,
 		ValueRef,
 			Ignored,

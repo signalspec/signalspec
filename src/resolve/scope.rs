@@ -1,10 +1,10 @@
 use std::fmt;
 use std::collections::hashmap::HashMap;
 
-use resolve::{EventClosure, EventBodyClosure};
-use signal::Signal;
-use context::ValueID;
-use types::Type;
+use resolve::block::{EventClosure, EventBodyClosure};
+use resolve::signal::Signal;
+use resolve::context::ValueID;
+use resolve::types::Type;
 use ast;
 use ast::Value;
 

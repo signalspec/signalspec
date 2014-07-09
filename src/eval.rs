@@ -1,7 +1,7 @@
 use ast::{
 	Value,
 };
-use context::{ValueID};
+use resolve::context::{ValueID};
 
 pub enum ValueSrc {
 	Const(Vec<Value>),

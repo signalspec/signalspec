@@ -1,7 +1,8 @@
-use arena::TypedArena;
-use scope::Item;
-use std::sync::atomics::{AtomicUint, Relaxed};
 use std::fmt;
+use std::sync::atomics::{AtomicUint, Relaxed};
+use arena::TypedArena;
+
+use resolve::scope::Item;
 
 /// The data common to an entire resolve pass
 pub struct Session<'session> {

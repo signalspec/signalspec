@@ -1,7 +1,7 @@
 use ast;
-use context::Context;
 
-pub use expr::resolve_expr;
+use resolve::context::Context;
+use resolve::expr::resolve_expr;
 pub use exec::{
 	Step,
 		NopStep,
@@ -9,7 +9,7 @@ pub use exec::{
 		SeqStep,
 		PrimitiveStep,
 };
-pub use scope::{Scope, Item, ValueItem, SignalItem, DefItem, Params};
+pub use resolve::scope::{Scope, Item, ValueItem, SignalItem, DefItem, Params};
 // A body associated with an event call
 pub struct EventBodyClosure<'s> {
 	ast: &'s ast::ActionBody,

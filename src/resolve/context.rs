@@ -1,7 +1,7 @@
 use session::Session;
 use eval;
 use ast::Value;
-use scope::{ValueRef, Constant, Dynamic};
+use resolve::scope::{ValueRef, Constant, Dynamic};
 
 /// Dynamic Cell
 pub type ValueID = uint;
