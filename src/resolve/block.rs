@@ -5,7 +5,6 @@ use resolve::expr::resolve_expr;
 pub use exec::{
 	Step,
 		NopStep,
-		CallStep,
 		SeqStep,
 		PrimitiveStep,
 };
@@ -78,6 +77,6 @@ impl<'s> EventClosure<'s> {
 		let mut scope = self.parentScope.child(); // Base on lexical parent
 
 		scope.add_params(self.ast.params.as_slice(), params);
-		CallStep(box resolve_seq(&ctx, &scope, &self.ast.block))
+		resolve_seq(&ctx, &scope, &self.ast.block)
 	}
 }

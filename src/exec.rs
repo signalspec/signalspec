@@ -13,7 +13,6 @@ pub trait PrimitiveStep {
 pub enum Step {
 	NopStep,
 	EventStep(SignalId, String, Vec<(ValueRef, ValueRef)>),
-	CallStep(Box<Step>),
 	SeqStep(Vec<Step>),
 	//PrimitiveStep(Box<PrimitiveStep>),
 }
@@ -24,10 +23,6 @@ pub fn print_step_tree(s: &Step, indent: uint) {
 		NopStep => println!("{}NOP", i),
 		EventStep(id, ref s, ref args) => {
 			println!("{}Event: {} {} {}", i, id, s, args);
-		}
-		CallStep(box ref c) => {
-			println!("{}Call", i);
-			print_step_tree(c, indent+1);
 		}
 		SeqStep(ref steps) => {
 			println!("{}Seq", i)
@@ -53,7 +48,6 @@ pub fn exec(s: &Step, parent: &comm::DuplexStream<Option<Value>, Option<Value>>)
 				parent.send(down.const_down());
 				up.const_up(parent.recv())
 			}
-			CallStep(box ref c) => exec(c, parent),
 			SeqStep(ref steps) => {
 				for c in steps.iter() {
 					match exec(c, parent) {
