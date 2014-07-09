@@ -6,4 +6,4 @@ Applications include analysis and generation of digital, analog, and RF signals:
 
 _It's a work in progress and doesn't do anything useful yet._
 
-Signalspec is written in [Rust](https://rust-lang.org).
+Signalspec is written in [Rust](https://rust-lang.org) and is open source software under the [Mozilla Public License, version 2.0](LICENSE).
