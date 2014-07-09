@@ -1,54 +1,10 @@
 use session::Session;
 use eval;
 use ast::Value;
-use std::fmt;
-
-#[deriving(PartialEq, Clone)]
-pub enum ValueRef {
-	Ignored,
-	Constant(Value),
-	Dynamic(DCell),
-	Poison(&'static str),
-}
-
-impl fmt::Show for ValueRef {
-	fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::FormatError> {
-		match *self {
-			Ignored => write!(f, "ignore"),
-			Constant(ref v) => write!(f, "{}", v),
-			Dynamic(c) => write!(f, "%{}", c),
-			Poison(s) => write!(f, "poison: {}", s),
-		}
-	}
-}
-
-impl ValueRef {
-	pub fn const_down(&self) -> Option<Value> {
-		match *self {
-			Ignored => None,
-			Constant(ref v) => Some(v.clone()),
-			Dynamic(..) => fail!("const_down of a dynamic!"),
-			Poison(s) => fail!("const_down of a poison: {}", s),
-		}
-	}
-
-	pub fn const_up(&self, vo: Option<Value>) -> bool {
-		match vo {
-				Some(ref v) => {
-					match *self {
-						Ignored => true,
-						Constant(ref p) => v == p,
-						Dynamic(..) => fail!("const_up of a dynamic!"),
-						Poison(s) => fail!("const_up of a poison: {}", s),
-					}
-				}
-				None => true
-		}
-	}
-}
+use scope::{ValueRef, Constant, Dynamic};
 
 /// Dynamic Cell
-pub type DCell = uint;
+pub type ValueID = uint;
 
 pub struct Context<'session> {
 	pub session: &'session Session<'session>,
@@ -87,15 +43,15 @@ impl<'session> Context<'session> {
 		Dynamic(0)
 	}
 
-	pub fn up_cell(&mut self) -> DCell {
+	pub fn up_cell(&mut self) -> ValueID {
 		return 0;
 	}
 
-	pub fn up_op(&mut self, _cell:DCell, _o: eval::ValOp) {
+	pub fn up_op(&mut self, _cell:ValueID, _o: eval::ValOp) {
 
 	}
 
-	pub fn up_op_cell(&mut self, _res: DCell, v: |DCell| -> eval::ValOp) -> ValueRef {
+	pub fn up_op_cell(&mut self, _res: ValueID, v: |ValueID| -> eval::ValOp) -> ValueRef {
 		let cell = 0;
 		v(cell);
 		Dynamic(cell)

@@ -1,25 +1,25 @@
 use ast::{
 	Value,
 };
-use context::{DCell};
+use context::{ValueID};
 
 pub enum ValueSrc {
 	Const(Vec<Value>),
-	Dyn(DCell)
+	Dyn(ValueID)
 }
 
 pub enum ValOp {
-	RangeCheckOp(DCell, f64, f64),
+	RangeCheckOp(ValueID, f64, f64),
 
-	ChooseOp(DCell, Vec<(Value, Value)>),
+	ChooseOp(ValueID, Vec<(Value, Value)>),
 
-	CheckOp(DCell, Value),
+	CheckOp(ValueID, Value),
 
-	SliceOp(DCell, /*offset*/ uint, /*length*/ uint),
+	SliceOp(ValueID, /*offset*/ uint, /*length*/ uint),
 	ConcatOp(Vec<ValueSrc>),
 
-	BinaryOp(DCell, BinOp, DCell),
-	BinaryConstOp(DCell, BinOp, f64),
+	BinaryOp(ValueID, BinOp, ValueID),
+	BinaryConstOp(ValueID, BinOp, f64),
 }
 
 /// Binary numeric operators

@@ -15,7 +15,9 @@ use std::comm;
 use std::task;
 
 mod session;
+mod scope;
 mod context;
+mod types;
 mod expr;
 mod eval;
 mod ast;
@@ -43,7 +45,7 @@ fn main() {
 	let modscope = resolve::resolve_module(&mut ctx, &prelude, &module);
 
 	let main = match *modscope.get("main").unwrap() {
-		expr::DefItem(ref s) => s,
+		scope::DefItem(ref s) => s,
 		_ => fail!("Main is not an event"),
 	};
 

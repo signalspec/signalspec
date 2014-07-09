@@ -1,5 +1,5 @@
 use arena::TypedArena;
-use expr::Item;
+use scope::Item;
 use std::sync::atomics::{AtomicUint, Relaxed};
 use std::fmt;
 

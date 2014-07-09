@@ -1,14 +1,7 @@
 use ast;
-use std::collections::hashmap::HashMap;
 use context::Context;
 
-pub use expr::{
-	Item,
-	ValueItem,
-	SignalItem,
-	DefItem,
-	resolve_expr,
-};
+pub use expr::resolve_expr;
 pub use exec::{
 	Step,
 		NopStep,
@@ -16,62 +9,7 @@ pub use exec::{
 		SeqStep,
 		PrimitiveStep,
 };
-
-#[deriving(Clone)]
-pub struct Scope<'s>{
-	pub names: HashMap<String, &'s Item<'s>>,
-}
-
-impl<'s> Scope<'s> {
-	pub fn new() -> Scope<'s> {
-		Scope {
-			names: HashMap::new(),
-		}
-	}
-
-	fn add_lets(&mut self, lets: &[ast::LetDef]) {
-		for _letdef in lets.iter() {
-			fail!("Let unimplemented");
-		}
-	}
-
-	fn add_params(&mut self, param_defs: &[ast::ParamDef], param_values: &Params<'s>) {
-		// TODO: keyword args, defaults
-		if param_defs.len() != param_values.positional.len() {
-			fail!("Wrong number of parameters passed")
-		}
-
-		for (def, &val) in param_defs.iter().zip(param_values.positional.iter()) {
-			// TODO: type check
-			self.names.insert(def.name.to_string(), val);
-		}
-	}
-
-	pub fn get(&self, name: &str) -> Option<&'s Item<'s>> {
-		self.names.find_equiv(&name).map(|x| x.clone())
-	}
-
-	pub fn child(&self) -> Scope<'s> {
-		Scope {
-			names: self.names.clone(),
-		}
-	}
-}
-
-pub struct Params<'s> {
-	pub positional: Vec<&'s Item<'s>>,
-	pub body: Option<EventBodyClosure<'s>>,
-}
-
-impl<'s> Params<'s> {
-	pub fn empty() -> Params {
-		Params {
-			positional: Vec::new(),
-			body: None,
-		}
-	}
-}
-
+pub use scope::{Scope, Item, ValueItem, SignalItem, DefItem, Params};
 // A body associated with an event call
 pub struct EventBodyClosure<'s> {
 	ast: &'s ast::ActionBody,

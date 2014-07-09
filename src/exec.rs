@@ -1,4 +1,4 @@
-use context::ValueRef;
+use scope::ValueRef;
 use signal::SignalId;
 use ast::Value;
 use std::comm;

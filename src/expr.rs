@@ -1,67 +1,17 @@
 use std::iter::AdditiveIterator;
-use std::fmt;
 
-use context::{
-	Context,
-	ValueRef,
-		Ignored,
-		Constant,
-		Dynamic,
-		Poison,
-};
-
+use context::Context;
 use ast;
 use ast::{
-	TopType,
 	NumberType,
 	VectorType,
 	Value,
 		NumberValue,
 		VectorValue,
 };
-use resolve;
-use signal::Signal;
+use scope::{ Scope, Item, ValueItem, SignalItem, ValueRef, Constant, Dynamic, Ignored, Poison};
 use eval;
-
-// For now, types have nothing to resolve.
-// Eventually, some type parameters will be expressions.
-pub type Type = ast::TypeExpr;
-fn resolve_type(t: ast::TypeExpr) -> Type { t }
-
-pub enum Item<'s> {
-	SignalItem(Signal),
-	DefItem(resolve::EventClosure<'s>),
-	ValueItem(Type, ValueRef /*Down*/, ValueRef /*Up*/)
-}
-
-impl<'s> PartialEq for Item<'s> {
-	fn eq(&self, other: &Item<'s>) -> bool {
-		match (self, other) {
-			(&ValueItem(ref ta, ref da, ref ua), &ValueItem(ref tb, ref db, ref ub))
-				if ta==tb && da==db && ua==ub => true,
-			_ => false
-		}
-	}
-}
-
-impl<'s> fmt::Show for Item<'s> {
-	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-		write!(f, "{:?}", self)
-	}
-}
-
-fn common_type(a: Type, b: Type) -> Option<Type>{
-	match (a, b) {
-		(TopType, x) | (x, TopType) => Some(x),
-		(a, b) if a == b => Some(a),
-		_ => None
-	}
-}
-
-#[inline]
-fn common_type_all<T:Iterator<Type>>(mut l: T) -> Option<Type> {
-	l.fold(Some(TopType), |opt_a, b|{opt_a.and_then(|a| common_type(a, b))})
-}
+use types::{Type, TopType, common_type, common_type_all };
 
 // This would take an iterator if it weren't for mozilla/rust#5121
 fn count_ref_types<'a, T: Iterator<&'a ValueRef>>(mut l: T) -> Result<(uint, uint, uint), ValueRef> {
@@ -79,7 +29,7 @@ fn count_ref_types<'a, T: Iterator<&'a ValueRef>>(mut l: T) -> Result<(uint, uin
 	return Ok((ignores, constants, dynamics));
 }
 
-fn resolve_value_expr<'s>(ctx: &mut Context<'s>, scope: &resolve::Scope<'s>, e: &ast::Expr) ->  (Type, ValueRef /*Down*/, ValueRef /*Up*/) {
+fn resolve_value_expr<'s>(ctx: &mut Context<'s>, scope: &Scope<'s>, e: &ast::Expr) ->  (Type, ValueRef /*Down*/, ValueRef /*Up*/) {
 	match *e {
 		ast::IgnoreExpr => (TopType, Ignored, Ignored),
 
@@ -278,7 +228,7 @@ fn resolve_value_expr<'s>(ctx: &mut Context<'s>, scope: &resolve::Scope<'s>, e: 
 	}
 }
 
-pub fn resolve_expr<'s>(ctx: &mut Context<'s>, scope: &resolve::Scope<'s>, e: &ast::Expr) -> &'s Item<'s> {
+pub fn resolve_expr<'s>(ctx: &mut Context<'s>, scope: &Scope<'s>, e: &ast::Expr) -> &'s Item<'s> {
 	match *e {
 		ast::VarExpr(ref name) => {
 			scope.get(name.as_slice()).expect("Undefined variable")
@@ -300,14 +250,9 @@ pub fn resolve_expr<'s>(ctx: &mut Context<'s>, scope: &resolve::Scope<'s>, e: &a
 
 #[cfg(test)]
 mod test {
-	use expr::{ValueItem, resolve_expr};
+	use expr::resolve_expr;
 	use session::Session;
-	use context::{
-		Context,
-		ValueRef,
-			Ignored,
-			Constant,
-	};
+	use context::Context;
 	use ast::{
 		TypeExpr,
 			NumberType,
@@ -320,7 +265,13 @@ mod test {
 			VectorValue,
 			SymbolValue,
 	};
-	use resolve::Scope;
+	use scope::{
+		Scope,
+		ValueRef,
+			Ignored,
+			Constant,
+		ValueItem,
+	};
 	use grammar;
 
 	fn check_const_value(s: &str, t: TypeExpr, down: ValueRef, up: ValueRef) {
