@@ -7,6 +7,7 @@ pub use exec::{
 		NopStep,
 		SeqStep,
 		PrimitiveStep,
+		RepeatStep,
 };
 pub use resolve::scope::{Scope, Item, ValueItem, SignalItem, DefItem, Params};
 // A body associated with an event call
@@ -58,6 +59,9 @@ fn resolve_action<'s>(ctx: &mut Context<'s>, scope: &Scope<'s>, action: &'s ast:
 				SignalItem(ref signal) => signal.resolve_method_call(ctx, method.as_slice(), &params),
 				_ => fail!("Not a signal"),
 			}
+		}
+		ast::ActionRepeat(ref block) => {
+			RepeatStep(box resolve_seq(ctx, scope, block))
 		}
 	}
 }

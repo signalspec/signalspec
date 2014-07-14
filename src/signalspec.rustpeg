@@ -41,6 +41,8 @@ def -> ast::Def
 			{ ast::ActionToken(entity, name, call) }
 		/ expr:varexpr call:actionargs
 			{ ast::ActionCall(expr, call) }
+		/ "repeat" __ block:block
+			{ ast::ActionRepeat(block) }
 
 		// TODO: multiple arguments, keyword arguments
 		actionargs -> ast::Call

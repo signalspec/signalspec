@@ -16,7 +16,7 @@ pub struct Block {
 pub enum Action {
 	ActionSeq(Block),
 	//ActionPar(Block),
-	//ActionRepeat(Block),
+	ActionRepeat(Block),
 	ActionCall(Expr, Call),
 	ActionToken(Expr, String, Call),
 }
