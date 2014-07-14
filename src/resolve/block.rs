@@ -33,34 +33,41 @@ pub fn resolve_module<'s>(pctx: &Context<'s>, pscope: &Scope<'s>, ast: &'s ast::
 	scope
 }
 
+fn resolve_call_params<'s>(ctx: &mut Context<'s>, scope: &Scope<'s>, call: &'s ast::Call) -> Params<'s> {
+	Params {
+		positional: call.positional.iter().map(|a| resolve_expr(ctx, scope, a)).collect(),
+		body: call.body.as_ref().map(|x| {
+			EventBodyClosure { ast: x, parentScope: scope.child() }
+		})
+	}
+}
+
+fn resolve_action<'s>(ctx: &mut Context<'s>, scope: &Scope<'s>, action: &'s ast::Action) -> Step {
+	match *action {
+		ast::ActionSeq(ref block) => resolve_seq(ctx, scope, block),
+		ast::ActionCall(ref expr, ref call) => {
+			let params = resolve_call_params(ctx, scope, call);
+			match *resolve_expr(ctx, scope, expr) {
+				DefItem(ref entity) => entity.resolve_call(ctx, &params),
+				_ => fail!("Not an action"),
+			}
+		}
+		ast::ActionToken(ref expr, ref method, ref call) => {
+			let params = resolve_call_params(ctx, scope, call);
+			match *resolve_expr(ctx, scope, expr) {
+				SignalItem(ref signal) => signal.resolve_method_call(ctx, method.as_slice(), &params),
+				_ => fail!("Not a signal"),
+			}
+		}
+	}
+}
+
 fn resolve_seq<'s>(pctx: &Context<'s>, pscope: &Scope<'s>, block: &'s ast::Block) -> Step {
 	let mut ctx = pctx.child();
 	let mut scope = pscope.child();
 	scope.add_lets(block.lets.as_slice());
 
-	let steps = block.actions.iter().map(|action| {
-		let params = &Params {
-			positional: action.positional.iter().map(|a| resolve_expr(&mut ctx, &scope, a)).collect(),
-			body: action.body.as_ref().map(|x| {
-				EventBodyClosure { ast: x, parentScope: scope.child() }
-			})
-		};
-
-		match action.action {
-			ast::ActionDef(ref entityitem) => {
-				match *resolve_expr(&mut ctx, &scope, entityitem) {
-					DefItem(ref entity) => entity.resolve_call(&ctx, params),
-					_ => fail!("Not an action"),
-				}
-			}
-			ast::ActionEntity(ref entityitem, ref method) => {
-				match *resolve_expr(&mut ctx, &scope, entityitem) {
-					SignalItem(ref signal) => signal.resolve_method_call(&ctx, method.as_slice(), params),
-					_ => fail!("Not a signal"),
-				}
-			}
-		}
-	}).collect();
+	let steps = block.actions.iter().map(|action| resolve_action(&mut ctx, &scope, action)).collect();
 
 	SeqStep(steps)
 }

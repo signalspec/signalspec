@@ -37,14 +37,15 @@ def -> ast::Def
 		{ ast::ParamDef{name:name, tp:tp, default:init} }
 
 	action -> ast::Action
-		= action:actiontarget _ "(" params:valexpr* ")" __ body: actionbody?
-			{ ast::Action { action:action, positional:params, body: body } }
+		= entity:varexpr ":" name:identifier call:actionargs
+			{ ast::ActionToken(entity, name, call) }
+		/ expr:varexpr call:actionargs
+			{ ast::ActionCall(expr, call) }
 
 		// TODO: multiple arguments, keyword arguments
-
-		actiontarget -> ast::ActionTarget
-			= entity:varexpr ":" name:identifier { ast::ActionEntity(entity, name) }
-			/ def:varexpr { ast::ActionDef(def) }
+		actionargs -> ast::Call
+			= "(" params:valexpr* ")" __ body: actionbody?
+			{ ast::Call{ positional:params, body: body } }
 
 		actionbody -> ast::ActionBody
 			= "|" args: (n:identifier commasep {n})* "|" __ block: block

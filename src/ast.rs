@@ -13,19 +13,20 @@ pub struct Block {
 	pub actions: Vec<Action>,
 }
 
+pub enum Action {
+	ActionSeq(Block),
+	//ActionPar(Block),
+	//ActionRepeat(Block),
+	ActionCall(Expr, Call),
+	ActionToken(Expr, String, Call),
+}
+
 pub struct Def {
 	pub name: String,
 	pub params: Vec<ParamDef>,
 	pub block: Block,
 }
-
-pub enum ActionTarget {
-	ActionDef(Expr),
-	ActionEntity(Expr, String)
-}
-
-pub struct Action {
-	pub action: ActionTarget,
+pub struct Call {
 	pub positional: Vec<Expr>,
 	pub body: Option<ActionBody>,
 }
