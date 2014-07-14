@@ -8,7 +8,6 @@ pub type ValueID = uint;
 
 pub struct Context<'session> {
 	pub session: &'session Session<'session>,
-	pub depth: uint,
 	pub downs: Vec<eval::ValOp>,
 	pub ups:   Vec<eval::ValOp>,
 }
@@ -17,7 +16,6 @@ impl<'session> Context<'session> {
 	pub fn new<'s>(session: &'s Session<'s>) -> Context<'s> {
 		Context {
 			session: session,
-			depth: 0,
 			downs: Vec::new(),
 			ups: Vec::new(),
 		}
@@ -26,7 +24,6 @@ impl<'session> Context<'session> {
 	pub fn child<'p>(&self) -> Context<'session> {
 		Context {
 			session: self.session,
-			depth: self.depth + 1,
 			downs: Vec::new(),
 			ups: Vec::new(),
 		}
