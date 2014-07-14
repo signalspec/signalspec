@@ -20,7 +20,7 @@ pub fn write_values(file: &mut Writer, port: &comm::DuplexStream<Option<Value>, 
   loop {
     match port.recv_opt() {
       Ok(Some(v)) => {
-        w.write_line(v.to_str().as_slice()).unwrap();
+        w.write_line(v.to_string().as_slice()).unwrap();
       }
       Ok(None) => (),
       Err(..) => break,

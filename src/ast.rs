@@ -86,7 +86,7 @@ impl fmt::Show for Value {
 			NumberValue(n) => write!(f, "{}", n),
 			IntegerValue(n) => write!(f, "{}", n),
 			SymbolValue(ref s) => write!(f, "#{}", *s),
-			VectorValue(ref n) => write!(f, "[{}]", n.to_str()),
+			VectorValue(ref n) => write!(f, "[{}]", n.to_string()),
 		}
 	}
 }
