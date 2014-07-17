@@ -50,11 +50,11 @@ fn main() {
 
 	exec::print_step_tree(&event, 0);
 
-	let (s1, s2) = comm::duplex();
+	let (mut s1, mut s2) = exec::Connection::new();
 	task::spawn(proc(){
 		let event = event;
-		let s1 = s1;
-		let r = exec::exec(&event, &s1);
+		let mut s1 = s1;
+		let r = exec::exec(&event, &mut s1);
 		if r {
 			println!("Matched");
 		} else {
@@ -63,5 +63,5 @@ fn main() {
 	});
 
 	//dumpfile::write_values(&mut File::create(&Path::new("out.sd")).unwrap(), &s2);
-	dumpfile::read_values(&mut File::open(&Path::new("out.sd")).unwrap(), &s2);
+	dumpfile::read_values(&mut File::open(&Path::new("out.sd")).unwrap(), &mut s2);
 }

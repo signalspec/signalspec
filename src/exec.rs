@@ -44,21 +44,62 @@ pub fn print_step_tree(s: &Step, indent: uint) {
 	}
 }
 
-pub fn exec(s: &Step, parent: &comm::DuplexStream<Option<Value>, Option<Value>>) -> bool {
+pub struct Connection {
+	rx: comm::Receiver<Option<Value>>,
+	tx: comm::Sender<Option<Value>>,
+	lookahead: Option<(Option<Value>, Option<Value>)>,
+}
+
+impl Connection {
+	pub fn new() -> (Connection, Connection) {
+		let (s1, r1) = comm::channel();
+		let (s2, r2) = comm::channel();
+		(Connection{ tx: s1, rx: r2, lookahead: None }, Connection{ tx: s2, rx: r1, lookahead: None })
+	}
+	
+	pub fn send(&self, v: Option<Value>) -> Result<(), Option<Value>> {
+		self.tx.send_opt(v)
+	}
+	
+	pub fn recv(&self) -> Result<Option<Value>, ()> {
+		self.rx.recv_opt()
+	}
+	
+	pub fn apply(&mut self, tokName: &str, args: &[(ValueRef, ValueRef)]) -> bool {
+		let &(ref down, ref up) = &args[0];
+		
+		let down_v = down.const_down();
+		let received = match self.lookahead.take() {
+			Some((sent, received)) => {
+				if sent != down_v { fail!("Committed {}, but sending {}", sent, down_v); }
+				received
+			}
+			None => {
+				match self.send(down_v.clone()) {
+					Ok(..) => {},
+					Err(..) => return false,
+				};
+				match self.recv() {
+					Ok(r) => r,
+					Err(..) => return false,
+				}
+			}
+		};
+		
+		if up.const_up(received.clone()) {
+			true
+		} else {
+			self.lookahead = Some((down_v, received));
+			false
+		}
+	}
+}
+
+pub fn exec(s: &Step, parent: &mut Connection) -> bool {
 		match *s {
 			NopStep => true,
 			EventStep(id, ref tokName, ref args) => {
-				// TODO: check name and id
-				let &(ref down, ref up) = args.get(0);
-				match parent.send_opt(down.const_down()) {
-					Ok(..) => {},
-					Err(..) => return false,
-				}
-				match parent.recv_opt() {
-					Ok(r) => up.const_up(r),
-					Err(..) => false,
-				}
-				
+				parent.apply(tokName.as_slice(), args.as_slice())
 			}
 			SeqStep(ref steps) => {
 				for c in steps.iter() {
