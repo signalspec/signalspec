@@ -56,7 +56,7 @@ pub struct Params<'s> {
 }
 
 impl<'s> Params<'s> {
-  pub fn empty() -> Params {
+  pub fn empty() -> Params<'s> {
     Params {
       positional: Vec::new(),
       body: None,

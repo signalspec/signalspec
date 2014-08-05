@@ -12,7 +12,7 @@ pub struct Interner<'s> {
 }
 
 impl<'s> Interner<'s> {
-  fn new() -> Interner {
+  fn new() -> Interner<'s> {
     Interner {
       arena: TypedArena::new(),
       forward: RefCell::new(HashMap::new()),

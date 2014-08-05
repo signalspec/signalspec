@@ -11,7 +11,7 @@ pub struct Session<'session> {
 }
 
 impl<'session> Session<'session> {
-	pub fn new() -> Session {
+	pub fn new() -> Session<'session> {
 		Session {
 			itemArena: TypedArena::new(),
 			idCounter: AtomicUint::new(1),
