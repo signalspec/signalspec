@@ -17,18 +17,13 @@ pub enum Action {
 	ActionSeq(Block),
 	//ActionPar(Block),
 	ActionRepeat(Block),
-	ActionCall(Expr, Call),
-	ActionToken(Expr, String, Call),
+	ActionCall(Expr, Expr, Option<ActionBody>),
 }
 
 pub struct Def {
 	pub name: String,
-	pub params: Vec<ParamDef>,
+	pub param: Expr,
 	pub block: Block,
-}
-pub struct Call {
-	pub positional: Vec<Expr>,
-	pub body: Option<ActionBody>,
 }
 
 pub struct ActionBody {
@@ -37,12 +32,6 @@ pub struct ActionBody {
 }
 
 pub struct UseDef(pub String);
-pub struct ParamDef {
-	pub name: String,
-	pub tp: TypeExpr,
-	pub default: Option<Expr>
-}
-
 pub struct LetDef(pub String, pub Expr);
 
 #[deriving(PartialEq, Clone)]

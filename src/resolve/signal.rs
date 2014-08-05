@@ -1,5 +1,6 @@
 use resolve::context::Context;
-use resolve::scope::{Item, ValueItem, Params};
+use resolve::scope::{Item, ValueItem};
+use resolve::block::{EventBodyClosure};
 use exec::{Step, EventStep};
 use session::Id;
 
@@ -15,16 +16,14 @@ impl Signal {
 		Signal { id: id}
 	}
 
-	pub fn resolve_method_call(&self, _pctx: &Context, name: &str, params: &Params) -> Step {
-		let param_values = params.positional.iter().map(|item| {
-				// TODO: type check, check for poison
-				match **item {
-					ValueItem(_, ref down, ref up) => (down.clone(), up.clone()),
-					_ => fail!("Non-values can't be included in a token")
-				}
-		}).collect();
+	pub fn resolve_method_call(&self, _pctx: &Context, param: &Item, body: Option<&EventBodyClosure>) -> Step {
+		if body.is_some() { fail!("Body unimplemented"); }
+		let (down, up) = match *param {
+			ValueItem(_, ref down, ref up) => (down.clone(), up.clone()),
+			_ => fail!("Non-values can't be included in a token")
+		};
 
-		EventStep(self.id, name.to_string(), param_values)
+		EventStep(self.id, down, up)
 	}
 
 	pub fn get_property<'a>(&'a self, _ctx: &Context, _property: &str) -> Option<&'a Item<'a>> {

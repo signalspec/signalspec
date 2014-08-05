@@ -1,7 +1,7 @@
 use std::fmt;
 use std::collections::hashmap::HashMap;
 
-use resolve::block::{EventClosure, EventBodyClosure};
+use resolve::block::{EventClosure};
 use resolve::signal::Signal;
 use resolve::context::ValueID;
 use resolve::types::Type;
@@ -27,15 +27,12 @@ impl<'s> Scope<'s> {
     }
   }
 
-  pub fn add_params(&mut self, param_defs: &[ast::ParamDef], param_values: &Params<'s>) {
-    // TODO: keyword args, defaults
-    if param_defs.len() != param_values.positional.len() {
-      fail!("Wrong number of parameters passed")
-    }
-
-    for (def, &val) in param_defs.iter().zip(param_values.positional.iter()) {
-      // TODO: type check
-      self.names.insert(def.name.to_string(), val);
+  pub fn add_param(&mut self, param_def: &ast::Expr, param_value: &'s Item<'s>) {
+    match *param_def {
+      ast::VarExpr(ref name) => {
+        self.names.insert(name.to_string(), param_value);
+      }
+      _ => fail!("Unimplemented expression form in parameter")
     }
   }
 
@@ -49,21 +46,6 @@ impl<'s> Scope<'s> {
     }
   }
 }
-
-pub struct Params<'s> {
-  pub positional: Vec<&'s Item<'s>>,
-  pub body: Option<EventBodyClosure<'s>>,
-}
-
-impl<'s> Params<'s> {
-  pub fn empty() -> Params<'s> {
-    Params {
-      positional: Vec::new(),
-      body: None,
-    }
-  }
-}
-
 
 /// A thing associated with a name in a Scope
 pub enum Item<'s> {

@@ -9,7 +9,7 @@ pub use exec::{
 		PrimitiveStep,
 		RepeatStep,
 };
-pub use resolve::scope::{Scope, Item, ValueItem, SignalItem, DefItem, Params};
+pub use resolve::scope::{Scope, Item, ValueItem, SignalItem, DefItem};
 // A body associated with an event call
 pub struct EventBodyClosure<'s> {
 	ast: &'s ast::ActionBody,
@@ -34,30 +34,20 @@ pub fn resolve_module<'s>(pctx: &Context<'s>, pscope: &Scope<'s>, ast: &'s ast::
 	scope
 }
 
-fn resolve_call_params<'s>(ctx: &mut Context<'s>, scope: &Scope<'s>, call: &'s ast::Call) -> Params<'s> {
-	Params {
-		positional: call.positional.iter().map(|a| resolve_expr(ctx, scope, a)).collect(),
-		body: call.body.as_ref().map(|x| {
-			EventBodyClosure { ast: x, parentScope: scope.child() }
-		})
-	}
-}
 
 fn resolve_action<'s>(ctx: &mut Context<'s>, scope: &Scope<'s>, action: &'s ast::Action) -> Step {
 	match *action {
 		ast::ActionSeq(ref block) => resolve_seq(ctx, scope, block),
-		ast::ActionCall(ref expr, ref call) => {
-			let params = resolve_call_params(ctx, scope, call);
+		ast::ActionCall(ref expr, ref arg, ref body) => {
+			let arg = resolve_expr(ctx, scope, arg);
+			let body = body.as_ref().map(|x| {
+				EventBodyClosure { ast: x, parentScope: scope.child() }
+			});
+			
 			match *resolve_expr(ctx, scope, expr) {
-				DefItem(ref entity) => entity.resolve_call(ctx, &params),
-				_ => fail!("Not an action"),
-			}
-		}
-		ast::ActionToken(ref expr, ref method, ref call) => {
-			let params = resolve_call_params(ctx, scope, call);
-			match *resolve_expr(ctx, scope, expr) {
-				SignalItem(ref signal) => signal.resolve_method_call(ctx, method.as_slice(), &params),
-				_ => fail!("Not a signal"),
+				DefItem(ref entity) => entity.resolve_call(ctx, arg, body.as_ref()),
+				SignalItem(ref signal) => signal.resolve_method_call(ctx, arg, body.as_ref()),
+				_ => fail!("Not callable"),
 			}
 		}
 		ast::ActionRepeat(ref block) => {
@@ -83,11 +73,12 @@ pub struct EventClosure<'s> {
 }
 
 impl<'s> EventClosure<'s> {
-	pub fn resolve_call(&self, pctx: &Context<'s>, params: &Params<'s>) -> Step {
+	pub fn resolve_call(&self, pctx: &Context<'s>, param: &'s Item<'s>, body: Option<&EventBodyClosure<'s>>) -> Step {
+		if body.is_some() { fail!("Body unimplemented"); }
 		let ctx = pctx.child();
 		let mut scope = self.parentScope.child(); // Base on lexical parent
 
-		scope.add_params(self.ast.params.as_slice(), params);
+		scope.add_param(&self.ast.param, param);
 		resolve_seq(&ctx, &scope, &self.ast.block)
 	}
 }

@@ -25,29 +25,18 @@ letstmt -> ast::LetDef
 	{ ast::LetDef(name, value) }
 
 def -> ast::Def
-	= "def" _ name:identifier _ "(" params: paramdef* ")" _ block:block
-	{ ast::Def{ name:name, params:params, block:block } }
+	= "def" _ name:identifier _ "(" param: varexpr ")" _ block:block
+	{ ast::Def{ name:name, param:param, block:block } }
 
 	block -> ast::Block
 		= "{" __ lets:letstmt* actions:action* "}" __
 		{ ast::Block{ lets:lets, actions:actions } }
 
-	paramdef -> ast::ParamDef
-		= name:identifier _ ":" _ tp:typeexpr init:varinit? commasep
-		{ ast::ParamDef{name:name, tp:tp, default:init} }
-
 	action -> ast::Action
-		= entity:varexpr ":" name:identifier call:actionargs
-			{ ast::ActionToken(entity, name, call) }
-		/ expr:varexpr call:actionargs
-			{ ast::ActionCall(expr, call) }
+		= expr:varexpr "(" param:valexpr ")" __ body: actionbody?
+			{ ast::ActionCall(expr, param, body) }
 		/ "repeat" __ block:block
 			{ ast::ActionRepeat(block) }
-
-		// TODO: multiple arguments, keyword arguments
-		actionargs -> ast::Call
-			= "(" params:valexpr* ")" __ body: actionbody?
-			{ ast::Call{ positional:params, body: body } }
 
 		actionbody -> ast::ActionBody
 			= "|" args: (n:identifier commasep {n})* "|" __ block: block

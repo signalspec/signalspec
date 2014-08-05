@@ -12,7 +12,7 @@ pub trait PrimitiveStep {
 
 pub enum Step {
 	NopStep,
-	EventStep(SignalId, String, Vec<(ValueRef, ValueRef)>),
+	EventStep(SignalId, /*down*/ ValueRef, /*up*/ ValueRef),
 	SeqStep(Vec<Step>),
 	RepeatStep(Box<Step>),
 	//PrimitiveStep(Box<PrimitiveStep>),
@@ -22,8 +22,8 @@ pub fn print_step_tree(s: &Step, indent: uint) {
 	let i = " ".repeat(indent);
 	match *s {
 		NopStep => println!("{}NOP", i),
-		EventStep(id, ref s, ref args) => {
-			println!("{}Event: {} {} {}", i, id, s, args);
+		EventStep(id, ref down, ref up) => {
+			println!("{}Event: {} {} {}", i, id, down, up);
 		}
 		SeqStep(ref steps) => {
 			println!("{}Seq", i)
@@ -65,9 +65,7 @@ impl Connection {
 		self.rx.recv_opt()
 	}
 	
-	pub fn apply(&mut self, tokName: &str, args: &[(ValueRef, ValueRef)]) -> bool {
-		let &(ref down, ref up) = &args[0];
-		
+	pub fn apply(&mut self, down: &ValueRef, up: &ValueRef) -> bool {
 		let down_v = down.const_down();
 		let received = match self.lookahead.take() {
 			Some((sent, received)) => {
@@ -98,8 +96,8 @@ impl Connection {
 pub fn exec(s: &Step, parent: &mut Connection) -> bool {
 		match *s {
 			NopStep => true,
-			EventStep(id, ref tokName, ref args) => {
-				parent.apply(tokName.as_slice(), args.as_slice())
+			EventStep(id, ref down, ref up) => {
+				parent.apply(down, up)
 			}
 			SeqStep(ref steps) => {
 				for c in steps.iter() {

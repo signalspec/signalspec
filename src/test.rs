@@ -46,7 +46,7 @@ fn main() {
 	};
 
 	let w = resolve::scope::SignalItem(resolve::Signal::new(sess.make_id()));
-	let event = main.resolve_call(&mut ctx, &resolve::Params{ positional: vec!(&w), body: None});
+	let event = main.resolve_call(&mut ctx, &w, None);
 
 	exec::print_step_tree(&event, 0);
 

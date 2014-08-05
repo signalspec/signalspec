@@ -1,4 +1,4 @@
-pub use self::scope::{Scope,Params};
+pub use self::scope::{Scope};
 pub use self::context::Context;
 pub use self::block::resolve_module;
 pub use self::signal::Signal;
