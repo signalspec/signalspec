@@ -33,14 +33,12 @@ def -> ast::Def
 		{ ast::Block{ lets:lets, actions:actions } }
 
 	action -> ast::Action
-		= expr:varexpr "(" param:valexpr ")" __ body: actionbody?
-			{ ast::ActionCall(expr, param, body) }
-		/ "repeat" __ block:block
+		= "repeat" __ block:block
 			{ ast::ActionRepeat(block) }
-
-		actionbody -> ast::ActionBody
-			= "|" args: (n:identifier commasep {n})* "|" __ block: block
-			{ ast::ActionBody{ param_names: args, block: block } }
+		/ expr:varexpr "(" param:valexpr ")" __ body:block?
+			{ ast::ActionCall(expr, param, body) }
+		/ expr:valexpr __ body:block?
+			{ ast::ActionToken(expr, body) }
 
 #[export]
 typeexpr -> ast::TypeExpr
@@ -143,7 +141,7 @@ valexpr -> ast::Expr
 						ast::IntegerValue((v.as_slice()[n] & (1 << (4-b))) as i64)
 					}))
 				}
-				/ "'" "b"? v:(binbit+) _ 
+				/ "'" "b"? v:(binbit+) _
 					{ ast::VectorValue(v.iter().map(|&b| ast::IntegerValue(b as i64)).collect()) }
 
 				hexchar -> u8

@@ -6,13 +6,13 @@ pub use exec::{
 	Step,
 		NopStep,
 		SeqStep,
-		PrimitiveStep,
+		TokenStep,
 		RepeatStep,
 };
-pub use resolve::scope::{Scope, Item, ValueItem, SignalItem, DefItem};
+pub use resolve::scope::{Scope, Item, ValueItem, DefItem};
 // A body associated with an event call
 pub struct EventBodyClosure<'s> {
-	ast: &'s ast::ActionBody,
+	ast: &'s ast::Block,
 	parentScope: Scope<'s>,
 }
 
@@ -43,11 +43,18 @@ fn resolve_action<'s>(ctx: &mut Context<'s>, scope: &Scope<'s>, action: &'s ast:
 			let body = body.as_ref().map(|x| {
 				EventBodyClosure { ast: x, parentScope: scope.child() }
 			});
-			
+
 			match *resolve_expr(ctx, scope, expr) {
 				DefItem(ref entity) => entity.resolve_call(ctx, arg, body.as_ref()),
-				SignalItem(ref signal) => signal.resolve_method_call(ctx, arg, body.as_ref()),
 				_ => fail!("Not callable"),
+			}
+		}
+		ast::ActionToken(ref expr, ref body) => {
+			if body.is_some() { fail!("Body unimplemented"); }
+
+			match *resolve_expr(ctx, scope, expr) {
+				ValueItem(_, ref down, ref up) => TokenStep(down.clone(), up.clone()),
+				_ => fail!("Non-values can't be included in a token")
 			}
 		}
 		ast::ActionRepeat(ref block) => {

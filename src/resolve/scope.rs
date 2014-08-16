@@ -2,7 +2,6 @@ use std::fmt;
 use std::collections::hashmap::HashMap;
 
 use resolve::block::{EventClosure};
-use resolve::signal::Signal;
 use resolve::context::ValueID;
 use resolve::types::Type;
 use ast;
@@ -49,7 +48,7 @@ impl<'s> Scope<'s> {
 
 /// A thing associated with a name in a Scope
 pub enum Item<'s> {
-  SignalItem(Signal),
+  EmptyItem, // TODO: 0-item tuple
   DefItem(EventClosure<'s>),
   ValueItem(Type, ValueRef /*Down*/, ValueRef /*Up*/)
 }

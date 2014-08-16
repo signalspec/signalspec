@@ -10,7 +10,7 @@ use ast::{
 };
 use eval;
 use resolve::context::Context;
-use resolve::scope::{ Scope, Item, ValueItem, SignalItem, ValueRef, Constant, Dynamic, Ignored, Poison};
+use resolve::scope::{ Scope, Item, ValueItem, ValueRef, Constant, Dynamic, Ignored, Poison};
 use resolve::types::{Type, TopType, common_type, common_type_all };
 
 // This would take an iterator if it weren't for mozilla/rust#5121
@@ -177,7 +177,7 @@ fn resolve_value_expr<'s>(ctx: &mut Context<'s>, scope: &Scope<'s>, e: &ast::Exp
 							}
 							_ => fail!(),
 						}
-	
+
 					}
 					Dynamic(cell)
 				}
@@ -234,12 +234,7 @@ pub fn resolve_expr<'s>(ctx: &mut Context<'s>, scope: &Scope<'s>, e: &ast::Expr)
 			scope.get(name.as_slice()).expect("Undefined variable")
 		}
 
-		ast::DotExpr(box ref lexpr, ref name) => {
-			match *resolve_expr(ctx, scope, lexpr) {
-				SignalItem(ref e) => e.get_property(ctx, name.as_slice()).expect("Undefined property"),
-				_ => fail!("dot only works on entities"),
-			}
-		}
+		ast::DotExpr(box ref lexpr, ref name) => unimplemented!(),
 
 		_ => {
 			let (tp, down, up) = resolve_value_expr(ctx, scope, e);

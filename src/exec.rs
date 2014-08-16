@@ -1,7 +1,6 @@
 use std::comm;
 
 use resolve::scope::ValueRef;
-use resolve::signal::SignalId;
 use ast::Value;
 
 pub trait PrimitiveStep {
@@ -12,7 +11,7 @@ pub trait PrimitiveStep {
 
 pub enum Step {
 	NopStep,
-	EventStep(SignalId, /*down*/ ValueRef, /*up*/ ValueRef),
+	TokenStep(/*down*/ ValueRef, /*up*/ ValueRef),
 	SeqStep(Vec<Step>),
 	RepeatStep(Box<Step>),
 	//PrimitiveStep(Box<PrimitiveStep>),
@@ -22,8 +21,8 @@ pub fn print_step_tree(s: &Step, indent: uint) {
 	let i = " ".repeat(indent);
 	match *s {
 		NopStep => println!("{}NOP", i),
-		EventStep(id, ref down, ref up) => {
-			println!("{}Event: {} {} {}", i, id, down, up);
+		TokenStep(ref down, ref up) => {
+			println!("{}Token: {} {}", i, down, up);
 		}
 		SeqStep(ref steps) => {
 			println!("{}Seq", i)
@@ -56,15 +55,15 @@ impl Connection {
 		let (s2, r2) = comm::channel();
 		(Connection{ tx: s1, rx: r2, lookahead: None }, Connection{ tx: s2, rx: r1, lookahead: None })
 	}
-	
+
 	pub fn send(&self, v: Option<Value>) -> Result<(), Option<Value>> {
 		self.tx.send_opt(v)
 	}
-	
+
 	pub fn recv(&self) -> Result<Option<Value>, ()> {
 		self.rx.recv_opt()
 	}
-	
+
 	pub fn apply(&mut self, down: &ValueRef, up: &ValueRef) -> bool {
 		let down_v = down.const_down();
 		let received = match self.lookahead.take() {
@@ -83,7 +82,7 @@ impl Connection {
 				}
 			}
 		};
-		
+
 		if up.const_up(received.clone()) {
 			true
 		} else {
@@ -96,7 +95,7 @@ impl Connection {
 pub fn exec(s: &Step, parent: &mut Connection) -> bool {
 		match *s {
 			NopStep => true,
-			EventStep(id, ref down, ref up) => {
+			TokenStep(ref down, ref up) => {
 				parent.apply(down, up)
 			}
 			SeqStep(ref steps) => {

@@ -17,17 +17,13 @@ pub enum Action {
 	ActionSeq(Block),
 	//ActionPar(Block),
 	ActionRepeat(Block),
-	ActionCall(Expr, Expr, Option<ActionBody>),
+	ActionCall(Expr, Expr, Option<Block>),
+	ActionToken(Expr, Option<Block>),
 }
 
 pub struct Def {
 	pub name: String,
 	pub param: Expr,
-	pub block: Block,
-}
-
-pub struct ActionBody {
-	pub param_names: Vec<String>,
 	pub block: Block,
 }
 
@@ -83,7 +79,7 @@ impl fmt::Show for Value {
 pub enum Expr {
 	ValueExpr(Value),
 	IgnoreExpr,
-	
+
 	FlipExpr(Box<Expr>, Box<Expr>),
 	RangeExpr(Box<Expr>, Box<Expr>),
 	ChooseExpr(Box<Expr>, Vec<(Expr, Expr)>),
