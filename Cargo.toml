@@ -9,4 +9,3 @@ git = "https://github.com/kevinmehall/rust-peg.git"
 
 [[bin]]
 name = "signalspec"
-path = "src/test.rs"
