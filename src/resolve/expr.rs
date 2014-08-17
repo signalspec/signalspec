@@ -234,7 +234,7 @@ pub fn resolve_expr<'s>(ctx: &mut Context<'s>, scope: &Scope<'s>, e: &ast::Expr)
 			scope.get(name.as_slice()).expect("Undefined variable")
 		}
 
-		ast::DotExpr(box ref lexpr, ref name) => unimplemented!(),
+		ast::DotExpr(box ref _lexpr, ref _name) => unimplemented!(),
 
 		_ => {
 			let (tp, down, up) = resolve_value_expr(ctx, scope, e);

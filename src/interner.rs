@@ -19,14 +19,14 @@ impl<'s> Interner<'s> {
       backward: RefCell::new(Vec::new()),
     }
   }
-  
+
   fn intern(&'s self, s: &str) -> Name {
     let mut forward = self.forward.borrow_mut();
     match forward.find_equiv(&s) {
       Some(&name) => return name,
       None => {}
     }
-  
+
     let s = self.arena.alloc(s.to_string()).as_slice();
     let mut backward = self.backward.borrow_mut();
     let name = Name(backward.len() as u32);
@@ -34,10 +34,10 @@ impl<'s> Interner<'s> {
     forward.insert(s, name);
     name
   }
-  
+
   fn get(&'s self, n: Name) -> &'s str {
     let Name(i) = n;
-    *self.backward.borrow().get(i as uint)
+    (*self.backward.borrow())[i as uint]
   }
 }
 

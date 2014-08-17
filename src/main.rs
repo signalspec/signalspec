@@ -11,7 +11,6 @@ extern crate peg_syntax_ext;
 use std::os;
 use std::str;
 use std::io::fs::File;
-use std::comm;
 use std::task;
 
 mod session;
@@ -28,7 +27,7 @@ fn main() {
 	let sess = session::Session::new();
 
 	let args = os::args();
-	let source_utf8 = File::open(&Path::new(args.get(1).as_slice())).read_to_end().unwrap();
+	let source_utf8 = File::open(&Path::new(args[1].as_slice())).read_to_end().unwrap();
 	let source = str::from_utf8(source_utf8.as_slice());
 	let module = grammar::module(source.unwrap());
 
@@ -49,7 +48,7 @@ fn main() {
 	let event = main.resolve_call(&mut ctx, &w, None);
 	exec::print_step_tree(&event, 0);
 
-	let (mut s1, mut s2) = exec::Connection::new();
+	let (s1, mut s2) = exec::Connection::new();
 	task::spawn(proc(){
 		let event = event;
 		let mut s1 = s1;

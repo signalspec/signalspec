@@ -1,6 +1,5 @@
 use std::io::{BufferedReader, BufferedWriter};
 use grammar::literal;
-use ast::Value;
 use exec;
 
 pub fn read_values(reader: &mut Reader, port: &mut exec::Connection) {
@@ -8,10 +7,10 @@ pub fn read_values(reader: &mut Reader, port: &mut exec::Connection) {
     let line = line.unwrap();
     let lit = match literal(line.as_slice().trim()) {
       Ok(lit) => lit,
-      Err(lit) => fail!("Invalid line `{}`", line.as_slice())
+      Err(_) => fail!("Invalid line `{}`", line.as_slice())
     };
-    port.recv();
-    port.send(Some(lit));
+    if port.recv().is_err() { break; }
+    if port.send(Some(lit)).is_err() { break; }
   }
 }
 
@@ -25,6 +24,6 @@ pub fn write_values(file: &mut Writer, port: &mut exec::Connection) {
       Ok(None) => (),
       Err(..) => break,
     }
-    port.send(None);
+    if port.send(None).is_err() { break; }
   }
 }

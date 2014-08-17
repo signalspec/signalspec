@@ -28,7 +28,7 @@ pub enum BinOp {
 	BiAdd,       // a + b
 	BiSub,       // a - b
 	BiSubSwap,   // b - a
-	
+
 	BiMul,       // a * b
 	BiDiv,       // a / b
 	BiDivSwap,   // b / a
