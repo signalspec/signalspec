@@ -20,6 +20,7 @@ mod ast;
 mod exec;
 mod dumpfile;
 mod interner;
+#[cfg(test)] mod test;
 
 peg_file! grammar("signalspec.rustpeg")
 
