@@ -100,9 +100,9 @@ impl ValueRef {
     }
   }
 
-  pub fn const_up(&self, vo: Option<Value>) -> bool {
+  pub fn const_up(&self, vo: Option<&Value>) -> bool {
     match vo {
-        Some(ref v) => {
+        Some(v) => {
           match *self {
             Ignored => true,
             Constant(ref p) => v == p,

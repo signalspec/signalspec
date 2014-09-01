@@ -5,8 +5,8 @@ extern crate arena;
 extern crate collections;
 extern crate debug;
 
-#[phase(plugin)]
-extern crate peg_syntax_ext;
+#[phase(plugin, link)] extern crate log;
+#[phase(plugin)] extern crate peg_syntax_ext;
 
 use std::os;
 use std::str;

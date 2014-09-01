@@ -26,6 +26,7 @@ fn compile(source: &str) -> TestCode {
 
 impl TestCode {
   fn up(&self, input: &'static str) -> bool {
+    debug!("--- up")
     let (mut s1, mut s2) = exec::Connection::new();
     task::spawn(proc(){
       let mut reader = MemReader::new(input.as_bytes().to_vec());
@@ -50,7 +51,7 @@ impl TestCode {
     }
   }
 
-  fn down_pass(&self, arg: &str, output: &str) {
+  fn down_pass(&self, _arg: &str, _output: &str) {
 
   }
 }
@@ -89,6 +90,6 @@ fn test_loop() {
   p.up_pass("", "#a \n #b \n #a");
   p.up_pass("", "#a \n #b \n #c \n #d \n #a");
   p.up_pass("", "#a \n #b \n #c \n #d \n #c \n #d \n #a");
-  //p.up_fail("", "#a \n #b \n #c \n #a");
+  p.up_fail("", "#a \n #b \n #c \n #a");
   p.up_fail("", "#a \n #b \n #c \n #d");
 }

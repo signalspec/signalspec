@@ -17,6 +17,15 @@ pub enum Step {
 	//PrimitiveStep(Box<PrimitiveStep>),
 }
 
+fn first(s: &Step) -> Option<(&ValueRef, &ValueRef)> {
+	match *s {
+		NopStep => None,
+		TokenStep(ref down, ref up) => Some((down, up)),
+		SeqStep(ref steps) => steps.as_slice().get(0).and_then(first),
+		RepeatStep(box ref inner) => first(inner),
+	}
+}
+
 pub fn print_step_tree(s: &Step, indent: uint) {
 	let i = " ".repeat(indent);
 	match *s {
@@ -64,10 +73,12 @@ impl Connection {
 		self.rx.recv_opt()
 	}
 
-	pub fn apply(&mut self, down: &ValueRef, up: &ValueRef) -> bool {
+	pub fn try(&mut self, down: &ValueRef, up: &ValueRef) -> bool {
 		let down_v = down.const_down();
+
 		let received = match self.lookahead.take() {
 			Some((sent, received)) => {
+				debug!("lookahead {}", received);
 				if sent != down_v { fail!("Committed {}, but sending {}", sent, down_v); }
 				received
 			}
@@ -83,10 +94,20 @@ impl Connection {
 			}
 		};
 
-		if up.const_up(received.clone()) {
+		debug!("recieved {}", received);
+		let result = up.const_up(received.as_ref());
+		self.lookahead = Some((down_v, received));
+		result
+	}
+
+
+	pub fn apply(&mut self, down: &ValueRef, up: &ValueRef) -> bool {
+		if self.try(down, up) {
+			debug!("matched {}", up);
+			self.lookahead.take();
 			true
 		} else {
-			self.lookahead = Some((down_v, received));
+			debug!("failed {}", up);
 			false
 		}
 	}
@@ -108,10 +129,13 @@ pub fn exec(s: &Step, parent: &mut Connection) -> bool {
 				true
 			}
 			RepeatStep(box ref inner) => {
+				let (down, up) = first(inner).expect("Loop has no body");
 				loop {
-					if !exec(inner, parent) {
+					if !parent.try(down, up) {
 						break;
-						// TODO: retry that event
+					}
+					if !exec(inner, parent) {
+						return false;
 					}
 				}
 				true
