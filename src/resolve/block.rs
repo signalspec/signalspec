@@ -13,7 +13,7 @@ pub use resolve::scope::{Scope, Item, ValueItem, DefItem};
 // A body associated with an event call
 pub struct EventBodyClosure<'s> {
 	ast: &'s ast::Block,
-	parentScope: Scope<'s>,
+	parent_scope: Scope<'s>,
 }
 
 pub fn resolve_module<'s>(pctx: &Context<'s>, pscope: &Scope<'s>, ast: &'s ast::Module) -> Scope<'s> {
@@ -27,7 +27,7 @@ pub fn resolve_module<'s>(pctx: &Context<'s>, pscope: &Scope<'s>, ast: &'s ast::
 	scope.add_lets(ast.lets.as_slice());
 
 	for def in ast.defs.iter() {
-		let ed = ctx.session.itemArena.alloc(DefItem(EventClosure{ ast:def, parentScope: scope.clone() }));
+		let ed = ctx.session.item_arena.alloc(DefItem(EventClosure{ ast:def, parent_scope: scope.clone() }));
 		scope.names.insert(def.name.to_string(), ed);
 	}
 
@@ -41,7 +41,7 @@ fn resolve_action<'s>(ctx: &mut Context<'s>, scope: &Scope<'s>, action: &'s ast:
 		ast::ActionCall(ref expr, ref arg, ref body) => {
 			let arg = resolve_expr(ctx, scope, arg);
 			let body = body.as_ref().map(|x| {
-				EventBodyClosure { ast: x, parentScope: scope.child() }
+				EventBodyClosure { ast: x, parent_scope: scope.child() }
 			});
 
 			match *resolve_expr(ctx, scope, expr) {
@@ -76,14 +76,14 @@ fn resolve_seq<'s>(pctx: &Context<'s>, pscope: &Scope<'s>, block: &'s ast::Block
 // A user-defined event
 pub struct EventClosure<'s> {
 	ast: &'s ast::Def,
-	parentScope: Scope<'s>,
+	parent_scope: Scope<'s>,
 }
 
 impl<'s> EventClosure<'s> {
 	pub fn resolve_call(&self, pctx: &Context<'s>, param: &'s Item<'s>, body: Option<&EventBodyClosure<'s>>) -> Step {
 		if body.is_some() { fail!("Body unimplemented"); }
 		let ctx = pctx.child();
-		let mut scope = self.parentScope.child(); // Base on lexical parent
+		let mut scope = self.parent_scope.child(); // Base on lexical parent
 
 		scope.add_param(&self.ast.param, param);
 		resolve_seq(&ctx, &scope, &self.ast.block)

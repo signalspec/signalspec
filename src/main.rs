@@ -29,9 +29,7 @@ fn main() {
 	let args = os::args();
 	let source_utf8 = File::open(&Path::new(args[1].as_slice())).read_to_end().unwrap();
 	let source = str::from_utf8(source_utf8.as_slice());
-	let module = grammar::module(source.unwrap());
-
-	let module = module.unwrap();
+	let module = grammar::module(source.unwrap()).unwrap();
 
 	let prelude = resolve::Scope::new();
 

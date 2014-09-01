@@ -6,20 +6,20 @@ use resolve::scope::Item;
 
 /// The data common to an entire resolve pass
 pub struct Session<'session> {
-	pub itemArena: TypedArena<Item<'session>>,
-	idCounter: AtomicUint,
+	pub item_arena: TypedArena<Item<'session>>,
+	id_counter: AtomicUint,
 }
 
 impl<'session> Session<'session> {
 	pub fn new() -> Session<'session> {
 		Session {
-			itemArena: TypedArena::new(),
-			idCounter: AtomicUint::new(1),
+			item_arena: TypedArena::new(),
+			id_counter: AtomicUint::new(1),
 		}
 	}
 
 	pub fn make_id<T>(&self) -> Id<T> {
-      Id(self.idCounter.fetch_add(1, Relaxed))
+      Id(self.id_counter.fetch_add(1, Relaxed))
   }
 }
 

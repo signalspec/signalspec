@@ -238,7 +238,7 @@ pub fn resolve_expr<'s>(ctx: &mut Context<'s>, scope: &Scope<'s>, e: &ast::Expr)
 
 		_ => {
 			let (tp, down, up) = resolve_value_expr(ctx, scope, e);
-			ctx.session.itemArena.alloc(ValueItem(tp, down, up))
+			ctx.session.item_arena.alloc(ValueItem(tp, down, up))
 		}
 	}
 }
