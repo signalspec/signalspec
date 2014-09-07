@@ -93,3 +93,27 @@ fn test_loop() {
   p.up_fail("", "#a \n #b \n #c \n #a");
   p.up_fail("", "#a \n #b \n #c \n #d");
 }
+
+#[test]
+fn test_nested_loop() {
+  let p = compile("
+  def main(w) {
+    #a
+    repeat {
+      repeat {
+        :> #b
+      }
+      repeat {
+        :> #c
+      }
+      :> #d
+    }
+    :> #e
+  }
+  ");
+
+  p.up_pass("", "#a \n #e");
+  p.up_pass("", "#a \n #b \n #c \n #d \n #e");
+  p.up_pass("", "#a \n #b \n #b \n #c \n #c \n #c \n #d \n #b \n #d \n #e");
+  p.up_fail("", "#a \n #b \n #c");
+}
