@@ -10,7 +10,7 @@ use ast::{
 };
 use eval;
 use resolve::context::Context;
-use resolve::scope::{ Scope, Item, ValueItem, ValueRef, Constant, Dynamic, Ignored, Poison};
+use resolve::scope::{ Scope, Item, ValueItem, TupleItem, ValueRef, Constant, Dynamic, Ignored, Poison};
 use resolve::types::{Type, TopType, common_type, common_type_all };
 
 // This would take an iterator if it weren't for mozilla/rust#5121
@@ -219,7 +219,7 @@ fn resolve_value_expr<'s>(ctx: &mut Context<'s>, scope: &Scope<'s>, e: &ast::Exp
 			(tp, down, up)
 		}
 
-		ast::VarExpr(..) | ast::DotExpr(..) => {
+		ast::VarExpr(..) | ast::DotExpr(..) | ast::TupExpr(..) => {
 			match resolve_expr(ctx, scope, e) {
 				&ValueItem(ref t, ref du, ref uu) => (t.clone(), du.clone(), uu.clone()),
 				_ => fail!("Expected a value expression")
@@ -232,6 +232,12 @@ pub fn resolve_expr<'s>(ctx: &mut Context<'s>, scope: &Scope<'s>, e: &ast::Expr)
 	match *e {
 		ast::VarExpr(ref name) => {
 			scope.get(name.as_slice()).expect("Undefined variable")
+		}
+
+		ast::TupExpr(ref items) => {
+			ctx.session.item_arena.alloc(
+				TupleItem(items.iter().map(|i| resolve_expr(ctx, scope, i)).collect())
+			)
 		}
 
 		ast::DotExpr(box ref _lexpr, ref _name) => unimplemented!(),

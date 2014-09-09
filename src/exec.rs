@@ -11,16 +11,16 @@ pub trait PrimitiveStep {
 
 pub enum Step {
 	NopStep,
-	TokenStep(/*down*/ ValueRef, /*up*/ ValueRef),
+	TokenStep(/*down*/ Vec<ValueRef> , Vec<ValueRef> /*up*/),
 	SeqStep(Vec<Step>),
 	RepeatStep(Box<Step>),
 	//PrimitiveStep(Box<PrimitiveStep>),
 }
 
-fn first(s: &Step) -> Option<(&ValueRef, &ValueRef)> {
+fn first(s: &Step) -> Option<(&[ValueRef], &[ValueRef])> {
 	match *s {
 		NopStep => None,
-		TokenStep(ref down, ref up) => Some((down, up)),
+		TokenStep(ref down, ref up) => Some((down.as_slice(), up.as_slice())),
 		SeqStep(ref steps) => steps.as_slice().get(0).and_then(first),
 		RepeatStep(box ref inner) => first(inner),
 	}
@@ -53,9 +53,9 @@ pub fn print_step_tree(s: &Step, indent: uint) {
 }
 
 pub struct Connection {
-	rx: comm::Receiver<Option<Value>>,
-	tx: comm::Sender<Option<Value>>,
-	lookahead: Option<(Option<Value>, Option<Value>)>,
+	rx: comm::Receiver<Vec<Value>>,
+	tx: comm::Sender<Vec<Value>>,
+	lookahead: Option<(Vec<Value>, Vec<Value>)>,
 }
 
 impl Connection {
@@ -65,16 +65,16 @@ impl Connection {
 		(Connection{ tx: s1, rx: r2, lookahead: None }, Connection{ tx: s2, rx: r1, lookahead: None })
 	}
 
-	pub fn send(&self, v: Option<Value>) -> Result<(), Option<Value>> {
+	pub fn send(&self, v: Vec<Value>) -> Result<(), Vec<Value>> {
 		self.tx.send_opt(v)
 	}
 
-	pub fn recv(&self) -> Result<Option<Value>, ()> {
+	pub fn recv(&self) -> Result<Vec<Value>, ()> {
 		self.rx.recv_opt()
 	}
 
-	pub fn try(&mut self, down: &ValueRef, up: &ValueRef) -> bool {
-		let down_v = down.const_down();
+	pub fn try(&mut self, down: &[ValueRef], up: &[ValueRef]) -> bool {
+		let down_v: Vec<Value> = down.iter().map(|i| i.const_down()).collect();
 
 		let received = match self.lookahead.take() {
 			Some((sent, received)) => {
@@ -95,13 +95,13 @@ impl Connection {
 		};
 
 		debug!("recieved {}", received);
-		let result = up.const_up(received.as_ref());
+		let result = up.iter().zip(received.iter()).fold(true, |success, (pat, rx)| success & pat.const_up(rx));
 		self.lookahead = Some((down_v, received));
 		result
 	}
 
 
-	pub fn apply(&mut self, down: &ValueRef, up: &ValueRef) -> bool {
+	pub fn apply(&mut self, down: &[ValueRef], up: &[ValueRef]) -> bool {
 		if self.try(down, up) {
 			debug!("matched {}", up);
 			self.lookahead.take();
@@ -117,7 +117,7 @@ pub fn exec(s: &Step, parent: &mut Connection) -> bool {
 		match *s {
 			NopStep => true,
 			TokenStep(ref down, ref up) => {
-				parent.apply(down, up)
+				parent.apply(down.as_slice(), up.as_slice())
 			}
 			SeqStep(ref steps) => {
 				for c in steps.iter() {

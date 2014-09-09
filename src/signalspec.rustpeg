@@ -12,7 +12,7 @@ include -> ast::UseDef
 	{ ast::UseDef(name) }
 
 letstmt -> ast::LetDef
-	= LET _ name:identifier _ "=" _ value:valexpr BREAK
+	= LET _ name:identifier _ "=" _ value:expr BREAK
 	{ ast::LetDef(name, value) }
 
 def -> ast::Def
@@ -26,9 +26,9 @@ def -> ast::Def
 	action -> ast::Action
 		= REPEAT _ block:block BREAK
 			{ ast::ActionRepeat(block) }
-		/ expr:varexpr _ "(" _ param:valexpr _ ")" _ body:block? BREAK
+		/ expr:varexpr _ "(" _ param:expr_tup _ ")" _ body:block? BREAK
 			{ ast::ActionCall(expr, param, body) }
-		/ expr:valexpr body:block? BREAK
+		/ expr:expr body:block? BREAK
 			{ ast::ActionToken(expr, body) }
 
 #[export]
@@ -52,8 +52,17 @@ typeexpr -> ast::TypeExpr
 // Expressions
 
 #[export]
+expr -> ast::Expr
+	= "(" _ e:expr_tup _")" {e}
+  / valexpr
+
+expr_tup -> ast::Expr
+  = es:(expr ++ COMMA) COMMA?
+    { if es.len() == 1 { es.move_iter().next().unwrap() } else { ast::TupExpr(es) } }
+
+#[export]
 valexpr -> ast::Expr
-	= valexpr_flip
+  = valexpr_flip
 
 	valexpr_flip -> ast::Expr
 		= l:valexpr_range _ "!" _ r:valexpr_range { ast::FlipExpr(box l, box r) }

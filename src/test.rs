@@ -117,3 +117,16 @@ fn test_nested_loop() {
   p.up_pass("", "#a \n #b \n #b \n #c \n #c \n #c \n #d \n #b \n #d \n #e");
   p.up_fail("", "#a \n #b \n #c");
 }
+
+#[test]
+fn test_tup() {
+  let p = compile("
+    def main(w) {
+      (#a, #b)
+      (#c, #d)
+    }
+  ");
+
+  p.up_pass("", "#a, #b \n #c, #d");
+  p.up_fail("", "#a, #d \n #c, #b");
+}

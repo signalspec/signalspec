@@ -50,7 +50,8 @@ impl<'s> Scope<'s> {
 pub enum Item<'s> {
   EmptyItem, // TODO: 0-item tuple
   DefItem(EventClosure<'s>),
-  ValueItem(Type, ValueRef /*Down*/, ValueRef /*Up*/)
+  ValueItem(Type, ValueRef /*Down*/, ValueRef /*Up*/),
+  TupleItem(Vec<&'s Item<'s>>) // TODO: named components
 }
 
 impl<'s> PartialEq for Item<'s> {
@@ -66,6 +67,28 @@ impl<'s> PartialEq for Item<'s> {
 impl<'s> fmt::Show for Item<'s> {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
     write!(f, "{:?}", self)
+  }
+}
+
+impl<'s> Item<'s> {
+  fn flatten_into(&self, down: &mut Vec<ValueRef>, up: &mut Vec<ValueRef>) {
+    // TODO: check shape
+    match *self {
+      EmptyItem => (),
+      ValueItem(_, ref d, ref u) => {
+        down.push(d.clone());
+        up.push(u.clone());
+      },
+      TupleItem(ref t) => for i in t.iter() { i.flatten_into(down, up) },
+      DefItem(..) => fail!("Cannot flatten non-sendable expression")
+    }
+  }
+
+  pub fn flatten(&self) -> (Vec<ValueRef>, Vec<ValueRef>) {
+    let mut down = Vec::new();
+    let mut up = Vec::new();
+    self.flatten_into(&mut down, &mut up);
+    (down, up)
   }
 }
 
@@ -91,26 +114,21 @@ impl fmt::Show for ValueRef {
 }
 
 impl ValueRef {
-  pub fn const_down(&self) -> Option<Value> {
+  pub fn const_down(&self) -> Value {
     match *self {
-      Ignored => None,
-      Constant(ref v) => Some(v.clone()),
+      Ignored => ast::NumberValue(0.), // should fail?
+      Constant(ref v) => v.clone(),
       Dynamic(..) => fail!("const_down of a dynamic!"),
       Poison(s) => fail!("const_down of a poison: {}", s),
     }
   }
 
-  pub fn const_up(&self, vo: Option<&Value>) -> bool {
-    match vo {
-        Some(v) => {
-          match *self {
-            Ignored => true,
-            Constant(ref p) => v == p,
-            Dynamic(..) => fail!("const_up of a dynamic!"),
-            Poison(s) => fail!("const_up of a poison: {}", s),
-          }
-        }
-        None => true
+  pub fn const_up(&self, v: &Value) -> bool {
+    match *self {
+      Ignored => true,
+      Constant(ref p) => v == p,
+      Dynamic(..) => fail!("const_up of a dynamic!"),
+      Poison(s) => fail!("const_up of a poison: {}", s),
     }
   }
 }

@@ -78,6 +78,7 @@ impl fmt::Show for Value {
 
 pub enum Expr {
 	ValueExpr(Value),
+	TupExpr(Vec<Expr>),
 	IgnoreExpr,
 
 	FlipExpr(Box<Expr>, Box<Expr>),

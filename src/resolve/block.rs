@@ -51,11 +51,8 @@ fn resolve_action<'s>(ctx: &mut Context<'s>, scope: &Scope<'s>, action: &'s ast:
 		}
 		ast::ActionToken(ref expr, ref body) => {
 			if body.is_some() { fail!("Body unimplemented"); }
-
-			match *resolve_expr(ctx, scope, expr) {
-				ValueItem(_, ref down, ref up) => TokenStep(down.clone(), up.clone()),
-				_ => fail!("Non-values can't be included in a token")
-			}
+			let (down, up) = resolve_expr(ctx, scope, expr).flatten();
+			TokenStep(down, up)
 		}
 		ast::ActionRepeat(ref block) => {
 			RepeatStep(box resolve_seq(ctx, scope, block))
