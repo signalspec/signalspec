@@ -257,6 +257,9 @@ pub fn resolve_pattern<'s>(ctx: &mut Context<'s>, scope: &mut Scope<'s>, l: &ast
 		ast::TupExpr(ref exprs) => {
 			match r {
 				TupleItem(v) => {
+					if exprs.len() != v.len() {
+						fail!("can't bind a tuple with a different length");
+					}
 					for (expr, item) in exprs.iter().zip(v.move_iter()) {
 						resolve_pattern(ctx, scope, expr, item);
 					}

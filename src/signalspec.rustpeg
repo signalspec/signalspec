@@ -16,7 +16,7 @@ letstmt -> ast::LetDef
 	{ ast::LetDef(name, value) }
 
 def -> ast::Def
-	= DEF _ name:identifier _ "(" _ param: varexpr _ ")" _ block:block BREAK
+	= DEF _ name:identifier _ "(" _ param: expr_tup _ ")" _ block:block BREAK
 	{ ast::Def{ name:name, param:param, block:block } }
 
 	block -> ast::Block
@@ -57,7 +57,7 @@ expr -> ast::Expr
   / valexpr
 
 expr_tup -> ast::Expr
-  = es:(expr ++ COMMA) COMMA?
+  = es:(expr ** COMMA) COMMA?
     { if es.len() == 1 { es.move_iter().next().unwrap() } else { ast::TupExpr(es) } }
 
 #[export]

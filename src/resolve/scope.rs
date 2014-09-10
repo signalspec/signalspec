@@ -1,5 +1,6 @@
 use std::fmt;
 use std::collections::hashmap::HashMap;
+use std::default::Default;
 
 use resolve::block::{EventClosure};
 use resolve::context::ValueID;
@@ -44,7 +45,6 @@ impl<'s> Scope<'s> {
 /// A thing associated with a name in a Scope
 #[deriving(Clone)]
 pub enum Item<'s> {
-  EmptyItem, // TODO: 0-item tuple
   DefItem(&'s EventClosure<'s>),
   ValueItem(Type, ValueRef /*Down*/, ValueRef /*Up*/),
   TupleItem(Vec<Item<'s>>) // TODO: named components
@@ -60,6 +60,12 @@ impl<'s> PartialEq for Item<'s> {
   }
 }
 
+impl <'s> Default for Item<'s> {
+  fn default() -> Item<'s> {
+    TupleItem(Vec::new())
+  }
+}
+
 impl<'s> fmt::Show for Item<'s> {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
     write!(f, "{:?}", self)
@@ -70,7 +76,6 @@ impl<'s> Item<'s> {
   fn flatten_into(&self, down: &mut Vec<ValueRef>, up: &mut Vec<ValueRef>) {
     // TODO: check shape
     match *self {
-      EmptyItem => (),
       ValueItem(_, ref d, ref u) => {
         down.push(d.clone());
         up.push(u.clone());

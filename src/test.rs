@@ -1,5 +1,6 @@
 use std::io::MemReader;
 use std::task;
+use std::default::Default;
 
 use {session, resolve, grammar, exec, dumpfile};
 
@@ -20,7 +21,7 @@ fn compile(source: &str) -> TestCode {
     _ => fail!("Main is not an event"),
   };
 
-  TestCode{ step: main.resolve_call(&mut ctx, resolve::scope::EmptyItem, None) }
+  TestCode{ step: main.resolve_call(&mut ctx, Default::default(), None) }
 }
 
 impl TestCode {
@@ -58,7 +59,7 @@ impl TestCode {
 #[test]
 fn test_seq() {
   let p = compile("
-  def main (w) {
+  def main () {
     #a
     #b
     #c
@@ -75,7 +76,7 @@ fn test_seq() {
 #[test]
 fn test_loop() {
   let p = compile("
-  def main(w) {
+  def main() {
     #a
     #b
     repeat {
@@ -96,7 +97,7 @@ fn test_loop() {
 #[test]
 fn test_nested_loop() {
   let p = compile("
-  def main(w) {
+  def main() {
     #a
     repeat {
       repeat {

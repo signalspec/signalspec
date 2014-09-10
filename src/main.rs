@@ -12,6 +12,7 @@ use std::os;
 use std::str;
 use std::io::fs::File;
 use std::task;
+use std::default::Default;
 
 mod session;
 mod resolve;
@@ -43,7 +44,7 @@ fn main() {
 		_ => fail!("Main is not an event"),
 	};
 
-	let event = main.resolve_call(&mut ctx, resolve::scope::EmptyItem, None);
+	let event = main.resolve_call(&mut ctx, Default::default(), None);
 	exec::print_step_tree(&event, 0);
 
 	let (s1, mut s2) = exec::Connection::new();
