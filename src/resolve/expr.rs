@@ -30,10 +30,17 @@ fn count_ref_types<'a, T: Iterator<&'a ValueRef>>(mut l: T) -> Result<(uint, uin
 }
 
 fn resolve_value_expr<'s>(ctx: &mut Context<'s>, scope: &Scope<'s>, e: &ast::Expr) ->  (Type, ValueRef /*Down*/, ValueRef /*Up*/) {
-	match *e {
-		ast::IgnoreExpr => (TopType, Ignored, Ignored),
+	match resolve_expr(ctx, scope, e) {
+		ValueItem(ref t, ref du, ref uu) => (t.clone(), du.clone(), uu.clone()),
+		_ => fail!("Expected a value expression")
+	}
+}
 
-		ast::ValueExpr(ref val) => (val.get_type(), Constant(val.clone()), Constant(val.clone())),
+pub fn resolve_expr<'s>(ctx: &mut Context<'s>, scope: &Scope<'s>, e: &ast::Expr) -> Item<'s> {
+	match *e {
+		ast::IgnoreExpr => ValueItem(TopType, Ignored, Ignored),
+
+		ast::ValueExpr(ref val) => ValueItem(val.get_type(), Constant(val.clone()), Constant(val.clone())),
 
 		ast::FlipExpr(box ref down, box ref up) => {
 			let (down_type, down_ref, _     ) = resolve_value_expr(ctx, scope, down);
@@ -41,7 +48,7 @@ fn resolve_value_expr<'s>(ctx: &mut Context<'s>, scope: &Scope<'s>, e: &ast::Exp
 
 			let common_type = common_type(down_type, up_type).expect("Flip expr sides must be of common type");
 
-			(common_type, down_ref, up_ref)
+			ValueItem(common_type, down_ref, up_ref)
 		}
 
 		ast::RangeExpr(box ref min_expr, box ref max_expr) => {
@@ -67,7 +74,7 @@ fn resolve_value_expr<'s>(ctx: &mut Context<'s>, scope: &Scope<'s>, e: &ast::Exp
 			let up = ctx.up_op_cell(0, |cell| eval::RangeCheckOp(cell, min, max));
 
 			//TODO: up is not quite dynamic; specifically should be able to be used in a Choose arm
-			(NumberType, Poison("Range can only be up-evaluated"), up)
+			ValueItem(NumberType, Poison("Range can only be up-evaluated"), up)
 		}
 
 		ast::ChooseExpr(box ref e, ref c) => {
@@ -111,7 +118,7 @@ fn resolve_value_expr<'s>(ctx: &mut Context<'s>, scope: &Scope<'s>, e: &ast::Exp
 			};
 
 			// TODO: ignores, check types for case coverage
-			(r_type, down, up)
+			ValueItem(r_type, down, up)
 		}
 
 		ast::ConcatExpr(ref v) =>  {
@@ -183,7 +190,7 @@ fn resolve_value_expr<'s>(ctx: &mut Context<'s>, scope: &Scope<'s>, e: &ast::Exp
 				}
 			};
 
-			(VectorType(len), down, up)
+			ValueItem(VectorType(len), down, up)
 		}
 
 		ast::BinExpr(box ref a, op, box ref b) => {
@@ -216,36 +223,18 @@ fn resolve_value_expr<'s>(ctx: &mut Context<'s>, scope: &Scope<'s>, e: &ast::Exp
 				(Poison(e), _) | (_, Poison(e)) => Poison(e),
 			};
 
-			(tp, down, up)
+			ValueItem(tp, down, up)
 		}
 
-		ast::VarExpr(..) | ast::DotExpr(..) | ast::TupExpr(..) => {
-			match resolve_expr(ctx, scope, e) {
-				&ValueItem(ref t, ref du, ref uu) => (t.clone(), du.clone(), uu.clone()),
-				_ => fail!("Expected a value expression")
-			}
-		}
-	}
-}
-
-pub fn resolve_expr<'s>(ctx: &mut Context<'s>, scope: &Scope<'s>, e: &ast::Expr) -> &'s Item<'s> {
-	match *e {
 		ast::VarExpr(ref name) => {
 			scope.get(name.as_slice()).expect("Undefined variable")
 		}
 
 		ast::TupExpr(ref items) => {
-			ctx.session.item_arena.alloc(
-				TupleItem(items.iter().map(|i| resolve_expr(ctx, scope, i)).collect())
-			)
+			TupleItem(items.iter().map(|i| resolve_expr(ctx, scope, i)).collect())
 		}
 
 		ast::DotExpr(box ref _lexpr, ref _name) => unimplemented!(),
-
-		_ => {
-			let (tp, down, up) = resolve_value_expr(ctx, scope, e);
-			ctx.session.item_arena.alloc(ValueItem(tp, down, up))
-		}
 	}
 }
 
@@ -281,7 +270,7 @@ mod test {
 		let scope = Scope::new();
 		let e = grammar::valexpr(s).unwrap();
 		let r = resolve_expr(&mut ctx, &scope, &e);
-		assert_eq!(r, &ValueItem(t, down, up));
+		assert_eq!(r, ValueItem(t, down, up));
 	}
 
 	#[test]

@@ -27,7 +27,7 @@ pub fn resolve_module<'s>(pctx: &Context<'s>, pscope: &Scope<'s>, ast: &'s ast::
 	scope.add_lets(ast.lets.as_slice());
 
 	for def in ast.defs.iter() {
-		let ed = ctx.session.item_arena.alloc(DefItem(EventClosure{ ast:def, parent_scope: scope.clone() }));
+		let ed = DefItem(ctx.session.closure_arena.alloc(EventClosure{ ast:def, parent_scope: scope.clone() }));
 		scope.names.insert(def.name.to_string(), ed);
 	}
 
@@ -44,8 +44,8 @@ fn resolve_action<'s>(ctx: &mut Context<'s>, scope: &Scope<'s>, action: &'s ast:
 				EventBodyClosure { ast: x, parent_scope: scope.child() }
 			});
 
-			match *resolve_expr(ctx, scope, expr) {
-				DefItem(ref entity) => entity.resolve_call(ctx, arg, body.as_ref()),
+			match resolve_expr(ctx, scope, expr) {
+				DefItem(entity) => entity.resolve_call(ctx, &arg, body.as_ref()),
 				_ => fail!("Not callable"),
 			}
 		}
@@ -77,12 +77,12 @@ pub struct EventClosure<'s> {
 }
 
 impl<'s> EventClosure<'s> {
-	pub fn resolve_call(&self, pctx: &Context<'s>, param: &'s Item<'s>, body: Option<&EventBodyClosure<'s>>) -> Step {
+	pub fn resolve_call(&self, pctx: &Context<'s>, param: &Item<'s>, body: Option<&EventBodyClosure<'s>>) -> Step {
 		if body.is_some() { fail!("Body unimplemented"); }
 		let ctx = pctx.child();
 		let mut scope = self.parent_scope.child(); // Base on lexical parent
 
-		scope.add_param(&self.ast.param, param);
+		scope.add_param(&self.ast.param, param.clone());
 		resolve_seq(&ctx, &scope, &self.ast.block)
 	}
 }

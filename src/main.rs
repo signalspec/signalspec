@@ -38,8 +38,8 @@ fn main() {
 
 	let modscope = resolve::resolve_module(&mut ctx, &prelude, &module);
 
-	let main = match *modscope.get("main").unwrap() {
-		resolve::scope::DefItem(ref s) => s,
+	let main = match modscope.get("main").unwrap() {
+		resolve::scope::DefItem(s) => s,
 		_ => fail!("Main is not an event"),
 	};
 

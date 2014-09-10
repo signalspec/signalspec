@@ -10,7 +10,7 @@ use ast::Value;
 /// A collection of named Items.
 #[deriving(Clone)]
 pub struct Scope<'s>{
-  pub names: HashMap<String, &'s Item<'s>>,
+  pub names: HashMap<String, Item<'s>>,
 }
 
 impl<'s> Scope<'s> {
@@ -26,7 +26,7 @@ impl<'s> Scope<'s> {
     }
   }
 
-  pub fn add_param(&mut self, param_def: &ast::Expr, param_value: &'s Item<'s>) {
+  pub fn add_param(&mut self, param_def: &ast::Expr, param_value: Item<'s>) {
     match *param_def {
       ast::VarExpr(ref name) => {
         self.names.insert(name.to_string(), param_value);
@@ -35,7 +35,7 @@ impl<'s> Scope<'s> {
     }
   }
 
-  pub fn get(&self, name: &str) -> Option<&'s Item<'s>> {
+  pub fn get(&self, name: &str) -> Option<Item<'s>> {
     self.names.find_equiv(&name).map(|x| x.clone())
   }
 
@@ -47,11 +47,12 @@ impl<'s> Scope<'s> {
 }
 
 /// A thing associated with a name in a Scope
+#[deriving(Clone)]
 pub enum Item<'s> {
   EmptyItem, // TODO: 0-item tuple
-  DefItem(EventClosure<'s>),
+  DefItem(&'s EventClosure<'s>),
   ValueItem(Type, ValueRef /*Down*/, ValueRef /*Up*/),
-  TupleItem(Vec<&'s Item<'s>>) // TODO: named components
+  TupleItem(Vec<Item<'s>>) // TODO: named components
 }
 
 impl<'s> PartialEq for Item<'s> {
