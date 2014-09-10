@@ -20,8 +20,7 @@ fn compile(source: &str) -> TestCode {
     _ => fail!("Main is not an event"),
   };
 
-  let w = resolve::scope::EmptyItem;
-  TestCode{ step: main.resolve_call(&mut ctx, &w, None) }
+  TestCode{ step: main.resolve_call(&mut ctx, resolve::scope::EmptyItem, None) }
 }
 
 impl TestCode {

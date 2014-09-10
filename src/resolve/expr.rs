@@ -238,6 +238,40 @@ pub fn resolve_expr<'s>(ctx: &mut Context<'s>, scope: &Scope<'s>, e: &ast::Expr)
 	}
 }
 
+
+pub fn resolve_pattern<'s>(ctx: &mut Context<'s>, scope: &mut Scope<'s>, l: &ast::Expr, r: Item<'s>) {
+	match *l {
+		ast::IgnoreExpr => (),
+		ast::ValueExpr(ref _val) => fail!("patterns cannot be falsifiable"),
+		ast::RangeExpr(box ref _min_expr, box ref _max_expr) => fail!("patterns cannot be refutable"),
+
+		ast::FlipExpr(box ref _down, box ref _up) => unimplemented!(),
+		ast::ChooseExpr(box ref _e, ref _c) => unimplemented!(),
+		ast::ConcatExpr(ref _v) =>  unimplemented!(),
+		ast::BinExpr(box ref _a, _op, box ref _b) => unimplemented!(),
+
+		ast::VarExpr(ref name) => {
+			scope.bind(name.as_slice(), r);
+		}
+
+		ast::TupExpr(ref exprs) => {
+			match r {
+				TupleItem(v) => {
+					for (expr, item) in exprs.iter().zip(v.move_iter()) {
+						resolve_pattern(ctx, scope, expr, item);
+					}
+				}
+				_ => fail!("can't bind a tuple with a non-tuple")
+			}
+		}
+
+		ast::DotExpr(box ref _lexpr, ref _name) => fail!("Cannot declare a property"),
+	}
+}
+
+
+
+
 #[cfg(test)]
 mod test {
 	use super::resolve_expr;

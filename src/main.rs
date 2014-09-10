@@ -43,8 +43,7 @@ fn main() {
 		_ => fail!("Main is not an event"),
 	};
 
-	let w = resolve::scope::EmptyItem;
-	let event = main.resolve_call(&mut ctx, &w, None);
+	let event = main.resolve_call(&mut ctx, resolve::scope::EmptyItem, None);
 	exec::print_step_tree(&event, 0);
 
 	let (s1, mut s2) = exec::Connection::new();

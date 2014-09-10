@@ -1,7 +1,7 @@
 use ast;
 
 use resolve::context::Context;
-use resolve::expr::resolve_expr;
+use resolve::expr::{resolve_expr, resolve_pattern};
 pub use exec::{
 	Step,
 		NopStep,
@@ -45,7 +45,7 @@ fn resolve_action<'s>(ctx: &mut Context<'s>, scope: &Scope<'s>, action: &'s ast:
 			});
 
 			match resolve_expr(ctx, scope, expr) {
-				DefItem(entity) => entity.resolve_call(ctx, &arg, body.as_ref()),
+				DefItem(entity) => entity.resolve_call(ctx, arg, body.as_ref()),
 				_ => fail!("Not callable"),
 			}
 		}
@@ -77,12 +77,12 @@ pub struct EventClosure<'s> {
 }
 
 impl<'s> EventClosure<'s> {
-	pub fn resolve_call(&self, pctx: &Context<'s>, param: &Item<'s>, body: Option<&EventBodyClosure<'s>>) -> Step {
+	pub fn resolve_call(&self, pctx: &Context<'s>, param: Item<'s>, body: Option<&EventBodyClosure<'s>>) -> Step {
 		if body.is_some() { fail!("Body unimplemented"); }
-		let ctx = pctx.child();
+		let mut ctx = pctx.child();
 		let mut scope = self.parent_scope.child(); // Base on lexical parent
+		resolve_pattern(&mut ctx, &mut scope, &self.ast.param, param);
 
-		scope.add_param(&self.ast.param, param.clone());
 		resolve_seq(&ctx, &scope, &self.ast.block)
 	}
 }

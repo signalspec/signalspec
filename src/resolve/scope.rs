@@ -26,13 +26,8 @@ impl<'s> Scope<'s> {
     }
   }
 
-  pub fn add_param(&mut self, param_def: &ast::Expr, param_value: Item<'s>) {
-    match *param_def {
-      ast::VarExpr(ref name) => {
-        self.names.insert(name.to_string(), param_value);
-      }
-      _ => fail!("Unimplemented expression form in parameter")
-    }
+  pub fn bind(&mut self, name: &str, value: Item<'s>) {
+    self.names.insert(name.to_string(), value);
   }
 
   pub fn get(&self, name: &str) -> Option<Item<'s>> {
