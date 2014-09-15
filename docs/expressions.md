@@ -1,7 +1,3 @@
-# Signalspec Language Reference
-
-Signalspec is statically typed. A subset is designed for efficient compilation to embedded processors or even potentially FPGAs.
-
 ## Expressions: Bidirectional Evaluation
 
 Evaluation of expressions can occur in two directions: **Up** and **down** the abstraction stack. *[Maybe to be called push and pull evaluation?]*
@@ -15,7 +11,7 @@ Evaluation of expressions can occur in two directions: **Up** and **down** the a
 bit literals: `'1010`, `'xAA55`  
 symbol literals: `#abc`  
 number literals: `42.1`  
-unit literals: `3.3V`
+unit literals: `3.3V`  
 
 **down:** Evaluates to itself.  
 **up:** Match if the pushed value is equal, or fail if the pushed value is not equal.
@@ -24,15 +20,24 @@ unit literals: `3.3V`
 
 No syntax (Provided at top level by caller).
 
-**down:** `ignore`  
+**down:** ignored  
 **up:** If the unknown has not been bound, bind it to the pushed value. If it already has a value, up-evaluate the existing value with the pushed value (which fails if the values are not equivalent).
 
 ### Ignore
 
-	ignore
+	_
 
 **down:** Evaluates to itself. When used as an operand, that operator returns `ignore` too.  
 **up:** Pushed value is discarded, match always succeeds.
+
+### Arithmetic expressions
+
+types: numbers
+
+	a+b, a*b, a-b, a/b
+
+**Down:** Down-evaluate both arguments and perform operation.  
+**Up:** If one argument is constant, perform the inverse operation with the pushed value and the constant and up-evaluate the non-constant argument with the result.
 
 ### Switch
 
@@ -67,13 +72,13 @@ Syntactic sugar for `ignore ! y`
 
 	min..max
 
-**down:** Evaluates to itself. *(or maybe an error to use in a position where it may be down-evaluated.)*  
+**down:** It is an error if a range is a in a position where it is down-evaluated.
 **up:** Down-evaluate numbers `min` and `max`. Match if the pushed value is between `min` (inclusive) and `max` (exclusive), or fail if it is outside the range.
 
-If min is omitted (`..max`), it defaults to -Infinity.  
+If min is omitted (`..max`), it defaults to -Infinity.
 If max is omitted (`min..`), it defaults to Infinity.
 
-Example: `nom!min..max`  
+Example: `nom!min..max`
 Nominal value used for down-evaluation, match values between min..max on up-evaluation.
 
 ### Mappings
@@ -87,33 +92,19 @@ Because of the properties of `ignore`, it can be used as an "else" clause, in ei
 
 Mappings work like Haskell's case expressions, but bidirectionally.
 
+### Tuples
+
+	(a, b, x=y, ..f)
+
+Tuples can contain positional and named elements. The optional "functional update" expression `..f` at the end bidirectionally binds named elements from the tuple `f` that are not overridden by the literal.
+
 ### Concatenations
 
 types: vector
 
-	[a1:l1, a2:l2, a3:l3, a4:l4]
+	[l1:a1, v1, l2:a2, :a3, v2, l4:a4]
 
-**down:** Down-evaluate each part. Assert that the length of data `ax` is the number `lx`. Return the concatenation of `a1` + `a2` + ... + `an`.  
-**up:** Split the data into parts using the lengths `l1`...`ln`. Up-evaluate each `a1`...`an` field with the respective part.
+**down:** Down-evaluate each part. Assert that the length of data `ax` is the number `lx`. Components without the `:`, like `v1`, are treated as length 1, and the value is inserted directly into the vector. Return the concatenation of `a1` + [`v1`] + `a2` + ... + `an`.  
+**up:** Split the data into parts using the lengths `l1`...`ln`. Up-evaluate each `a1`...`an` field with the respective part. Components without the `:` are treated as length 1, and the expression up-evaluted with the element at that position.
 
 The width expressions `lx` must be compile-time constant, or may be omitted if it can be inferred from a parameter's type declaration.
-
-### Arithmetic expressions
-
-types: numbers
-
-	a+b, a*b, a-b, a/b
-
-**Down:** Down-evaluate both arguments and perform operation.  
-**Up:** If one argument is constant, perform the inverse operation with the pushed value and the constant and up-evaluate the non-constant argument with the result.
-
-### Bitwise expressions
-
-types: bits, bytes
-
-```
-a|b, a&b, a^b
-```
-
-**Down:** Down-evaluate arguments and perform corresponding bitwise or, and, xor operation.  
-**Up:** Down-evaluate itself and fail the the pushed value is not equal.
