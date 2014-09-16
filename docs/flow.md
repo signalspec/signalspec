@@ -28,7 +28,9 @@ Its main purpose is partial application / currying of streams. This can be optim
 
 <code><b>repeat</b> <var>n</var> <b>{ </b> <var>(first) ; [rest]</var> <b>};</b> <var>(follow...)</var></code>
 
-Perform the actions in the block repeatedly. If the first token expression (recursively) of the body can be disambiguated via up-evaluation from the first token expression of the block after the repeat statement, they must be identical in the down direction. The number of repetitions is bounded by the signal by determining which expression matches at the beginning of each loop iteration, and the count is up-evaluated into expression `n`. Otherwise, `n` is down-evaluated, and the body repeated that many times.
+Perform the actions in the block `n` times. The heuristic described in "Disambiguation rule" below (applied to the loop body and the block following the loop body) infers the data direction of the count `n` based on the data direction of the tokens being manipulated in the loop.
+
+If the first token expression of the body can be disambiguated from the first token expression of the block after the repeat statement, the number of repetitions is bounded by the signal, and the count is up-evaluated into expression `n`. Otherwise, `n` is down-evaluated, and the body repeated that many times.
 
 In sampled signals, this is used to measure and set the time duration of signal features.
 
@@ -45,9 +47,10 @@ In sampled signals, this is used to measure and set the time duration of signal 
 
 <code><b>switch</b> <var>expr</var> <b> { when</b> <var>expr1</var> <b> { </b><var>body1</var><b> } when</b> <var>expr2</var> <b> { </b><var>body2</var><b> }</b> <var>...</var> <b>}</b>
 
-If the first token expression of each of `body1`, `body2`, <code>body<var>n</var></code> can be disambiguated in the up direction, they must be identical in the down direction. The choice of branch is determined by which first token expression matches. `expr` is up-evaluated with <code>expr<var>n</var></code> corresponding to the branch taken.
 
-Otherwise, `expr` is down-evaluated and matched against <code>expr<var>n</var></code>. The first matching branch is taken.
+The heuristic described in "Disambiguation rule" below (applied to each of the case body blocks) infers whether the expression is down evaluated and matched against the arms, or vice versa.
+
+If the first token expression of each of `body1`, `body2`, <code>body<var>n</var></code> can be disambiguated, the choice of branch is determined by which arm's first token expression matches. `expr` is up-evaluated with <code>expr<var>n</var></code> corresponding to the branch taken. Otherwise, `expr` is down-evaluated and matched against <code>expr<var>n</var></code>. The first matching branch is taken.
 
 ### `on`
 
@@ -59,8 +62,24 @@ A token is received from the top stream and destructured into `expr`, binding do
 
 ### `par`
 
+Run multiple blocks in parallel.
+
 TBD
 
+
+### Disambiguation Rule
+
+Regular expression engines typically handle ambiguity by backtracking, but backtracking is not an option in a bidirectional system because you can't un-send data that has already been output. We use this rule for `repeat` (whether to begin an iteration vs exit the loop) and for `switch` (which branch to take) to ensure consistent output while using one token to choose a branch direction.
+
+`first` is defined to be the first token within the block, recursively (keep going into the first sub-block until the first thing in the block is a token statement). We compare the `first` token of all blocks under consideration. There are 3 cases:
+
+- The data in the down direction is the same, and there are conditions in the up direction that can make one match and the other not => Send the data down, and decide which way to go based on the data that comes back up.
+
+- The data in the down direction is not the same, and there is something to check in the returned data => We have to send something before we can get data back, so this doesn't work. This is an error.
+
+- There is nothing to check in the returned data. => We're running this in output mode, use down-evaluated repeat count or switch expression. No limitations on the data down, because we know which direction to go ahead of time.
+
+TODO: There are edge cases here with nullable blocks (repeat that could  loop 0 times) that require analyzing more than the first statement. Also need to spell out rules for `up` blocks and ending loops when a sub-signal ends.
 
 ---
 

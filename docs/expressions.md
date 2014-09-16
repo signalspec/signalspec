@@ -16,18 +16,12 @@ unit literals: `3.3V`
 **down:** Evaluates to itself.  
 **up:** Match if the pushed value is equal, or fail if the pushed value is not equal.
 
-### Unknowns
-
-No syntax (Provided at top level by caller).
-
-**down:** ignored  
-**up:** If the unknown has not been bound, bind it to the pushed value. If it already has a value, up-evaluate the existing value with the pushed value (which fails if the values are not equivalent).
-
 ### Ignore
 
 	_
+(underscore `_` or `ignore`)
 
-**down:** Evaluates to itself. When used as an operand, that operator returns `ignore` too.  
+**down:** Evaluates to itself. When used as an operand, that operator returns `ignore` too. It is an error for `ignore` to reach hardware.  
 **up:** Pushed value is discarded, match always succeeds.
 
 ### Arithmetic expressions
@@ -55,7 +49,7 @@ types: numbers
 **down:** Down-evaluation of `x`.  
 **up:** Ignored.
 
-Syntactic sugar for `x ! ignore`
+Syntactic sugar for `x ! _`
 
 ### In
 
@@ -64,7 +58,7 @@ Syntactic sugar for `x ! ignore`
 **down:** `ignore`.  
 **up:** Up-evaluate `y` with the pushed value,
 
-Syntactic sugar for `ignore ! y`
+Syntactic sugar for `_ ! y`
 
 *[it is unambiguous for `:>` and `<:` to imply an `=` if used directly next to a parameter name or let declaration, so we may allow that. Ex: `sample(v = <: 3.3V, i = :> x)` -> `sample(v <: 3.3V, i :> x)`]*
 
@@ -72,7 +66,7 @@ Syntactic sugar for `ignore ! y`
 
 	min..max
 
-**down:** It is an error if a range is a in a position where it is down-evaluated.
+**down:** It is an error if a range is in a position where it is down-evaluated.  
 **up:** Down-evaluate numbers `min` and `max`. Match if the pushed value is between `min` (inclusive) and `max` (exclusive), or fail if it is outside the range.
 
 If min is omitted (`..max`), it defaults to -Infinity.
@@ -92,11 +86,14 @@ Because of the properties of `ignore`, it can be used as an "else" clause, in ei
 
 Mappings work like Haskell's case expressions, but bidirectionally.
 
+Example:
+`v[#l = 0V ! (..1.6V), #h = 3.3V ! (1.6V..)]` is a bidirectional definition of LVCMOS digital logic on top of an analog signal. On down-evaluation, if `v` is `#l`, the first arm matches, and the result is 0V; if `v` is `#h`, the second arm matches and the result is 3.3V. On up-evaluation, values below 1.6V cause `v` to be up-evaluated with `#l`, and values above 1.6V cause it to be up-evaluated with `#h`. A more robust implementation may want to use a Schmitt trigger, which is not a single expression because it maintains state between samples, but can be built out of `repeat` blocks.
+
 ### Tuples
 
 	(a, b, x=y, ..f)
 
-Tuples can contain positional and named elements. The optional "functional update" expression `..f` at the end bidirectionally binds named elements from the tuple `f` that are not overridden by the literal.
+Tuples can contain positional and named elements. A tuple can be extended with the named elements from another tuple with the `..f` syntax. The new tuple inherits the named fields from `f` that are not overridden in the expression.
 
 ### Concatenations
 
@@ -104,7 +101,7 @@ types: vector
 
 	[l1:a1, v1, l2:a2, :a3, v2, l4:a4]
 
-**down:** Down-evaluate each part. Assert that the length of data `ax` is the number `lx`. Components without the `:`, like `v1`, are treated as length 1, and the value is inserted directly into the vector. Return the concatenation of `a1` + [`v1`] + `a2` + ... + `an`.  
+**down:** Down-evaluate each part. Components without the `:`, like `v1`, are treated as length 1, and the value is inserted directly into the vector. Return the concatenation of `a1` + [`v1`] + `a2` + ... + `an`.  
 **up:** Split the data into parts using the lengths `l1`...`ln`. Up-evaluate each `a1`...`an` field with the respective part. Components without the `:` are treated as length 1, and the expression up-evaluted with the element at that position.
 
-The width expressions `lx` must be compile-time constant, or may be omitted if it can be inferred from a parameter's type declaration.
+The width expressions <code>l<var>x</var></code> must be compile-time constant, or can be omitted, in which case the length is inferred from the type of <code>a<var>x</var></code>.

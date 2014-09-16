@@ -2,27 +2,47 @@
 
 ### SPI
 
+A minimal definition CPOL=0, CPHA=0 SPI that could be used as master, slave, or sniffer just by changing the direction of the pins: 
+
 ```
 def SPI {
   repeat _ {
-    on _ {
+    on _ { // SPI transaction
       with |x| (cs = #l, ..x) {
+        // Everything within this block has CS low
         repeat _ {
-          on (bi, bo) {
-            for mi=bi, mo=bo {
+          // It infers two conditions to exit this loop: 
+          // - The byte event is no longer possible to match
+          //   because the inner block has ended (for master)
+          // - CS goes high, as everything in this block
+          //   specifies CS low due to the enclosing `with` (for slave/sniff)
+          on (bi, bo) { // byte
+            for mi=bi, mo=bo { // for each bit of the byte
               repeat (<:clkPer/2) {
-                (clk=#l, mi<mi, mo<mo)
+                // If we control the timing (clk is an output),
+                // make this be clkPer/2 samples.
+                // While clk is low, set the mi and mo lines if they 
+                // are outputs, but ignore them as inputs
+                (clk=#l, mi<:mi, mo<:mo)
               }
-              (cs=#l, clk=#h, mi=mi, mo=mo)
+              // For the first sample of clk high, mi and mo are 
+              // bound bidirectionally. This is where we capture 
+              // the values on input.
+              (clk=#h, mi=mi, mo=mo)
               repeat (<:clkPer/2 - 1) {
-                (clk=#h, mi<mi, mo<mo)
+                // Same as above, but with clk high
+                (clk=#h, mi<:mi, mo<:mo)
               }
             }
           }
         }
       }
     }
-    repeat {
+    
+    (cs=#h, .._) // Must match at least one sample with cs=#h
+    repeat <: clkPer {
+      // Between transactions, CS is high, and ignore
+      // all the other signals.
       (cs=#h, .._)
     }
   }

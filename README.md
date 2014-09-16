@@ -10,8 +10,8 @@ Signalspec is written in [Rust](https://rust-lang.org) and is open source softwa
 
 ## Documentation
 
- * [Bidirectional Expressions](docs/expressions.md) are invertable functions used for data manipulation between layers of abstraction. To be invertable, expressions are defined to both compute a value based on evaluating sub-expressions ("down evaluation"), but also accept a value on the "result" side and push values into its subexpressions ("up evaluation").
+ * [Bidirectional Expressions](docs/expressions.md) are invertible functions used for data manipulation between layers of abstraction. To be invertible, expressions are defined to both compute a value based on evaluating sub-expressions ("down evaluation"), but also accept a value on the "result" side and push values into its subexpressions ("up evaluation").
 
- * [Control and data flow](docs/flow.md) semantics are related to textual regular expressions, but can both generate and parse strings ("signals") from the language ("protocol"), and operates over structured tokens of arbitrary data rather than characters. These blocks are stacked to parse layered protocols.
+ * [Control and data flow](docs/flow.md) semantics are related to textual regular expressions, but Signalspec can both generate and parse strings ("signals") from the language ("protocol"), and operates over structured tokens of arbitrary data rather than characters. These blocks are stacked to parse layered protocols.
 
- * [Practical Considerations](docs/practical.md) -- how these primitives apply to real-world protocols, and how they map to hardware resources.  Data is statically typed, there are no dynamically sized types, and recursion is prohibited, so all memory is allocated staticaly at compile time. Control flow is readily represented as a finite state machine on FPGAs and microcontrollers.
+ * [Practical Considerations](docs/practical.md) -- how these primitives apply to real-world protocols, and how they map to hardware resources.  Data is statically typed, there are no dynamically sized types, and recursion is prohibited, so all memory is allocated statically at compile time. Control flow is readily represented as a finite state machine on FPGAs and microcontrollers.
