@@ -2,7 +2,7 @@ use std::io::MemReader;
 use std::task;
 use std::default::Default;
 
-use {session, resolve, grammar, exec, dumpfile};
+use {session, resolve, grammar, exec, eval, dumpfile};
 
 struct TestCode {
   step: exec::Step,
@@ -32,7 +32,8 @@ impl TestCode {
       let mut reader = MemReader::new(input.as_bytes().to_vec());
       dumpfile::read_values(&mut reader, &mut s2);
     });
-    exec::exec(&self.step, &mut s1)
+    let mut state = eval::State::new();
+    exec::exec(&mut state, &self.step, &mut s1)
   }
 
   fn down() -> String {

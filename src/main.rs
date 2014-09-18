@@ -51,7 +51,8 @@ fn main() {
 	task::spawn(proc(){
 		let event = event;
 		let mut s1 = s1;
-		let r = exec::exec(&event, &mut s1);
+    let mut state = eval::State::new();
+		let r = exec::exec(&mut state, &event, &mut s1);
 		if r {
 			println!("Matched");
 		} else {

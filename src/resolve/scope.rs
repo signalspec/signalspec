@@ -94,6 +94,14 @@ impl ValueRef {
       _ => self,
     }
   }
+
+  pub fn value_id(self) -> ValueID {
+    match self {
+      Dynamic(id) => id,
+      Ignored => 0,
+      Poison(s) => fail!("Use of an invalid value: {}", s),
+    }
+  }
 }
 
 pub fn propagate_pair(a: ValueRef, b: ValueRef, f: |ValueID, ValueID| -> ValueRef) -> ValueRef {

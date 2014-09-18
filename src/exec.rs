@@ -2,6 +2,7 @@ use std::comm;
 
 use resolve::context::ValueID;
 use ast::Value;
+use eval;
 
 pub trait PrimitiveStep {
 	fn display(&self) -> String;
@@ -11,16 +12,16 @@ pub trait PrimitiveStep {
 
 pub enum Step {
 	NopStep,
-	TokenStep(/*down*/ Vec<ValueID> , Vec<ValueID> /*up*/),
+	TokenStep(eval::Ops, /*down*/ Vec<ValueID> , Vec<ValueID> /*up*/),
 	SeqStep(Vec<Step>),
 	RepeatStep(Box<Step>),
 	//PrimitiveStep(Box<PrimitiveStep>),
 }
 
-fn first(s: &Step) -> Option<(&[ValueID], &[ValueID])> {
+fn first(s: &Step) -> Option<(&eval::Ops, &[ValueID], &[ValueID])> {
 	match *s {
 		NopStep => None,
-		TokenStep(ref down, ref up) => Some((down.as_slice(), up.as_slice())),
+		TokenStep(ref ops, ref down, ref up) => Some((ops, down.as_slice(), up.as_slice())),
 		SeqStep(ref steps) => steps.as_slice().get(0).and_then(first),
 		RepeatStep(box ref inner) => first(inner),
 	}
@@ -30,7 +31,7 @@ pub fn print_step_tree(s: &Step, indent: uint) {
 	let i = " ".repeat(indent);
 	match *s {
 		NopStep => println!("{}NOP", i),
-		TokenStep(ref down, ref up) => {
+		TokenStep(_, ref down, ref up) => {
 			println!("{}Token: {} {}", i, down, up);
 		}
 		SeqStep(ref steps) => {
@@ -73,8 +74,11 @@ impl Connection {
 		self.rx.recv_opt()
 	}
 
-	pub fn try(&mut self, down: &[ValueID], up: &[ValueID]) -> bool {
-		let down_v: Vec<Value> = unimplemented!();
+	pub fn try(&mut self, state: &mut eval::State, ops: &eval::Ops, down: &[ValueID], up: &[ValueID]) -> bool {
+		debug!("{}", ops);
+		debug!("down: {}", down);
+		state.enter(ops);
+		let down_v = down.iter().map(|&x| state.get(x).clone()).collect();
 
 		let received = match self.lookahead.take() {
 			Some((sent, received)) => {
@@ -95,14 +99,16 @@ impl Connection {
 		};
 
 		debug!("recieved {}", received);
-		let result = unimplemented!();
+		for (&id, value) in up.iter().zip(received.iter()) {
+			state.set(id, value.clone());
+		}
 		self.lookahead = Some((down_v, received));
-		result
+		state.exit(ops)
 	}
 
 
-	pub fn apply(&mut self, down: &[ValueID], up: &[ValueID]) -> bool {
-		if self.try(down, up) {
+	pub fn apply(&mut self, state: &mut eval::State, ops: &eval::Ops, down: &[ValueID], up: &[ValueID]) -> bool {
+		if self.try(state, ops, down, up) {
 			debug!("matched {}", up);
 			self.lookahead.take();
 			true
@@ -113,15 +119,15 @@ impl Connection {
 	}
 }
 
-pub fn exec(s: &Step, parent: &mut Connection) -> bool {
+pub fn exec(state: &mut eval::State, s: &Step, parent: &mut Connection) -> bool {
 		match *s {
 			NopStep => true,
-			TokenStep(ref down, ref up) => {
-				parent.apply(down.as_slice(), up.as_slice())
+			TokenStep(ref ops, ref down, ref up) => {
+				parent.apply(state, ops, down.as_slice(), up.as_slice())
 			}
 			SeqStep(ref steps) => {
 				for c in steps.iter() {
-					match exec(c, parent) {
+					match exec(state, c, parent) {
 						true => (),
 						false => return false,
 					}
@@ -129,12 +135,12 @@ pub fn exec(s: &Step, parent: &mut Connection) -> bool {
 				true
 			}
 			RepeatStep(box ref inner) => {
-				let (down, up) = first(inner).expect("Loop has no body");
+				let (ops, down, up) = first(inner).expect("Loop has no body");
 				loop {
-					if !parent.try(down, up) {
+					if !parent.try(state, ops, down, up) {
 						break;
 					}
-					if !exec(inner, parent) {
+					if !exec(state, inner, parent) {
 						return false;
 					}
 				}

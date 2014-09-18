@@ -50,10 +50,11 @@ fn resolve_action<'s>(ctx: &mut Context<'s>, scope: &Scope<'s>, action: &'s ast:
 			}
 		}
 		ast::ActionToken(ref expr, ref body) => {
+			let mut cctx = ctx.child();
 			if body.is_some() { fail!("Body unimplemented"); }
-			let i = resolve_expr(ctx, scope, expr);
-			let (down, up) = ctx.flatten_to_message(i);
-			TokenStep(down, up)
+			let i = resolve_expr(&mut cctx, scope, expr);
+			let (down, up) = cctx.flatten_to_message(i);
+			TokenStep(cctx.into_ops(), down, up)
 		}
 		ast::ActionRepeat(ref block) => {
 			RepeatStep(box resolve_seq(ctx, scope, block))
