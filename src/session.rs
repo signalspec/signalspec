@@ -1,4 +1,3 @@
-use std::fmt;
 use std::sync::atomics::{AtomicUint, Relaxed};
 use arena::TypedArena;
 
@@ -18,16 +17,8 @@ impl<'session> Session<'session> {
 		}
 	}
 
-	pub fn make_id<T>(&self) -> Id<T> {
-      Id(self.id_counter.fetch_add(1, Relaxed))
+	pub fn make_id(&self) -> uint {
+    self.id_counter.fetch_add(1, Relaxed)
   }
 }
 
-#[deriving(Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Id<M>(uint);
-impl<M> fmt::Show for Id<M> {
-	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-		let Id(i) = *self;
-		write!(f, "{}", i)
-	}
-}

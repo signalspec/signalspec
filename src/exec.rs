@@ -1,6 +1,6 @@
 use std::comm;
 
-use resolve::scope::ValueRef;
+use resolve::context::ValueID;
 use ast::Value;
 
 pub trait PrimitiveStep {
@@ -11,13 +11,13 @@ pub trait PrimitiveStep {
 
 pub enum Step {
 	NopStep,
-	TokenStep(/*down*/ Vec<ValueRef> , Vec<ValueRef> /*up*/),
+	TokenStep(/*down*/ Vec<ValueID> , Vec<ValueID> /*up*/),
 	SeqStep(Vec<Step>),
 	RepeatStep(Box<Step>),
 	//PrimitiveStep(Box<PrimitiveStep>),
 }
 
-fn first(s: &Step) -> Option<(&[ValueRef], &[ValueRef])> {
+fn first(s: &Step) -> Option<(&[ValueID], &[ValueID])> {
 	match *s {
 		NopStep => None,
 		TokenStep(ref down, ref up) => Some((down.as_slice(), up.as_slice())),
@@ -73,8 +73,8 @@ impl Connection {
 		self.rx.recv_opt()
 	}
 
-	pub fn try(&mut self, down: &[ValueRef], up: &[ValueRef]) -> bool {
-		let down_v: Vec<Value> = down.iter().map(|i| i.const_down()).collect();
+	pub fn try(&mut self, down: &[ValueID], up: &[ValueID]) -> bool {
+		let down_v: Vec<Value> = unimplemented!();
 
 		let received = match self.lookahead.take() {
 			Some((sent, received)) => {
@@ -95,13 +95,13 @@ impl Connection {
 		};
 
 		debug!("recieved {}", received);
-		let result = up.iter().zip(received.iter()).fold(true, |success, (pat, rx)| success & pat.const_up(rx));
+		let result = unimplemented!();
 		self.lookahead = Some((down_v, received));
 		result
 	}
 
 
-	pub fn apply(&mut self, down: &[ValueRef], up: &[ValueRef]) -> bool {
+	pub fn apply(&mut self, down: &[ValueID], up: &[ValueID]) -> bool {
 		if self.try(down, up) {
 			debug!("matched {}", up);
 			self.lookahead.take();

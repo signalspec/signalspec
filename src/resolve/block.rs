@@ -51,7 +51,8 @@ fn resolve_action<'s>(ctx: &mut Context<'s>, scope: &Scope<'s>, action: &'s ast:
 		}
 		ast::ActionToken(ref expr, ref body) => {
 			if body.is_some() { fail!("Body unimplemented"); }
-			let (down, up) = resolve_expr(ctx, scope, expr).flatten();
+			let i = resolve_expr(ctx, scope, expr);
+			let (down, up) = ctx.flatten_to_message(i);
 			TokenStep(down, up)
 		}
 		ast::ActionRepeat(ref block) => {

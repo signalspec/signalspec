@@ -45,8 +45,9 @@ impl<'s> Scope<'s> {
 /// A thing associated with a name in a Scope
 #[deriving(Clone)]
 pub enum Item<'s> {
-  DefItem(&'s EventClosure<'s>),
+  ConstantItem(Value),
   ValueItem(Type, ValueRef /*Down*/, ValueRef /*Up*/),
+  DefItem(&'s EventClosure<'s>),
   TupleItem(Vec<Item<'s>>) // TODO: named components
 }
 
@@ -55,6 +56,7 @@ impl<'s> PartialEq for Item<'s> {
     match (self, other) {
       (&ValueItem(ref ta, ref da, ref ua), &ValueItem(ref tb, ref db, ref ub))
         if ta==tb && da==db && ua==ub => true,
+      (&ConstantItem(ref a), &ConstantItem(ref b)) if a == b => true,
       _ => false
     }
   }
@@ -72,64 +74,43 @@ impl<'s> fmt::Show for Item<'s> {
   }
 }
 
-impl<'s> Item<'s> {
-  fn flatten_into(&self, down: &mut Vec<ValueRef>, up: &mut Vec<ValueRef>) {
-    // TODO: check shape
-    match *self {
-      ValueItem(_, ref d, ref u) => {
-        down.push(d.clone());
-        up.push(u.clone());
-      },
-      TupleItem(ref t) => for i in t.iter() { i.flatten_into(down, up) },
-      DefItem(..) => fail!("Cannot flatten non-sendable expression")
-    }
-  }
-
-  pub fn flatten(&self) -> (Vec<ValueRef>, Vec<ValueRef>) {
-    let mut down = Vec::new();
-    let mut up = Vec::new();
-    self.flatten_into(&mut down, &mut up);
-    (down, up)
-  }
-}
-
-
 /// A constant value or ID for obtaining a value at runtime
 #[deriving(PartialEq, Clone)]
 pub enum ValueRef {
   Ignored,
-  Constant(Value),
+  
+  /// down: register to load the value from
+  /// up: the register to store the value into
   Dynamic(ValueID),
+  
+  /// The use of the value is illegal. Contains the error message to show if the value is used.
   Poison(&'static str),
+}
+
+impl ValueRef {
+  pub fn propagate(self, f: |ValueID| -> ValueRef) -> ValueRef {
+    match self {
+      Dynamic(id) => f(id),
+      _ => self,
+    }
+  }
+}
+
+pub fn propagate_pair(a: ValueRef, b: ValueRef, f: |ValueID, ValueID| -> ValueRef) -> ValueRef {
+  match (a, b) {
+    (Dynamic(id_a), Dynamic(id_b)) => f(id_a, id_b),
+    (p @ Poison(..), _) | (_, p @ Poison(..)) => p,
+    (Ignored, _) | (_, Ignored) => Ignored,
+  }
 }
 
 impl fmt::Show for ValueRef {
   fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::FormatError> {
     match *self {
       Ignored => write!(f, "ignore"),
-      Constant(ref v) => write!(f, "{}", v),
       Dynamic(c) => write!(f, "%{}", c),
       Poison(s) => write!(f, "poison: {}", s),
     }
   }
 }
 
-impl ValueRef {
-  pub fn const_down(&self) -> Value {
-    match *self {
-      Ignored => ast::NumberValue(0.), // should fail?
-      Constant(ref v) => v.clone(),
-      Dynamic(..) => fail!("const_down of a dynamic!"),
-      Poison(s) => fail!("const_down of a poison: {}", s),
-    }
-  }
-
-  pub fn const_up(&self, v: &Value) -> bool {
-    match *self {
-      Ignored => true,
-      Constant(ref p) => v == p,
-      Dynamic(..) => fail!("const_up of a dynamic!"),
-      Poison(s) => fail!("const_up of a poison: {}", s),
-    }
-  }
-}

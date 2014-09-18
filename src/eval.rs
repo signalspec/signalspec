@@ -4,18 +4,20 @@ use ast::{
 use resolve::context::{ValueID};
 
 pub enum ValueSrc {
-	Const(Vec<Value>),
-	Dyn(ValueID)
+	ConstSlice(Vec<Value>),
+	DynElem(ValueID),
+	DynSlice(ValueID, uint),
 }
 
 pub enum ValOp {
+	ConstOp(Value),
+	CheckOp(ValueID, Value),
 	RangeCheckOp(ValueID, f64, f64),
 
 	ChooseOp(ValueID, Vec<(Value, Value)>),
-
-	CheckOp(ValueID, Value),
-
+	
 	SliceOp(ValueID, /*offset*/ uint, /*length*/ uint),
+	ElemOp(ValueID, uint),
 	ConcatOp(Vec<ValueSrc>),
 
 	BinaryOp(ValueID, BinOp, ValueID),
@@ -23,7 +25,7 @@ pub enum ValOp {
 }
 
 /// Binary numeric operators
-#[deriving(PartialEq, Eq)]
+#[deriving(PartialEq, Eq, Show)]
 pub enum BinOp {
 	BiAdd,       // a + b
 	BiSub,       // a - b
