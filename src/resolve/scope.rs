@@ -70,7 +70,10 @@ impl <'s> Default for Item<'s> {
 
 impl<'s> fmt::Show for Item<'s> {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-    write!(f, "{:?}", self)
+    match *self {
+      ConstantItem(ref v) => write!(f, "{}", v),
+      _ => write!(f, "{:?}", self)
+    }
   }
 }
 
