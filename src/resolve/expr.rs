@@ -209,15 +209,36 @@ pub fn resolve_expr<'s>(ctx: &mut Context<'s>, scope: &Scope<'s>, e: &ast::Expr)
 pub fn resolve_pattern<'s>(ctx: &mut Context<'s>, scope: &mut Scope<'s>, l: &ast::Expr, r: Item<'s>) {
 	match *l {
 		ast::IgnoreExpr => (),
-		ast::ValueExpr(ref _val) => fail!("patterns cannot be falsifiable"),
+		ast::ValueExpr(ref val) => {
+			match r {
+				ConstantItem(ref v) => {
+					if v != val { fail!("Match always fails"); }
+				}
+				ValueItem(_t, d, u) => {
+					// TODO: type check
+					d.propagate(|d| ctx.down_op(eval::CheckOp(d, val.clone())));
+					u.propagate(|u| ctx.up_op(u, |_| eval::ConstOp(val.clone())));
+				}
+				_ => fail!("Type error")
+			}
+		},
 		ast::RangeExpr(box ref _min_expr, box ref _max_expr) => fail!("patterns cannot be refutable"),
-
-		ast::FlipExpr(box ref _down, box ref _up) => unimplemented!(),
+		ast::FlipExpr(box ref down, box ref up) => {
+				match r {
+					ConstantItem(..) => unimplemented!(),
+					ValueItem(t, d, u) => {
+						resolve_pattern(ctx, scope, down, ValueItem(t, d, Ignored));
+						resolve_pattern(ctx, scope, up,   ValueItem(t, Ignored, u));
+					}
+					_ => fail!("Type error")
+				}
+		}
 		ast::ChooseExpr(box ref _e, ref _c) => unimplemented!(),
 		ast::ConcatExpr(ref _v) =>  unimplemented!(),
 		ast::BinExpr(box ref _a, _op, box ref _b) => unimplemented!(),
 
 		ast::VarExpr(ref name) => {
+			debug!("defined {} = {}", name, r);
 			scope.bind(name.as_slice(), r);
 		}
 
