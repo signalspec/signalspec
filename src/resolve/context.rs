@@ -67,27 +67,28 @@ impl<'session> Context<'session> {
 		self.add_up_op(dest, v(cell));
 		Dynamic(cell)
 	}
-	
-	fn flatten_into(&mut self, item: Item<'session>, down: &mut Vec<ValueID>, up: &mut Vec<ValueID>) {
-		// TODO: check shape
-		match item {
-			ConstantItem(ref v) => {
-				down.push(self.down_op(eval::ConstOp(v.clone())).value_id());
-				up.push(self.up_op(0, |c| eval::CheckOp(c, v.clone())).value_id());
-			},
-			ValueItem(_, ref d, ref u) => {
-				down.push(d.value_id());
-				up.push(u.value_id());
-			},
-			TupleItem(t) => for i in t.into_iter() { self.flatten_into(i, down, up) },
-			DefItem(..) => fail!("Cannot flatten non-sendable expression")
-		}
-	}
 
-	pub fn flatten_to_message(&mut self, item: Item<'session>) -> (Vec<ValueID>, Vec<ValueID>) {
+	pub fn message_downward(&mut self, item: Item) -> (Vec<ValueID>, Vec<ValueID>) {
 		let mut down = Vec::new();
 		let mut up = Vec::new();
-		self.flatten_into(item, &mut down, &mut up);
+
+		fn flatten_into(ctx: &mut Context, item: Item, down: &mut Vec<ValueID>, up: &mut Vec<ValueID>) {
+			// TODO: check shape
+			match item {
+				ConstantItem(ref v) => {
+					down.push(ctx.down_op(eval::ConstOp(v.clone())).value_id());
+					up.push(ctx.up_op(0, |c| eval::CheckOp(c, v.clone())).value_id());
+				},
+				ValueItem(_, ref d, ref u) => {
+					down.push(d.value_id());
+					up.push(u.value_id());
+				},
+				TupleItem(t) => for i in t.into_iter() { flatten_into(ctx, i, down, up) },
+				DefItem(..) => fail!("Cannot flatten non-sendable expression")
+			}
+		}
+
+		flatten_into(self, item, &mut down, &mut up);
 		(down, up)
 	}
 }

@@ -53,7 +53,7 @@ fn resolve_action<'s>(ctx: &mut Context<'s>, scope: &Scope<'s>, action: &'s ast:
 			let mut cctx = ctx.child();
 			if body.is_some() { fail!("Body unimplemented"); }
 			let i = resolve_expr(&mut cctx, scope, expr);
-			let (down, up) = cctx.flatten_to_message(i);
+			let (down, up) = cctx.message_downward(i);
 			TokenStep(cctx.into_ops(), down, up)
 		}
 		ast::ActionRepeat(ref block) => {
