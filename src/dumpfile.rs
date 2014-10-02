@@ -1,4 +1,4 @@
-use std::io::{BufferedReader, BufferedWriter};
+use std::io::{BufferedReader};
 use grammar::literal;
 use ast::Value;
 use exec;
@@ -16,12 +16,16 @@ pub fn read_values(reader: &mut Reader, port: &mut exec::Connection) {
   }
 }
 
-pub fn write_values(file: &mut Writer, port: &mut exec::Connection) {
-  let mut w = BufferedWriter::new(file);
+pub fn write_values(w: &mut Writer, port: &mut exec::Connection) {
+  if port.send(Vec::new()).is_err() { return; }
   loop {
     match port.recv() {
       Ok(v) => {
-        w.write_line(v.to_string().as_slice()).unwrap();
+        for (i, v) in v.iter().enumerate() {
+          if i != 0 { w.write(b", ").unwrap(); }
+          (write!(w, "{}", v)).unwrap();
+        }
+        w.write(b"\n");
       }
       Err(..) => break,
     }
