@@ -1,5 +1,5 @@
 use ast;
-pub use ast::TopType;
+pub use ast::{TopType, NumberType, SymbolType, IntegerType};
 
 /// For now, types have nothing to resolve.
 /// Eventually, some type parameters will be expressions.

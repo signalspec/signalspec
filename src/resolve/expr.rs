@@ -21,15 +21,15 @@ pub fn resolve_expr<'s>(ctx: &mut Context<'s>, scope: &Scope<'s>, e: &ast::Expr)
 				ConstantItem(v) => (v.get_type(), ctx.down_op(eval::ConstOp(v))),
 				ValueItem(down_type, down_ref, _) => (down_type, down_ref),
 				_ => fail!("Non-value type in flip")
-				
+
 			};
-			
+
 			let (up_type, up_ref) = match resolve_expr(ctx, scope, up) {
 				ConstantItem(v) => (v.get_type(), ctx.up_op(0, |cell| eval::CheckOp(cell, v.clone()))),
-				ValueItem(up_type, up_ref, _) => (up_type, up_ref),
+				ValueItem(up_type, _, up_ref) => (up_type, up_ref),
 				_ => fail!("Non-value type in flip")
 			};
-			
+
 			let common_type = common_type(down_type, up_type).expect("Flip expr sides must be of common type");
 			ValueItem(common_type, down_ref, up_ref)
 		}
@@ -54,45 +54,45 @@ pub fn resolve_expr<'s>(ctx: &mut Context<'s>, scope: &Scope<'s>, e: &ast::Expr)
 			let pairs: Vec<(Value, Value)> = c.iter().map(|&(ref le, ref re)| {
 				let l = resolve_expr(ctx, scope, le);
 				let r = resolve_expr(ctx, scope, re);
-				
+
 				match (l, r) {
 					(ConstantItem(lv), ConstantItem(rv)) => (lv, rv),
 					_ => fail!("Choose expression arms must be constant, for now")
-				}	
+				}
 			}).collect();
-			
+
 			match resolve_expr(ctx, scope, e) {
 				ConstantItem(v) => ConstantItem(eval::eval_choose(&v, pairs.as_slice()).expect("Choice up not complete")),
-				ValueItem(_t, d, u) => {					
-					ValueItem(common_type_all(pairs.iter().map(|&(_, ref r)| r.get_type())).expect("Right sides are not of common type"), 
+				ValueItem(_t, d, u) => {
+					ValueItem(common_type_all(pairs.iter().map(|&(_, ref r)| r.get_type())).expect("Right sides are not of common type"),
 						d.propagate(|d| ctx.down_op(eval::ChooseOp(d, pairs.clone()))),
-						u.propagate(|u| ctx.up_op(u, |cell| eval::ChooseOp(cell, 
+						u.propagate(|u| ctx.up_op(u, |cell| eval::ChooseOp(cell,
 							pairs.iter().map(|&(ref l, ref r)| (r.clone(), l.clone())).collect()
 						)))
 					)
 				}
 				_ => fail!("Invalid type in choice expr")
 			}
-			
+
 			// TODO: non-constant arms, check types for case coverage
 		}
 
 		ast::ConcatExpr(ref v) =>  {
 			let mut len = 0;
 			let mut consts = Vec::new();
-			
+
 			let mut down_parts = Vec::new();
 			let mut down_poison = None;
-			
+
 			let mut up_parts = Vec::new();
 			let mut up_poison = None;
-			
+
 			for e in v.iter() {
 				match resolve_expr(ctx, scope, e) {
 					ConstantItem(v) => {
 						consts.push(v);
 					}
-					ValueItem(_t, d, u) => {	
+					ValueItem(_t, d, u) => {
 						if down_poison.is_none() {
 							if consts.len() != 0 { down_parts.push(eval::ConstSlice(consts.clone())); }
 							match d {
@@ -101,7 +101,7 @@ pub fn resolve_expr<'s>(ctx: &mut Context<'s>, scope: &Scope<'s>, e: &ast::Expr)
 								Poison(..) => { down_poison = Some(d) }
 							}
 						}
-						
+
 						if up_poison.is_none() {
 							if consts.len() != 0 { up_parts.push(eval::ConstSlice(consts.clone())); }
 							match u {
@@ -110,14 +110,14 @@ pub fn resolve_expr<'s>(ctx: &mut Context<'s>, scope: &Scope<'s>, e: &ast::Expr)
 								Poison(..) => { up_poison = Some(u) }
 							}
 						}
-						
+
 						len += consts.len() + 1;
 						consts.clear();
 					}
 					_ => fail!("Concatinating values that are not vectors")
 				}
 			}
-			
+
 			if len == 0 { // Length is only incremented on non-constant elements
 				ConstantItem(VectorValue(consts))
 			} else {
@@ -128,7 +128,7 @@ pub fn resolve_expr<'s>(ctx: &mut Context<'s>, scope: &Scope<'s>, e: &ast::Expr)
 						ctx.down_op(eval::ConcatOp(down_parts))
 					}
 				};
-				
+
 				let u = match up_poison {
 					Some(p) => p,
 					None => {
@@ -158,21 +158,21 @@ pub fn resolve_expr<'s>(ctx: &mut Context<'s>, scope: &Scope<'s>, e: &ast::Expr)
 						} else { Ignored }
 					}
 				};
-				
+
 				ValueItem(VectorType(len), d, u)
 			}
 		}
 
-		ast::BinExpr(box ref a, op, box ref b) => {			
+		ast::BinExpr(box ref a, op, box ref b) => {
 			fn one_const<'s>(ctx: &mut Context<'s>, op: eval::BinOp, _a_type: Type, a_down: ValueRef, a_up: ValueRef, b: f64) -> Item<'s> {
-				// TODO: check type	
+				// TODO: check type
 				ValueItem(NumberType,
 					a_down.propagate(|a| ctx.down_op(eval::BinaryConstOp(a, op, b))),
 					a_up.propagate(|a| ctx.up_op(a, |i| eval::BinaryConstOp(i, op.invert(), b)))
 				)
 			}
-			
-			match (resolve_expr(ctx, scope, a), resolve_expr(ctx, scope, b)) { 
+
+			match (resolve_expr(ctx, scope, a), resolve_expr(ctx, scope, b)) {
 				(ConstantItem(NumberValue(a)), ConstantItem(NumberValue(b))) => {
 					ConstantItem(NumberValue(op.eval(a, b)))
 				}
@@ -187,7 +187,7 @@ pub fn resolve_expr<'s>(ctx: &mut Context<'s>, scope: &Scope<'s>, e: &ast::Expr)
 					ValueItem(NumberType,
 						propagate_pair(a_down, b_down, |a, b| ctx.down_op(eval::BinaryOp(a, op, b))),
 						Poison("At least one side of an up-evaluated binary operator must be constant")
-					)	
+					)
 				}
 				_ => fail!("Invalid types in binary {}", op)
 			}
@@ -246,7 +246,8 @@ pub fn resolve_pattern<'s>(ctx: &mut Context<'s>, scope: &mut Scope<'s>, l: &ast
 mod test {
 	use super::resolve_expr;
 	use session::Session;
-	use resolve::context::Context;
+	use resolve::context::{Context, ValueID};
+	use resolve::types::{Type, TopType, NumberType, SymbolType};
 	use ast::{
 		Value,
 			NumberValue,
@@ -256,66 +257,63 @@ mod test {
 	};
 	use resolve::scope::{
 		Scope,
-		ConstantItem,
+		Item,
+			ConstantItem,
+			ValueItem,
+		ValueRef,
+			Dynamic,
+			Ignored,
 	};
 	use grammar;
 
-	fn check_const_value(s: &str, v: Value) {
+	static XD: ValueID = 100;
+	static XU: ValueID = 101;
+	static YD: ValueID = 102;
+	static YU: ValueID = 103;
+
+	fn check(s: &str, test: proc(Item)) {
 		let ses = Session::new();
 		let mut ctx = Context::new(&ses);
-		let scope = Scope::new();
+		let mut scope = Scope::new();
+		scope.bind("x", ValueItem(TopType, Dynamic(XD), Dynamic(XU)));
+		scope.bind("y", ValueItem(TopType, Dynamic(YD), Dynamic(YU)));
 		let e = grammar::valexpr(s).unwrap();
 		let r = resolve_expr(&mut ctx, &scope, &e);
-		assert_eq!(r, ConstantItem(v));
-	}
-	#[test]
-	fn test_const_number() {
-		check_const_value("55", NumberValue(55f64));
+		test(r)
 	}
 
-	#[test]
-	fn test_const_symbol() {
-		check_const_value("#foo", SymbolValue("foo".to_string()));
+	fn check_const(s: &str, v: Value) {
+		check(s, proc(r) assert_eq!(r, ConstantItem(v)));
 	}
 
-	#[test]
-	fn test_const_int() {
-		check_const_value("#10", IntegerValue(10));
+	fn check_dyn(s: &str, t: Type, d: ValueRef, u: ValueRef) {
+		check(s, proc(r) {
+			assert_eq!(r, ValueItem(t, d, u))
+		})
 	}
 
-	#[test]
-	fn test_const_add() {
-		check_const_value("2 + 3", NumberValue(5f64));
+	#[test] fn literal_number() { check_const("55",   NumberValue(55f64)); }
+	#[test] fn literal_symbol() { check_const("#foo", SymbolValue("foo".to_string())); }
+	#[test] fn literal_int()    { check_const("#10",  IntegerValue(10)); }
+
+	#[test] fn const_add()      { check_const("2 + 3", NumberValue(5f64)); }
+	#[test] fn const_switch()   { check_const("(#bar)[#foo=#a, #bar=#b, #baz=#c]", SymbolValue("b".to_string())); }
+	#[test] fn const_concat()   { check_const("[#1, #2]", VectorValue(vec![IntegerValue(1), IntegerValue(2)])); }
+
+	#[test] fn flip() {
+		check_dyn("x!y", TopType, Dynamic(XD), Dynamic(YU));
+		check_dyn("<:x", TopType, Dynamic(XD), Ignored);
+		check_dyn(":>x", TopType, Ignored, Dynamic(XU));
 	}
-	
-	/*
-	#[test]
-	fn test_add_ignore() {
-		check_const_value("2 + ignore", ValueItem(NumberType, Ignored, Ignored));
+
+	#[test] fn ignore_propagate() {
+		check_dyn("2+ignore", NumberType, Ignored, Ignored);
+		check_dyn("ignore[#foo=#a]", SymbolType, Ignored, Ignored);
 	}
-	*/
 
 	#[test]
 	#[should_fail]
 	fn test_add_wrongtype() {
-		check_const_value("2 + #test", NumberValue(2.)); // TODO: make sure it fails for the right reason
-	}
-
-	/*
-	#[test]
-	fn test_const_flip() {
-		check_const_value("#l!#r", SymbolType, Constant(SymbolValue("l".to_string())), Constant(SymbolValue("r".to_string())));
-	}
-	*/
-
-	#[test]
-	fn test_const_choice_expr() {
-		check_const_value("(#bar)[#foo=#a, #bar=#b, #baz=#c]", SymbolValue("b".to_string()));
-	}
-
-	#[test]
-	fn test_const_concat_expr() {
-		let b = [1, 2, 3].iter().map(|&i| IntegerValue(i)).collect::<Vec<Value>>();
-		check_const_value("[#1, #2, #3]", VectorValue(b));
+		check_const("2 + #test", NumberValue(2.)); // TODO: make sure it fails for the right reason
 	}
 }
