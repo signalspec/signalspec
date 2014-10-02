@@ -216,7 +216,7 @@ pub fn resolve_pattern<'s>(ctx: &mut Context<'s>, scope: &mut Scope<'s>, l: &ast
 				}
 				ValueItem(_t, d, u) => {
 					// TODO: type check
-					d.propagate(|d| ctx.down_op(eval::CheckOp(d, val.clone())));
+					//d.propagate(|d| ctx.down_op(eval::CheckOp(d, val.clone())));
 					u.propagate(|u| ctx.up_op(u, |_| eval::ConstOp(val.clone())));
 				}
 				_ => fail!("Type error")

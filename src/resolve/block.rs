@@ -7,6 +7,7 @@ pub use exec::{
 		NopStep,
 		SeqStep,
 		TokenStep,
+		TokenTopStep,
 		RepeatStep,
 };
 pub use resolve::scope::{Scope, Item, ValueItem, DefItem};
@@ -55,6 +56,17 @@ fn resolve_action<'s>(ctx: &mut Context<'s>, scope: &Scope<'s>, action: &'s ast:
 			let i = resolve_expr(&mut cctx, scope, expr);
 			let (down, up) = cctx.message_downward(i);
 			TokenStep(cctx.into_ops(), down, up)
+		}
+		ast::ActionOn(ref expr, ref body) => {
+			let mut cctx = ctx.child();
+			let mut body_scope = scope.child();
+			let (down, up, message_item) = cctx.message_upward();
+			resolve_pattern(&mut cctx, &mut body_scope, expr, message_item);
+			let body_step = match *body {
+				Some(ref body) => resolve_seq(&mut cctx, &body_scope, body),
+				None => NopStep,
+			};
+			TokenTopStep(cctx.into_ops(), down, up, box body_step)
 		}
 		ast::ActionRepeat(ref block) => {
 			RepeatStep(box resolve_seq(ctx, scope, block))

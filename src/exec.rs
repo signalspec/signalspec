@@ -12,7 +12,8 @@ pub trait PrimitiveStep {
 
 pub enum Step {
 	NopStep,
-	TokenStep(eval::Ops, /*down*/ Vec<ValueID> , Vec<ValueID> /*up*/),
+	TokenStep(eval::Ops, /*down*/ Vec<ValueID>, /*up*/ Vec<ValueID>),
+	TokenTopStep(eval::Ops, /*down*/ Vec<ValueID>, /*up*/ Vec<ValueID>, Box<Step>),
 	SeqStep(Vec<Step>),
 	RepeatStep(Box<Step>),
 	//PrimitiveStep(Box<PrimitiveStep>),
@@ -22,6 +23,7 @@ fn first(s: &Step) -> Option<(&eval::Ops, &[ValueID], &[ValueID])> {
 	match *s {
 		NopStep => None,
 		TokenStep(ref ops, ref down, ref up) => Some((ops, down.as_slice(), up.as_slice())),
+		TokenTopStep(_, _, _, box ref body) => first(body),
 		SeqStep(ref steps) => steps.as_slice().get(0).and_then(first),
 		RepeatStep(box ref inner) => first(inner),
 	}
@@ -33,6 +35,10 @@ pub fn print_step_tree(s: &Step, indent: uint) {
 		NopStep => println!("{}NOP", i),
 		TokenStep(_, ref down, ref up) => {
 			println!("{}Token: {} {}", i, down, up);
+		}
+		TokenTopStep(_, ref down, ref up, box ref body) => {
+			println!("{}Up: {} {}", i, down, up);
+			print_step_tree(body, indent+1);
 		}
 		SeqStep(ref steps) => {
 			println!("{}Seq", i)
@@ -132,7 +138,7 @@ pub fn try_token(state: &mut eval::State, parent: &mut Connection,
 	}
 }
 
-pub fn exec(state: &mut eval::State, s: &Step, parent: &mut Connection) -> bool {
+pub fn exec(state: &mut eval::State, s: &Step, parent: &mut Connection, child: &mut Connection) -> bool {
 		match *s {
 			NopStep => true,
 			TokenStep(ref ops, ref down, ref up) => {
@@ -143,9 +149,28 @@ pub fn exec(state: &mut eval::State, s: &Step, parent: &mut Connection) -> bool 
 				}
 				r
 			}
+			TokenTopStep(ref ops, ref down, ref up, box ref body) => {
+				match child.recv() {
+					Ok(m) => {
+						debug!("tokentop: {}, d:{} u:{}", ops, down[], up[]);
+						debug!("down: {} {}", down[], m)
+						state.rx_message(down[], m);
+						state.enter(ops);
+
+						let r = exec(state, body, parent, child);
+
+						state.exit(ops);
+						let m = state.tx_message(up[]);
+						debug!("up: {} {}", up[], m);
+						if child.send(m).is_err() { return false; }
+						r
+					}
+					Err(..) => false
+				}
+			}
 			SeqStep(ref steps) => {
 				for c in steps.iter() {
-					match exec(state, c, parent) {
+					match exec(state, c, parent, child) {
 						true => (),
 						false => return false,
 					}
@@ -159,7 +184,7 @@ pub fn exec(state: &mut eval::State, s: &Step, parent: &mut Connection) -> bool 
 						debug!("  loop exit");
 						break;
 					}
-					if !exec(state, inner, parent) {
+					if !exec(state, inner, parent, child) {
 						return false;
 					}
 				}

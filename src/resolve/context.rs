@@ -91,4 +91,30 @@ impl<'session> Context<'session> {
 		flatten_into(self, item, &mut down, &mut up);
 		(down, up)
 	}
+
+	pub fn message_upward(&mut self) -> (Vec<ValueID>, Vec<ValueID>, Item<'session>) {
+		let shape = self.signal_info.upwards.borrow();
+		let len = shape.count().expect("Signal shape not fully constrained");
+		let mut down = Vec::with_capacity(len);
+		let mut up = Vec::with_capacity(len);
+
+		fn recurse<'s>(ctx: &mut Context<'s>, shape: &Shape, down: &mut Vec<ValueID>, up: &mut Vec<ValueID>) -> Item<'s> {
+			match *shape {
+				ShapeVal(t) => {
+					let d = ctx.make_register();
+					let u = ctx.make_register();
+					down.push(d);
+					up.push(u);
+					ValueItem(t, Dynamic(d), Dynamic(u))
+				}
+				ShapeTup(ref v) => {
+					TupleItem(v.iter().map(|s| recurse(ctx, s, down, up) ).collect())
+				}
+				ShapeUnknown => fail!("Signal shape not fully constrained"),
+			}
+		}
+
+		let item = recurse(self, &*shape, &mut down, &mut up);
+		(down, up, item)
+	}
 }

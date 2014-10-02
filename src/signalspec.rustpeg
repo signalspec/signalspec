@@ -26,6 +26,8 @@ def -> ast::Def
 	action -> ast::Action
 		= REPEAT _ block:block BREAK
 			{ ast::ActionRepeat(block) }
+		/ ON _ expr:expr _ body:block? BREAK
+			{ ast::ActionOn(expr, body) }
 		/ expr:varexpr _ "(" _ param:expr_tup _ ")" _ body:block? BREAK
 			{ ast::ActionCall(expr, param, body) }
 		/ expr:expr body:block? BREAK
@@ -183,6 +185,7 @@ USE    = "use"    !IDCHAR
 LET    = "let"    !IDCHAR
 DEF    = "def"    !IDCHAR
 REPEAT = "repeat" !IDCHAR
+ON     = "on"     !IDCHAR
 
 identifier -> String = [a-zA-Z_][0-9a-zA-Z_]*
 	{ match_str.to_string() }

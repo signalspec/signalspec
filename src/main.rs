@@ -49,11 +49,13 @@ fn main() {
 	exec::print_step_tree(&event, 0);
 
 	let (s1, mut s2) = exec::Connection::new();
+	let (t1, _) = exec::Connection::new();
 	task::spawn(proc(){
 		let event = event;
 		let mut s1 = s1;
+		let mut t1 = t1;
     let mut state = eval::State::new();
-		let r = exec::exec(&mut state, &event, &mut s1);
+		let r = exec::exec(&mut state, &event, &mut s1, &mut t1);
 		if r {
 			println!("Matched");
 		} else {

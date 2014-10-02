@@ -1,4 +1,5 @@
-use std::io::MemReader;
+use std::io::{MemReader, MemWriter};
+use std::str;
 use std::task;
 use std::default::Default;
 
@@ -26,34 +27,41 @@ fn compile(source: &str) -> TestCode {
 }
 
 impl TestCode {
-  fn up(&self, input: &'static str) -> bool {
+  fn up(&self, bottom: &'static str, top: &'static str) -> bool {
     debug!("--- up")
     let (mut s1, mut s2) = exec::Connection::new();
+    let (mut t1, mut t2) = exec::Connection::new();
     task::spawn(proc(){
-      let mut reader = MemReader::new(input.as_bytes().to_vec());
+      let mut reader = MemReader::new(bottom.as_bytes().to_vec());
       dumpfile::read_values(&mut reader, &mut s2);
     });
+    task::spawn(proc(){
+      let mut writer = MemWriter::new();
+      dumpfile::write_values(&mut writer, &mut t2);
+      let v = writer.unwrap();
+      assert_eq!(top, str::from_utf8(v[]).unwrap());
+    });
     let mut state = eval::State::new();
-    exec::exec(&mut state, &self.step, &mut s1)
+    exec::exec(&mut state, &self.step, &mut s1, &mut t1)
   }
 
   fn down() -> String {
     unimplemented!();
   }
 
-  fn up_pass(&self, _arg: &str, input: &'static str) {
-    if !self.up(input) {
-      fail!("up_pass test failed to match: {}", input);
+  fn up_pass(&self, _arg: &str, bottom: &'static str, top: &'static str) {
+    if !self.up(bottom, top) {
+      fail!("up_pass test failed to match: {}", bottom);
     }
   }
 
-  fn up_fail(&self, _arg: &str, input: &'static str) {
-    if self.up(input) {
-      fail!("up_fail test matched: {}", input);
+  fn up_fail(&self, _arg: &str, bottom: &'static str, top: &'static str) {
+    if self.up(bottom, top) {
+      fail!("up_fail test matched: {}", bottom);
     }
   }
 
-  fn down_pass(&self, _arg: &str, _output: &str) {
+  fn down_pass(&self, _arg: &str, _bottom: &'static str, _top: &'static str) {
 
   }
 }
@@ -69,10 +77,10 @@ fn test_seq() {
     "
   );
 
-  p.up_pass("", "#a \n #b \n #c");
-  p.down_pass("", "#a \n #b \n #c");
-  p.up_fail("", "#a \n #b \n #a");
-  p.up_fail("", "#b \n #b \n #c");
+  p.up_pass("", "#a \n #b \n #c", "");
+  p.down_pass("", "#a \n #b \n #c", "");
+  p.up_fail("", "#a \n #b \n #a", "");
+  p.up_fail("", "#b \n #b \n #c", "");
 }
 
 #[test]
@@ -89,11 +97,11 @@ fn test_loop() {
   }
   ");
 
-  p.up_pass("", "#a \n #b \n #a");
-  p.up_pass("", "#a \n #b \n #c \n #d \n #a");
-  p.up_pass("", "#a \n #b \n #c \n #d \n #c \n #d \n #a");
-  p.up_fail("", "#a \n #b \n #c \n #a");
-  p.up_fail("", "#a \n #b \n #c \n #d");
+  p.up_pass("", "#a \n #b \n #a", "");
+  p.up_pass("", "#a \n #b \n #c \n #d \n #a", "");
+  p.up_pass("", "#a \n #b \n #c \n #d \n #c \n #d \n #a", "");
+  p.up_fail("", "#a \n #b \n #c \n #a", "");
+  p.up_fail("", "#a \n #b \n #c \n #d", "");
 }
 
 #[test]
@@ -114,10 +122,10 @@ fn test_nested_loop() {
   }
   ");
 
-  p.up_pass("", "#a \n #e");
-  p.up_pass("", "#a \n #b \n #c \n #d \n #e");
-  p.up_pass("", "#a \n #b \n #b \n #c \n #c \n #c \n #d \n #b \n #d \n #e");
-  p.up_fail("", "#a \n #b \n #c");
+  p.up_pass("", "#a \n #e", "");
+  p.up_pass("", "#a \n #b \n #c \n #d \n #e", "");
+  p.up_pass("", "#a \n #b \n #b \n #c \n #c \n #c \n #d \n #b \n #d \n #e", "");
+  p.up_fail("", "#a \n #b \n #c", "");
 }
 
 #[test]
@@ -129,6 +137,21 @@ fn test_tup() {
     }
   ");
 
-  p.up_pass("", "#a, #b \n #c, #d");
-  p.up_fail("", "#a, #d \n #c, #b");
+  p.up_pass("", "#a, #b \n #c, #d", "");
+  p.up_fail("", "#a, #d \n #c, #b", "");
+}
+
+#[test]
+fn test_on() {
+  let p = compile("
+    def main() {
+      on 1 {}
+      on 2 {}
+      on :>a {
+        (:>(a+1))
+      }
+    }
+  ");
+
+  p.up_pass("", "5", "1\n2\n4\n")
 }

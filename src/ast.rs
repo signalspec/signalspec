@@ -19,6 +19,7 @@ pub enum Action {
 	ActionRepeat(Block),
 	ActionCall(Expr, Expr, Option<Block>),
 	ActionToken(Expr, Option<Block>),
+	ActionOn(Expr, Option<Block>),
 }
 
 pub struct Def {
