@@ -9,7 +9,7 @@ use ast::{
 use eval;
 use resolve::context::Context;
 use resolve::scope::{ Scope, Item, ConstantItem, ValueItem, TupleItem, ValueRef, Dynamic, Ignored, Poison, propagate_pair};
-use resolve::types::{Type, TopType, common_type, common_type_all };
+use resolve::types::{mod, Type, TopType, common_type, common_type_all };
 
 pub fn resolve_expr<'s>(ctx: &mut Context<'s>, scope: &Scope<'s>, e: &ast::Expr) -> Item<'s> {
 	match *e {
@@ -260,7 +260,17 @@ pub fn resolve_pattern<'s>(ctx: &mut Context<'s>, scope: &mut Scope<'s>, l: &ast
 	}
 }
 
-
+pub fn expr_shape(a: &ast::Expr) -> types::Shape {
+	match *a {
+		ast::IgnoreExpr => types::ShapeVal(types::TopType),
+		ast::ValueExpr(ref val) => types::ShapeVal(val.get_type()),
+		ast::RangeExpr(..) | ast::FlipExpr(..)
+		| ast::ChooseExpr(..) | ast::ConcatExpr(..)
+		| ast::BinExpr(..) | ast::VarExpr(..) => types::ShapeVal(types::TopType),
+		ast::TupExpr(ref exprs) => types::ShapeTup(exprs.iter().map(|e| expr_shape(e)).collect()),
+		ast::DotExpr(box ref _lexpr, ref _name) => fail!("Cannot declare a property"),
+	}
+}
 
 
 #[cfg(test)]
@@ -294,7 +304,8 @@ mod test {
 
 	fn check(s: &str, test: proc(Item)) {
 		let ses = Session::new();
-		let mut ctx = Context::new(&ses);
+		let signal_info = ::resolve::SignalInfo::new();
+		let mut ctx = Context::new(&ses, &signal_info);
 		let mut scope = Scope::new();
 		scope.bind("x", ValueItem(TopType, Dynamic(XD), Dynamic(XU)));
 		scope.bind("y", ValueItem(TopType, Dynamic(YD), Dynamic(YU)));

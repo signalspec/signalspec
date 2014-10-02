@@ -35,7 +35,8 @@ fn main() {
 
 	let prelude = resolve::Scope::new();
 
-	let mut ctx = resolve::Context::new(&sess);
+	let signal_info = resolve::SignalInfo::new();
+	let mut ctx = resolve::Context::new(&sess, &signal_info);
 
 	let modscope = resolve::resolve_module(&mut ctx, &prelude, &module);
 

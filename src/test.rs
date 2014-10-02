@@ -9,8 +9,9 @@ struct TestCode {
 }
 
 fn compile(source: &str) -> TestCode {
-	let sess = session::Session::new();
-  let mut ctx = resolve::Context::new(&sess);
+  let sess = session::Session::new();
+  let signal_info = resolve::SignalInfo::new();
+  let mut ctx = resolve::Context::new(&sess, &signal_info);
 
   let module = grammar::module(source).unwrap();
   let prelude = resolve::Scope::new();

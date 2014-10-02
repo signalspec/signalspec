@@ -30,7 +30,7 @@ pub struct Def {
 pub struct UseDef(pub String);
 pub struct LetDef(pub String, pub Expr);
 
-#[deriving(PartialEq, Clone)]
+#[deriving(Show, PartialEq, Clone)]
 pub enum TypeExpr {
 	SymbolType, // TODO: include variants?
 	IntegerType, // TODO: range

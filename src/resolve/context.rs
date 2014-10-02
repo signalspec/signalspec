@@ -1,26 +1,45 @@
+use std::cell::RefCell;
 use session::Session;
 use eval;
+use resolve::types::{mod, Shape, ShapeUnknown, ShapeTup, ShapeVal};
 use resolve::scope::{ValueRef, Dynamic, Item, ValueItem, ConstantItem, TupleItem, DefItem};
 
 /// Dynamic Cell
 pub type ValueID = uint;
 
+pub struct SignalInfo {
+	pub downwards: RefCell<Shape>,
+	pub upwards: RefCell<Shape>,
+}
+
+impl SignalInfo {
+	pub fn new() -> SignalInfo {
+		SignalInfo {
+			downwards: RefCell::new(ShapeUnknown),
+			upwards: RefCell::new(ShapeVal(types::TopType)),
+		}
+	}
+}
+
 pub struct Context<'session> {
 	pub session: &'session Session<'session>,
+	pub signal_info: &'session SignalInfo,
 	pub ops: eval::Ops,
 }
 
 impl<'session> Context<'session> {
-	pub fn new<'s>(session: &'s Session<'s>) -> Context<'s> {
+	pub fn new<'s>(session: &'s Session<'s>, signals: &'s SignalInfo) -> Context<'s> {
 		Context {
 			session: session,
+			signal_info: signals,
 			ops: eval::Ops::new(),
 		}
 	}
 
-	pub fn child<'p>(&self) -> Context<'session> {
+	pub fn child(&self) -> Context<'session> {
 		Context {
 			session: self.session,
+			signal_info: self.signal_info,
 			ops: eval::Ops::new(),
 		}
 	}
