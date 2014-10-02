@@ -56,14 +56,17 @@ pub fn print_step_tree(s: &Step, indent: uint) {
 pub struct Connection {
 	rx: comm::Receiver<Vec<Value>>,
 	tx: comm::Sender<Vec<Value>>,
-	lookahead: Option<(Vec<Value>, Vec<Value>)>,
+
+	lookahead_tx: Option<Vec<Value>>,
+	lookahead_rx: Option<Vec<Value>>,
 }
 
 impl Connection {
 	pub fn new() -> (Connection, Connection) {
 		let (s1, r1) = comm::channel();
 		let (s2, r2) = comm::channel();
-		(Connection{ tx: s1, rx: r2, lookahead: None }, Connection{ tx: s2, rx: r1, lookahead: None })
+		(Connection{ tx: s1, rx: r2, lookahead_tx: None, lookahead_rx: None },
+		 Connection{ tx: s2, rx: r1, lookahead_tx: None, lookahead_rx: None })
 	}
 
 	pub fn send(&self, v: Vec<Value>) -> Result<(), Vec<Value>> {
@@ -74,48 +77,58 @@ impl Connection {
 		self.rx.recv_opt()
 	}
 
-	pub fn try(&mut self, state: &mut eval::State, ops: &eval::Ops, down: &[ValueID], up: &[ValueID]) -> bool {
-		debug!("{}", ops);
-		debug!("down: {}", down);
-		state.enter(ops);
-		let down_v = down.iter().map(|&x| state.get(x).clone()).collect();
-
-		let received = match self.lookahead.take() {
-			Some((sent, received)) => {
-				debug!("lookahead {}", received);
-				if sent != down_v { fail!("Committed {}, but sending {}", sent, down_v); }
-				received
+	pub fn lookahead_send(&mut self, v: Vec<Value>) {
+		match self.lookahead_tx {
+			Some(ref lv) => {
+				if v != *lv { fail!("Committed {}, but sending {}", lv, v); }
 			}
 			None => {
-				match self.send(down_v.clone()) {
-					Ok(..) => {},
-					Err(..) => return false,
-				};
-				match self.recv() {
-					Ok(r) => r,
-					Err(..) => return false,
+				match self.send(v.clone()) {
+					Ok(..) => {
+						self.lookahead_tx = Some(v);
+					},
+					Err(..) => (),
 				}
 			}
-		};
-
-		debug!("recieved {}", received);
-		for (&id, value) in up.iter().zip(received.iter()) {
-			state.set(id, value.clone());
 		}
-		self.lookahead = Some((down_v, received));
-		state.exit(ops)
 	}
 
-
-	pub fn apply(&mut self, state: &mut eval::State, ops: &eval::Ops, down: &[ValueID], up: &[ValueID]) -> bool {
-		if self.try(state, ops, down, up) {
-			debug!("matched {}", up);
-			self.lookahead.take();
-			true
-		} else {
-			debug!("failed {}", up);
-			false
+	pub fn lookahead_receive(&mut self) -> Option<Vec<Value>> {
+		match self.lookahead_rx {
+			Some(ref lv) => Some(lv.clone()),
+			None => {
+				match self.recv() {
+					Ok(r) => {
+						self.lookahead_rx = Some(r.clone());
+						Some(r)
+					},
+					Err(..) => None,
+				}
+			}
 		}
+	}
+
+	pub fn accept(&mut self) {
+		self.lookahead_rx.take();
+		self.lookahead_tx.take();
+	}
+}
+
+pub fn try_token(state: &mut eval::State, parent: &mut Connection,
+	               ops: &eval::Ops, down: &[ValueID], up: &[ValueID]) -> bool {
+	debug!("tokenstep {} d:{} u:{}", ops, down, up);
+	state.enter(ops);
+	let m = state.tx_message(down);
+	debug!("  down: {} {}", down, m);
+	parent.lookahead_send(m);
+
+	match parent.lookahead_receive() {
+		Some(m) => {
+			debug!("  up: {} {}", up, m);
+			state.rx_message(up, m);
+			state.exit(ops)
+		}
+		None => false
 	}
 }
 
@@ -123,7 +136,12 @@ pub fn exec(state: &mut eval::State, s: &Step, parent: &mut Connection) -> bool 
 		match *s {
 			NopStep => true,
 			TokenStep(ref ops, ref down, ref up) => {
-				parent.apply(state, ops, down.as_slice(), up.as_slice())
+				let r = try_token(state, parent, ops, down[], up[]);
+				if r {
+					debug!("  matched");
+					parent.accept();
+				}
+				r
 			}
 			SeqStep(ref steps) => {
 				for c in steps.iter() {
@@ -137,7 +155,8 @@ pub fn exec(state: &mut eval::State, s: &Step, parent: &mut Connection) -> bool 
 			RepeatStep(box ref inner) => {
 				let (ops, down, up) = first(inner).expect("Loop has no body");
 				loop {
-					if !parent.try(state, ops, down, up) {
+					if !try_token(state, parent, ops, down, up) {
+						debug!("  loop exit");
 						break;
 					}
 					if !exec(state, inner, parent) {

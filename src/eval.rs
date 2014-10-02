@@ -105,7 +105,7 @@ impl State {
 	}
 
 	pub fn get(&self, reg: ValueID) -> &Value {
-		debug!("get {}: {}", reg, self.registers[reg]);
+		debug!("get {}: {}", reg, self.registers.find(&reg));
 		&self.registers[reg]
 	}
 
@@ -184,7 +184,18 @@ impl State {
 		for &(dest, ref op) in ops.exit.iter().rev() {
 				success &= self.execute(dest, op);
 		}
+		debug!("success: {}", success);
 		success
+	}
+
+	pub fn tx_message(&self, down: &[ValueID]) -> Vec<Value> {
+		down.iter().map(|&x| self.get(x).clone()).collect()
+	}
+
+	pub fn rx_message(&mut self, up: &[ValueID], received: Vec<Value>) {
+		for (&id, value) in up.iter().zip(received.iter()) {
+			self.set(id, value.clone());
+		}
 	}
 }
 
