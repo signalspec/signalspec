@@ -4,174 +4,174 @@ use std::num::from_str_radix;
 
 #[export]
 module -> ast::Module
-  = _ imports:include* lets:letstmt* defs:def*
-  { ast::Module{ imports: imports, lets: lets, defs: defs } }
+    = _ imports:include* lets:letstmt* defs:def*
+    { ast::Module{ imports: imports, lets: lets, defs: defs } }
 
 include -> ast::UseDef
-	= USE _ name:identifier BREAK
-	{ ast::UseDef(name) }
+    = USE _ name:identifier BREAK
+    { ast::UseDef(name) }
 
 letstmt -> ast::LetDef
-	= LET _ name:identifier _ "=" _ value:expr BREAK
-	{ ast::LetDef(name, value) }
+    = LET _ name:identifier _ "=" _ value:expr BREAK
+    { ast::LetDef(name, value) }
 
 def -> ast::Def
-	= DEF _ name:identifier _ "(" _ param: expr_tup _ ")" _ block:block BREAK
-	{ ast::Def{ name:name, param:param, block:block } }
+    = DEF _ name:identifier _ "(" _ param: expr_tup _ ")" _ block:block BREAK
+    { ast::Def{ name:name, param:param, block:block } }
 
-	block -> ast::Block
-		= "{" _ lets:letstmt* actions:action* "}"
-		{ ast::Block{ lets:lets, actions:actions } }
+    block -> ast::Block
+        = "{" _ lets:letstmt* actions:action* "}"
+        { ast::Block{ lets:lets, actions:actions } }
 
-	action -> ast::Action
-		= REPEAT _ block:block BREAK
-			{ ast::ActionRepeat(block) }
-		/ ON _ expr:expr _ body:block? BREAK
-			{ ast::ActionOn(expr, body) }
-		/ expr:varexpr _ "(" _ param:expr_tup _ ")" _ body:block? BREAK
-			{ ast::ActionCall(expr, param, body) }
-		/ expr:expr body:block? BREAK
-			{ ast::ActionToken(expr, body) }
+    action -> ast::Action
+        = REPEAT _ block:block BREAK
+            { ast::ActionRepeat(block) }
+        / ON _ expr:expr _ body:block? BREAK
+            { ast::ActionOn(expr, body) }
+        / expr:varexpr _ "(" _ param:expr_tup _ ")" _ body:block? BREAK
+            { ast::ActionCall(expr, param, body) }
+        / expr:expr body:block? BREAK
+            { ast::ActionToken(expr, body) }
 
 #[export]
 typeexpr -> ast::TypeExpr
-	= symboltype
-	/ numbertype
-	/ entitytype
+    = symboltype
+    / numbertype
+    / entitytype
 
-	symboltype -> ast::TypeExpr
-		= "enum" _ "(" _ vs:symbolliteral**COMMA COMMA? ")"
-		{ ast::SymbolType }
+    symboltype -> ast::TypeExpr
+        = "enum" _ "(" _ vs:symbolliteral**COMMA COMMA? ")"
+        { ast::SymbolType }
 
-	numbertype -> ast::TypeExpr
-		= "number" _ "(" _ units:unitliteral _ ")"
-		{ ast::NumberType }
+    numbertype -> ast::TypeExpr
+        = "number" _ "(" _ units:unitliteral _ ")"
+        { ast::NumberType }
 
-	entitytype -> ast::TypeExpr
-		= tp:identifier
-		{ ast::EntityType }
+    entitytype -> ast::TypeExpr
+        = tp:identifier
+        { ast::EntityType }
 
 // Expressions
 
 #[export]
 expr -> ast::Expr
-	= "(" _ e:expr_tup _")" {e}
-  / valexpr
+    = "(" _ e:expr_tup _")" {e}
+    / valexpr
 
 expr_tup -> ast::Expr
-  = es:(expr ** COMMA) COMMA?
+    = es:(expr ** COMMA) COMMA?
     { if es.len() == 1 { es.move_iter().next().unwrap() } else { ast::TupExpr(es) } }
 
 #[export]
 valexpr -> ast::Expr
   = valexpr_flip
 
-	valexpr_flip -> ast::Expr
-		= l:valexpr_range _ "!" _ r:valexpr_range { ast::FlipExpr(box l, box r) }
-		/ "<:" _ x:valexpr_range { ast::FlipExpr(box x, box ast::IgnoreExpr) }
-		/ ":>" _ x:valexpr_range { ast::FlipExpr(box ast::IgnoreExpr, box x) }
-		/ valexpr_range
+    valexpr_flip -> ast::Expr
+        = l:valexpr_range _ "!" _ r:valexpr_range { ast::FlipExpr(box l, box r) }
+        / "<:" _ x:valexpr_range { ast::FlipExpr(box x, box ast::IgnoreExpr) }
+        / ":>" _ x:valexpr_range { ast::FlipExpr(box ast::IgnoreExpr, box x) }
+        / valexpr_range
 
-	valexpr_range -> ast::Expr
-		= rangeexpr
-		/ valexpr_sum
+    valexpr_range -> ast::Expr
+        = rangeexpr
+        / valexpr_sum
 
-		rangeexpr -> ast::Expr
-			= l:valexpr_sum _ ".." _ r:valexpr_sum
-			{ ast::RangeExpr(box l, box r) }
+        rangeexpr -> ast::Expr
+            = l:valexpr_sum _ ".." _ r:valexpr_sum
+            { ast::RangeExpr(box l, box r) }
 
-	valexpr_sum -> ast::Expr
-		= l:valexpr_product _ op:[+] _ r:valexpr_sum
-			{ ast::BinExpr(box l, eval::BiAdd, box r) }
-		/ valexpr_product
+    valexpr_sum -> ast::Expr
+        = l:valexpr_product _ op:[+] _ r:valexpr_sum
+            { ast::BinExpr(box l, eval::BiAdd, box r) }
+        / valexpr_product
 
-	valexpr_product -> ast::Expr
-		= l:valexpr_choose _ op:[*] _ r:valexpr_product
-			{ ast::BinExpr(box l, eval::BiMul, box r) }
-		/ valexpr_choose
+    valexpr_product -> ast::Expr
+        = l:valexpr_choose _ op:[*] _ r:valexpr_product
+            { ast::BinExpr(box l, eval::BiMul, box r) }
+        / valexpr_choose
 
-	valexpr_choose -> ast::Expr
-		= e:valexpr_atom _ "[" _ vs:(k:valexpr "=" _ v:valexpr { (k,v) })**COMMA COMMA? "]"
-			{ ast::ChooseExpr(box e, vs) }
-		/ valexpr_atom
+    valexpr_choose -> ast::Expr
+        = e:valexpr_atom _ "[" _ vs:(k:valexpr "=" _ v:valexpr { (k,v) })**COMMA COMMA? "]"
+            { ast::ChooseExpr(box e, vs) }
+        / valexpr_atom
 
-	valexpr_atom -> ast::Expr
-		= literal_expr
-		/ ignoreliteral
-		/ concatexpr
-		/ varexpr
-		/ ("(" _ v:valexpr _ ")" _ {v})
+    valexpr_atom -> ast::Expr
+        = literal_expr
+        / ignoreliteral
+        / concatexpr
+        / varexpr
+        / ("(" _ v:valexpr _ ")" _ {v})
 
-	concatexpr -> ast::Expr
-		= "[" _ vs:(valexpr ++ COMMA) COMMA? "]"
-		{ ast::ConcatExpr(vs) }
+    concatexpr -> ast::Expr
+        = "[" _ vs:(valexpr ++ COMMA) COMMA? "]"
+        { ast::ConcatExpr(vs) }
 
-	varexpr -> ast::Expr
-		= i:identifier accessors:("." i:identifier {i} )*
-		{ accessors.move_iter().fold(ast::VarExpr(i), |base, accessor| ast::DotExpr(box base, accessor)) }
+    varexpr -> ast::Expr
+        = i:identifier accessors:("." i:identifier {i} )*
+        { accessors.move_iter().fold(ast::VarExpr(i), |base, accessor| ast::DotExpr(box base, accessor)) }
 
-	literal_expr -> ast::Expr
-		= v:literal { ast::ValueExpr(v) }
+    literal_expr -> ast::Expr
+        = v:literal { ast::ValueExpr(v) }
 
-	#[export]
-	literal -> ast::Value
-		= symbolliteral
-		/ integerliteral
-		/ bitsliteral
-		/ numberliteral
+    #[export]
+    literal -> ast::Value
+        = symbolliteral
+        / integerliteral
+        / bitsliteral
+        / numberliteral
 
-			ignoreliteral -> ast::Expr
-				= "ignore"
-				{ ast::IgnoreExpr }
+            ignoreliteral -> ast::Expr
+                = "ignore"
+                { ast::IgnoreExpr }
 
-			symbolliteral -> ast::Value
-				= "#" i:identifier
-				{ ast::SymbolValue(i) }
+            symbolliteral -> ast::Value
+                = "#" i:identifier
+                { ast::SymbolValue(i) }
 
-			integerliteral -> ast::Value
-				= "#" n:integer { ast::IntegerValue(n) }
+            integerliteral -> ast::Value
+                = "#" n:integer { ast::IntegerValue(n) }
 
-			bitsliteral -> ast::Value
-				= "'h" v:(hexchar+) {
-					ast::VectorValue(Vec::from_fn(v.len()*4, |i| {
-						let n = i/4;
-						let b = i%4;
-						ast::IntegerValue((v.as_slice()[n] & (1 << (4-b))) as i64)
-					}))
-				}
-				/ "'" "b"? v:(binbit+)
-					{ ast::VectorValue(v.iter().map(|&b| ast::IntegerValue(b as i64)).collect()) }
+            bitsliteral -> ast::Value
+                = "'h" v:(hexchar+) {
+                    ast::VectorValue(Vec::from_fn(v.len()*4, |i| {
+                        let n = i/4;
+                        let b = i%4;
+                        ast::IntegerValue((v.as_slice()[n] & (1 << (4-b))) as i64)
+                    }))
+                }
+                / "'" "b"? v:(binbit+)
+                    { ast::VectorValue(v.iter().map(|&b| ast::IntegerValue(b as i64)).collect()) }
 
-				hexchar -> u8
-					= [0-9a-fA-F]
-					{ from_str_radix::<u8>(match_str, 16).unwrap() }
+                hexchar -> u8
+                    = [0-9a-fA-F]
+                    { from_str_radix::<u8>(match_str, 16).unwrap() }
 
-				binbit -> bool
-					= "0" {false} / "1" {true}
+                binbit -> bool
+                    = "0" {false} / "1" {true}
 
-			numberliteral -> ast::Value
-				= v:floatnumber _ u:unit
-				{ ast::NumberValue(v) }
+            numberliteral -> ast::Value
+                = v:floatnumber _ u:unit
+                { ast::NumberValue(v) }
 
-			unitliteral = unit { () }
+            unitliteral = unit { () }
 
-				unit -> String
-					= [a-zA-Z]+ { match_str.to_string() }
-				    / "" { "".to_string() }
+                unit -> String
+                    = [a-zA-Z]+ { match_str.to_string() }
+                    / "" { "".to_string() }
 
 // Lexer
 
 WHITESPACE
-  = [\u0009\u000B\u000C\u0020\u00A0\uFEFF\u1680\u180E\u2000-\u200A\u202F\u205F\u3000]
-  / "\\" TERM
+    = [\u0009\u000B\u000C\u0020\u00A0\uFEFF\u1680\u180E\u2000-\u200A\u202F\u205F\u3000]
+    / "\\" TERM
 
 TERM
-  = "\r"? "\n"
+    = "\r"? "\n"
 
 COMMENT = "//" (!TERM .)*
 
 TERMINATOR
-  = COMMENT? TERM
+    = COMMENT? TERM
 
 BREAK = WHITESPACE* TERMINATOR _
 
@@ -188,10 +188,10 @@ REPEAT = "repeat" !IDCHAR
 ON     = "on"     !IDCHAR
 
 identifier -> String = [a-zA-Z_][0-9a-zA-Z_]*
-	{ match_str.to_string() }
+    { match_str.to_string() }
 
 integer -> i64 = "-"?[0-9]+
-	{ from_str::<i64>(match_str).unwrap() }
+    { from_str::<i64>(match_str).unwrap() }
 
 floatnumber -> f64 = "-"?[0-9]+("."[0-9]+)?
-	{ from_str::<f64>(match_str).unwrap() }
+    { from_str::<f64>(match_str).unwrap() }
