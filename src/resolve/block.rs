@@ -54,19 +54,19 @@ fn resolve_action<'s>(ctx: &mut Context<'s>, scope: &Scope<'s>, action: &'s ast:
             let mut cctx = ctx.child();
             if body.is_some() { fail!("Body unimplemented"); }
             let i = resolve_expr(&mut cctx, scope, expr);
-            let (down, up) = cctx.message_downward(i);
-            TokenStep(cctx.into_ops(), down, up)
+            let msg = cctx.message_downward(i);
+            TokenStep(cctx.into_ops(), msg)
         }
         ast::ActionOn(ref expr, ref body) => {
             let mut cctx = ctx.child();
             let mut body_scope = scope.child();
-            let (down, up, message_item) = cctx.message_upward();
-            resolve_pattern(&mut cctx, &mut body_scope, expr, message_item);
+            let (message, item) = cctx.message_upward();
+            resolve_pattern(&mut cctx, &mut body_scope, expr, item);
             let body_step = match *body {
                 Some(ref body) => resolve_seq(&mut cctx, &body_scope, body),
                 None => NopStep,
             };
-            TokenTopStep(cctx.into_ops(), down, up, box body_step)
+            TokenTopStep(cctx.into_ops(), message, box body_step)
         }
         ast::ActionRepeat(ref block) => {
             RepeatStep(box resolve_seq(ctx, scope, block))

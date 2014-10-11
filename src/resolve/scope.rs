@@ -98,10 +98,10 @@ impl ValueRef {
         }
     }
 
-    pub fn value_id(self) -> ValueID {
+    pub fn value_id(self) -> Option<ValueID> {
         match self {
-            Dynamic(id) => id,
-            Ignored => 0,
+            Dynamic(id) => Some(id),
+            Ignored => None,
             Poison(s) => fail!("Use of an invalid value: {}", s),
         }
     }

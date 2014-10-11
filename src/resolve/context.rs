@@ -1,6 +1,8 @@
 use std::cell::RefCell;
+use std::vec;
 use session::Session;
 use eval;
+use exec;
 use resolve::types::{mod, Shape, ShapeUnknown, ShapeTup, ShapeVal};
 use resolve::scope::{ValueRef, Dynamic, Item, ValueItem, ConstantItem, TupleItem, DefItem};
 
@@ -68,53 +70,47 @@ impl<'session> Context<'session> {
         Dynamic(cell)
     }
 
-    pub fn message_downward(&mut self, item: Item) -> (Vec<ValueID>, Vec<ValueID>) {
-        let mut down = Vec::new();
-        let mut up = Vec::new();
-
-        fn flatten_into(ctx: &mut Context, item: Item, down: &mut Vec<ValueID>, up: &mut Vec<ValueID>) {
+    pub fn message_downward(&mut self, item: Item) -> exec::Message {
+        // TODO: collect information on shape
+        fn flatten_into(ctx: &mut Context, item: Item) -> exec::Message {
             // TODO: check shape
             match item {
                 ConstantItem(ref v) => {
-                    down.push(ctx.down_op(eval::ConstOp(v.clone())).value_id());
-                    up.push(ctx.up_op(0, |c| eval::CheckOp(c, v.clone())).value_id());
-                },
+                    exec::MessageValue(
+                        ctx.down_op(eval::ConstOp(v.clone())).value_id(),
+                        ctx.up_op(0, |c| eval::CheckOp(c, v.clone())).value_id()
+                    )
+                }
                 ValueItem(_, ref d, ref u) => {
-                    down.push(d.value_id());
-                    up.push(u.value_id());
-                },
-                TupleItem(t) => for i in t.into_iter() { flatten_into(ctx, i, down, up) },
+                    exec::MessageValue(d.value_id(), u.value_id())
+                }
+                TupleItem(t) => {
+                    exec::MessageTuple(t.into_iter().map(|i| flatten_into(ctx, i)).collect())
+                }
                 DefItem(..) => fail!("Cannot flatten non-sendable expression")
             }
         }
-
-        flatten_into(self, item, &mut down, &mut up);
-        (down, up)
+        flatten_into(self, item)
     }
 
-    pub fn message_upward(&mut self) -> (Vec<ValueID>, Vec<ValueID>, Item<'session>) {
+    pub fn message_upward(&mut self) -> (exec::Message, Item<'session>) {
         let shape = self.signal_info.upwards.borrow();
-        let len = shape.count().expect("Signal shape not fully constrained");
-        let mut down = Vec::with_capacity(len);
-        let mut up = Vec::with_capacity(len);
 
-        fn recurse<'s>(ctx: &mut Context<'s>, shape: &Shape, down: &mut Vec<ValueID>, up: &mut Vec<ValueID>) -> Item<'s> {
+        fn recurse<'s>(ctx: &mut Context<'s>, shape: &Shape) -> (exec::Message, Item<'s>) {
             match *shape {
                 ShapeVal(t) => {
                     let d = ctx.make_register();
                     let u = ctx.make_register();
-                    down.push(d);
-                    up.push(u);
-                    ValueItem(t, Dynamic(d), Dynamic(u))
+                    (exec::MessageValue(Some(u), Some(d)), ValueItem(t, Dynamic(d), Dynamic(u)))
                 }
                 ShapeTup(ref v) => {
-                    TupleItem(v.iter().map(|s| recurse(ctx, s, down, up) ).collect())
+                    let (ms, is) = vec::unzip(v.iter().map(|s| recurse(ctx, s)));
+                    (exec::MessageTuple(ms), TupleItem(is))
                 }
                 ShapeUnknown => fail!("Signal shape not fully constrained"),
             }
         }
 
-        let item = recurse(self, &*shape, &mut down, &mut up);
-        (down, up, item)
+        recurse(self, &*shape)
     }
 }

@@ -10,20 +10,26 @@ pub trait PrimitiveStep {
     fn exec(&self);
 }
 
+#[deriving(Show)]
+pub enum Message {
+    MessageValue(/*down*/ Option<ValueID>, /*up*/ Option<ValueID>),
+    MessageTuple(Vec<Message>),
+}
+
 pub enum Step {
     NopStep,
-    TokenStep(eval::Ops, /*down*/ Vec<ValueID>, /*up*/ Vec<ValueID>),
-    TokenTopStep(eval::Ops, /*down*/ Vec<ValueID>, /*up*/ Vec<ValueID>, Box<Step>),
+    TokenStep(eval::Ops, Message),
+    TokenTopStep(eval::Ops, Message, Box<Step>),
     SeqStep(Vec<Step>),
     RepeatStep(Box<Step>),
     //PrimitiveStep(Box<PrimitiveStep>),
 }
 
-fn first(s: &Step) -> Option<(&eval::Ops, &[ValueID], &[ValueID])> {
+fn first(s: &Step) -> Option<(&eval::Ops, &Message)> {
     match *s {
         NopStep => None,
-        TokenStep(ref ops, ref down, ref up) => Some((ops, down.as_slice(), up.as_slice())),
-        TokenTopStep(_, _, _, box ref body) => first(body),
+        TokenStep(ref ops, ref message) => Some((ops, message)),
+        TokenTopStep(_, _, box ref body) => first(body),
         SeqStep(ref steps) => steps.as_slice().get(0).and_then(first),
         RepeatStep(box ref inner) => first(inner),
     }
@@ -33,11 +39,11 @@ pub fn print_step_tree(s: &Step, indent: uint) {
     let i = " ".repeat(indent);
     match *s {
         NopStep => println!("{}NOP", i),
-        TokenStep(_, ref down, ref up) => {
-            println!("{}Token: {} {}", i, down, up);
+        TokenStep(_, ref message) => {
+            println!("{}Token: {}", i, message);
         }
-        TokenTopStep(_, ref down, ref up, box ref body) => {
-            println!("{}Up: {} {}", i, down, up);
+        TokenTopStep(_, ref message, box ref body) => {
+            println!("{}Up: {}", i, message);
             print_step_tree(body, indent+1);
         }
         SeqStep(ref steps) => {
@@ -105,6 +111,7 @@ impl Connection {
             None => {
                 match self.recv() {
                     Ok(r) => {
+                        debug!("recv: {}", r);
                         self.lookahead_rx = Some(r.clone());
                         Some(r)
                     },
@@ -121,17 +128,17 @@ impl Connection {
 }
 
 pub fn try_token(state: &mut eval::State, parent: &mut Connection,
-                   ops: &eval::Ops, down: &[ValueID], up: &[ValueID]) -> bool {
-    debug!("tokenstep {} d:{} u:{}", ops, down, up);
+                   ops: &eval::Ops, msg: &Message) -> bool {
+    debug!("tokenstep {} {}", ops, msg);
     state.enter(ops);
-    let m = state.tx_message(down);
-    debug!("  down: {} {}", down, m);
+    let m = state.tx_message(msg);
+    debug!("  down: {}", m);
     parent.lookahead_send(m);
 
     match parent.lookahead_receive() {
         Some(m) => {
-            debug!("  up: {} {}", up, m);
-            state.rx_message(up, m);
+            debug!("  up: {}", m);
+            state.rx_message(msg, m);
             state.exit(ops)
         }
         None => false
@@ -141,27 +148,27 @@ pub fn try_token(state: &mut eval::State, parent: &mut Connection,
 pub fn exec(state: &mut eval::State, s: &Step, parent: &mut Connection, child: &mut Connection) -> bool {
     match *s {
         NopStep => true,
-        TokenStep(ref ops, ref down, ref up) => {
-            let r = try_token(state, parent, ops, down[], up[]);
+        TokenStep(ref ops, ref msg) => {
+            let r = try_token(state, parent, ops, msg);
             if r {
                 debug!("  matched");
                 parent.accept();
             }
             r
         }
-        TokenTopStep(ref ops, ref down, ref up, box ref body) => {
+        TokenTopStep(ref ops, ref msg, box ref body) => {
             match child.recv() {
                 Ok(m) => {
-                    debug!("tokentop: {}, d:{} u:{}", ops, down[], up[]);
-                    debug!("down: {} {}", down[], m)
-                    state.rx_message(down[], m);
+                    debug!("tokentop: {}, {}", ops, msg);
+                    debug!("down: {}", m)
+                    state.rx_message(msg, m);
                     state.enter(ops);
 
                     let r = exec(state, body, parent, child);
 
                     state.exit(ops);
-                    let m = state.tx_message(up[]);
-                    debug!("up: {} {}", up[], m);
+                    let m = state.tx_message(msg);
+                    debug!("up: {}", m);
                     if child.send(m).is_err() { return false; }
                     r
                 }
@@ -178,9 +185,9 @@ pub fn exec(state: &mut eval::State, s: &Step, parent: &mut Connection, child: &
             true
         }
         RepeatStep(box ref inner) => {
-            let (ops, down, up) = first(inner).expect("Loop has no body");
+            let (ops, msg) = first(inner).expect("Loop has no body");
             loop {
-                if !try_token(state, parent, ops, down, up) {
+                if !try_token(state, parent, ops, msg) {
                     debug!("  loop exit");
                     break;
                 }

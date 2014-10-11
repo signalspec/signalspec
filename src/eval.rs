@@ -5,6 +5,7 @@ use ast:: {
         VectorValue,
 };
 use resolve::context::{ValueID};
+use exec;
 
 #[deriving(PartialEq, Show)]
 pub enum ValueSrc {
@@ -188,14 +189,39 @@ impl State {
         success
     }
 
-    pub fn tx_message(&self, down: &[ValueID]) -> Vec<Value> {
-        down.iter().map(|&x| self.get(x).clone()).collect()
+    pub fn tx_message(&self, msg: &exec::Message) -> Vec<Value> {
+        let mut v = Vec::new();
+
+        fn recurse(state: &State, v: &mut Vec<Value>, msg: &exec::Message) {
+            match *msg {
+                exec::MessageValue(Some(id), _) => v.push(state.get(id).clone()),
+                exec::MessageValue(None, _) => (),
+                exec::MessageTuple(ref children) => {
+                    for i in children.iter() { recurse(state, v, i) }
+                }
+            }
+        }
+        recurse(self, &mut v, msg);
+        v
     }
 
-    pub fn rx_message(&mut self, up: &[ValueID], received: Vec<Value>) {
-        for (&id, value) in up.iter().zip(received.iter()) {
-            self.set(id, value.clone());
+    pub fn rx_message(&mut self, msg: &exec::Message, received: Vec<Value>) {
+        let mut iter = received.iter();
+        fn recurse<'a, T: Iterator<&'a Value>>(state: &mut State, iter: &mut T, msg: &exec::Message) {
+            match *msg {
+                exec::MessageValue(_, Some(id)) => {
+                    // TODO: replace the dummy value with .expect("Not enough values in message")
+                    let v = iter.next().map(|v| v.clone()).unwrap_or(NumberValue(0.));
+                    state.set(id, v);
+                }
+                exec::MessageValue(_, None) => (),
+                exec::MessageTuple(ref v) => {
+                    for i in v.iter() { recurse(state, iter, i) }
+                }
+            }
         }
+
+        recurse(self, &mut iter, msg)
     }
 }
 
