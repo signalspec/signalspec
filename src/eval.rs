@@ -5,6 +5,7 @@ use ast:: {
         VectorValue,
 };
 use resolve::context::{ValueID};
+use resolve::scope::{Dynamic};
 use exec;
 
 #[deriving(PartialEq, Show)]
@@ -194,8 +195,8 @@ impl State {
 
         fn recurse(state: &State, v: &mut Vec<Value>, msg: &exec::Message) {
             match *msg {
-                exec::MessageValue(Some(id), _) => v.push(state.get(id).clone()),
-                exec::MessageValue(None, _) => (),
+                exec::MessageValue(Dynamic(id), _) => v.push(state.get(id).clone()),
+                exec::MessageValue(_, _) => (),
                 exec::MessageTuple(ref children) => {
                     for i in children.iter() { recurse(state, v, i) }
                 }
@@ -209,12 +210,12 @@ impl State {
         let mut iter = received.iter();
         fn recurse<'a, T: Iterator<&'a Value>>(state: &mut State, iter: &mut T, msg: &exec::Message) {
             match *msg {
-                exec::MessageValue(_, Some(id)) => {
+                exec::MessageValue(_, Dynamic(id)) => {
                     // TODO: replace the dummy value with .expect("Not enough values in message")
                     let v = iter.next().map(|v| v.clone()).unwrap_or(NumberValue(0.));
                     state.set(id, v);
                 }
-                exec::MessageValue(_, None) => (),
+                exec::MessageValue(_, _) => (),
                 exec::MessageTuple(ref v) => {
                     for i in v.iter() { recurse(state, iter, i) }
                 }

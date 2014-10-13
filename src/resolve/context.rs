@@ -77,12 +77,12 @@ impl<'session> Context<'session> {
             match item {
                 ConstantItem(ref v) => {
                     exec::MessageValue(
-                        ctx.down_op(eval::ConstOp(v.clone())).value_id(),
-                        ctx.up_op(0, |c| eval::CheckOp(c, v.clone())).value_id()
+                        ctx.down_op(eval::ConstOp(v.clone())),
+                        ctx.up_op(0, |c| eval::CheckOp(c, v.clone()))
                     )
                 }
-                ValueItem(_, ref d, ref u) => {
-                    exec::MessageValue(d.value_id(), u.value_id())
+                ValueItem(_, d, u) => {
+                    exec::MessageValue(d, u)
                 }
                 TupleItem(t) => {
                     exec::MessageTuple(t.into_iter().map(|i| flatten_into(ctx, i)).collect())
@@ -99,9 +99,9 @@ impl<'session> Context<'session> {
         fn recurse<'s>(ctx: &mut Context<'s>, shape: &Shape) -> (exec::Message, Item<'s>) {
             match *shape {
                 ShapeVal(t) => {
-                    let d = ctx.make_register();
-                    let u = ctx.make_register();
-                    (exec::MessageValue(Some(u), Some(d)), ValueItem(t, Dynamic(d), Dynamic(u)))
+                    let d = Dynamic(ctx.make_register());
+                    let u = Dynamic(ctx.make_register());
+                    (exec::MessageValue(u, d), ValueItem(t, d, u))
                 }
                 ShapeTup(ref v) => {
                     let (ms, is) = vec::unzip(v.iter().map(|s| recurse(ctx, s)));

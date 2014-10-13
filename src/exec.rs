@@ -1,6 +1,6 @@
 use std::comm;
 
-use resolve::context::ValueID;
+use resolve::scope::ValueRef;
 use ast::Value;
 use eval;
 
@@ -12,7 +12,7 @@ pub trait PrimitiveStep {
 
 #[deriving(Show)]
 pub enum Message {
-    MessageValue(/*down*/ Option<ValueID>, /*up*/ Option<ValueID>),
+    MessageValue(/*down*/ ValueRef, /*up*/ ValueRef),
     MessageTuple(Vec<Message>),
 }
 
