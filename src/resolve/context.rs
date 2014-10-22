@@ -17,8 +17,8 @@ pub struct SignalInfo {
 impl SignalInfo {
     pub fn new() -> SignalInfo {
         SignalInfo {
-            downwards: RefCell::new(ShapeUnknown),
-            upwards: RefCell::new(ShapeVal(types::TopType)),
+            downwards: RefCell::new(ShapeVal(types::TopType, false, true)),
+            upwards: RefCell::new(ShapeVal(types::TopType, false, true)),
         }
     }
 }
@@ -98,7 +98,7 @@ impl<'session> Context<'session> {
 
         fn recurse<'s>(ctx: &mut Context<'s>, shape: &Shape) -> (exec::Message, Item<'s>) {
             match *shape {
-                ShapeVal(t) => {
+                ShapeVal(t, _, _) => {
                     let d = Dynamic(ctx.make_register());
                     let u = Dynamic(ctx.make_register());
                     (exec::MessageValue(u, d), ValueItem(t, d, u))
@@ -107,7 +107,7 @@ impl<'session> Context<'session> {
                     let (ms, is) = vec::unzip(v.iter().map(|s| recurse(ctx, s)));
                     (exec::MessageTuple(ms), TupleItem(is))
                 }
-                ShapeUnknown => fail!("Signal shape not fully constrained"),
+                ShapeUnknown(..) => fail!("Signal shape not fully constrained"),
             }
         }
 

@@ -24,43 +24,17 @@ pub fn common_type_all<T:Iterator<Type>>(mut l: T) -> Option<Type> {
 
 #[deriving(Clone, Show, PartialEq)]
 pub enum Shape {
-    ShapeUnknown,
+    ShapeUnknown(bool, bool),
     ShapeTup(Vec<Shape>),
-    ShapeVal(Type),
+    ShapeVal(Type, bool, bool),
 }
 
 impl Shape {
     pub fn count(&self) -> Option<uint> {
         match *self {
-            ShapeUnknown => None,
+            ShapeUnknown(..) => None,
             ShapeTup(ref v) => v.iter().fold(Some(0), |c, s| c.and_then(|c| s.count().map(|s| s+c))),
             ShapeVal(..) => Some(1),
-        }
-    }
-
-    pub fn unify_with(&mut self, other: &Shape) -> bool {
-        match (self, other) {
-            (s @ &ShapeUnknown, _) => {
-                *s = other.clone();
-                true
-            }
-            (&ShapeTup(ref mut sv), &ShapeTup(ref ov)) => {
-                if sv.len() != ov.len() { return false; }
-                for (s, o) in sv.iter_mut().zip(ov.iter()) {
-                    if !s.unify_with(o) { return false;}
-                }
-                true
-            }
-            (&ShapeVal(ref mut st), &ShapeVal(ot)) => {
-                match common_type(*st, ot) {
-                    Some(t) => {
-                        *st = t;
-                        true
-                    }
-                    None => false
-                }
-            }
-            _ => false
         }
     }
 }

@@ -265,11 +265,11 @@ pub fn resolve_pattern<'s>(ctx: &mut Context<'s>, scope: &mut Scope<'s>, l: &ast
 
 pub fn expr_shape(a: &ast::Expr) -> types::Shape {
     match *a {
-        ast::IgnoreExpr => types::ShapeVal(types::TopType),
-        ast::ValueExpr(ref val) => types::ShapeVal(val.get_type()),
+        ast::IgnoreExpr => types::ShapeVal(types::TopType, false, false),
+        ast::ValueExpr(ref val) => types::ShapeVal(val.get_type(), true, true),
         ast::RangeExpr(..) | ast::FlipExpr(..)
         | ast::ChooseExpr(..) | ast::ConcatExpr(..)
-        | ast::BinExpr(..) | ast::VarExpr(..) => types::ShapeVal(types::TopType),
+        | ast::BinExpr(..) | ast::VarExpr(..) => types::ShapeVal(types::TopType, true, true),
         ast::TupExpr(ref exprs) => types::ShapeTup(exprs.iter().map(|e| expr_shape(e)).collect()),
         ast::DotExpr(box ref _lexpr, ref _name) => fail!("Cannot declare a property"),
     }
