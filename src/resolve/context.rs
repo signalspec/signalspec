@@ -101,7 +101,7 @@ impl<'session> Context<'session> {
                 ShapeVal(t, _, _) => {
                     let d = Dynamic(ctx.make_register());
                     let u = Dynamic(ctx.make_register());
-                    (exec::MessageValue(u, d), ValueItem(t, d, u))
+                    (exec::MessageValue(d, u), ValueItem(t, d, u))
                 }
                 ShapeTup(ref v) => {
                     let (ms, is) = vec::unzip(v.iter().map(|s| recurse(ctx, s)));

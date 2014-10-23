@@ -2,7 +2,7 @@ use std::comm;
 
 use resolve::scope::{ValueRef, Dynamic};
 use resolve::context::ValueID;
-use ast::Value;
+use ast::{Value,NumberValue};
 use eval;
 
 pub trait PrimitiveStep {
@@ -155,14 +155,23 @@ pub fn try_token(state: &mut eval::State, parent: &mut Connection,
                    ops: &eval::Ops, msg: &Message) -> bool {
     debug!("tokenstep {} {}", ops, msg);
     state.enter(ops);
-    let m = state.tx_message(msg);
+
+    let mut m = Vec::new();
+    msg.each_down_ref(|id| m.push(state.get(id).clone()) );
+
     debug!("  down: {}", m);
     parent.lookahead_send(m);
 
     match parent.lookahead_receive() {
         Some(m) => {
             debug!("  up: {}", m);
-            state.rx_message(msg, m);
+
+            let mut iter = m.into_iter();
+            // TODO: replace the dummy value with .expect("Not enough values in message")
+            msg.each_up_ref(|id| {
+                state.set(id, iter.next().unwrap_or(NumberValue(0.)));
+            });
+
             state.exit(ops)
         }
         None => false
@@ -185,13 +194,22 @@ pub fn exec(state: &mut eval::State, s: &Step, parent: &mut Connection, child: &
                 Ok(m) => {
                     debug!("tokentop: {}, {}", ops, msg);
                     debug!("down: {}", m)
-                    state.rx_message(msg, m);
+
+                    let mut iter = m.into_iter();
+                    // TODO: replace the dummy value with .expect("Not enough values in message")
+                    msg.each_down_ref(|id| {
+                        state.set(id, iter.next().unwrap_or(NumberValue(0.)));
+                    });
+
                     state.enter(ops);
 
                     let r = exec(state, body, parent, child);
 
                     state.exit(ops);
-                    let m = state.tx_message(msg);
+
+                    let mut m = Vec::new();
+                    msg.each_up_ref(|id| m.push(state.get(id).clone()) );
+
                     debug!("up: {}", m);
                     if child.send(m).is_err() { return false; }
                     r

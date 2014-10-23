@@ -187,20 +187,6 @@ impl State {
         debug!("success: {}", success);
         success
     }
-
-    pub fn tx_message(&self, msg: &exec::Message) -> Vec<Value> {
-        let mut v = Vec::new();
-        msg.each_down_ref(|id| v.push(self.get(id).clone()) );
-        v
-    }
-
-    pub fn rx_message(&mut self, msg: &exec::Message, received: Vec<Value>) {
-        let mut iter = received.iter();
-        // TODO: replace the dummy value with .expect("Not enough values in message")
-        msg.each_up_ref(|id| {
-            self.set(id, iter.next().map(|v| v.clone()).unwrap_or(NumberValue(0.)));
-        });
-    }
 }
 
 fn value_match(a: &Value, b: &Value) -> bool {
