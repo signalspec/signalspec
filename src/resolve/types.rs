@@ -28,13 +28,3 @@ pub enum Shape {
     ShapeTup(Vec<Shape>),
     ShapeVal(Type, bool, bool),
 }
-
-impl Shape {
-    pub fn count(&self) -> Option<uint> {
-        match *self {
-            ShapeUnknown(..) => None,
-            ShapeTup(ref v) => v.iter().fold(Some(0), |c, s| c.and_then(|c| s.count().map(|s| s+c))),
-            ShapeVal(..) => Some(1),
-        }
-    }
-}

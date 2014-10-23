@@ -1,5 +1,5 @@
 #![allow(dead_code)]
-#![feature(phase)]
+#![feature(phase, if_let)]
 
 extern crate arena;
 extern crate collections;

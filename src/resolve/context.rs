@@ -4,7 +4,7 @@ use session::Session;
 use eval;
 use exec;
 use resolve::types::{mod, Shape, ShapeUnknown, ShapeTup, ShapeVal};
-use resolve::scope::{ValueRef, Dynamic, Item, ValueItem, ConstantItem, TupleItem, DefItem};
+use resolve::scope::{ValueRef, Dynamic, Item, ValueItem, ConstantItem, TupleItem};
 
 /// Dynamic Cell
 pub type ValueID = uint;
@@ -17,7 +17,7 @@ pub struct SignalInfo {
 impl SignalInfo {
     pub fn new() -> SignalInfo {
         SignalInfo {
-            downwards: RefCell::new(ShapeVal(types::TopType, false, true)),
+            downwards: RefCell::new(ShapeUnknown(false, true)),
             upwards: RefCell::new(ShapeVal(types::TopType, false, true)),
         }
     }
@@ -70,27 +70,54 @@ impl<'session> Context<'session> {
         Dynamic(cell)
     }
 
+    fn item_to_refs(&mut self, item: &Item) -> (types::Type, ValueRef, ValueRef) {
+        match *item {
+            ConstantItem(ref v) => (
+                v.get_type(),
+                self.down_op(eval::ConstOp(v.clone())),
+                self.up_op(0, |c| eval::CheckOp(c, v.clone()))
+            ),
+            ValueItem(t, d, u) => (t, d, u),
+            _ => fail!("Item does not match shape: expected value, found {}", item),
+        }
+    }
+
+    /// Create a message downward from the given Item. Checks that the Item matches the Shape,
+    /// and fills in the Shape's type information.
     pub fn message_downward(&mut self, item: Item) -> exec::Message {
-        // TODO: collect information on shape
-        fn flatten_into(ctx: &mut Context, item: Item) -> exec::Message {
-            // TODO: check shape
-            match item {
-                ConstantItem(ref v) => {
-                    exec::MessageValue(
-                        ctx.down_op(eval::ConstOp(v.clone())),
-                        ctx.up_op(0, |c| eval::CheckOp(c, v.clone()))
-                    )
+        let mut shape = self.signal_info.downwards.borrow_mut();
+
+        fn recurse(ctx: &mut Context, shape: &mut Shape, item: Item) -> exec::Message {
+            // If the shape is unknown, fill it in based on the item
+            if let ShapeUnknown(is_down, is_up) = *shape {
+                *shape = match item {
+                    TupleItem(ref t) => ShapeTup(Vec::from_elem(t.len(), ShapeUnknown(is_down, is_up))),
+                    _ => ShapeVal(types::TopType, is_down, is_up)
                 }
-                ValueItem(_, d, u) => {
+            }
+
+            match *shape {
+                ShapeVal(ref _ty, _, _) => {
+                    let (_t, d, u) = ctx.item_to_refs(&item);
                     exec::MessageValue(d, u)
                 }
-                TupleItem(t) => {
-                    exec::MessageTuple(t.into_iter().map(|i| flatten_into(ctx, i)).collect())
+
+                ShapeTup(ref mut sub) => {
+                    if let TupleItem(t) = item {
+                        exec::MessageTuple(
+                            t.into_iter().zip(sub.iter_mut())
+                            .map(|(i, s)| recurse(ctx, s, i))
+                            .collect()
+                        )
+                    } else {
+                        fail!("Item does not match shape: expected tuple, found {}", item)
+                    }
                 }
-                DefItem(..) => fail!("Cannot flatten non-sendable expression")
+
+                _ => fail!("Unconstrained shape")
             }
         }
-        flatten_into(self, item)
+        recurse(self, &mut *shape, item)
     }
 
     pub fn message_upward(&mut self) -> (exec::Message, Item<'session>) {
