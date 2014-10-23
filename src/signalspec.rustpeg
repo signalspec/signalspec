@@ -60,7 +60,7 @@ expr -> ast::Expr
 
 expr_tup -> ast::Expr
     = es:(expr ** COMMA) COMMA?
-    { if es.len() == 1 { es.move_iter().next().unwrap() } else { ast::TupExpr(es) } }
+    { if es.len() == 1 { es.into_iter().next().unwrap() } else { ast::TupExpr(es) } }
 
 #[export]
 valexpr -> ast::Expr
@@ -108,7 +108,7 @@ valexpr -> ast::Expr
 
     varexpr -> ast::Expr
         = i:identifier accessors:("." i:identifier {i} )*
-        { accessors.move_iter().fold(ast::VarExpr(i), |base, accessor| ast::DotExpr(box base, accessor)) }
+        { accessors.into_iter().fold(ast::VarExpr(i), |base, accessor| ast::DotExpr(box base, accessor)) }
 
     literal_expr -> ast::Expr
         = v:literal { ast::ValueExpr(v) }

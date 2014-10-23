@@ -1,4 +1,4 @@
-use std::sync::atomics::{AtomicUint, Relaxed};
+use std::sync::atomic::{AtomicUint, Relaxed};
 use arena::TypedArena;
 
 use resolve::block::EventClosure;
