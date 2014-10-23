@@ -1,6 +1,7 @@
 use std::comm;
 
-use resolve::scope::ValueRef;
+use resolve::scope::{ValueRef, Dynamic};
+use resolve::context::ValueID;
 use ast::Value;
 use eval;
 
@@ -16,6 +17,29 @@ pub enum Message {
     MessageTuple(Vec<Message>),
 }
 
+impl Message {
+    pub fn each_down_ref(&self, f: |ValueID| -> ()) {
+        match *self {
+            MessageValue(Dynamic(id), _) => f(id),
+            MessageValue(_, _) => (),
+            MessageTuple(ref children) => {
+                for i in children.iter() { i.each_down_ref(|i| f(i)) }
+            }
+        }
+    }
+
+    pub fn each_up_ref(&self, f: |ValueID| -> ()) {
+        match *self {
+            MessageValue(_, Dynamic(id)) => f(id),
+            MessageValue(_, _) => (),
+            MessageTuple(ref children) => {
+                for i in children.iter() { i.each_up_ref(|i| f(i)) }
+            }
+        }
+    }
+}
+
+#[deriving(Show)]
 pub enum Step {
     NopStep,
     TokenStep(eval::Ops, Message),
