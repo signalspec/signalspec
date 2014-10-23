@@ -3,7 +3,6 @@
 
 extern crate arena;
 extern crate collections;
-extern crate debug;
 
 #[phase(plugin, link)] extern crate log;
 #[phase(plugin)] extern crate peg_syntax_ext;

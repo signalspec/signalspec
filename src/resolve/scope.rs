@@ -72,7 +72,16 @@ impl<'s> fmt::Show for Item<'s> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             ConstantItem(ref v) => write!(f, "{}", v),
-            _ => write!(f, "{:?}", self)
+            ValueItem(t, d, u) => write!(f, "[{}: {} {}]", t, d, u),
+            DefItem(..) => write!(f, "<def>"),
+            TupleItem(ref v) => {
+                try!(write!(f, "("));
+                for i in v.iter() {
+                    try!(i.fmt(f));
+                    try!(write!(f, ", "));
+                }
+                write!(f, ")")
+            }
         }
     }
 }
