@@ -4,6 +4,7 @@ use std::task;
 use std::default::Default;
 
 use {session, resolve, grammar, exec, eval, dumpfile};
+use data_usage;
 
 struct TestCode {
     step: exec::Step,
@@ -23,7 +24,9 @@ fn compile(source: &str) -> TestCode {
         _ => fail!("Main is not an event"),
     };
 
-    TestCode{ step: main.resolve_call(&mut ctx, Default::default(), None) }
+    let mut step = main.resolve_call(&mut ctx, Default::default(), None);
+    data_usage::pass(&mut step, &signal_info);
+    TestCode{ step: step }
 }
 
 impl TestCode {
@@ -90,10 +93,10 @@ fn test_loop() {
         #a
         #b
         repeat {
-            :> #c
-            :> #d
+            #c
+            #d
         }
-        :> #a
+        #a
     }
     ");
 
@@ -111,14 +114,14 @@ fn test_nested_loop() {
         #a
         repeat {
             repeat {
-                :> #b
+                #b
             }
             repeat {
-                :> #c
+                #c
             }
-            :> #d
+            #d
         }
-        :> #e
+        #e
     }
     ");
 
@@ -147,8 +150,8 @@ fn test_on() {
         def main() {
             on 1 {}
             on 2 {}
-            on :>a {
-                (:>(a+1))
+            on a {
+                (a+1)
             }
         }
     ");

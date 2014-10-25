@@ -29,6 +29,36 @@ pub enum ValOp {
     BinaryConstOp(ValueID, BinOp, f64),
 }
 
+impl ValOp {
+    pub fn each_dep(&self, f: |ValueID| -> ()) {
+        match *self {
+            ConstOp(..) => (),
+            CheckOp(i, _) => f(i),
+            RangeCheckOp(i, _, _) => f(i),
+            ChooseOp(i, _) => f(i),
+            SliceOp(i, _, _) => f(i),
+            ElemOp(i, _) => f(i),
+            ConcatOp(ref l) => {
+                for src in l.iter() {
+                    match *src {
+                        ConstSlice(..) => (),
+                        DynElem(i) => f(i),
+                        DynSlice(i, _) => f(i)
+                    }
+                }
+            }
+            BinaryOp(l, _, r) => { f(l); f(r) }
+            BinaryConstOp(i, _, _) => f(i),
+        }
+    }
+
+    pub fn all_deps(&self, f: |ValueID| -> bool) -> bool {
+        let mut r = true;
+        self.each_dep(|id| r &= f(id));
+        r
+    }
+}
+
 /// Binary numeric operators
 #[deriving(PartialEq, Eq, Show)]
 pub enum BinOp {
