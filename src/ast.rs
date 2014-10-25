@@ -1,6 +1,7 @@
 use std::fmt;
 
 use eval::BinOp;
+use resolve::types;
 
 pub struct Module {
     pub imports: Vec<UseDef>,
@@ -31,18 +32,6 @@ pub struct Def {
 pub struct UseDef(pub String);
 pub struct LetDef(pub String, pub Expr);
 
-#[deriving(Show, PartialEq, Clone)]
-pub enum TypeExpr {
-    SymbolType, // TODO: include variants?
-    IntegerType, // TODO: range
-    BitsType(uint),
-    VectorType(uint), //TODO: element type
-    NumberType,
-    EntityType,
-    InvalidType,
-    TopType
-}
-
 #[deriving(PartialEq, Clone)]
 pub enum Value {
     NumberValue(f64),
@@ -52,12 +41,12 @@ pub enum Value {
 }
 
 impl Value {
-    pub fn get_type(&self) -> TypeExpr {
+    pub fn get_type(&self) -> types::Type {
         match *self {
-            NumberValue(..) => NumberType,
-            IntegerValue(..) => IntegerType,
-            SymbolValue(..) => SymbolType,
-            VectorValue(ref n) => VectorType(n.len()),
+            NumberValue(..) => types::Number,
+            IntegerValue(..) => types::Integer,
+            SymbolValue(..) => types::Symbol,
+            VectorValue(ref n) => types::Vector(n.len()),
         }
     }
 

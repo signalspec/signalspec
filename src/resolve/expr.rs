@@ -1,7 +1,5 @@
 use ast;
 use ast::{
-    NumberType,
-    VectorType,
     Value,
         NumberValue,
         VectorValue,
@@ -11,11 +9,11 @@ use resolve::context::Context;
 use resolve::scope::Scope;
 use resolve::scope::{ ValueRef, Dynamic, Ignored, Poison, propagate_pair };
 use resolve::scope::{ Item, ConstantItem, ValueItem, TupleItem };
-use resolve::types::{mod, Type, TopType, common_type, common_type_all };
+use resolve::types::{ mod, Type };
 
 pub fn resolve_expr<'s>(ctx: &mut Context<'s>, scope: &Scope<'s>, e: &ast::Expr) -> Item<'s> {
     match *e {
-        ast::IgnoreExpr => ValueItem(TopType, Ignored, Ignored),
+        ast::IgnoreExpr => ValueItem(types::Bottom, Ignored, Ignored),
         ast::ValueExpr(ref val) => ConstantItem(val.clone()),
 
         ast::FlipExpr(box ref down, box ref up) => {
@@ -32,7 +30,7 @@ pub fn resolve_expr<'s>(ctx: &mut Context<'s>, scope: &Scope<'s>, e: &ast::Expr)
                 _ => fail!("Non-value type in flip")
             };
 
-            let common_type = common_type(down_type, up_type).expect("Flip expr sides must be of common type");
+            let common_type = types::common(down_type, up_type).expect("Flip expr sides must be of common type");
             ValueItem(common_type, down_ref, up_ref)
         }
 
@@ -49,7 +47,7 @@ pub fn resolve_expr<'s>(ctx: &mut Context<'s>, scope: &Scope<'s>, e: &ast::Expr)
 
             let up = ctx.up_op(0, |cell| eval::RangeCheckOp(cell, min, max));
 
-            ValueItem(NumberType, Poison("Range can only be up-evaluated"), up)
+            ValueItem(types::Number, Poison("Range can only be up-evaluated"), up)
         }
 
         ast::ChooseExpr(box ref e, ref c) => {
@@ -66,7 +64,7 @@ pub fn resolve_expr<'s>(ctx: &mut Context<'s>, scope: &Scope<'s>, e: &ast::Expr)
             match resolve_expr(ctx, scope, e) {
                 ConstantItem(v) => ConstantItem(eval::eval_choose(&v, pairs.as_slice()).expect("Choice up not complete")),
                 ValueItem(_t, d, u) => {
-                    ValueItem(common_type_all(pairs.iter().map(|&(_, ref r)| r.get_type())).expect("Right sides are not of common type"),
+                    ValueItem(types::common_all(pairs.iter().map(|&(_, ref r)| r.get_type())).expect("Right sides are not of common type"),
                         d.propagate(|d| ctx.down_op(eval::ChooseOp(d, pairs.clone()))),
                         u.propagate(|u| ctx.up_op(u, |cell| eval::ChooseOp(cell,
                             pairs.iter().map(|&(ref l, ref r)| (r.clone(), l.clone())).collect()
@@ -161,7 +159,7 @@ pub fn resolve_expr<'s>(ctx: &mut Context<'s>, scope: &Scope<'s>, e: &ast::Expr)
                     }
                 };
 
-                ValueItem(VectorType(len), d, u)
+                ValueItem(types::Vector(len), d, u)
             }
         }
 
@@ -169,7 +167,7 @@ pub fn resolve_expr<'s>(ctx: &mut Context<'s>, scope: &Scope<'s>, e: &ast::Expr)
             fn one_const<'s>(ctx: &mut Context<'s>, op: eval::BinOp,
                              _a_type: Type, a_down: ValueRef, a_up: ValueRef, b: f64) -> Item<'s> {
                 // TODO: check type
-                ValueItem(NumberType,
+                ValueItem(types::Number,
                     a_down.propagate(|a| ctx.down_op(eval::BinaryConstOp(a, op, b))),
                     a_up.propagate(|a| ctx.up_op(a, |i| eval::BinaryConstOp(i, op.invert(), b)))
                 )
@@ -187,7 +185,7 @@ pub fn resolve_expr<'s>(ctx: &mut Context<'s>, scope: &Scope<'s>, e: &ast::Expr)
                 }
                 (ValueItem(_a_type, a_down, _), ValueItem(_b_type, b_down, _)) => {
                     // TODO: check type
-                    ValueItem(NumberType,
+                    ValueItem(types::Number,
                         propagate_pair(a_down, b_down, |a, b| ctx.down_op(eval::BinaryOp(a, op, b))),
                         Poison("At least one side of an up-evaluated binary operator must be constant")
                     )
@@ -265,11 +263,11 @@ pub fn resolve_pattern<'s>(ctx: &mut Context<'s>, scope: &mut Scope<'s>, l: &ast
 
 pub fn expr_shape(a: &ast::Expr) -> types::Shape {
     match *a {
-        ast::IgnoreExpr => types::ShapeVal(types::TopType, false, false),
+        ast::IgnoreExpr => types::ShapeVal(types::Bottom, false, false),
         ast::ValueExpr(ref val) => types::ShapeVal(val.get_type(), true, true),
         ast::RangeExpr(..) | ast::FlipExpr(..)
         | ast::ChooseExpr(..) | ast::ConcatExpr(..)
-        | ast::BinExpr(..) | ast::VarExpr(..) => types::ShapeVal(types::TopType, true, true),
+        | ast::BinExpr(..) | ast::VarExpr(..) => types::ShapeVal(types::Bottom, true, true),
         ast::TupExpr(ref exprs) => types::ShapeTup(exprs.iter().map(|e| expr_shape(e)).collect()),
         ast::DotExpr(box ref _lexpr, ref _name) => fail!("Cannot declare a property"),
     }
@@ -281,7 +279,7 @@ mod test {
     use super::resolve_expr;
     use session::Session;
     use resolve::context::{Context, ValueID};
-    use resolve::types::{Type, TopType, NumberType, SymbolType};
+    use resolve::types;
     use ast::{
         Value,
             NumberValue,
@@ -310,8 +308,8 @@ mod test {
         let signal_info = ::resolve::SignalInfo::new();
         let mut ctx = Context::new(&ses, &signal_info);
         let mut scope = Scope::new();
-        scope.bind("x", ValueItem(TopType, Dynamic(XD), Dynamic(XU)));
-        scope.bind("y", ValueItem(TopType, Dynamic(YD), Dynamic(YU)));
+        scope.bind("x", ValueItem(types::Bottom, Dynamic(XD), Dynamic(XU)));
+        scope.bind("y", ValueItem(types::Bottom, Dynamic(YD), Dynamic(YU)));
         let e = grammar::valexpr(s).unwrap();
         let r = resolve_expr(&mut ctx, &scope, &e);
         test(r)
@@ -321,7 +319,7 @@ mod test {
         check(s, proc(r) assert_eq!(r, ConstantItem(v)));
     }
 
-    fn check_dyn(s: &str, t: Type, d: ValueRef, u: ValueRef) {
+    fn check_dyn(s: &str, t: types::Type, d: ValueRef, u: ValueRef) {
         check(s, proc(r) {
             assert_eq!(r, ValueItem(t, d, u))
         })
@@ -336,14 +334,14 @@ mod test {
     #[test] fn const_concat()   { check_const("[#1, #2]", VectorValue(vec![IntegerValue(1), IntegerValue(2)])); }
 
     #[test] fn flip() {
-        check_dyn("x!y", TopType, Dynamic(XD), Dynamic(YU));
-        check_dyn("<:x", TopType, Dynamic(XD), Ignored);
-        check_dyn(":>x", TopType, Ignored, Dynamic(XU));
+        check_dyn("x!y", types::Bottom, Dynamic(XD), Dynamic(YU));
+        check_dyn("<:x", types::Bottom, Dynamic(XD), Ignored);
+        check_dyn(":>x", types::Bottom, Ignored, Dynamic(XU));
     }
 
     #[test] fn ignore_propagate() {
-        check_dyn("2+ignore", NumberType, Ignored, Ignored);
-        check_dyn("ignore[#foo=#a]", SymbolType, Ignored, Ignored);
+        check_dyn("2+ignore", types::Number, Ignored, Ignored);
+        check_dyn("ignore[#foo=#a]", types::Symbol, Ignored, Ignored);
     }
 
     #[test]

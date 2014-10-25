@@ -1,25 +1,28 @@
-use ast;
-pub use ast::{TopType, NumberType, SymbolType, IntegerType};
 
-/// For now, types have nothing to resolve.
-/// Eventually, some type parameters will be expressions.
-pub type Type = ast::TypeExpr;
+#[deriving(Show, PartialEq, Clone)]
+/// A type represents a set of possible values
+pub enum Type {
+    Symbol, // TODO: include variants?
+    Integer, // TODO: range
+    Bits(uint),
+    Vector(uint), //TODO: element type
+    Number,
+    /// Type containing no values. No-op union with any type
+    Bottom,
+}
 
-/// Resolve a type AST
-fn resolve_type(t: ast::TypeExpr) -> Type { t }
-
-/// Return the intersection of the two types, or None if the types don't intersect
-pub fn common_type(a: Type, b: Type) -> Option<Type>{
+/// Return the union of the two types, if it exists
+pub fn common(a: Type, b: Type) -> Option<Type>{
     match (a, b) {
-        (TopType, x) | (x, TopType) => Some(x),
+        (Bottom, x) | (x, Bottom) => Some(x),
         (a, b) if a == b => Some(a),
         _ => None
     }
 }
 
 /// Return the intersection of a vector of types, or None if the types don't intersect
-pub fn common_type_all<T:Iterator<Type>>(mut l: T) -> Option<Type> {
-    l.fold(Some(TopType), |opt_a, b|{opt_a.and_then(|a| common_type(a, b))})
+pub fn common_all<T:Iterator<Type>>(mut l: T) -> Option<Type> {
+    l.fold(Some(Bottom), |opt_a, b|{ opt_a.and_then(|a| common(a, b)) })
 }
 
 #[deriving(Clone, Show, PartialEq)]

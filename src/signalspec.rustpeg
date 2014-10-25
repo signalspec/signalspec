@@ -33,24 +33,6 @@ def -> ast::Def
         / expr:expr body:block? BREAK
             { ast::ActionToken(expr, body) }
 
-#[export]
-typeexpr -> ast::TypeExpr
-    = symboltype
-    / numbertype
-    / entitytype
-
-    symboltype -> ast::TypeExpr
-        = "enum" _ "(" _ vs:symbolliteral**COMMA COMMA? ")"
-        { ast::SymbolType }
-
-    numbertype -> ast::TypeExpr
-        = "number" _ "(" _ units:unitliteral _ ")"
-        { ast::NumberType }
-
-    entitytype -> ast::TypeExpr
-        = tp:identifier
-        { ast::EntityType }
-
 // Expressions
 
 #[export]

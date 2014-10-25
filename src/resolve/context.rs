@@ -18,7 +18,7 @@ impl SignalInfo {
     pub fn new() -> SignalInfo {
         SignalInfo {
             downwards: RefCell::new(ShapeUnknown(false, true)),
-            upwards: RefCell::new(ShapeVal(types::TopType, false, true)),
+            upwards: RefCell::new(ShapeVal(types::Bottom, false, true)),
         }
     }
 }
@@ -92,7 +92,7 @@ impl<'session> Context<'session> {
             if let ShapeUnknown(is_down, is_up) = *shape {
                 *shape = match item {
                     TupleItem(ref t) => ShapeTup(Vec::from_elem(t.len(), ShapeUnknown(is_down, is_up))),
-                    _ => ShapeVal(types::TopType, is_down, is_up)
+                    _ => ShapeVal(types::Bottom, is_down, is_up)
                 }
             }
 
