@@ -2,7 +2,7 @@ use std::comm;
 
 use resolve::scope::{ValueRef, Dynamic};
 use resolve::context::ValueID;
-use ast::{Value,NumberValue};
+use ast::{Value,NumberValue,IntegerValue};
 use eval;
 
 pub trait PrimitiveStep {
@@ -10,6 +10,8 @@ pub trait PrimitiveStep {
     fn body<'a>(&'a self) -> Option<&'a Step> { None }
     fn exec(&self);
 }
+
+pub type ValuePair = (/*down*/ ValueRef, /*up*/ ValueRef);
 
 #[deriving(Show)]
 pub enum Message {
@@ -45,7 +47,7 @@ pub enum Step {
     TokenStep(eval::Ops, Message),
     TokenTopStep(eval::Ops, Message, Box<Step>),
     SeqStep(Vec<Step>),
-    RepeatStep(Box<Step>),
+    RepeatStep(ValuePair, Box<Step>),
     //PrimitiveStep(Box<PrimitiveStep>),
 }
 
@@ -55,7 +57,7 @@ fn first(s: &Step) -> Option<(&eval::Ops, &Message)> {
         TokenStep(ref ops, ref message) => Some((ops, message)),
         TokenTopStep(_, _, box ref body) => first(body),
         SeqStep(ref steps) => steps.as_slice().get(0).and_then(first),
-        RepeatStep(box ref inner) => first(inner),
+        RepeatStep(_, box ref inner) => first(inner),
     }
 }
 
@@ -76,8 +78,8 @@ pub fn print_step_tree(s: &Step, indent: uint) {
                 print_step_tree(c, indent+1);
             }
         }
-        RepeatStep(box ref inner) => {
-            println!("{}Repeat:", i);
+        RepeatStep(ref count, box ref inner) => {
+            println!("{}Repeat: {}", i, count);
             print_step_tree(inner, indent + 1);
         }
         /*PrimitiveStep(ref h) => {
@@ -226,8 +228,9 @@ pub fn exec(state: &mut eval::State, s: &Step, parent: &mut Connection, child: &
             }
             true
         }
-        RepeatStep(box ref inner) => {
+        RepeatStep((_cd, cu), box ref inner) => {
             let (ops, msg) = first(inner).expect("Loop has no body");
+            let mut count = 0;
             loop {
                 if !try_token(state, parent, ops, msg) {
                     debug!("  loop exit");
@@ -236,6 +239,10 @@ pub fn exec(state: &mut eval::State, s: &Step, parent: &mut Connection, child: &
                 if !exec(state, inner, parent, child) {
                     return false;
                 }
+                count += 1;
+            }
+            if let Dynamic(id) = cu {
+                state.set(id, IntegerValue(count));
             }
             true
         }

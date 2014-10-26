@@ -24,8 +24,8 @@ def -> ast::Def
         { ast::Block{ lets:lets, actions:actions } }
 
     action -> ast::Action
-        = REPEAT _ block:block BREAK
-            { ast::ActionRepeat(block) }
+        = REPEAT _ count:expr? _ block:block BREAK
+            { ast::ActionRepeat(count.unwrap_or(ast::IgnoreExpr), block) }
         / ON _ expr:expr _ body:block? BREAK
             { ast::ActionOn(expr, body) }
         / expr:varexpr _ "(" _ param:expr_tup _ ")" _ body:block? BREAK

@@ -180,8 +180,14 @@ pub fn direction_analysis(cx: &mut UsageSet, step: &Step, down: &mut Shape, up: 
               direction_analysis(cx, c, down, up);
           }
         }
-        RepeatStep(box ref inner) => {
+        RepeatStep((_cd, cu), box ref inner) => {
           direction_analysis(cx, inner, down, up);
+
+          // TODO: support repeat down count
+          if let Dynamic(id) = cu {
+              cx.written.insert(id);
+          }
+
         }
     }
 }
@@ -238,8 +244,12 @@ pub fn sweep_unused(cx: &mut UsageSet, step: &mut Step, down: &Shape, up: &Shape
                 sweep_unused(cx, c, down, up);
             }
         }
-        RepeatStep(box ref mut inner) => {
+        RepeatStep((ref mut cd, ref mut cu), box ref mut inner) => {
             sweep_unused(cx, inner, down, up);
+            if let Dynamic(id) = *cu {
+                cx.written.insert(id);
+            }
+            *cd = Ignored;
         }
     }
 }

@@ -70,7 +70,7 @@ impl<'session> Context<'session> {
         Dynamic(cell)
     }
 
-    fn item_to_refs(&mut self, item: &Item) -> (types::Type, ValueRef, ValueRef) {
+    pub fn item_to_refs(&mut self, item: &Item) -> (types::Type, ValueRef, ValueRef) {
         match *item {
             ConstantItem(ref v) => (
                 v.get_type(),

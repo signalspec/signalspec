@@ -68,8 +68,10 @@ fn resolve_action<'s>(ctx: &mut Context<'s>, scope: &Scope<'s>, action: &'s ast:
             };
             TokenTopStep(cctx.into_ops(), message, box body_step)
         }
-        ast::ActionRepeat(ref block) => {
-            RepeatStep(box resolve_seq(ctx, scope, block))
+        ast::ActionRepeat(ref count_ast, ref block) => {
+            let count = resolve_expr(ctx, scope, count_ast);
+            let (_t, d, u) = ctx.item_to_refs(&count);
+            RepeatStep((d, u), box resolve_seq(ctx, scope, block))
         }
     }
 }

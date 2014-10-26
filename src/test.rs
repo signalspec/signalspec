@@ -132,10 +132,10 @@ fn test_arg() {
 #[test]
 fn test_loop() {
     let p = compile("
-    def main() {
+    def main(x) {
         #a
         #b
-        repeat {
+        repeat x {
             #c
             #d
         }
@@ -143,9 +143,9 @@ fn test_loop() {
     }
     ");
 
-    p.up_pass("", "#a \n #b \n #a", "");
-    p.up_pass("", "#a \n #b \n #c \n #d \n #a", "");
-    p.up_pass("", "#a \n #b \n #c \n #d \n #c \n #d \n #a", "");
+    p.up_pass("#0", "#a \n #b \n #a", "");
+    p.up_pass("#1", "#a \n #b \n #c \n #d \n #a", "");
+    p.up_pass("#2", "#a \n #b \n #c \n #d \n #c \n #d \n #a", "");
     p.up_fail("", "#a \n #b \n #c \n #a", "");
     p.up_fail("", "#a \n #b \n #c \n #d", "");
 }
