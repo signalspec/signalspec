@@ -86,8 +86,8 @@ fn resolve_seq<'s>(pctx: &Context<'s>, pscope: &Scope<'s>, block: &'s ast::Block
 
 // A user-defined event
 pub struct EventClosure<'s> {
-    ast: &'s ast::Def,
-    parent_scope: Scope<'s>,
+    pub ast: &'s ast::Def,
+    pub parent_scope: Scope<'s>,
 }
 
 impl<'s> EventClosure<'s> {

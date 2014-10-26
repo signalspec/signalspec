@@ -1,13 +1,16 @@
 use std::io::{MemReader, MemWriter};
 use std::str;
 use std::task;
-use std::default::Default;
 
-use {session, resolve, grammar, exec, eval, dumpfile};
+use {ast, session, resolve, grammar, exec, eval, dumpfile};
+use resolve::types;
+use resolve::scope::{Dynamic, Ignored,ValueItem,TupleItem};
+use resolve::context::ValueID;
 use data_usage;
 
 struct TestCode {
     step: exec::Step,
+    args: Vec<ValueID>,
 }
 
 fn compile(source: &str) -> TestCode {
@@ -24,13 +27,30 @@ fn compile(source: &str) -> TestCode {
         _ => fail!("Main is not an event"),
     };
 
-    let mut step = main.resolve_call(&mut ctx, Default::default(), None);
+    let mut args = Vec::new();
+
+    let param = {
+        let make_reg = || {
+            let reg = ctx.make_register();
+            args.push(reg);
+            ValueItem(types::Bottom, Ignored, Dynamic(reg))
+        };
+
+        match main.ast.param {
+            ast::TupExpr(ref v) => {
+                TupleItem(v.iter().map(|_| make_reg()).collect())
+            }
+            _ => make_reg()
+        }
+    };
+
+    let mut step = main.resolve_call(&mut ctx, param, None);
     data_usage::pass(&mut step, &signal_info);
-    TestCode{ step: step }
+    TestCode{ step: step, args: args }
 }
 
 impl TestCode {
-    fn up(&self, bottom: &'static str, top: &'static str) -> bool {
+    fn up(&self, arg: &str, bottom: &'static str, top: &'static str) -> bool {
         debug!("--- up")
         let (mut s1, mut s2) = exec::Connection::new();
         let (mut t1, mut t2) = exec::Connection::new();
@@ -45,21 +65,31 @@ impl TestCode {
             assert_eq!(top, str::from_utf8(v[]).unwrap());
         });
         let mut state = eval::State::new();
-        exec::exec(&mut state, &self.step, &mut s1, &mut t1)
+
+        let r = exec::exec(&mut state, &self.step, &mut s1, &mut t1);
+
+        if r {
+            let args = dumpfile::parse_line(arg);
+            for (argval, &id) in args.iter().zip(self.args.iter()) {
+                assert_eq!(argval, state.get(id))
+            }
+        }
+
+        r
     }
 
     fn down() -> String {
         unimplemented!();
     }
 
-    fn up_pass(&self, _arg: &str, bottom: &'static str, top: &'static str) {
-        if !self.up(bottom, top) {
+    fn up_pass(&self, arg: &str, bottom: &'static str, top: &'static str) {
+        if !self.up(arg, bottom, top) {
             fail!("up_pass test failed to match: {}", bottom);
         }
     }
 
-    fn up_fail(&self, _arg: &str, bottom: &'static str, top: &'static str) {
-        if self.up(bottom, top) {
+    fn up_fail(&self, arg: &str, bottom: &'static str, top: &'static str) {
+        if self.up(arg, bottom, top) {
             fail!("up_fail test matched: {}", bottom);
         }
     }
@@ -84,6 +114,19 @@ fn test_seq() {
     p.down_pass("", "#a \n #b \n #c", "");
     p.up_fail("", "#a \n #b \n #a", "");
     p.up_fail("", "#b \n #b \n #c", "");
+}
+
+#[test]
+fn test_arg() {
+    let p = compile("
+    def main(a, b, c) {
+        a
+        b
+        c
+    }
+    ");
+
+    p.up_pass("#x, #y, #z", "#x \n #y \n #z", "");
 }
 
 #[test]

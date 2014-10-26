@@ -4,7 +4,10 @@ use ast::Value;
 use exec;
 
 // TODO: how to support nesting, shape
-fn parse_line(line: &str) -> Vec<Value> {
+pub fn parse_line(line: &str) -> Vec<Value> {
+    if line.trim().len() == 0 {
+        return Vec::new()
+    }
     line.split(',').map(|x| literal(x.trim()).unwrap()).collect()
 }
 
