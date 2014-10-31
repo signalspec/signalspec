@@ -12,11 +12,6 @@ pub use exec::{
         RepeatStep,
 };
 pub use resolve::scope::{Scope, Item, ValueItem, DefItem};
-// A body associated with an event call
-pub struct EventBodyClosure<'s> {
-    ast: &'s ast::Block,
-    parent_scope: Scope<'s>,
-}
 
 pub fn resolve_module<'s>(session: &'s Session<'s>, ast: &'s ast::Module) -> Scope<'s> {
     let mut scope = session.prelude.clone();
@@ -33,6 +28,32 @@ pub fn resolve_module<'s>(session: &'s Session<'s>, ast: &'s ast::Module) -> Sco
     }
 
     scope
+}
+
+/// A user-defined event
+pub struct EventClosure<'s> {
+    pub ast: &'s ast::Def,
+    pub parent_scope: Scope<'s>,
+}
+
+impl<'s> EventClosure<'s> {
+    pub fn resolve_call(&self,
+                        pctx: &Context<'s>,
+                        signals: &mut SignalInfo,
+                        param: Item<'s>,
+                        body: Option<&EventBodyClosure<'s>>) -> Step {
+        if body.is_some() { fail!("Body unimplemented"); }
+        let mut ctx = pctx.child();
+        let mut scope = self.parent_scope.child(); // Base on lexical parent
+        resolve_pattern(&mut ctx, &mut scope, &self.ast.param, param);
+        resolve_seq(&ctx, signals, &scope, &self.ast.block)
+    }
+}
+
+/// A body associated with an event call
+pub struct EventBodyClosure<'s> {
+    ast: &'s ast::Block,
+    parent_scope: Scope<'s>,
 }
 
 fn resolve_action<'s>(ctx: &mut Context<'s>,
@@ -86,24 +107,4 @@ fn resolve_seq<'s>(pctx: &Context<'s>, signals: &mut SignalInfo, pscope: &Scope<
     let steps = block.actions.iter().map(|action| resolve_action(&mut ctx, signals, &scope, action)).collect();
 
     SeqStep(steps)
-}
-
-// A user-defined event
-pub struct EventClosure<'s> {
-    pub ast: &'s ast::Def,
-    pub parent_scope: Scope<'s>,
-}
-
-impl<'s> EventClosure<'s> {
-    pub fn resolve_call(&self,
-                        pctx: &Context<'s>,
-                        signals: &mut SignalInfo,
-                        param: Item<'s>,
-                        body: Option<&EventBodyClosure<'s>>) -> Step {
-        if body.is_some() { fail!("Body unimplemented"); }
-        let mut ctx = pctx.child();
-        let mut scope = self.parent_scope.child(); // Base on lexical parent
-        resolve_pattern(&mut ctx, &mut scope, &self.ast.param, param);
-        resolve_seq(&ctx, signals, &scope, &self.ast.block)
-    }
 }
