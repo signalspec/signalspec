@@ -33,12 +33,10 @@ fn main() {
     let source = str::from_utf8(source_utf8.as_slice());
     let module = grammar::module(source.unwrap()).unwrap();
 
-    let prelude = resolve::Scope::new();
     let mut signal_info = resolve::SignalInfo::new();
     let mut ctx = resolve::Context::new(&sess);
 
-
-    let modscope = resolve::resolve_module(&mut ctx, &prelude, &module);
+    let modscope = resolve::resolve_module(&sess, &module);
 
     let main = match modscope.get("main").unwrap() {
         resolve::scope::DefItem(s) => s,

@@ -1,5 +1,6 @@
 use ast;
 
+use session::Session;
 use resolve::context::{ Context, SignalInfo };
 use resolve::expr::{resolve_expr, resolve_pattern};
 pub use exec::{
@@ -17,9 +18,8 @@ pub struct EventBodyClosure<'s> {
     parent_scope: Scope<'s>,
 }
 
-pub fn resolve_module<'s>(pctx: &Context<'s>, pscope: &Scope<'s>, ast: &'s ast::Module) -> Scope<'s> {
-    let ctx = pctx.child();
-    let mut scope = pscope.clone();
+pub fn resolve_module<'s>(session: &'s Session<'s>, ast: &'s ast::Module) -> Scope<'s> {
+    let mut scope = session.prelude.clone();
 
     for _import in ast.imports.iter() {
         fail!("Imports unimplemented");
@@ -28,7 +28,7 @@ pub fn resolve_module<'s>(pctx: &Context<'s>, pscope: &Scope<'s>, ast: &'s ast::
     scope.add_lets(ast.lets.as_slice());
 
     for def in ast.defs.iter() {
-        let ed = DefItem(ctx.session.closure_arena.alloc(EventClosure{ ast:def, parent_scope: scope.clone() }));
+        let ed = DefItem(session.closure_arena.alloc(EventClosure{ ast:def, parent_scope: scope.clone() }));
         scope.names.insert(def.name.to_string(), ed);
     }
 

@@ -19,9 +19,8 @@ fn compile(source: &str) -> TestCode {
     let mut ctx = resolve::Context::new(&sess);
 
     let module = grammar::module(source).unwrap();
-    let prelude = resolve::Scope::new();
 
-    let modscope = resolve::resolve_module(&mut ctx, &prelude, &module);
+    let modscope = resolve::resolve_module(&sess, &module);
     let main = match modscope.get("main").unwrap() {
         resolve::scope::DefItem(s) => s,
         _ => fail!("Main is not an event"),
