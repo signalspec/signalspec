@@ -1,4 +1,3 @@
-use std::cell::RefCell;
 use std::vec;
 use session::Session;
 use eval;
@@ -9,31 +8,30 @@ use resolve::scope::{ValueRef, Dynamic, Item, ValueItem, ConstantItem, TupleItem
 /// Dynamic Cell
 pub type ValueID = uint;
 
+#[deriving(Show)]
 pub struct SignalInfo {
-    pub downwards: RefCell<Shape>,
-    pub upwards: RefCell<Shape>,
+    pub downwards: Shape,
+    pub upwards: Shape,
 }
 
 impl SignalInfo {
     pub fn new() -> SignalInfo {
         SignalInfo {
-            downwards: RefCell::new(ShapeUnknown(false, true)),
-            upwards: RefCell::new(ShapeVal(types::Bottom, false, true)),
+            downwards: ShapeUnknown(false, true),
+            upwards: ShapeVal(types::Bottom, false, true),
         }
     }
 }
 
 pub struct Context<'session> {
     pub session: &'session Session<'session>,
-    pub signal_info: &'session SignalInfo,
     pub ops: eval::Ops,
 }
 
 impl<'session> Context<'session> {
-    pub fn new<'s>(session: &'s Session<'s>, signals: &'s SignalInfo) -> Context<'s> {
+    pub fn new<'s>(session: &'s Session<'s>) -> Context<'s> {
         Context {
             session: session,
-            signal_info: signals,
             ops: eval::Ops::new(),
         }
     }
@@ -41,7 +39,6 @@ impl<'session> Context<'session> {
     pub fn child(&self) -> Context<'session> {
         Context {
             session: self.session,
-            signal_info: self.signal_info,
             ops: eval::Ops::new(),
         }
     }
@@ -84,8 +81,8 @@ impl<'session> Context<'session> {
 
     /// Create a message downward from the given Item. Checks that the Item matches the Shape,
     /// and fills in the Shape's type information.
-    pub fn message_downward(&mut self, item: Item) -> exec::Message {
-        let mut shape = self.signal_info.downwards.borrow_mut();
+    pub fn message_downward(&mut self, signals: &mut SignalInfo, item: Item) -> exec::Message {
+        let shape = &mut signals.downwards;
 
         fn recurse(ctx: &mut Context, shape: &mut Shape, item: Item) -> exec::Message {
             // If the shape is unknown, fill it in based on the item
@@ -120,8 +117,8 @@ impl<'session> Context<'session> {
         recurse(self, &mut *shape, item)
     }
 
-    pub fn message_upward(&mut self) -> (exec::Message, Item<'session>) {
-        let shape = self.signal_info.upwards.borrow();
+    pub fn message_upward(&mut self, signals: &mut SignalInfo) -> (exec::Message, Item<'session>) {
+        let shape = &mut signals.upwards;
 
         fn recurse<'s>(ctx: &mut Context<'s>, shape: &Shape) -> (exec::Message, Item<'s>) {
             match *shape {

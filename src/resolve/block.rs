@@ -1,6 +1,6 @@
 use ast;
 
-use resolve::context::Context;
+use resolve::context::{ Context, SignalInfo };
 use resolve::expr::{resolve_expr, resolve_pattern};
 pub use exec::{
     Step,
@@ -35,10 +35,12 @@ pub fn resolve_module<'s>(pctx: &Context<'s>, pscope: &Scope<'s>, ast: &'s ast::
     scope
 }
 
-
-fn resolve_action<'s>(ctx: &mut Context<'s>, scope: &Scope<'s>, action: &'s ast::Action) -> Step {
+fn resolve_action<'s>(ctx: &mut Context<'s>,
+                      signals: &mut SignalInfo,
+                      scope: &Scope<'s>,
+                      action: &'s ast::Action) -> Step {
     match *action {
-        ast::ActionSeq(ref block) => resolve_seq(ctx, scope, block),
+        ast::ActionSeq(ref block) => resolve_seq(ctx, signals, scope, block),
         ast::ActionCall(ref expr, ref arg, ref body) => {
             let arg = resolve_expr(ctx, scope, arg);
             let body = body.as_ref().map(|x| {
@@ -46,7 +48,7 @@ fn resolve_action<'s>(ctx: &mut Context<'s>, scope: &Scope<'s>, action: &'s ast:
             });
 
             match resolve_expr(ctx, scope, expr) {
-                DefItem(entity) => entity.resolve_call(ctx, arg, body.as_ref()),
+                DefItem(entity) => entity.resolve_call(ctx, signals, arg, body.as_ref()),
                 _ => fail!("Not callable"),
             }
         }
@@ -54,16 +56,16 @@ fn resolve_action<'s>(ctx: &mut Context<'s>, scope: &Scope<'s>, action: &'s ast:
             let mut cctx = ctx.child();
             if body.is_some() { fail!("Body unimplemented"); }
             let i = resolve_expr(&mut cctx, scope, expr);
-            let msg = cctx.message_downward(i);
+            let msg = cctx.message_downward(signals, i);
             TokenStep(cctx.into_ops(), msg)
         }
         ast::ActionOn(ref expr, ref body) => {
             let mut cctx = ctx.child();
             let mut body_scope = scope.child();
-            let (message, item) = cctx.message_upward();
+            let (message, item) = cctx.message_upward(signals);
             resolve_pattern(&mut cctx, &mut body_scope, expr, item);
             let body_step = match *body {
-                Some(ref body) => resolve_seq(&mut cctx, &body_scope, body),
+                Some(ref body) => resolve_seq(&mut cctx, signals, &body_scope, body),
                 None => NopStep,
             };
             TokenTopStep(cctx.into_ops(), message, box body_step)
@@ -71,17 +73,17 @@ fn resolve_action<'s>(ctx: &mut Context<'s>, scope: &Scope<'s>, action: &'s ast:
         ast::ActionRepeat(ref count_ast, ref block) => {
             let count = resolve_expr(ctx, scope, count_ast);
             let (_t, d, u) = ctx.item_to_refs(&count);
-            RepeatStep((d, u), box resolve_seq(ctx, scope, block))
+            RepeatStep((d, u), box resolve_seq(ctx, signals, scope, block))
         }
     }
 }
 
-fn resolve_seq<'s>(pctx: &Context<'s>, pscope: &Scope<'s>, block: &'s ast::Block) -> Step {
+fn resolve_seq<'s>(pctx: &Context<'s>, signals: &mut SignalInfo, pscope: &Scope<'s>, block: &'s ast::Block) -> Step {
     let mut ctx = pctx.child();
     let mut scope = pscope.child();
     scope.add_lets(block.lets.as_slice());
 
-    let steps = block.actions.iter().map(|action| resolve_action(&mut ctx, &scope, action)).collect();
+    let steps = block.actions.iter().map(|action| resolve_action(&mut ctx, signals, &scope, action)).collect();
 
     SeqStep(steps)
 }
@@ -93,11 +95,15 @@ pub struct EventClosure<'s> {
 }
 
 impl<'s> EventClosure<'s> {
-    pub fn resolve_call(&self, pctx: &Context<'s>, param: Item<'s>, body: Option<&EventBodyClosure<'s>>) -> Step {
+    pub fn resolve_call(&self,
+                        pctx: &Context<'s>,
+                        signals: &mut SignalInfo,
+                        param: Item<'s>,
+                        body: Option<&EventBodyClosure<'s>>) -> Step {
         if body.is_some() { fail!("Body unimplemented"); }
         let mut ctx = pctx.child();
         let mut scope = self.parent_scope.child(); // Base on lexical parent
         resolve_pattern(&mut ctx, &mut scope, &self.ast.param, param);
-        resolve_seq(&ctx, &scope, &self.ast.block)
+        resolve_seq(&ctx, signals, &scope, &self.ast.block)
     }
 }

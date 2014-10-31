@@ -34,9 +34,9 @@ fn main() {
     let module = grammar::module(source.unwrap()).unwrap();
 
     let prelude = resolve::Scope::new();
+    let mut signal_info = resolve::SignalInfo::new();
+    let mut ctx = resolve::Context::new(&sess);
 
-    let signal_info = resolve::SignalInfo::new();
-    let mut ctx = resolve::Context::new(&sess, &signal_info);
 
     let modscope = resolve::resolve_module(&mut ctx, &prelude, &module);
 
@@ -45,7 +45,7 @@ fn main() {
         _ => fail!("Main is not an event"),
     };
 
-    let event = main.resolve_call(&mut ctx, Default::default(), None);
+    let event = main.resolve_call(&mut ctx, &mut signal_info, Default::default(), None);
     exec::print_step_tree(&event, 0);
 
     let (s1, mut s2) = exec::Connection::new();

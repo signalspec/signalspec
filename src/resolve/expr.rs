@@ -305,8 +305,7 @@ mod test {
 
     fn check(s: &str, test: proc(Item)) {
         let ses = Session::new();
-        let signal_info = ::resolve::SignalInfo::new();
-        let mut ctx = Context::new(&ses, &signal_info);
+        let mut ctx = Context::new(&ses);
         let mut scope = Scope::new();
         scope.bind("x", ValueItem(types::Bottom, Dynamic(XD), Dynamic(XU)));
         scope.bind("y", ValueItem(types::Bottom, Dynamic(YD), Dynamic(YU)));

@@ -255,16 +255,14 @@ pub fn sweep_unused(cx: &mut UsageSet, step: &mut Step, down: &Shape, up: &Shape
 }
 
 /// Run both data usage passes
-pub fn pass(step: &mut Step, signal_info: &resolve::SignalInfo) {
+pub fn pass(step: &mut Step, signals: &mut resolve::SignalInfo) {
     let mut dctx = UsageSet::new();
-    let mut dshape = signal_info.downwards.borrow_mut();
-    let mut ushape = signal_info.upwards.borrow_mut();
-    debug!("before: {} {}", *dshape, *ushape);
+    debug!("before: {}", signals);
     debug!("step: {}", step);
-    direction_analysis(&mut dctx, step, &mut*dshape, &mut*ushape);
+    direction_analysis(&mut dctx, step, &mut signals.downwards, &mut signals.upwards);
 
     let mut dctx = UsageSet::new();
-    sweep_unused(&mut dctx, step, &*dshape, &*ushape);
-    debug!("after: {} {}", *dshape, *ushape);
+    sweep_unused(&mut dctx, step, &signals.downwards, &signals.upwards);
+    debug!("after: {}", signals);
     debug!("step: {}", step);
 }

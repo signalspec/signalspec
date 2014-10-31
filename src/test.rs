@@ -15,8 +15,8 @@ struct TestCode {
 
 fn compile(source: &str) -> TestCode {
     let sess = session::Session::new();
-    let signal_info = resolve::SignalInfo::new();
-    let mut ctx = resolve::Context::new(&sess, &signal_info);
+    let mut signal_info = resolve::SignalInfo::new();
+    let mut ctx = resolve::Context::new(&sess);
 
     let module = grammar::module(source).unwrap();
     let prelude = resolve::Scope::new();
@@ -44,8 +44,8 @@ fn compile(source: &str) -> TestCode {
         }
     };
 
-    let mut step = main.resolve_call(&mut ctx, param, None);
-    data_usage::pass(&mut step, &signal_info);
+    let mut step = main.resolve_call(&mut ctx, &mut signal_info, param, None);
+    data_usage::pass(&mut step, &mut signal_info);
     TestCode{ step: step, args: args }
 }
 
