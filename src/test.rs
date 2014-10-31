@@ -174,6 +174,26 @@ fn test_nested_loop() {
 }
 
 #[test]
+fn test_unbounded_loop() {
+    let p = compile("
+    def main() {
+      repeat {
+        on v {
+          repeat v {
+            #h
+          }
+          repeat ignore {
+            #l
+          }
+        }
+      }
+    }
+    ");
+
+    p.up_pass("", "#h \n #l \n #h \n #h \n #l \n #h \n #h \n #h", "1\n2\n3\n");
+}
+
+#[test]
 fn test_tup() {
     let p = compile("
         def main(w) {

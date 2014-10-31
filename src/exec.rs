@@ -51,11 +51,11 @@ pub enum Step {
     //PrimitiveStep(Box<PrimitiveStep>),
 }
 
-fn first(s: &Step) -> Option<(&eval::Ops, &Message)> {
+fn first(s: &Step) -> Option<&Step> {
     match *s {
         NopStep => None,
-        TokenStep(ref ops, ref message) => Some((ops, message)),
-        TokenTopStep(_, _, box ref body) => first(body),
+        TokenStep(..) => Some(s),
+        TokenTopStep(..) => Some(s),
         SeqStep(ref steps) => steps.as_slice().get(0).and_then(first),
         RepeatStep(_, box ref inner) => first(inner),
     }
@@ -97,22 +97,32 @@ pub struct Connection {
 
     lookahead_tx: Option<Vec<Value>>,
     lookahead_rx: Option<Vec<Value>>,
+
+    pub alive: bool,
 }
 
 impl Connection {
     pub fn new() -> (Connection, Connection) {
         let (s1, r1) = comm::channel();
         let (s2, r2) = comm::channel();
-        (Connection{ tx: s1, rx: r2, lookahead_tx: None, lookahead_rx: None },
-         Connection{ tx: s2, rx: r1, lookahead_tx: None, lookahead_rx: None })
+        (Connection{ tx: s1, rx: r2, lookahead_tx: None, lookahead_rx: None, alive: true },
+         Connection{ tx: s2, rx: r1, lookahead_tx: None, lookahead_rx: None, alive: true })
     }
 
-    pub fn send(&self, v: Vec<Value>) -> Result<(), Vec<Value>> {
-        self.tx.send_opt(v)
+    pub fn send(&mut self, v: Vec<Value>) -> Result<(), Vec<Value>> {
+        let r = self.tx.send_opt(v);
+        if r.is_err() {
+            self.alive = false;
+        }
+        r
     }
 
-    pub fn recv(&self) -> Result<Vec<Value>, ()> {
-        self.rx.recv_opt()
+    pub fn recv(&mut self) -> Result<Vec<Value>, ()> {
+        let r = self.rx.recv_opt();
+        if r.is_err() {
+            self.alive = false;
+        }
+        r
     }
 
     pub fn lookahead_send(&mut self, v: Vec<Value>) {
@@ -229,12 +239,23 @@ pub fn exec(state: &mut eval::State, s: &Step, parent: &mut Connection, child: &
             true
         }
         RepeatStep((_cd, cu), box ref inner) => {
-            let (ops, msg) = first(inner).expect("Loop has no body");
+            let f = first(inner).expect("Loop has no body");
             let mut count = 0;
             loop {
-                if !try_token(state, parent, ops, msg) {
-                    debug!("  loop exit");
-                    break;
+                match *f {
+                    TokenStep(ref ops, ref msg) => {
+                        if !try_token(state, parent, ops, msg) {
+                            debug!("  loop exit");
+                            break;
+                        }
+                    }
+                    TokenTopStep(..) => {
+                        if !parent.alive || !child.alive {
+                            debug!("  loop done");
+                            break;
+                        }
+                    },
+                    _ => fail!(),
                 }
                 if !exec(state, inner, parent, child) {
                     return false;
