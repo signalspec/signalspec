@@ -128,7 +128,7 @@ impl Connection {
     pub fn lookahead_send(&mut self, v: Vec<Value>) {
         match self.lookahead_tx {
             Some(ref lv) => {
-                if v != *lv { fail!("Committed {}, but sending {}", lv, v); }
+                if v != *lv { panic!("Committed {}, but sending {}", lv, v); }
             }
             None => {
                 match self.send(v.clone()) {
@@ -255,7 +255,7 @@ pub fn exec(state: &mut eval::State, s: &Step, parent: &mut Connection, child: &
                             break;
                         }
                     },
-                    _ => fail!(),
+                    _ => panic!(),
                 }
                 if !exec(state, inner, parent, child) {
                     return false;

@@ -23,7 +23,7 @@ impl<'s> Scope<'s> {
 
     pub fn add_lets(&mut self, lets: &[ast::LetDef]) {
         for _letdef in lets.iter() {
-            fail!("Let unimplemented");
+            panic!("Let unimplemented");
         }
     }
 
@@ -111,7 +111,7 @@ impl ValueRef {
         match self {
             Dynamic(id) => Some(id),
             Ignored => None,
-            Poison(s) => fail!("Use of an invalid value: {}", s),
+            Poison(s) => panic!("Use of an invalid value: {}", s),
         }
     }
 }

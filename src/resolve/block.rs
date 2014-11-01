@@ -17,7 +17,7 @@ pub fn resolve_module<'s>(session: &'s Session<'s>, ast: &'s ast::Module) -> Sco
     let mut scope = session.prelude.clone();
 
     for _import in ast.imports.iter() {
-        fail!("Imports unimplemented");
+        panic!("Imports unimplemented");
     }
 
     scope.add_lets(ast.lets.as_slice());
@@ -42,7 +42,7 @@ impl<'s> EventClosure<'s> {
                         signals: &mut SignalInfo,
                         param: Item<'s>,
                         body: Option<&EventBodyClosure<'s>>) -> Step {
-        if body.is_some() { fail!("Body unimplemented"); }
+        if body.is_some() { panic!("Body unimplemented"); }
         let mut ctx = pctx.child();
         let mut scope = self.parent_scope.child(); // Base on lexical parent
         resolve_pattern(&mut ctx, &mut scope, &self.ast.param, param);
@@ -70,12 +70,12 @@ fn resolve_action<'s>(ctx: &mut Context<'s>,
 
             match resolve_expr(ctx, scope, expr) {
                 DefItem(entity) => entity.resolve_call(ctx, signals, arg, body.as_ref()),
-                _ => fail!("Not callable"),
+                _ => panic!("Not callable"),
             }
         }
         ast::ActionToken(ref expr, ref body) => {
             let mut cctx = ctx.child();
-            if body.is_some() { fail!("Body unimplemented"); }
+            if body.is_some() { panic!("Body unimplemented"); }
             let i = resolve_expr(&mut cctx, scope, expr);
             let msg = cctx.message_downward(signals, i);
             TokenStep(cctx.into_ops(), msg)

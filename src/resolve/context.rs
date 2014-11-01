@@ -75,7 +75,7 @@ impl<'session> Context<'session> {
                 self.up_op(0, |c| eval::CheckOp(c, v.clone()))
             ),
             ValueItem(t, d, u) => (t, d, u),
-            _ => fail!("Item does not match shape: expected value, found {}", item),
+            _ => panic!("Item does not match shape: expected value, found {}", item),
         }
     }
 
@@ -107,11 +107,11 @@ impl<'session> Context<'session> {
                             .collect()
                         )
                     } else {
-                        fail!("Item does not match shape: expected tuple, found {}", item)
+                        panic!("Item does not match shape: expected tuple, found {}", item)
                     }
                 }
 
-                _ => fail!("Unconstrained shape")
+                _ => panic!("Unconstrained shape")
             }
         }
         recurse(self, &mut *shape, item)
@@ -131,7 +131,7 @@ impl<'session> Context<'session> {
                     let (ms, is) = vec::unzip(v.iter().map(|s| recurse(ctx, s)));
                     (exec::MessageTuple(ms), TupleItem(is))
                 }
-                ShapeUnknown(..) => fail!("Signal shape not fully constrained"),
+                ShapeUnknown(..) => panic!("Signal shape not fully constrained"),
             }
         }
 

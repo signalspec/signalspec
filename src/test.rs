@@ -23,7 +23,7 @@ fn compile(source: &str) -> TestCode {
     let modscope = resolve::resolve_module(&sess, &module);
     let main = match modscope.get("main").unwrap() {
         resolve::scope::DefItem(s) => s,
-        _ => fail!("Main is not an event"),
+        _ => panic!("Main is not an event"),
     };
 
     let mut args = Vec::new();
@@ -83,13 +83,13 @@ impl TestCode {
 
     fn up_pass(&self, arg: &str, bottom: &'static str, top: &'static str) {
         if !self.up(arg, bottom, top) {
-            fail!("up_pass test failed to match: {}", bottom);
+            panic!("up_pass test failed to match: {}", bottom);
         }
     }
 
     fn up_fail(&self, arg: &str, bottom: &'static str, top: &'static str) {
         if self.up(arg, bottom, top) {
-            fail!("up_fail test matched: {}", bottom);
+            panic!("up_fail test matched: {}", bottom);
         }
     }
 

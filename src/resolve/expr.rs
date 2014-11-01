@@ -20,14 +20,14 @@ pub fn resolve_expr<'s>(ctx: &mut Context<'s>, scope: &Scope<'s>, e: &ast::Expr)
             let (down_type, down_ref) = match resolve_expr(ctx, scope, down) {
                 ConstantItem(v) => (v.get_type(), ctx.down_op(eval::ConstOp(v))),
                 ValueItem(down_type, down_ref, _) => (down_type, down_ref),
-                _ => fail!("Non-value type in flip")
+                _ => panic!("Non-value type in flip")
 
             };
 
             let (up_type, up_ref) = match resolve_expr(ctx, scope, up) {
                 ConstantItem(v) => (v.get_type(), ctx.up_op(0, |cell| eval::CheckOp(cell, v.clone()))),
                 ValueItem(up_type, _, up_ref) => (up_type, up_ref),
-                _ => fail!("Non-value type in flip")
+                _ => panic!("Non-value type in flip")
             };
 
             let common_type = types::common(down_type, up_type).expect("Flip expr sides must be of common type");
@@ -38,7 +38,7 @@ pub fn resolve_expr<'s>(ctx: &mut Context<'s>, scope: &Scope<'s>, e: &ast::Expr)
             fn get_const_default_num(i: Item, _default: f64) -> f64 {
                 match i {
                     ConstantItem(NumberValue(v)) => v,
-                    _ => fail!("Range expressions must be numeric constant")
+                    _ => panic!("Range expressions must be numeric constant")
                 }
             }
 
@@ -57,7 +57,7 @@ pub fn resolve_expr<'s>(ctx: &mut Context<'s>, scope: &Scope<'s>, e: &ast::Expr)
 
                 match (l, r) {
                     (ConstantItem(lv), ConstantItem(rv)) => (lv, rv),
-                    _ => fail!("Choose expression arms must be constant, for now")
+                    _ => panic!("Choose expression arms must be constant, for now")
                 }
             }).collect();
 
@@ -71,7 +71,7 @@ pub fn resolve_expr<'s>(ctx: &mut Context<'s>, scope: &Scope<'s>, e: &ast::Expr)
                         )))
                     )
                 }
-                _ => fail!("Invalid type in choice expr")
+                _ => panic!("Invalid type in choice expr")
             }
 
             // TODO: non-constant arms, check types for case coverage
@@ -114,7 +114,7 @@ pub fn resolve_expr<'s>(ctx: &mut Context<'s>, scope: &Scope<'s>, e: &ast::Expr)
                         len += consts.len() + 1;
                         consts.clear();
                     }
-                    _ => fail!("Concatinating values that are not vectors")
+                    _ => panic!("Concatinating values that are not vectors")
                 }
             }
 
@@ -190,7 +190,7 @@ pub fn resolve_expr<'s>(ctx: &mut Context<'s>, scope: &Scope<'s>, e: &ast::Expr)
                         Poison("At least one side of an up-evaluated binary operator must be constant")
                     )
                 }
-                _ => fail!("Invalid types in binary {}", op)
+                _ => panic!("Invalid types in binary {}", op)
             }
         }
 
@@ -213,17 +213,17 @@ pub fn resolve_pattern<'s>(ctx: &mut Context<'s>, scope: &mut Scope<'s>, l: &ast
         ast::ValueExpr(ref val) => {
             match r {
                 ConstantItem(ref v) => {
-                    if v != val { fail!("Match always fails"); }
+                    if v != val { panic!("Match always fails"); }
                 }
                 ValueItem(_t, d, u) => {
                     // TODO: type check
                     d.propagate(|d| ctx.down_op(eval::CheckOp(d, val.clone())));
                     u.propagate(|u| ctx.up_op(u, |_| eval::ConstOp(val.clone())));
                 }
-                _ => fail!("Type error")
+                _ => panic!("Type error")
             }
         },
-        ast::RangeExpr(box ref _min_expr, box ref _max_expr) => fail!("patterns cannot be refutable"),
+        ast::RangeExpr(box ref _min_expr, box ref _max_expr) => panic!("patterns cannot be refutable"),
         ast::FlipExpr(box ref down, box ref up) => {
                 match r {
                     ConstantItem(..) => unimplemented!(),
@@ -231,7 +231,7 @@ pub fn resolve_pattern<'s>(ctx: &mut Context<'s>, scope: &mut Scope<'s>, l: &ast
                         resolve_pattern(ctx, scope, down, ValueItem(t, d, Ignored));
                         resolve_pattern(ctx, scope, up,   ValueItem(t, Ignored, u));
                     }
-                    _ => fail!("Type error")
+                    _ => panic!("Type error")
                 }
         }
         ast::ChooseExpr(box ref _e, ref _c) => unimplemented!(),
@@ -247,17 +247,17 @@ pub fn resolve_pattern<'s>(ctx: &mut Context<'s>, scope: &mut Scope<'s>, l: &ast
             match r {
                 TupleItem(v) => {
                     if exprs.len() != v.len() {
-                        fail!("can't bind a tuple with a different length");
+                        panic!("can't bind a tuple with a different length");
                     }
                     for (expr, item) in exprs.iter().zip(v.into_iter()) {
                         resolve_pattern(ctx, scope, expr, item);
                     }
                 }
-                _ => fail!("can't bind a tuple with a non-tuple")
+                _ => panic!("can't bind a tuple with a non-tuple")
             }
         }
 
-        ast::DotExpr(box ref _lexpr, ref _name) => fail!("Cannot declare a property"),
+        ast::DotExpr(box ref _lexpr, ref _name) => panic!("Cannot declare a property"),
     }
 }
 
@@ -269,7 +269,7 @@ pub fn expr_shape(a: &ast::Expr) -> types::Shape {
         | ast::ChooseExpr(..) | ast::ConcatExpr(..)
         | ast::BinExpr(..) | ast::VarExpr(..) => types::ShapeVal(types::Bottom, true, true),
         ast::TupExpr(ref exprs) => types::ShapeTup(exprs.iter().map(|e| expr_shape(e)).collect()),
-        ast::DotExpr(box ref _lexpr, ref _name) => fail!("Cannot declare a property"),
+        ast::DotExpr(box ref _lexpr, ref _name) => panic!("Cannot declare a property"),
     }
 }
 

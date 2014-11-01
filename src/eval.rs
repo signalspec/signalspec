@@ -149,14 +149,14 @@ impl State {
     fn get_num(&self, reg: ValueID) -> f64 {
         match *self.get(reg) {
             NumberValue(v) => v,
-            _ => fail!(),
+            _ => panic!(),
         }
     }
 
     fn get_vec<'s>(&'s self, reg: ValueID) -> &'s [Value] {
         match *self.get(reg) {
             VectorValue(ref v) => v.as_slice(),
-            _ => fail!(),
+            _ => panic!(),
         }
     }
 

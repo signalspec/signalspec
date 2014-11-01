@@ -86,15 +86,15 @@ impl UsageSet {
                             assert!(self.written.contains(&id), "Use of value that was never written");
                             self.read.insert(id);
                         }
-                        Poison(err) => fail!("Poison value used: {}", err),
-                        Ignored => fail!("Required value is ignored"),
+                        Poison(err) => panic!("Poison value used: {}", err),
+                        Ignored => panic!("Required value is ignored"),
                     }
                 }
 
                 if is_up {
                     match up {
                         Dynamic(id) => { self.written.insert(id); },
-                        Poison(err) => fail!("Poison value written: {}", err),
+                        Poison(err) => panic!("Poison value written: {}", err),
                         Ignored => (),
                     }
                 }
@@ -104,7 +104,7 @@ impl UsageSet {
                     self.message_downward(m, s);
                 }
             }
-            _ => fail!("Message does not match shape")
+            _ => panic!("Message does not match shape")
         }
     }
 
@@ -114,13 +114,13 @@ impl UsageSet {
             MessageValue(down, up) => {
                 match down {
                     Dynamic(id) => { self.written.insert(id); }
-                    Poison(err) => fail!("Poison value used: {}", err),
+                    Poison(err) => panic!("Poison value used: {}", err),
                     Ignored => (),
                 }
                 match up {
                     Dynamic(id) => { self.read.insert(id); }
-                    Poison(err) => fail!("Poison value used: {}", err),
-                    Ignored => fail!("Required value is ignored"),
+                    Poison(err) => panic!("Poison value used: {}", err),
+                    Ignored => panic!("Required value is ignored"),
                 }
             }
             MessageTuple(ref ms) => {
@@ -143,12 +143,12 @@ pub fn direction_analysis(cx: &mut UsageSet, step: &Step, down: &mut Shape, up: 
                 *is_down |= match down {
                   Dynamic(id) => set.read.contains(&id),
                   Ignored => false,
-                  Poison(s) => fail!("Poison value written: {}", s)
+                  Poison(s) => panic!("Poison value written: {}", s)
                 };
                 *is_up &= match up {
                   Dynamic(id) => set.written.contains(&id),
                   Ignored => false,
-                  Poison(s) => fail!("Poison value used: {}", s)
+                  Poison(s) => panic!("Poison value used: {}", s)
                 };
             }
             (&MessageTuple(ref ms), &ShapeTup(ref mut ss)) => {
@@ -156,7 +156,7 @@ pub fn direction_analysis(cx: &mut UsageSet, step: &Step, down: &mut Shape, up: 
                     update_upward_shape(set, m, s);
                 }
             }
-            _ => fail!("Shape doesn't match message")
+            _ => panic!("Shape doesn't match message")
         }
     }
 
@@ -218,7 +218,7 @@ pub fn sweep_unused(cx: &mut UsageSet, step: &mut Step, down: &Shape, up: &Shape
                     sweep_msg(cx, m, s);
                 }
             }
-            _ => fail!("Shape doesn't match message")
+            _ => panic!("Shape doesn't match message")
         }
     }
 

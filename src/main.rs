@@ -41,7 +41,7 @@ fn main() {
 
     let main = match modscope.get("main").unwrap() {
         resolve::scope::DefItem(s) => s,
-        _ => fail!("Main is not an event"),
+        _ => panic!("Main is not an event"),
     };
 
     let mut event = main.resolve_call(&mut ctx, &mut signal_info, Default::default(), None);
