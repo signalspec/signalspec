@@ -32,7 +32,7 @@ impl<'s> Scope<'s> {
     }
 
     pub fn get(&self, name: &str) -> Option<Item<'s>> {
-        self.names.find_equiv(&name).map(|x| x.clone())
+        self.names.find_equiv(name).map(|x| x.clone())
     }
 
     pub fn child(&self) -> Scope<'s> {

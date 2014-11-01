@@ -22,7 +22,7 @@ impl<'s> Interner<'s> {
 
     fn intern(&'s self, s: &str) -> Name {
         let mut forward = self.forward.borrow_mut();
-        match forward.find_equiv(&s) {
+        match forward.find_equiv(s) {
             Some(&name) => return name,
             None => {}
         }
