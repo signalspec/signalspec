@@ -4,7 +4,7 @@
 
 Applications include analysis and generation of digital, analog, and RF signals: debugging serial protocols, capturing data from sensors, controlling actuators, and software defined radio.
 
-_It's a work in progress and doesn't do anything useful yet._
+_It's a work in progress and isn't very useful yet._
 
 Signalspec is written in [Rust](https://rust-lang.org) and is open source software under the [Mozilla Public License, version 2.0](LICENSE).
 

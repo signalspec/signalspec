@@ -1,8 +1,20 @@
 ## Examples
 
+### Servo
+
+```
+repeat {
+  on v {
+    let t = 1.0us + v*1.0us
+    repeat t/sampleTime { #h }
+    repeat <:(20ms - t)/sampleTime  { #l }
+  }
+}
+```
+
 ### SPI
 
-A minimal definition CPOL=0, CPHA=0 SPI that could be used as master, slave, or sniffer just by changing the direction of the pins: 
+A minimal definition CPOL=0, CPHA=0 SPI that could be used as master, slave, or sniffer just by changing the direction of the pins:
 
 ```
 def SPI {
@@ -11,7 +23,7 @@ def SPI {
       with |x| (cs = #l, ..x) {
         // Everything within this block has CS low
         repeat _ {
-          // It infers two conditions to exit this loop: 
+          // It infers two conditions to exit this loop:
           // - The byte event is no longer possible to match
           //   because the inner block has ended (for master)
           // - CS goes high, as everything in this block
@@ -21,12 +33,12 @@ def SPI {
               repeat (<:clkPer/2) {
                 // If we control the timing (clk is an output),
                 // make this be clkPer/2 samples.
-                // While clk is low, set the mi and mo lines if they 
+                // While clk is low, set the mi and mo lines if they
                 // are outputs, but ignore them as inputs
                 (clk=#l, mi<:mi, mo<:mo)
               }
-              // For the first sample of clk high, mi and mo are 
-              // bound bidirectionally. This is where we capture 
+              // For the first sample of clk high, mi and mo are
+              // bound bidirectionally. This is where we capture
               // the values on input.
               (clk=#h, mi=mi, mo=mo)
               repeat (<:clkPer/2 - 1) {
@@ -38,7 +50,7 @@ def SPI {
         }
       }
     }
-    
+
     (cs=#h, .._) // Must match at least one sample with cs=#h
     repeat <: clkPer {
       // Between transactions, CS is high, and ignore
@@ -84,4 +96,3 @@ Tuple (vector?) of values for each pin, with a token representing a sample.
 ### Software defined radio
 
 ## UI
-
