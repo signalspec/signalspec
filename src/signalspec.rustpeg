@@ -20,17 +20,17 @@ def -> ast::Def
     { ast::Def{ name:name, param:param, block:block } }
 
     block -> ast::Block
-        = "{" _ lets:letstmt* actions:action* "}"
+        = "{" _ lets:letstmt* actions:action ** BREAK _ "}"
         { ast::Block{ lets:lets, actions:actions } }
 
     action -> ast::Action
-        = REPEAT _ count:expr? _ block:block BREAK
+        = REPEAT _ count:expr? _ block:block
             { ast::ActionRepeat(count.unwrap_or(ast::IgnoreExpr), block) }
-        / ON _ expr:expr _ body:block? BREAK
+        / ON _ expr:expr _ body:block?
             { ast::ActionOn(expr, body) }
-        / expr:varexpr _ "(" _ param:expr_tup _ ")" _ body:block? BREAK
+        / expr:varexpr _ "(" _ param:expr_tup _ ")" _ body:block?
             { ast::ActionCall(expr, param, body) }
-        / expr:expr body:block? BREAK
+        / expr:expr body:block?
             { ast::ActionToken(expr, body) }
 
 // Expressions

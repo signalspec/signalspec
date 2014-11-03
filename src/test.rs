@@ -179,12 +179,8 @@ fn test_unbounded_loop() {
     def main() {
       repeat {
         on v {
-          repeat v {
-            #h
-          }
-          repeat ignore {
-            #l
-          }
+          repeat v { #h }
+          repeat ignore { #l }
         }
       }
     }
