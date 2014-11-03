@@ -20,7 +20,8 @@ pub fn resolve_module<'s>(session: &'s Session<'s>, ast: &'s ast::Module) -> Sco
         panic!("Imports unimplemented");
     }
 
-    scope.add_lets(ast.lets.as_slice());
+    let mut ctx = Context::new(session);
+    resolve_letdef(&mut ctx, &mut scope, ast.lets.as_slice());
 
     for def in ast.defs.iter() {
         let ed = DefItem(session.closure_arena.alloc(EventClosure{ ast:def, parent_scope: scope.clone() }));
@@ -46,7 +47,7 @@ impl<'s> EventClosure<'s> {
         let mut ctx = pctx.child();
         let mut scope = self.parent_scope.child(); // Base on lexical parent
         resolve_pattern(&mut ctx, &mut scope, &self.ast.param, param);
-        resolve_seq(&ctx, signals, &scope, &self.ast.block)
+        resolve_seq(&mut ctx, signals, &scope, &self.ast.block)
     }
 }
 
@@ -99,12 +100,18 @@ fn resolve_action<'s>(ctx: &mut Context<'s>,
     }
 }
 
-fn resolve_seq<'s>(pctx: &Context<'s>, signals: &mut SignalInfo, pscope: &Scope<'s>, block: &'s ast::Block) -> Step {
-    let mut ctx = pctx.child();
+fn resolve_seq<'s>(ctx: &mut Context<'s>, signals: &mut SignalInfo, pscope: &Scope<'s>, block: &'s ast::Block) -> Step {
     let mut scope = pscope.child();
-    scope.add_lets(block.lets.as_slice());
+    resolve_letdef(ctx, &mut scope, block.lets.as_slice());
 
-    let steps = block.actions.iter().map(|action| resolve_action(&mut ctx, signals, &scope, action)).collect();
+    let steps = block.actions.iter().map(|action| resolve_action(ctx, signals, &scope, action)).collect();
 
     SeqStep(steps)
+}
+
+pub fn resolve_letdef<'s>(ctx: &mut Context<'s>, scope: &mut Scope<'s>, lets: &[ast::LetDef]) {
+    for &ast::LetDef(ref name, ref expr) in lets.iter() {
+        let item = resolve_expr(ctx, scope, expr);
+        scope.bind(name[], item);
+    }
 }

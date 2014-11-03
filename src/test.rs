@@ -129,6 +129,21 @@ fn test_arg() {
 }
 
 #[test]
+fn test_let() {
+    let p = compile("
+        let x = #x
+        def main(a) {
+            let y = a
+            let z = #z
+            x
+            y
+            z
+        }
+    ");
+    p.up_pass("#y", "#x \n #y \n #z", "");
+}
+
+#[test]
 fn test_loop() {
     let p = compile("
     def main(x) {

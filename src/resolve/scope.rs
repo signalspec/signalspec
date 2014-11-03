@@ -5,7 +5,6 @@ use std::default::Default;
 use resolve::block::{EventClosure};
 use resolve::context::ValueID;
 use resolve::types::Type;
-use ast;
 use ast::Value;
 
 /// A collection of named Items.
@@ -19,12 +18,6 @@ impl<'s> Scope<'s> {
       Scope {
         names: HashMap::new(),
       }
-    }
-
-    pub fn add_lets(&mut self, lets: &[ast::LetDef]) {
-        for _letdef in lets.iter() {
-            panic!("Let unimplemented");
-        }
     }
 
     pub fn bind(&mut self, name: &str, value: Item<'s>) {
