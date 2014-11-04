@@ -1,4 +1,4 @@
-use std::collections::SmallIntMap;
+use std::collections::VecMap;
 use ast:: {
     Value,
         NumberValue,
@@ -121,13 +121,13 @@ impl Ops {
 }
 
 pub struct State {
-    registers: SmallIntMap<Value>,
+    registers: VecMap<Value>,
 }
 
 impl State {
     pub fn new() -> State {
         let mut s = State {
-            registers: SmallIntMap::new()
+            registers: VecMap::new()
         };
         // TODO: shouldn't be necessary (we currently read from 0 on ignores)
         s.registers.insert(0, ::ast::SymbolValue("invalid".to_string()));

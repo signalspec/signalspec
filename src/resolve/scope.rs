@@ -1,5 +1,5 @@
 use std::fmt;
-use std::collections::hashmap::HashMap;
+use std::collections::HashMap;
 use std::default::Default;
 
 use resolve::block::{EventClosure};
