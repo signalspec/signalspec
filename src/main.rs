@@ -1,5 +1,5 @@
 #![allow(dead_code)]
-#![feature(phase, if_let, slicing_syntax)]
+#![feature(phase, if_let, slicing_syntax, macro_rules)]
 
 extern crate arena;
 extern crate collections;
@@ -14,6 +14,7 @@ use std::io::fs::File;
 use std::task;
 use std::default::Default;
 
+#[macro_escape]
 mod session;
 mod resolve;
 mod eval;

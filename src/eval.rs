@@ -147,6 +147,13 @@ impl State {
         true
     }
 
+    pub fn get_var(&self, v: ::session::Var) -> &Value {
+        match v.up {
+            ::resolve::scope::Dynamic(id) => self.get(id),
+            _ => panic!("Reading var that is not set in the up direction"),
+        }
+    }
+
     fn get_num(&self, reg: ValueID) -> f64 {
         match *self.get(reg) {
             NumberValue(v) => v,
