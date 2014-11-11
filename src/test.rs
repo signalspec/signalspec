@@ -6,6 +6,12 @@ fn v(s: &str) -> ast::Value{
     grammar::literal(s).unwrap()
 }
 
+fn shape_none() -> types::Shape { types::ShapeTup(Vec::new()) } // needs CTFE
+const SHAPE_UP_ANY: types::Shape = types::ShapeUnknown(false, true);
+const SHAPE_UP_VAL: types::Shape = types::ShapeVal(types::Bottom, false, true);
+const SHAPE_DOWN_VAL: types::Shape = types::ShapeUnknown(true, false);
+const SHAPE_DOWN_ANY: types::Shape = types::ShapeVal(types::Bottom, true, false);
+
 #[test]
 fn test_seq() {
     let s = Session::new();
@@ -18,7 +24,7 @@ fn test_seq() {
     "
     ).unwrap();
 
-    let p = m.compile_call("main", (), (), ()).unwrap();
+    let p = m.compile_call("main", SHAPE_UP_ANY, shape_none(), ()).unwrap();
 
     p.run_test_pass("#a \n #b \n #c", "");
     //p.down_pass("", "#a \n #b \n #c", "");
@@ -40,7 +46,7 @@ fn test_arg() {
     let a = s.var(types::Symbol, false, true);
     let b = s.var(types::Symbol, false, true);
     let c = s.var(types::Symbol, false, true);
-    let p = m.compile_call("main", (), (), tuple_item![a, b, c]).unwrap();
+    let p = m.compile_call("main", SHAPE_UP_ANY, shape_none(), tuple_item![a, b, c]).unwrap();
 
     let env = p.run_test_pass("#x \n #y \n #z", "");
     assert_eq!(env.get_var(a), &v("#x"));
@@ -63,7 +69,7 @@ fn test_let() {
     ").unwrap();
 
     let a = s.var(types::Symbol, false, true);
-    let p = m.compile_call("main", (), (), a).unwrap();
+    let p = m.compile_call("main",  SHAPE_UP_ANY, shape_none(), a).unwrap();
 
     let env = p.run_test_pass( "#x \n #y \n #z", "");
     assert_eq!(env.get_var(a), &v("#y"));
@@ -85,7 +91,7 @@ fn test_loop() {
     ").unwrap();
 
     let x = s.var(types::Integer, false, true);
-    let p = m.compile_call("main", (), (), x).unwrap();
+    let p = m.compile_call("main", SHAPE_UP_ANY, shape_none(), x).unwrap();
 
     let env = p.run_test_pass("#a \n #b \n #a", "");
     assert_eq!(env.get_var(x), &v("#0"));
@@ -119,7 +125,7 @@ fn test_nested_loop() {
     }
     ").unwrap();
 
-    let p = m.compile_call("main", (), (), ()).unwrap();
+    let p = m.compile_call("main", SHAPE_UP_ANY, shape_none(), ()).unwrap();
 
     p.run_test_pass("#a \n #e", "");
     p.run_test_pass("#a \n #b \n #c \n #d \n #e", "");
@@ -141,7 +147,7 @@ fn test_unbounded_loop() {
     }
     ").unwrap();
 
-    let p = m.compile_call("main", (), (), ()).unwrap();
+    let p = m.compile_call("main", SHAPE_UP_ANY, SHAPE_UP_VAL, ()).unwrap();
 
     p.run_test_pass("#h \n #l \n #h \n #h \n #l \n #h \n #h \n #h", "1\n2\n3\n");
 }
@@ -156,7 +162,7 @@ fn test_tup() {
         }
     ").unwrap();
 
-    let p = m.compile_call("main", (), (), ()).unwrap();
+    let p = m.compile_call("main", SHAPE_UP_ANY, shape_none(), ()).unwrap();
 
     p.run_test_pass("#a, #b \n #c, #d", "");
     p.run_test_fail("#a, #d \n #c, #b", "");
@@ -175,7 +181,7 @@ fn test_on() {
         }
     ").unwrap();
 
-    let p = m.compile_call("main", (), (), ()).unwrap();
+    let p = m.compile_call("main", SHAPE_UP_ANY, SHAPE_UP_VAL, ()).unwrap();
 
     p.run_test_pass("5", "1\n2\n4\n");
 }

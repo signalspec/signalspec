@@ -35,7 +35,6 @@ fn main() {
     let source = str::from_utf8(source_utf8.as_slice());
     let module = grammar::module(source.unwrap()).unwrap();
 
-    let mut signal_info = resolve::SignalInfo::new();
     let mut ctx = resolve::Context::new(&sess);
 
     let modscope = resolve::resolve_module(&sess, &module);
@@ -43,6 +42,11 @@ fn main() {
     let main = match modscope.get("main").unwrap() {
         resolve::scope::DefItem(s) => s,
         _ => panic!("Main is not an event"),
+    };
+
+    let mut signal_info = resolve::context::SignalInfo {
+        downwards: resolve::types::ShapeUnknown(false, true),
+        upwards: resolve::types::ShapeVal(resolve::types::Bottom, false, true),
     };
 
     let mut event = main.resolve_call(&mut ctx, &mut signal_info, Default::default(), None);

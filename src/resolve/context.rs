@@ -14,15 +14,6 @@ pub struct SignalInfo {
     pub upwards: Shape,
 }
 
-impl SignalInfo {
-    pub fn new() -> SignalInfo {
-        SignalInfo {
-            downwards: ShapeUnknown(false, true),
-            upwards: ShapeVal(types::Bottom, false, true),
-        }
-    }
-}
-
 pub struct Context<'session> {
     pub session: &'session Session<'session>,
     pub ops: eval::Ops,

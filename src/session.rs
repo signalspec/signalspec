@@ -8,6 +8,7 @@ use resolve::block::EventClosure;
 use exec::Step;
 use ast::Value;
 use resolve::scope::{Item, Dynamic, Ignored, ConstantItem, ValueItem, TupleItem, ValueRef};
+use resolve::types::Shape;
 use data_usage;
 use grammar;
 
@@ -115,10 +116,10 @@ impl <'s> Module<'s> {
     }
 
     pub fn compile_call<T: IntoItem<'s>>(&'s self, name: &str,
-                        _shape_down: (), _shape_up: (),
+                        shape_down: Shape, shape_up: Shape,
                         param: T) -> Result<Program, ()> {
         let def = self.get_def(name);
-        let mut signal_info = resolve::SignalInfo::new();
+        let mut signal_info = resolve::SignalInfo { downwards: shape_down, upwards: shape_up };
         let mut ctx = resolve::Context::new(self.session);
 
         let mut step = def.resolve_call(&mut ctx, &mut signal_info, param.into_item(), None);
