@@ -1,136 +1,57 @@
-use std::io::{MemReader, MemWriter};
-use std::str;
-use std::task;
-
-use {ast, session, resolve, grammar, exec, eval, dumpfile};
+use {ast, grammar};
 use resolve::types;
-use resolve::scope::{Dynamic, Ignored,ValueItem,TupleItem};
-use resolve::context::ValueID;
-use data_usage;
+use session::Session;
 
-struct TestCode {
-    step: exec::Step,
-    args: Vec<ValueID>,
-}
-
-fn compile(source: &str) -> TestCode {
-    let sess = session::Session::new();
-    let mut signal_info = resolve::SignalInfo::new();
-    let mut ctx = resolve::Context::new(&sess);
-
-    let module = grammar::module(source).unwrap();
-
-    let modscope = resolve::resolve_module(&sess, &module);
-    let main = match modscope.get("main").unwrap() {
-        resolve::scope::DefItem(s) => s,
-        _ => panic!("Main is not an event"),
-    };
-
-    let mut args = Vec::new();
-
-    let param = {
-        let make_reg = || {
-            let reg = ctx.make_register();
-            args.push(reg);
-            ValueItem(types::Bottom, Ignored, Dynamic(reg))
-        };
-
-        match main.ast.param {
-            ast::TupExpr(ref v) => {
-                TupleItem(v.iter().map(|_| make_reg()).collect())
-            }
-            _ => make_reg()
-        }
-    };
-
-    let mut step = main.resolve_call(&mut ctx, &mut signal_info, param, None);
-    data_usage::pass(&mut step, &mut signal_info);
-    TestCode{ step: step, args: args }
-}
-
-impl TestCode {
-    fn up(&self, arg: &str, bottom: &'static str, top: &'static str) -> bool {
-        debug!("--- up")
-        let (mut s1, mut s2) = exec::Connection::new();
-        let (mut t1, mut t2) = exec::Connection::new();
-        task::spawn(proc(){
-            let mut reader = MemReader::new(bottom.as_bytes().to_vec());
-            dumpfile::read_values(&mut reader, &mut s2);
-        });
-        task::spawn(proc(){
-            let mut writer = MemWriter::new();
-            dumpfile::write_values(&mut writer, &mut t2);
-            let v = writer.unwrap();
-            assert_eq!(top, str::from_utf8(v[]).unwrap());
-        });
-        let mut state = eval::State::new();
-
-        let r = exec::exec(&mut state, &self.step, &mut s1, &mut t1);
-
-        if r {
-            let args = dumpfile::parse_line(arg);
-            for (argval, &id) in args.iter().zip(self.args.iter()) {
-                assert_eq!(argval, state.get(id))
-            }
-        }
-
-        r
-    }
-
-    fn down() -> String {
-        unimplemented!();
-    }
-
-    fn up_pass(&self, arg: &str, bottom: &'static str, top: &'static str) {
-        if !self.up(arg, bottom, top) {
-            panic!("up_pass test failed to match: {}", bottom);
-        }
-    }
-
-    fn up_fail(&self, arg: &str, bottom: &'static str, top: &'static str) {
-        if self.up(arg, bottom, top) {
-            panic!("up_fail test matched: {}", bottom);
-        }
-    }
-
-    fn down_pass(&self, _arg: &str, _bottom: &'static str, _top: &'static str) {
-
-    }
+fn v(s: &str) -> ast::Value{
+    grammar::literal(s).unwrap()
 }
 
 #[test]
 fn test_seq() {
-    let p = compile("
+    let s = Session::new();
+    let m = s.parse_module("
     def main () {
         #a
         #b
         #c
     }
-        "
-    );
+    "
+    ).unwrap();
 
-    p.up_pass("", "#a \n #b \n #c", "");
-    p.down_pass("", "#a \n #b \n #c", "");
-    p.up_fail("", "#a \n #b \n #a", "");
-    p.up_fail("", "#b \n #b \n #c", "");
+    let p = m.compile_call("main", (), (), ()).unwrap();
+
+    p.run_test_pass("#a \n #b \n #c", "");
+    //p.down_pass("", "#a \n #b \n #c", "");
+    p.run_test_fail("#a \n #b \n #a", "");
+    p.run_test_fail("#b \n #b \n #c", "");
 }
 
 #[test]
 fn test_arg() {
-    let p = compile("
+    let s = Session::new();
+    let m = s.parse_module("
     def main(a, b, c) {
         a
         b
         c
     }
-    ");
+    ").unwrap();
 
-    p.up_pass("#x, #y, #z", "#x \n #y \n #z", "");
+    let a = s.var(types::Symbol, false, true);
+    let b = s.var(types::Symbol, false, true);
+    let c = s.var(types::Symbol, false, true);
+    let p = m.compile_call("main", (), (), tuple_item![a, b, c]).unwrap();
+
+    let env = p.run_test_pass("#x \n #y \n #z", "");
+    assert_eq!(env.get_var(a), &v("#x"));
+    assert_eq!(env.get_var(b), &v("#y"));
+    assert_eq!(env.get_var(c), &v("#z"));
 }
 
 #[test]
 fn test_let() {
-    let p = compile("
+    let s = Session::new();
+    let m = s.parse_module("
         let x = #x
         def main(a) {
             let y = a
@@ -139,13 +60,19 @@ fn test_let() {
             y
             z
         }
-    ");
-    p.up_pass("#y", "#x \n #y \n #z", "");
+    ").unwrap();
+
+    let a = s.var(types::Symbol, false, true);
+    let p = m.compile_call("main", (), (), a).unwrap();
+
+    let env = p.run_test_pass( "#x \n #y \n #z", "");
+    assert_eq!(env.get_var(a), &v("#y"));
 }
 
 #[test]
 fn test_loop() {
-    let p = compile("
+    let s = Session::new();
+    let m = s.parse_module("
     def main(x) {
         #a
         #b
@@ -155,18 +82,28 @@ fn test_loop() {
         }
         #a
     }
-    ");
+    ").unwrap();
 
-    p.up_pass("#0", "#a \n #b \n #a", "");
-    p.up_pass("#1", "#a \n #b \n #c \n #d \n #a", "");
-    p.up_pass("#2", "#a \n #b \n #c \n #d \n #c \n #d \n #a", "");
-    p.up_fail("", "#a \n #b \n #c \n #a", "");
-    p.up_fail("", "#a \n #b \n #c \n #d", "");
+    let x = s.var(types::Integer, false, true);
+    let p = m.compile_call("main", (), (), x).unwrap();
+
+    let env = p.run_test_pass("#a \n #b \n #a", "");
+    assert_eq!(env.get_var(x), &v("#0"));
+
+    let env = p.run_test_pass("#a \n #b \n #c \n #d \n #a", "");
+    assert_eq!(env.get_var(x), &v("#1"));
+
+    let env = p.run_test_pass("#a \n #b \n #c \n #d \n #c \n #d \n #a", "");
+    assert_eq!(env.get_var(x), &v("#2"));
+
+    p.run_test_fail("#a \n #b \n #c \n #a", "");
+    p.run_test_fail("#a \n #b \n #c \n #d", "");
 }
 
 #[test]
 fn test_nested_loop() {
-    let p = compile("
+    let s = Session::new();
+    let m = s.parse_module("
     def main() {
         #a
         repeat {
@@ -180,17 +117,20 @@ fn test_nested_loop() {
         }
         #e
     }
-    ");
+    ").unwrap();
 
-    p.up_pass("", "#a \n #e", "");
-    p.up_pass("", "#a \n #b \n #c \n #d \n #e", "");
-    p.up_pass("", "#a \n #b \n #b \n #c \n #c \n #c \n #d \n #b \n #d \n #e", "");
-    p.up_fail("", "#a \n #b \n #c", "");
+    let p = m.compile_call("main", (), (), ()).unwrap();
+
+    p.run_test_pass("#a \n #e", "");
+    p.run_test_pass("#a \n #b \n #c \n #d \n #e", "");
+    p.run_test_pass("#a \n #b \n #b \n #c \n #c \n #c \n #d \n #b \n #d \n #e", "");
+    p.run_test_fail("#a \n #b \n #c", "");
 }
 
 #[test]
 fn test_unbounded_loop() {
-    let p = compile("
+    let s = Session::new();
+    let m = s.parse_module("
     def main() {
       repeat {
         on v {
@@ -199,27 +139,33 @@ fn test_unbounded_loop() {
         }
       }
     }
-    ");
+    ").unwrap();
 
-    p.up_pass("", "#h \n #l \n #h \n #h \n #l \n #h \n #h \n #h", "1\n2\n3\n");
+    let p = m.compile_call("main", (), (), ()).unwrap();
+
+    p.run_test_pass("#h \n #l \n #h \n #h \n #l \n #h \n #h \n #h", "1\n2\n3\n");
 }
 
 #[test]
 fn test_tup() {
-    let p = compile("
-        def main(w) {
+    let s = Session::new();
+    let m = s.parse_module("
+        def main() {
             (#a, #b)
             (#c, #d)
         }
-    ");
+    ").unwrap();
 
-    p.up_pass("", "#a, #b \n #c, #d", "");
-    p.up_fail("", "#a, #d \n #c, #b", "");
+    let p = m.compile_call("main", (), (), ()).unwrap();
+
+    p.run_test_pass("#a, #b \n #c, #d", "");
+    p.run_test_fail("#a, #d \n #c, #b", "");
 }
 
 #[test]
 fn test_on() {
-    let p = compile("
+    let s = Session::new();
+    let m = s.parse_module("
         def main() {
             on 1 {}
             on 2 {}
@@ -227,7 +173,9 @@ fn test_on() {
                 (a+1)
             }
         }
-    ");
+    ").unwrap();
 
-    p.up_pass("", "5", "1\n2\n4\n")
+    let p = m.compile_call("main", (), (), ()).unwrap();
+
+    p.run_test_pass("5", "1\n2\n4\n");
 }

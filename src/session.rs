@@ -7,7 +7,6 @@ use resolve::Scope;
 use resolve::block::EventClosure;
 use exec::Step;
 use ast::Value;
-use resolve::types::Shape;
 use resolve::scope::{Item, Dynamic, Ignored, ConstantItem, ValueItem, TupleItem, ValueRef};
 use data_usage;
 use grammar;
