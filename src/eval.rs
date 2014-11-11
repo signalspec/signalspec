@@ -2,6 +2,7 @@ use std::collections::VecMap;
 use ast:: {
     Value,
         NumberValue,
+        IntegerValue,
         VectorValue,
 };
 use resolve::context::{ValueID};
@@ -149,6 +150,7 @@ impl State {
     fn get_num(&self, reg: ValueID) -> f64 {
         match *self.get(reg) {
             NumberValue(v) => v,
+            IntegerValue(v) => v as f64, // TODO: explicit conversion?
             _ => panic!(),
         }
     }
