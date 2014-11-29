@@ -25,13 +25,13 @@ def -> ast::Def
 
     action -> ast::Action
         = REPEAT _ count:expr? _ block:block
-            { ast::ActionRepeat(count.unwrap_or(ast::IgnoreExpr), block) }
+            { ast::Action::Repeat(count.unwrap_or(ast::Expr::Ignore), block) }
         / ON _ expr:expr _ body:block?
-            { ast::ActionOn(expr, body) }
+            { ast::Action::On(expr, body) }
         / expr:varexpr _ "(" _ param:expr_tup _ ")" _ body:block?
-            { ast::ActionCall(expr, param, body) }
+            { ast::Action::Call(expr, param, body) }
         / expr:expr body:block?
-            { ast::ActionToken(expr, body) }
+            { ast::Action::Token(expr, body) }
 
 // Expressions
 
@@ -42,16 +42,16 @@ expr -> ast::Expr
 
 expr_tup -> ast::Expr
     = es:(expr ** COMMA) COMMA?
-    { if es.len() == 1 { es.into_iter().next().unwrap() } else { ast::TupExpr(es) } }
+    { if es.len() == 1 { es.into_iter().next().unwrap() } else { ast::Expr::Tup(es) } }
 
 #[export]
 valexpr -> ast::Expr
   = valexpr_flip
 
     valexpr_flip -> ast::Expr
-        = l:valexpr_range _ "!" _ r:valexpr_range { ast::FlipExpr(box l, box r) }
-        / "<:" _ x:valexpr_range { ast::FlipExpr(box x, box ast::IgnoreExpr) }
-        / ":>" _ x:valexpr_range { ast::FlipExpr(box ast::IgnoreExpr, box x) }
+        = l:valexpr_range _ "!" _ r:valexpr_range { ast::Expr::Flip(box l, box r) }
+        / "<:" _ x:valexpr_range { ast::Expr::Flip(box x, box ast::Expr::Ignore) }
+        / ":>" _ x:valexpr_range { ast::Expr::Flip(box ast::Expr::Ignore, box x) }
         / valexpr_range
 
     valexpr_range -> ast::Expr
@@ -60,21 +60,21 @@ valexpr -> ast::Expr
 
         rangeexpr -> ast::Expr
             = l:valexpr_sum _ ".." _ r:valexpr_sum
-            { ast::RangeExpr(box l, box r) }
+            { ast::Expr::Range(box l, box r) }
 
     valexpr_sum -> ast::Expr
         = l:valexpr_product _ op:[+] _ r:valexpr_sum
-            { ast::BinExpr(box l, eval::BiAdd, box r) }
+            { ast::Expr::Bin(box l, eval::BinOp::Add, box r) }
         / valexpr_product
 
     valexpr_product -> ast::Expr
         = l:valexpr_choose _ op:[*] _ r:valexpr_product
-            { ast::BinExpr(box l, eval::BiMul, box r) }
+            { ast::Expr::Bin(box l, eval::BinOp::Mul, box r) }
         / valexpr_choose
 
     valexpr_choose -> ast::Expr
         = e:valexpr_atom _ "[" _ vs:(k:valexpr "=" _ v:valexpr { (k,v) })**COMMA COMMA? "]"
-            { ast::ChooseExpr(box e, vs) }
+            { ast::Expr::Choose(box e, vs) }
         / valexpr_atom
 
     valexpr_atom -> ast::Expr
@@ -86,14 +86,14 @@ valexpr -> ast::Expr
 
     concatexpr -> ast::Expr
         = "[" _ vs:(valexpr ++ COMMA) COMMA? "]"
-        { ast::ConcatExpr(vs) }
+        { ast::Expr::Concat(vs) }
 
     varexpr -> ast::Expr
         = i:identifier accessors:("." i:identifier {i} )*
-        { accessors.into_iter().fold(ast::VarExpr(i), |base, accessor| ast::DotExpr(box base, accessor)) }
+        { accessors.into_iter().fold(ast::Expr::Var(i), |base, accessor| ast::Expr::Dot(box base, accessor)) }
 
     literal_expr -> ast::Expr
-        = v:literal { ast::ValueExpr(v) }
+        = v:literal { ast::Expr::Value(v) }
 
     #[export]
     literal -> ast::Value
@@ -104,25 +104,25 @@ valexpr -> ast::Expr
 
             ignoreliteral -> ast::Expr
                 = "ignore"
-                { ast::IgnoreExpr }
+                { ast::Expr::Ignore }
 
             symbolliteral -> ast::Value
                 = "#" i:identifier
-                { ast::SymbolValue(i) }
+                { ast::Value::Symbol(i) }
 
             integerliteral -> ast::Value
-                = "#" n:integer { ast::IntegerValue(n) }
+                = "#" n:integer { ast::Value::Integer(n) }
 
             bitsliteral -> ast::Value
                 = "'h" v:(hexchar+) {
-                    ast::VectorValue(Vec::from_fn(v.len()*4, |i| {
+                    ast::Value::Vector(Vec::from_fn(v.len()*4, |i| {
                         let n = i/4;
                         let b = i%4;
-                        ast::IntegerValue((v.as_slice()[n] & (1 << (4-b))) as i64)
+                        ast::Value::Integer((v.as_slice()[n] & (1 << (4-b))) as i64)
                     }))
                 }
                 / "'" "b"? v:(binbit+)
-                    { ast::VectorValue(v.iter().map(|&b| ast::IntegerValue(b as i64)).collect()) }
+                    { ast::Value::Vector(v.iter().map(|&b| ast::Value::Integer(b as i64)).collect()) }
 
                 hexchar -> u8
                     = [0-9a-fA-F]
@@ -133,7 +133,7 @@ valexpr -> ast::Expr
 
             numberliteral -> ast::Value
                 = v:floatnumber _ u:unit
-                { ast::NumberValue(v) }
+                { ast::Value::Number(v) }
 
             unitliteral = unit { () }
 

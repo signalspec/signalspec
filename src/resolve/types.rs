@@ -1,3 +1,4 @@
+pub use self::Type::*;
 
 #[deriving(Show, PartialEq, Clone)]
 /// A type represents a set of possible values
@@ -27,7 +28,7 @@ pub fn common_all<T:Iterator<Type>>(mut l: T) -> Option<Type> {
 
 #[deriving(Clone, Show, PartialEq)]
 pub enum Shape {
-    ShapeUnknown(bool, bool),
-    ShapeTup(Vec<Shape>),
-    ShapeVal(Type, bool, bool),
+    Unknown(bool, bool),
+    Tup(Vec<Shape>),
+    Val(Type, bool, bool),
 }

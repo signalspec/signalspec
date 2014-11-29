@@ -1,8 +1,8 @@
 //! Data usage passes: Shape direction inference and unused value elimination
 use std::collections::BitvSet;
 use eval::{Ops, ValOp};
-use exec::{Message, MessageValue, MessageTuple, Step, NopStep, TokenStep, TokenTopStep, SeqStep, RepeatStep};
-use resolve::types::{Shape, ShapeVal, ShapeTup};
+use exec::{ Message, Step };
+use resolve::types::Shape;
 use resolve::context::{ValueID};
 use resolve::scope::{Dynamic, Ignored, Poison};
 use resolve;
@@ -79,7 +79,7 @@ impl UsageSet {
     /// Mark variables read and written as used in a Message on the downward stream.
     fn message_downward(&mut self, message: &Message, shape: &Shape) {
         match (message, shape) {
-            (&MessageValue(down, up), &ShapeVal(_, is_down, is_up)) => {
+            (&Message::Value(down, up), &Shape::Val(_, is_down, is_up)) => {
                 if is_down {
                     match down {
                         Dynamic(id) => {
@@ -99,7 +99,7 @@ impl UsageSet {
                     }
                 }
             }
-            (&MessageTuple(ref ms), &ShapeTup(ref ss)) => {
+            (&Message::Tuple(ref ms), &Shape::Tup(ref ss)) => {
                 for (m, s) in ms.iter().zip(ss.iter()) {
                     self.message_downward(m, s);
                 }
@@ -111,7 +111,7 @@ impl UsageSet {
     /// Mark variables read and written as used in a Message on the upward stream
     fn message_upward(&mut self, message: &Message) {
         match *message {
-            MessageValue(down, up) => {
+            Message::Value(down, up) => {
                 match down {
                     Dynamic(id) => { self.written.insert(id); }
                     Poison(err) => panic!("Poison value used: {}", err),
@@ -123,7 +123,7 @@ impl UsageSet {
                     Ignored => panic!("Required value is ignored"),
                 }
             }
-            MessageTuple(ref ms) => {
+            Message::Tuple(ref ms) => {
                 for m in ms.iter() {
                     self.message_upward(m);
                 }
@@ -139,7 +139,7 @@ pub fn direction_analysis(cx: &mut UsageSet, step: &Step, down: &mut Shape, up: 
 
     fn update_upward_shape(set: &UsageSet, message: &Message, shape: &mut Shape) {
         match (message, shape) {
-            (&MessageValue(down, up), &ShapeVal(_, ref mut is_down, ref mut is_up)) => {
+            (&Message::Value(down, up), &Shape::Val(_, ref mut is_down, ref mut is_up)) => {
                 *is_down |= match down {
                   Dynamic(id) => set.read.contains(&id),
                   Ignored => false,
@@ -151,7 +151,7 @@ pub fn direction_analysis(cx: &mut UsageSet, step: &Step, down: &mut Shape, up: 
                   Poison(s) => panic!("Poison value used: {}", s)
                 };
             }
-            (&MessageTuple(ref ms), &ShapeTup(ref mut ss)) => {
+            (&Message::Tuple(ref ms), &Shape::Tup(ref mut ss)) => {
                 for (m, s) in ms.iter().zip(ss.iter_mut()) {
                     update_upward_shape(set, m, s);
                 }
@@ -161,26 +161,26 @@ pub fn direction_analysis(cx: &mut UsageSet, step: &Step, down: &mut Shape, up: 
     }
 
     match *step {
-        NopStep => (),
-        TokenStep(ref ops, ref msg) => {
+        Step::Nop => (),
+        Step::Token(ref ops, ref msg) => {
           cx.enter_ops(ops);
           cx.message_downward(msg, down);
           // direction_analysis(cx, body, down, up);
           cx.leave_ops(ops);
         }
-        TokenTopStep(ref ops, ref msg, box ref body) => {
+        Step::TokenTop(ref ops, ref msg, box ref body) => {
           cx.message_upward(msg);
           cx.enter_ops(ops);
           direction_analysis(cx, body, down, up);
           cx.leave_ops(ops);
           update_upward_shape(cx, msg, up);
         }
-        SeqStep(ref steps) => {
+        Step::Seq(ref steps) => {
           for c in steps.iter() {
               direction_analysis(cx, c, down, up);
           }
         }
-        RepeatStep((_cd, cu), box ref inner) => {
+        Step::Repeat((_cd, cu), box ref inner) => {
           direction_analysis(cx, inner, down, up);
 
           // TODO: support repeat down count
@@ -209,11 +209,11 @@ pub fn sweep_unused(cx: &mut UsageSet, step: &mut Step, down: &Shape, up: &Shape
 
     fn sweep_msg(cx: &UsageSet, message: &mut Message, shape: &Shape) {
         match (message, shape) {
-            (&MessageValue(ref mut down, ref mut up), &ShapeVal(_, is_down, is_up)) => {
+            (&Message::Value(ref mut down, ref mut up), &Shape::Val(_, is_down, is_up)) => {
                 if !is_down { *down = Ignored }
                 if !is_up   { *up = Ignored }
             }
-            (&MessageTuple(ref mut ms), &ShapeTup(ref ss)) => {
+            (&Message::Tuple(ref mut ms), &Shape::Tup(ref ss)) => {
                 for (m, s) in ms.iter_mut().zip(ss.iter()) {
                     sweep_msg(cx, m, s);
                 }
@@ -223,15 +223,15 @@ pub fn sweep_unused(cx: &mut UsageSet, step: &mut Step, down: &Shape, up: &Shape
     }
 
     match *step {
-        NopStep => (),
-        TokenStep(ref mut ops, ref mut msg) => {
+        Step::Nop => (),
+        Step::Token(ref mut ops, ref mut msg) => {
             sweep_msg(cx, msg, down);
             cx.enter_ops(ops);
             cx.message_downward(msg, down);
             cx.leave_ops(ops);
             sweep_ops(cx, ops);
         }
-        TokenTopStep(ref mut ops, ref mut msg, box ref mut body) => {
+        Step::TokenTop(ref mut ops, ref mut msg, box ref mut body) => {
             sweep_msg(cx, msg, up);
             cx.message_upward(msg);
             cx.enter_ops(ops);
@@ -239,12 +239,12 @@ pub fn sweep_unused(cx: &mut UsageSet, step: &mut Step, down: &Shape, up: &Shape
             cx.leave_ops(ops);
             sweep_ops(cx, ops);
         }
-        SeqStep(ref mut steps) => {
+        Step::Seq(ref mut steps) => {
             for c in steps.iter_mut() {
                 sweep_unused(cx, c, down, up);
             }
         }
-        RepeatStep((ref mut cd, ref mut cu), box ref mut inner) => {
+        Step::Repeat((ref mut cd, ref mut cu), box ref mut inner) => {
             sweep_unused(cx, inner, down, up);
             if let Dynamic(id) = *cu {
                 cx.written.insert(id);

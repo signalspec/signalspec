@@ -7,7 +7,7 @@ use resolve::Scope;
 use resolve::block::EventClosure;
 use exec::Step;
 use ast::Value;
-use resolve::scope::{Item, Dynamic, Ignored, ConstantItem, ValueItem, TupleItem, ValueRef};
+use resolve::scope::{ Item, ValueRef, Dynamic, Ignored };
 use resolve::types::Shape;
 use data_usage;
 use grammar;
@@ -72,7 +72,7 @@ impl <'s> IntoItem<'s> for Item<'s> {
 }
 
 impl <'s> IntoItem<'s> for Value {
-    fn into_item(self) -> Item<'s> { ConstantItem(self) }
+    fn into_item(self) -> Item<'s> { Item::Constant(self) }
 }
 
 #[deriving(Clone, Show)]
@@ -83,21 +83,21 @@ pub struct Var {
 }
 
 impl <'s> IntoItem<'s> for Var {
-    fn into_item(self) -> Item<'s> { ValueItem(self.ty, self.down, self.up) }
+    fn into_item(self) -> Item<'s> { Item::Value(self.ty, self.down, self.up) }
 }
 
 #[macro_escape]
 macro_rules! tuple_item[
     ($($x:expr),*) => ({
         use session::IntoItem;
-        use resolve::scope::TupleItem;
-        TupleItem(vec![$($x.into_item()),*])
+        use resolve::scope::Item::Tuple;
+        Tuple(vec![$($x.into_item()),*])
     });
     ($($x:expr,)*) => (tuple_item![$($x),*])
 ]
 
 impl <'s> IntoItem<'s> for () {
-    fn into_item(self) -> Item<'s> { TupleItem(Vec::new()) }
+    fn into_item(self) -> Item<'s> { Item::Tuple(Vec::new()) }
 }
 
 pub struct Module<'s> {
@@ -110,7 +110,7 @@ impl <'s> Module<'s> {
     pub fn get_def(&'s self, name: &str) -> &'s EventClosure {
         // TODO: return Result
         match self.scope.get(name).unwrap() {
-            resolve::scope::DefItem(s) => s,
+            resolve::scope::Item::Def(s) => s,
             _ => panic!("Main is not an event"),
         }
     }

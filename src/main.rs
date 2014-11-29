@@ -1,5 +1,5 @@
 #![allow(dead_code)]
-#![feature(phase, if_let, slicing_syntax, macro_rules)]
+#![feature(phase, if_let, slicing_syntax, macro_rules, globs)]
 
 extern crate arena;
 extern crate collections;
@@ -40,13 +40,13 @@ fn main() {
     let modscope = resolve::resolve_module(&sess, &module);
 
     let main = match modscope.get("main").unwrap() {
-        resolve::scope::DefItem(s) => s,
+        resolve::scope::Item::Def(s) => s,
         _ => panic!("Main is not an event"),
     };
 
     let mut signal_info = resolve::context::SignalInfo {
-        downwards: resolve::types::ShapeUnknown(false, true),
-        upwards: resolve::types::ShapeVal(resolve::types::Bottom, false, true),
+        downwards: resolve::types::Shape::Unknown(false, true),
+        upwards: resolve::types::Shape::Val(resolve::types::Bottom, false, true),
     };
 
     let mut event = main.resolve_call(&mut ctx, &mut signal_info, Default::default(), None);

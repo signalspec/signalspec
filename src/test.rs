@@ -6,11 +6,11 @@ fn v(s: &str) -> ast::Value{
     grammar::literal(s).unwrap()
 }
 
-fn shape_none() -> types::Shape { types::ShapeTup(Vec::new()) } // needs CTFE
-const SHAPE_UP_ANY: types::Shape = types::ShapeUnknown(false, true);
-const SHAPE_UP_VAL: types::Shape = types::ShapeVal(types::Bottom, false, true);
-const SHAPE_DOWN_VAL: types::Shape = types::ShapeUnknown(true, false);
-const SHAPE_DOWN_ANY: types::Shape = types::ShapeVal(types::Bottom, true, false);
+fn shape_none() -> types::Shape { types::Shape::Tup(Vec::new()) } // needs CTFE
+const SHAPE_UP_ANY: types::Shape = types::Shape::Unknown(false, true);
+const SHAPE_UP_VAL: types::Shape = types::Shape::Val(types::Bottom, false, true);
+const SHAPE_DOWN_VAL: types::Shape = types::Shape::Unknown(true, false);
+const SHAPE_DOWN_ANY: types::Shape = types::Shape::Val(types::Bottom, true, false);
 
 #[test]
 fn test_seq() {

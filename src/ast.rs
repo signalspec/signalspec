@@ -15,12 +15,12 @@ pub struct Block {
 }
 
 pub enum Action {
-    ActionSeq(Block),
-    //ActionPar(Block),
-    ActionRepeat(Expr, Block),
-    ActionCall(Expr, Expr, Option<Block>),
-    ActionToken(Expr, Option<Block>),
-    ActionOn(Expr, Option<Block>),
+    Seq(Block),
+    //Par(Block),
+    Repeat(Expr, Block),
+    Call(Expr, Expr, Option<Block>),
+    Token(Expr, Option<Block>),
+    On(Expr, Option<Block>),
 }
 
 pub struct Def {
@@ -34,19 +34,19 @@ pub struct LetDef(pub String, pub Expr);
 
 #[deriving(PartialEq, Clone)]
 pub enum Value {
-    NumberValue(f64),
-    IntegerValue(i64),
-    SymbolValue(String),
-    VectorValue(Vec<Value>),
+    Number(f64),
+    Integer(i64),
+    Symbol(String),
+    Vector(Vec<Value>),
 }
 
 impl Value {
     pub fn get_type(&self) -> types::Type {
         match *self {
-            NumberValue(..) => types::Number,
-            IntegerValue(..) => types::Integer,
-            SymbolValue(..) => types::Symbol,
-            VectorValue(ref n) => types::Vector(n.len()),
+            Value::Number(..) => types::Number,
+            Value::Integer(..) => types::Integer,
+            Value::Symbol(..) => types::Symbol,
+            Value::Vector(ref n) => types::Vector(n.len()),
         }
     }
 
@@ -58,26 +58,26 @@ impl Value {
 impl fmt::Show for Value {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            NumberValue(n) => write!(f, "{}", n),
-            IntegerValue(n) => write!(f, "{}", n),
-            SymbolValue(ref s) => write!(f, "#{}", *s),
-            VectorValue(ref n) => write!(f, "{}", n.to_string()),
+            Value::Number(n) => write!(f, "{}", n),
+            Value::Integer(n) => write!(f, "{}", n),
+            Value::Symbol(ref s) => write!(f, "#{}", *s),
+            Value::Vector(ref n) => write!(f, "{}", n.to_string()),
         }
     }
 }
 
 pub enum Expr {
-    ValueExpr(Value),
-    TupExpr(Vec<Expr>),
-    IgnoreExpr,
+    Value(Value),
+    Tup(Vec<Expr>),
+    Ignore,
 
-    FlipExpr(Box<Expr>, Box<Expr>),
-    RangeExpr(Box<Expr>, Box<Expr>),
-    ChooseExpr(Box<Expr>, Vec<(Expr, Expr)>),
-    ConcatExpr(Vec<Expr>),
+    Flip(Box<Expr>, Box<Expr>),
+    Range(Box<Expr>, Box<Expr>),
+    Choose(Box<Expr>, Vec<(Expr, Expr)>),
+    Concat(Vec<Expr>),
 
-    BinExpr(Box<Expr>, BinOp, Box<Expr>),
+    Bin(Box<Expr>, BinOp, Box<Expr>),
 
-    VarExpr(String),
-    DotExpr(Box<Expr>, String),
+    Var(String),
+    Dot(Box<Expr>, String),
 }

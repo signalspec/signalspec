@@ -7,6 +7,8 @@ use resolve::context::ValueID;
 use resolve::types::Type;
 use ast::Value;
 
+pub use self::ValueRef::{ Ignored, Dynamic, Poison };
+
 /// A collection of named Items.
 #[deriving(Clone)]
 pub struct Scope<'s>{
@@ -38,18 +40,18 @@ impl<'s> Scope<'s> {
 /// A thing associated with a name in a Scope
 #[deriving(Clone)]
 pub enum Item<'s> {
-    ConstantItem(Value),
-    ValueItem(Type, ValueRef /*Down*/, ValueRef /*Up*/),
-    DefItem(&'s EventClosure<'s>),
-    TupleItem(Vec<Item<'s>>) // TODO: named components
+    Constant(Value),
+    Value(Type, ValueRef /*Down*/, ValueRef /*Up*/),
+    Def(&'s EventClosure<'s>),
+    Tuple(Vec<Item<'s>>) // TODO: named components
 }
 
 impl<'s> PartialEq for Item<'s> {
     fn eq(&self, other: &Item<'s>) -> bool {
         match (self, other) {
-            (&ValueItem(ref ta, ref da, ref ua), &ValueItem(ref tb, ref db, ref ub))
+            (&Item::Value(ref ta, ref da, ref ua), &Item::Value(ref tb, ref db, ref ub))
                 if ta==tb && da==db && ua==ub => true,
-            (&ConstantItem(ref a), &ConstantItem(ref b)) if a == b => true,
+            (&Item::Constant(ref a), &Item::Constant(ref b)) if a == b => true,
             _ => false
         }
     }
@@ -57,17 +59,17 @@ impl<'s> PartialEq for Item<'s> {
 
 impl <'s> Default for Item<'s> {
     fn default() -> Item<'s> {
-        TupleItem(Vec::new())
+        Item::Tuple(Vec::new())
     }
 }
 
 impl<'s> fmt::Show for Item<'s> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            ConstantItem(ref v) => write!(f, "{}", v),
-            ValueItem(t, d, u) => write!(f, "[{}: {} {}]", t, d, u),
-            DefItem(..) => write!(f, "<def>"),
-            TupleItem(ref v) => {
+            Item::Constant(ref v) => write!(f, "{}", v),
+            Item::Value(t, d, u) => write!(f, "[{}: {} {}]", t, d, u),
+            Item::Def(..) => write!(f, "<def>"),
+            Item::Tuple(ref v) => {
                 try!(write!(f, "("));
                 for i in v.iter() {
                     try!(i.fmt(f));

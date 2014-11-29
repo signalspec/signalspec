@@ -1,10 +1,5 @@
 use std::collections::VecMap;
-use ast:: {
-    Value,
-        NumberValue,
-        IntegerValue,
-        VectorValue,
-};
+use ast::Value;
 use resolve::context::{ValueID};
 
 #[deriving(PartialEq, Show)]
@@ -16,40 +11,40 @@ pub enum ValueSrc {
 
 #[deriving(PartialEq, Show)]
 pub enum ValOp {
-    ConstOp(Value),
-    CheckOp(ValueID, Value),
-    RangeCheckOp(ValueID, f64, f64),
+    Const(Value),
+    Check(ValueID, Value),
+    RangeCheck(ValueID, f64, f64),
 
-    ChooseOp(ValueID, Vec<(Value, Value)>),
+    Choose(ValueID, Vec<(Value, Value)>),
 
-    SliceOp(ValueID, /*offset*/ uint, /*length*/ uint),
-    ElemOp(ValueID, uint),
-    ConcatOp(Vec<ValueSrc>),
+    Slice(ValueID, /*offset*/ uint, /*length*/ uint),
+    Elem(ValueID, uint),
+    Concat(Vec<ValueSrc>),
 
-    BinaryOp(ValueID, BinOp, ValueID),
-    BinaryConstOp(ValueID, BinOp, f64),
+    Binary(ValueID, BinOp, ValueID),
+    BinaryConst(ValueID, BinOp, f64),
 }
 
 impl ValOp {
     pub fn each_dep(&self, f: |ValueID| -> ()) {
         match *self {
-            ConstOp(..) => (),
-            CheckOp(i, _) => f(i),
-            RangeCheckOp(i, _, _) => f(i),
-            ChooseOp(i, _) => f(i),
-            SliceOp(i, _, _) => f(i),
-            ElemOp(i, _) => f(i),
-            ConcatOp(ref l) => {
+            ValOp::Const(..) => (),
+            ValOp::Check(i, _) => f(i),
+            ValOp::RangeCheck(i, _, _) => f(i),
+            ValOp::Choose(i, _) => f(i),
+            ValOp::Slice(i, _, _) => f(i),
+            ValOp::Elem(i, _) => f(i),
+            ValOp::Concat(ref l) => {
                 for src in l.iter() {
                     match *src {
-                        ConstSlice(..) => (),
-                        DynElem(i) => f(i),
-                        DynSlice(i, _) => f(i)
+                        ValueSrc::ConstSlice(..) => (),
+                        ValueSrc::DynElem(i) => f(i),
+                        ValueSrc::DynSlice(i, _) => f(i)
                     }
                 }
             }
-            BinaryOp(l, _, r) => { f(l); f(r) }
-            BinaryConstOp(i, _, _) => f(i),
+            ValOp::Binary(l, _, r) => { f(l); f(r) }
+            ValOp::BinaryConst(i, _, _) => f(i),
         }
     }
 
@@ -63,49 +58,49 @@ impl ValOp {
 /// Binary numeric operators
 #[deriving(PartialEq, Eq, Show)]
 pub enum BinOp {
-    BiAdd,       // a + b
-    BiSub,       // a - b
-    BiSubSwap,   // b - a
+    Add,       // a + b
+    Sub,       // a - b
+    SubSwap,   // b - a
 
-    BiMul,       // a * b
-    BiDiv,       // a / b
-    BiDivSwap,   // b / a
+    Mul,       // a * b
+    Div,       // a / b
+    DivSwap,   // b / a
 }
 
 impl BinOp {
     /// a `op` b
     pub fn eval(&self, a: f64, b: f64) -> f64 {
         match *self {
-            BiAdd     => a + b,
-            BiSub     => a - b,
-            BiSubSwap => b - a,
-            BiMul     => a * b,
-            BiDiv     => a / b,
-            BiDivSwap => b / a,
+            BinOp::Add     => a + b,
+            BinOp::Sub     => a - b,
+            BinOp::SubSwap => b - a,
+            BinOp::Mul     => a * b,
+            BinOp::Div     => a / b,
+            BinOp::DivSwap => b / a,
         }
     }
 
     /// (a `op` b) == (b `op.swap()` a)
     pub fn swap(&self) -> BinOp {
         match *self {
-            BiAdd     => BiAdd,
-            BiSub     => BiSubSwap,
-            BiSubSwap => BiSub,
-            BiMul     => BiMul,
-            BiDiv     => BiDivSwap,
-            BiDivSwap => BiDiv,
+            BinOp::Add     => BinOp::Add,
+            BinOp::Sub     => BinOp::SubSwap,
+            BinOp::SubSwap => BinOp::Sub,
+            BinOp::Mul     => BinOp::Mul,
+            BinOp::Div     => BinOp::DivSwap,
+            BinOp::DivSwap => BinOp::Div,
         }
     }
 
     /// ((a `op` b) `op.invert()` b) == a
     pub fn invert(&self) -> BinOp {
         match *self {
-            BiAdd     => BiSub,
-            BiSub     => BiAdd,
-            BiSubSwap => BiSubSwap,
-            BiMul     => BiDiv,
-            BiDiv     => BiMul,
-            BiDivSwap => BiDivSwap,
+            BinOp::Add     => BinOp::Sub,
+            BinOp::Sub     => BinOp::Add,
+            BinOp::SubSwap => BinOp::SubSwap,
+            BinOp::Mul     => BinOp::Div,
+            BinOp::Div     => BinOp::Mul,
+            BinOp::DivSwap => BinOp::DivSwap,
         }
     }
 }
@@ -131,7 +126,7 @@ impl State {
             registers: VecMap::new()
         };
         // TODO: shouldn't be necessary (we currently read from 0 on ignores)
-        s.registers.insert(0, ::ast::SymbolValue("invalid".to_string()));
+        s.registers.insert(0, ::ast::Value::Symbol("invalid".to_string()));
         s
     }
 
@@ -156,15 +151,15 @@ impl State {
 
     fn get_num(&self, reg: ValueID) -> f64 {
         match *self.get(reg) {
-            NumberValue(v) => v,
-            IntegerValue(v) => v as f64, // TODO: explicit conversion?
+            Value::Number(v) => v,
+            Value::Integer(v) => v as f64, // TODO: explicit conversion?
             _ => panic!(),
         }
     }
 
     fn get_vec<'s>(&'s self, reg: ValueID) -> &'s [Value] {
         match *self.get(reg) {
-            VectorValue(ref v) => v.as_slice(),
+            Value::Vector(ref v) => v.as_slice(),
             _ => panic!(),
         }
     }
@@ -172,41 +167,41 @@ impl State {
     fn execute(&mut self, dest: ValueID, op: &ValOp) -> bool {
         debug!("execute: {} = {}", dest, op);
         let v = match *op {
-            ConstOp(ref v) => v.clone(),
-            CheckOp(reg, ref v) => return self.get(reg) == v,
-            RangeCheckOp(reg, min, max) => {
+            ValOp::Const(ref v) => v.clone(),
+            ValOp::Check(reg, ref v) => return self.get(reg) == v,
+            ValOp::RangeCheck(reg, min, max) => {
                 let v = self.get_num(reg);
                 return v >= min && v <= max;
             }
 
-            ChooseOp(reg, ref arms) =>
+            ValOp::Choose(reg, ref arms) =>
                 eval_choose(self.get(reg), arms.as_slice()).unwrap(),
 
-            ElemOp(reg, index) => self.get_vec(reg)[index].clone(),
+            ValOp::Elem(reg, index) => self.get_vec(reg)[index].clone(),
 
-            SliceOp(reg, offset, length) =>
-                VectorValue(self.get_vec(reg).slice(offset, offset+length).to_vec()),
+            ValOp::Slice(reg, offset, length) =>
+                Value::Vector(self.get_vec(reg).slice(offset, offset+length).to_vec()),
 
-            ConcatOp(ref parts) => {
+            ValOp::Concat(ref parts) => {
                 let mut v = Vec::new();
                 for part in parts.iter() {
                     match *part {
-                        ConstSlice(ref s) => v.extend(s.iter().map(|x| x.clone())),
-                        DynElem(reg) => v.push(self.get(reg).clone()),
-                        DynSlice(reg, len) => {
+                        ValueSrc::ConstSlice(ref s) => v.extend(s.iter().map(|x| x.clone())),
+                        ValueSrc::DynElem(reg) => v.push(self.get(reg).clone()),
+                        ValueSrc::DynSlice(reg, len) => {
                             let s = self.get_vec(reg);
                             assert!(s.len() == len);
                             v.extend(s.iter().map(|x| x.clone()))
                         }
                     }
                 }
-                VectorValue(v)
+                Value::Vector(v)
             },
 
-            BinaryOp(a, op, b) =>
-                NumberValue(op.eval(self.get_num(a), self.get_num(b))),
-            BinaryConstOp(a, op, b)  =>
-                NumberValue(op.eval(self.get_num(a), b)),
+            ValOp::Binary(a, op, b) =>
+                Value::Number(op.eval(self.get_num(a), self.get_num(b))),
+            ValOp::BinaryConst(a, op, b)  =>
+                Value::Number(op.eval(self.get_num(a), b)),
         };
         self.set(dest, v);
         true

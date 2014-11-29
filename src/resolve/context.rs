@@ -2,8 +2,8 @@ use std::vec;
 use session::Session;
 use eval;
 use exec;
-use resolve::types::{mod, Shape, ShapeUnknown, ShapeTup, ShapeVal};
-use resolve::scope::{ValueRef, Dynamic, Item, ValueItem, ConstantItem, TupleItem};
+use resolve::types::{ mod, Shape };
+use resolve::scope::{ ValueRef, Dynamic, Item };
 
 /// Dynamic Cell
 pub type ValueID = uint;
@@ -60,12 +60,12 @@ impl<'session> Context<'session> {
 
     pub fn item_to_refs(&mut self, item: &Item) -> (types::Type, ValueRef, ValueRef) {
         match *item {
-            ConstantItem(ref v) => (
+            Item::Constant(ref v) => (
                 v.get_type(),
-                self.down_op(eval::ConstOp(v.clone())),
-                self.up_op(0, |c| eval::CheckOp(c, v.clone()))
+                self.down_op(eval::ValOp::Const(v.clone())),
+                self.up_op(0, |c| eval::ValOp::Check(c, v.clone()))
             ),
-            ValueItem(t, d, u) => (t, d, u),
+            Item::Value(t, d, u) => (t, d, u),
             _ => panic!("Item does not match shape: expected value, found {}", item),
         }
     }
@@ -77,22 +77,22 @@ impl<'session> Context<'session> {
 
         fn recurse(ctx: &mut Context, shape: &mut Shape, item: Item) -> exec::Message {
             // If the shape is unknown, fill it in based on the item
-            if let ShapeUnknown(is_down, is_up) = *shape {
+            if let Shape::Unknown(is_down, is_up) = *shape {
                 *shape = match item {
-                    TupleItem(ref t) => ShapeTup(Vec::from_elem(t.len(), ShapeUnknown(is_down, is_up))),
-                    _ => ShapeVal(types::Bottom, is_down, is_up)
+                    Item::Tuple(ref t) => Shape::Tup(Vec::from_elem(t.len(), Shape::Unknown(is_down, is_up))),
+                    _ => Shape::Val(types::Bottom, is_down, is_up)
                 }
             }
 
             match *shape {
-                ShapeVal(ref _ty, _, _) => {
+                Shape::Val(ref _ty, _, _) => {
                     let (_t, d, u) = ctx.item_to_refs(&item);
-                    exec::MessageValue(d, u)
+                    exec::Message::Value(d, u)
                 }
 
-                ShapeTup(ref mut sub) => {
-                    if let TupleItem(t) = item {
-                        exec::MessageTuple(
+                Shape::Tup(ref mut sub) => {
+                    if let Item::Tuple(t) = item {
+                        exec::Message::Tuple(
                             t.into_iter().zip(sub.iter_mut())
                             .map(|(i, s)| recurse(ctx, s, i))
                             .collect()
@@ -113,16 +113,16 @@ impl<'session> Context<'session> {
 
         fn recurse<'s>(ctx: &mut Context<'s>, shape: &Shape) -> (exec::Message, Item<'s>) {
             match *shape {
-                ShapeVal(t, _, _) => {
+                Shape::Val(t, _, _) => {
                     let d = Dynamic(ctx.make_register());
                     let u = Dynamic(ctx.make_register());
-                    (exec::MessageValue(d, u), ValueItem(t, d, u))
+                    (exec::Message::Value(d, u), Item::Value(t, d, u))
                 }
-                ShapeTup(ref v) => {
+                Shape::Tup(ref v) => {
                     let (ms, is) = vec::unzip(v.iter().map(|s| recurse(ctx, s)));
-                    (exec::MessageTuple(ms), TupleItem(is))
+                    (exec::Message::Tuple(ms), Item::Tuple(is))
                 }
-                ShapeUnknown(..) => panic!("Signal shape not fully constrained"),
+                Shape::Unknown(..) => panic!("Signal shape not fully constrained"),
             }
         }
 

@@ -1,43 +1,38 @@
 use ast;
-use ast::{
-    Value,
-        NumberValue,
-        VectorValue,
-};
+use ast::Value;
 use eval;
 use resolve::context::Context;
-use resolve::scope::Scope;
+use resolve::scope::{ Scope, Item };
 use resolve::scope::{ ValueRef, Dynamic, Ignored, Poison, propagate_pair };
-use resolve::scope::{ Item, ConstantItem, ValueItem, TupleItem };
 use resolve::types::{ mod, Type };
 
 pub fn resolve_expr<'s>(ctx: &mut Context<'s>, scope: &Scope<'s>, e: &ast::Expr) -> Item<'s> {
     match *e {
-        ast::IgnoreExpr => ValueItem(types::Bottom, Ignored, Ignored),
-        ast::ValueExpr(ref val) => ConstantItem(val.clone()),
+        ast::Expr::Ignore => Item::Value(types::Bottom, Ignored, Ignored),
+        ast::Expr::Value(ref val) => Item::Constant(val.clone()),
 
-        ast::FlipExpr(box ref down, box ref up) => {
+        ast::Expr::Flip(box ref down, box ref up) => {
             let (down_type, down_ref) = match resolve_expr(ctx, scope, down) {
-                ConstantItem(v) => (v.get_type(), ctx.down_op(eval::ConstOp(v))),
-                ValueItem(down_type, down_ref, _) => (down_type, down_ref),
+                Item::Constant(v) => (v.get_type(), ctx.down_op(eval::ValOp::Const(v))),
+                Item::Value(down_type, down_ref, _) => (down_type, down_ref),
                 _ => panic!("Non-value type in flip")
 
             };
 
             let (up_type, up_ref) = match resolve_expr(ctx, scope, up) {
-                ConstantItem(v) => (v.get_type(), ctx.up_op(0, |cell| eval::CheckOp(cell, v.clone()))),
-                ValueItem(up_type, _, up_ref) => (up_type, up_ref),
+                Item::Constant(v) => (v.get_type(), ctx.up_op(0, |cell| eval::ValOp::Check(cell, v.clone()))),
+                Item::Value(up_type, _, up_ref) => (up_type, up_ref),
                 _ => panic!("Non-value type in flip")
             };
 
             let common_type = types::common(down_type, up_type).expect("Flip expr sides must be of common type");
-            ValueItem(common_type, down_ref, up_ref)
+            Item::Value(common_type, down_ref, up_ref)
         }
 
-        ast::RangeExpr(box ref min_expr, box ref max_expr) => {
+        ast::Expr::Range(box ref min_expr, box ref max_expr) => {
             fn get_const_default_num(i: Item, _default: f64) -> f64 {
                 match i {
-                    ConstantItem(NumberValue(v)) => v,
+                    Item::Constant(Value::Number(v)) => v,
                     _ => panic!("Range expressions must be numeric constant")
                 }
             }
@@ -45,28 +40,28 @@ pub fn resolve_expr<'s>(ctx: &mut Context<'s>, scope: &Scope<'s>, e: &ast::Expr)
             let min = get_const_default_num(resolve_expr(ctx, scope, min_expr), Float::neg_infinity());
             let max = get_const_default_num(resolve_expr(ctx, scope, max_expr), Float::infinity());
 
-            let up = ctx.up_op(0, |cell| eval::RangeCheckOp(cell, min, max));
+            let up = ctx.up_op(0, |cell| eval::ValOp::RangeCheck(cell, min, max));
 
-            ValueItem(types::Number, Poison("Range can only be up-evaluated"), up)
+            Item::Value(types::Number, Poison("Range can only be up-evaluated"), up)
         }
 
-        ast::ChooseExpr(box ref e, ref c) => {
+        ast::Expr::Choose(box ref e, ref c) => {
             let pairs: Vec<(Value, Value)> = c.iter().map(|&(ref le, ref re)| {
                 let l = resolve_expr(ctx, scope, le);
                 let r = resolve_expr(ctx, scope, re);
 
                 match (l, r) {
-                    (ConstantItem(lv), ConstantItem(rv)) => (lv, rv),
+                    (Item::Constant(lv), Item::Constant(rv)) => (lv, rv),
                     _ => panic!("Choose expression arms must be constant, for now")
                 }
             }).collect();
 
             match resolve_expr(ctx, scope, e) {
-                ConstantItem(v) => ConstantItem(eval::eval_choose(&v, pairs.as_slice()).expect("Choice up not complete")),
-                ValueItem(_t, d, u) => {
-                    ValueItem(types::common_all(pairs.iter().map(|&(_, ref r)| r.get_type())).expect("Right sides are not of common type"),
-                        d.propagate(|d| ctx.down_op(eval::ChooseOp(d, pairs.clone()))),
-                        u.propagate(|u| ctx.up_op(u, |cell| eval::ChooseOp(cell,
+                Item::Constant(v) => Item::Constant(eval::eval_choose(&v, pairs.as_slice()).expect("Choice up not complete")),
+                Item::Value(_t, d, u) => {
+                    Item::Value(types::common_all(pairs.iter().map(|&(_, ref r)| r.get_type())).expect("Right sides are not of common type"),
+                        d.propagate(|d| ctx.down_op(eval::ValOp::Choose(d, pairs.clone()))),
+                        u.propagate(|u| ctx.up_op(u, |cell| eval::ValOp::Choose(cell,
                             pairs.iter().map(|&(ref l, ref r)| (r.clone(), l.clone())).collect()
                         )))
                     )
@@ -77,7 +72,7 @@ pub fn resolve_expr<'s>(ctx: &mut Context<'s>, scope: &Scope<'s>, e: &ast::Expr)
             // TODO: non-constant arms, check types for case coverage
         }
 
-        ast::ConcatExpr(ref v) =>  {
+        ast::Expr::Concat(ref v) =>  {
             let mut len = 0;
             let mut consts = Vec::new();
 
@@ -89,23 +84,23 @@ pub fn resolve_expr<'s>(ctx: &mut Context<'s>, scope: &Scope<'s>, e: &ast::Expr)
 
             for e in v.iter() {
                 match resolve_expr(ctx, scope, e) {
-                    ConstantItem(v) => {
+                    Item::Constant(v) => {
                         consts.push(v);
                     }
-                    ValueItem(_t, d, u) => {
+                    Item::Value(_t, d, u) => {
                         if down_poison.is_none() {
-                            if consts.len() != 0 { down_parts.push(eval::ConstSlice(consts.clone())); }
+                            if consts.len() != 0 { down_parts.push(eval::ValueSrc::ConstSlice(consts.clone())); }
                             match d {
-                                Dynamic(id) => down_parts.push(eval::DynElem(id)),
+                                Dynamic(id) => down_parts.push(eval::ValueSrc::DynElem(id)),
                                 Ignored => { down_poison = Some(Poison("Some elements are ignored in down evaluation")) }
                                 Poison(..) => { down_poison = Some(d) }
                             }
                         }
 
                         if up_poison.is_none() {
-                            if consts.len() != 0 { up_parts.push(eval::ConstSlice(consts.clone())); }
+                            if consts.len() != 0 { up_parts.push(eval::ValueSrc::ConstSlice(consts.clone())); }
                             match u {
-                                Dynamic(id) => up_parts.push(eval::DynElem(id)),
+                                Dynamic(id) => up_parts.push(eval::ValueSrc::DynElem(id)),
                                 Ignored => (),
                                 Poison(..) => { up_poison = Some(u) }
                             }
@@ -119,37 +114,37 @@ pub fn resolve_expr<'s>(ctx: &mut Context<'s>, scope: &Scope<'s>, e: &ast::Expr)
             }
 
             if len == 0 { // Length is only incremented on non-constant elements
-                ConstantItem(VectorValue(consts))
+                Item::Constant(Value::Vector(consts))
             } else {
                 let d = match down_poison {
                     Some(p) => p,
                     None => {
-                        if consts.len() != 0 { down_parts.push(eval::ConstSlice(consts.clone())); }
-                        ctx.down_op(eval::ConcatOp(down_parts))
+                        if consts.len() != 0 { down_parts.push(eval::ValueSrc::ConstSlice(consts.clone())); }
+                        ctx.down_op(eval::ValOp::Concat(down_parts))
                     }
                 };
 
                 let u = match up_poison {
                     Some(p) => p,
                     None => {
-                        if consts.len() != 0 { up_parts.push(eval::ConstSlice(consts.clone())); }
+                        if consts.len() != 0 { up_parts.push(eval::ValueSrc::ConstSlice(consts.clone())); }
                         if up_parts.len() != 0 {
                             let up_ref = ctx.make_register();
                             let mut pos = 0;
                             for elem in up_parts.into_iter() {
                                 match elem {
-                                    eval::ConstSlice(v) => {
+                                    eval::ValueSrc::ConstSlice(v) => {
                                         let slice = ctx.make_register();
-                                        ctx.add_up_op(slice, eval::ElemOp(up_ref, pos));
+                                        ctx.add_up_op(slice, eval::ValOp::Elem(up_ref, pos));
                                         pos += v.len();
-                                        ctx.add_up_op(0, eval::CheckOp(slice, VectorValue(v)));
+                                        ctx.add_up_op(0, eval::ValOp::Check(slice, Value::Vector(v)));
                                     }
-                                    eval::DynElem(id) => {
-                                        ctx.add_up_op(id, eval::ElemOp(up_ref, pos));
+                                    eval::ValueSrc::DynElem(id) => {
+                                        ctx.add_up_op(id, eval::ValOp::Elem(up_ref, pos));
                                         pos += 1;
                                     }
-                                    eval::DynSlice(id, len) => {
-                                        ctx.add_up_op(id, eval::SliceOp(up_ref, pos, len));
+                                    eval::ValueSrc::DynSlice(id, len) => {
+                                        ctx.add_up_op(id, eval::ValOp::Slice(up_ref, pos, len));
                                         pos += len;
                                     }
                                 }
@@ -159,34 +154,34 @@ pub fn resolve_expr<'s>(ctx: &mut Context<'s>, scope: &Scope<'s>, e: &ast::Expr)
                     }
                 };
 
-                ValueItem(types::Vector(len), d, u)
+                Item::Value(types::Vector(len), d, u)
             }
         }
 
-        ast::BinExpr(box ref a, op, box ref b) => {
+        ast::Expr::Bin(box ref a, op, box ref b) => {
             fn one_const<'s>(ctx: &mut Context<'s>, op: eval::BinOp,
                              _a_type: Type, a_down: ValueRef, a_up: ValueRef, b: f64) -> Item<'s> {
                 // TODO: check type
-                ValueItem(types::Number,
-                    a_down.propagate(|a| ctx.down_op(eval::BinaryConstOp(a, op, b))),
-                    a_up.propagate(|a| ctx.up_op(a, |i| eval::BinaryConstOp(i, op.invert(), b)))
+                Item::Value(types::Number,
+                    a_down.propagate(|a| ctx.down_op(eval::ValOp::BinaryConst(a, op, b))),
+                    a_up.propagate(|a| ctx.up_op(a, |i| eval::ValOp::BinaryConst(i, op.invert(), b)))
                 )
             }
 
             match (resolve_expr(ctx, scope, a), resolve_expr(ctx, scope, b)) {
-                (ConstantItem(NumberValue(a)), ConstantItem(NumberValue(b))) => {
-                    ConstantItem(NumberValue(op.eval(a, b)))
+                (Item::Constant(Value::Number(a)), Item::Constant(Value::Number(b))) => {
+                    Item::Constant(Value::Number(op.eval(a, b)))
                 }
-                (ValueItem(a_type, a_down, a_up), ConstantItem(NumberValue(b))) => {
+                (Item::Value(a_type, a_down, a_up), Item::Constant(Value::Number(b))) => {
                     one_const(ctx, op, a_type, a_down, a_up, b)
                 }
-                (ConstantItem(NumberValue(a)), ValueItem(b_type, b_down, b_up)) => {
+                (Item::Constant(Value::Number(a)), Item::Value(b_type, b_down, b_up)) => {
                     one_const(ctx, op.swap(), b_type, b_down, b_up, a)
                 }
-                (ValueItem(_a_type, a_down, _), ValueItem(_b_type, b_down, _)) => {
+                (Item::Value(_a_type, a_down, _), Item::Value(_b_type, b_down, _)) => {
                     // TODO: check type
-                    ValueItem(types::Number,
-                        propagate_pair(a_down, b_down, |a, b| ctx.down_op(eval::BinaryOp(a, op, b))),
+                    Item::Value(types::Number,
+                        propagate_pair(a_down, b_down, |a, b| ctx.down_op(eval::ValOp::Binary(a, op, b))),
                         Poison("At least one side of an up-evaluated binary operator must be constant")
                     )
                 }
@@ -194,58 +189,58 @@ pub fn resolve_expr<'s>(ctx: &mut Context<'s>, scope: &Scope<'s>, e: &ast::Expr)
             }
         }
 
-        ast::VarExpr(ref name) => {
+        ast::Expr::Var(ref name) => {
             scope.get(name.as_slice()).expect("Undefined variable")
         }
 
-        ast::TupExpr(ref items) => {
-            TupleItem(items.iter().map(|i| resolve_expr(ctx, scope, i)).collect())
+        ast::Expr::Tup(ref items) => {
+            Item::Tuple(items.iter().map(|i| resolve_expr(ctx, scope, i)).collect())
         }
 
-        ast::DotExpr(box ref _lexpr, ref _name) => unimplemented!(),
+        ast::Expr::Dot(box ref _lexpr, ref _name) => unimplemented!(),
     }
 }
 
 
 pub fn resolve_pattern<'s>(ctx: &mut Context<'s>, scope: &mut Scope<'s>, l: &ast::Expr, r: Item<'s>) {
     match *l {
-        ast::IgnoreExpr => (),
-        ast::ValueExpr(ref val) => {
+        ast::Expr::Ignore => (),
+        ast::Expr::Value(ref val) => {
             match r {
-                ConstantItem(ref v) => {
+                Item::Constant(ref v) => {
                     if v != val { panic!("Match always fails"); }
                 }
-                ValueItem(_t, d, u) => {
+                Item::Value(_t, d, u) => {
                     // TODO: type check
-                    d.propagate(|d| ctx.down_op(eval::CheckOp(d, val.clone())));
-                    u.propagate(|u| ctx.up_op(u, |_| eval::ConstOp(val.clone())));
+                    d.propagate(|d| ctx.down_op(eval::ValOp::Check(d, val.clone())));
+                    u.propagate(|u| ctx.up_op(u, |_| eval::ValOp::Const(val.clone())));
                 }
                 _ => panic!("Type error")
             }
         },
-        ast::RangeExpr(box ref _min_expr, box ref _max_expr) => panic!("patterns cannot be refutable"),
-        ast::FlipExpr(box ref down, box ref up) => {
+        ast::Expr::Range(box ref _min_expr, box ref _max_expr) => panic!("patterns cannot be refutable"),
+        ast::Expr::Flip(box ref down, box ref up) => {
                 match r {
-                    ConstantItem(..) => unimplemented!(),
-                    ValueItem(t, d, u) => {
-                        resolve_pattern(ctx, scope, down, ValueItem(t, d, Ignored));
-                        resolve_pattern(ctx, scope, up,   ValueItem(t, Ignored, u));
+                    Item::Constant(..) => unimplemented!(),
+                    Item::Value(t, d, u) => {
+                        resolve_pattern(ctx, scope, down, Item::Value(t, d, Ignored));
+                        resolve_pattern(ctx, scope, up,   Item::Value(t, Ignored, u));
                     }
                     _ => panic!("Type error")
                 }
         }
-        ast::ChooseExpr(box ref _e, ref _c) => unimplemented!(),
-        ast::ConcatExpr(ref _v) =>  unimplemented!(),
-        ast::BinExpr(box ref _a, _op, box ref _b) => unimplemented!(),
+        ast::Expr::Choose(box ref _e, ref _c) => unimplemented!(),
+        ast::Expr::Concat(ref _v) =>  unimplemented!(),
+        ast::Expr::Bin(box ref _a, _op, box ref _b) => unimplemented!(),
 
-        ast::VarExpr(ref name) => {
+        ast::Expr::Var(ref name) => {
             debug!("defined {} = {}", name, r);
             scope.bind(name.as_slice(), r);
         }
 
-        ast::TupExpr(ref exprs) => {
+        ast::Expr::Tup(ref exprs) => {
             match r {
-                TupleItem(v) => {
+                Item::Tuple(v) => {
                     if exprs.len() != v.len() {
                         panic!("can't bind a tuple with a different length");
                     }
@@ -257,19 +252,19 @@ pub fn resolve_pattern<'s>(ctx: &mut Context<'s>, scope: &mut Scope<'s>, l: &ast
             }
         }
 
-        ast::DotExpr(box ref _lexpr, ref _name) => panic!("Cannot declare a property"),
+        ast::Expr::Dot(box ref _lexpr, ref _name) => panic!("Cannot declare a property"),
     }
 }
 
 pub fn expr_shape(a: &ast::Expr) -> types::Shape {
     match *a {
-        ast::IgnoreExpr => types::ShapeVal(types::Bottom, false, false),
-        ast::ValueExpr(ref val) => types::ShapeVal(val.get_type(), true, true),
-        ast::RangeExpr(..) | ast::FlipExpr(..)
-        | ast::ChooseExpr(..) | ast::ConcatExpr(..)
-        | ast::BinExpr(..) | ast::VarExpr(..) => types::ShapeVal(types::Bottom, true, true),
-        ast::TupExpr(ref exprs) => types::ShapeTup(exprs.iter().map(|e| expr_shape(e)).collect()),
-        ast::DotExpr(box ref _lexpr, ref _name) => panic!("Cannot declare a property"),
+        ast::Expr::Ignore => types::Shape::Val(types::Bottom, false, false),
+        ast::Expr::Value(ref val) => types::Shape::Val(val.get_type(), true, true),
+        ast::Expr::Range(..) | ast::Expr::Flip(..)
+        | ast::Expr::Choose(..) | ast::Expr::Concat(..)
+        | ast::Expr::Bin(..) | ast::Expr::Var(..) => types::Shape::Val(types::Bottom, true, true),
+        ast::Expr::Tup(ref exprs) => types::Shape::Tup(exprs.iter().map(|e| expr_shape(e)).collect()),
+        ast::Expr::Dot(box ref _lexpr, ref _name) => panic!("Cannot declare a property"),
     }
 }
 
@@ -280,18 +275,10 @@ mod test {
     use session::Session;
     use resolve::context::{Context, ValueID};
     use resolve::types;
-    use ast::{
-        Value,
-            NumberValue,
-            IntegerValue,
-            VectorValue,
-            SymbolValue,
-    };
+    use ast::Value;
     use resolve::scope::{
         Scope,
         Item,
-            ConstantItem,
-            ValueItem,
         ValueRef,
             Dynamic,
             Ignored,
@@ -307,30 +294,30 @@ mod test {
         let ses = Session::new();
         let mut ctx = Context::new(&ses);
         let mut scope = Scope::new();
-        scope.bind("x", ValueItem(types::Bottom, Dynamic(XD), Dynamic(XU)));
-        scope.bind("y", ValueItem(types::Bottom, Dynamic(YD), Dynamic(YU)));
+        scope.bind("x", Item::Value(types::Bottom, Dynamic(XD), Dynamic(XU)));
+        scope.bind("y", Item::Value(types::Bottom, Dynamic(YD), Dynamic(YU)));
         let e = grammar::valexpr(s).unwrap();
         let r = resolve_expr(&mut ctx, &scope, &e);
         test(r)
     }
 
     fn check_const(s: &str, v: Value) {
-        check(s, proc(r) assert_eq!(r, ConstantItem(v)));
+        check(s, proc(r) assert_eq!(r, Item::Constant(v)));
     }
 
     fn check_dyn(s: &str, t: types::Type, d: ValueRef, u: ValueRef) {
         check(s, proc(r) {
-            assert_eq!(r, ValueItem(t, d, u))
+            assert_eq!(r, Item::Value(t, d, u))
         })
     }
 
-    #[test] fn literal_number() { check_const("55",   NumberValue(55f64)); }
-    #[test] fn literal_symbol() { check_const("#foo", SymbolValue("foo".to_string())); }
-    #[test] fn literal_int()    { check_const("#10",  IntegerValue(10)); }
+    #[test] fn literal_number() { check_const("55",   Value::Number(55f64)); }
+    #[test] fn literal_symbol() { check_const("#foo", Value::Symbol("foo".to_string())); }
+    #[test] fn literal_int()    { check_const("#10",  Value::Integer(10)); }
 
-    #[test] fn const_add()      { check_const("2 + 3", NumberValue(5f64)); }
-    #[test] fn const_switch()   { check_const("(#bar)[#foo=#a, #bar=#b, #baz=#c]", SymbolValue("b".to_string())); }
-    #[test] fn const_concat()   { check_const("[#1, #2]", VectorValue(vec![IntegerValue(1), IntegerValue(2)])); }
+    #[test] fn const_add()      { check_const("2 + 3", Value::Number(5f64)); }
+    #[test] fn const_switch()   { check_const("(#bar)[#foo=#a, #bar=#b, #baz=#c]", Value::Symbol("b".to_string())); }
+    #[test] fn const_concat()   { check_const("[#1, #2]", Value::Vector(vec![Value::Integer(1), Value::Integer(2)])); }
 
     #[test] fn flip() {
         check_dyn("x!y", types::Bottom, Dynamic(XD), Dynamic(YU));
@@ -346,6 +333,6 @@ mod test {
     #[test]
     #[should_fail]
     fn test_add_wrongtype() {
-        check_const("2 + #test", NumberValue(2.)); // TODO: make sure it fails for the right reason
+        check_const("2 + #test", Value::Number(2.)); // TODO: make sure it fails for the right reason
     }
 }
