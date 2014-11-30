@@ -27,7 +27,7 @@ impl<'s> Scope<'s> {
     }
 
     pub fn get(&self, name: &str) -> Option<Item<'s>> {
-        self.names.find_equiv(name).map(|x| x.clone())
+        self.names.get(name).cloned()
     }
 
     pub fn child(&self) -> Scope<'s> {
@@ -120,7 +120,7 @@ pub fn propagate_pair(a: ValueRef, b: ValueRef, f: |ValueID, ValueID| -> ValueRe
 }
 
 impl fmt::Show for ValueRef {
-    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::FormatError> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         match *self {
             Ignored => write!(f, "ignore"),
             Dynamic(c) => write!(f, "%{}", c),

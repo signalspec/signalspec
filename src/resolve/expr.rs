@@ -1,3 +1,5 @@
+use std::num::Float;
+
 use ast;
 use ast::Value;
 use eval;

@@ -22,7 +22,7 @@ pub fn common(a: Type, b: Type) -> Option<Type>{
 }
 
 /// Return the intersection of a vector of types, or None if the types don't intersect
-pub fn common_all<T:Iterator<Type>>(mut l: T) -> Option<Type> {
+pub fn common_all<T:Iterator<Type>>(l: T) -> Option<Type> {
     l.fold(Some(Bottom), |opt_a, b|{ opt_a.and_then(|a| common(a, b)) })
 }
 

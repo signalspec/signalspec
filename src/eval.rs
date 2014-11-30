@@ -131,7 +131,7 @@ impl State {
     }
 
     pub fn get(&self, reg: ValueID) -> &Value {
-        debug!("get {}: {}", reg, self.registers.find(&reg));
+        debug!("get {}: {}", reg, self.registers.get(&reg));
         &self.registers[reg]
     }
 

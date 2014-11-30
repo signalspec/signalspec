@@ -145,7 +145,7 @@ impl Program {
         task::spawn(proc(){
             let mut writer = MemWriter::new();
             dumpfile::write_values(&mut writer, &mut t2);
-            let v = writer.unwrap();
+            let v = writer.into_inner();
             assert_eq!(top, str::from_utf8(v[]).unwrap());
         });
         let mut state = eval::State::new();
