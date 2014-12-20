@@ -82,7 +82,7 @@ impl<'s> fmt::Show for Item<'s> {
 }
 
 /// A constant value or ID for obtaining a value at runtime
-#[deriving(PartialEq, Clone)]
+#[deriving(Copy, PartialEq, Clone)]
 pub enum ValueRef {
     Ignored,
 

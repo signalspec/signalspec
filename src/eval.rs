@@ -56,7 +56,7 @@ impl ValOp {
 }
 
 /// Binary numeric operators
-#[deriving(PartialEq, Eq, Show)]
+#[deriving(Copy, PartialEq, Eq, Show)]
 pub enum BinOp {
     Add,       // a + b
     Sub,       // a - b

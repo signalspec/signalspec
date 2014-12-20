@@ -292,7 +292,7 @@ mod test {
     static YD: ValueID = 102;
     static YU: ValueID = 103;
 
-    fn check(s: &str, test: proc(Item)) {
+    fn check<T: FnOnce(Item)>(s: &str, test: T) {
         let ses = Session::new();
         let mut ctx = Context::new(&ses);
         let mut scope = Scope::new();
@@ -304,11 +304,11 @@ mod test {
     }
 
     fn check_const(s: &str, v: Value) {
-        check(s, proc(r) assert_eq!(r, Item::Constant(v)));
+        check(s, move |r| assert_eq!(r, Item::Constant(v)));
     }
 
     fn check_dyn(s: &str, t: types::Type, d: ValueRef, u: ValueRef) {
-        check(s, proc(r) {
+        check(s, move |r| {
             assert_eq!(r, Item::Value(t, d, u))
         })
     }

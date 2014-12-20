@@ -2,7 +2,7 @@ use arena::TypedArena;
 use std::collections::HashMap;
 use std::cell::RefCell;
 
-#[deriving(Show, PartialEq, Eq, Hash, Clone)]
+#[deriving(Copy, Show, PartialEq, Eq, Hash, Clone)]
 pub struct Name(u32);
 
 pub struct Interner<'s> {

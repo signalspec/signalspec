@@ -1,6 +1,6 @@
 pub use self::Type::*;
 
-#[deriving(Show, PartialEq, Clone)]
+#[deriving(Copy, Show, PartialEq, Clone)]
 /// A type represents a set of possible values
 pub enum Type {
     Symbol, // TODO: include variants?

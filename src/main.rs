@@ -56,13 +56,13 @@ fn main() {
     let (s1, mut s2) = exec::Connection::new();
     let (mut t1, t2) = exec::Connection::new();
 
-    task::spawn(proc() {
+    task::spawn(move || {
         let mut s1 = s1;
         let mut i = io::stdin();
         dumpfile::read_values(&mut i, &mut s1);
     });
 
-    task::spawn(proc() {
+    task::spawn(move || {
         let mut t2 = t2;
         let mut o = io::stdout();
         dumpfile::write_values(&mut o, &mut t2);

@@ -75,7 +75,7 @@ impl <'s> IntoItem<'s> for Value {
     fn into_item(self) -> Item<'s> { Item::Constant(self) }
 }
 
-#[deriving(Clone, Show)]
+#[deriving(Copy, Clone, Show)]
 pub struct Var {
     pub ty: resolve::types::Type,
     pub down: ValueRef,
@@ -138,11 +138,11 @@ impl Program {
     pub fn run_test(&self, bottom: &'static str, top: &'static str) -> (bool, eval::State) {
         let (mut s1, mut s2) = exec::Connection::new();
         let (mut t1, mut t2) = exec::Connection::new();
-        task::spawn(proc(){
+        task::spawn(move || {
             let mut reader = MemReader::new(bottom.as_bytes().to_vec());
             dumpfile::read_values(&mut reader, &mut s2);
         });
-        task::spawn(proc(){
+        task::spawn(move || {
             let mut writer = MemWriter::new();
             dumpfile::write_values(&mut writer, &mut t2);
             let v = writer.into_inner();
