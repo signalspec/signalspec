@@ -1,5 +1,5 @@
 #![allow(dead_code)]
-#![feature(phase, if_let, slicing_syntax, macro_rules, globs)]
+#![feature(phase, slicing_syntax, macro_rules, globs)]
 
 extern crate arena;
 extern crate collections;

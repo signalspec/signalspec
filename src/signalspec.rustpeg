@@ -144,7 +144,7 @@ valexpr -> ast::Expr
 // Lexer
 
 WHITESPACE
-    = [\u0009\u000B\u000C\u0020\u00A0\uFEFF\u1680\u180E\u2000-\u200A\u202F\u205F\u3000]
+    = [\u{09}\u{0B}\u{0C}\u{20}\u{A0}\u{FEFF}\u{1680}\u{180E}\u{2000}-\u{200A}\u{202F}\u{205F}\u{3000}]
     / "\\" TERM
 
 TERM
