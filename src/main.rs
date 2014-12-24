@@ -11,7 +11,7 @@ use std::os;
 use std::str;
 use std::io;
 use std::io::fs::File;
-use std::task;
+use std::thread::Thread;
 use std::default::Default;
 
 #[macro_escape]
@@ -25,7 +25,7 @@ mod interner;
 mod data_usage;
 #[cfg(test)] mod test;
 
-peg_file! grammar("signalspec.rustpeg")
+peg_file! grammar("signalspec.rustpeg");
 
 fn main() {
     let sess = session::Session::new();
@@ -56,13 +56,13 @@ fn main() {
     let (s1, mut s2) = exec::Connection::new();
     let (mut t1, t2) = exec::Connection::new();
 
-    task::spawn(move || {
+    let reader_thread = Thread::spawn(move || {
         let mut s1 = s1;
         let mut i = io::stdin();
         dumpfile::read_values(&mut i, &mut s1);
     });
 
-    task::spawn(move || {
+    let writer_thread = Thread::spawn(move || {
         let mut t2 = t2;
         let mut o = io::stdout();
         dumpfile::write_values(&mut o, &mut t2);
@@ -70,6 +70,11 @@ fn main() {
 
     let mut state = eval::State::new();
     let r = exec::exec(&mut state, &event, &mut s2, &mut t1);
+
+    drop(s2);
+    drop(t1);
+    reader_thread.join().ok().unwrap();
+    writer_thread.join().ok().unwrap();
 
     os::set_exit_status(if r { 0 } else { 1 });
 }

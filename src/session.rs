@@ -14,7 +14,7 @@ use grammar;
 
 use std::str;
 use std::io::{MemReader, MemWriter};
-use std::task;
+use std::thread::Thread;
 use exec;
 use dumpfile;
 use eval;
@@ -94,7 +94,7 @@ macro_rules! tuple_item[
         Tuple(vec![$($x.into_item()),*])
     });
     ($($x:expr,)*) => (tuple_item![$($x),*])
-]
+];
 
 impl <'s> IntoItem<'s> for () {
     fn into_item(self) -> Item<'s> { Item::Tuple(Vec::new()) }
@@ -138,11 +138,11 @@ impl Program {
     pub fn run_test(&self, bottom: &'static str, top: &'static str) -> (bool, eval::State) {
         let (mut s1, mut s2) = exec::Connection::new();
         let (mut t1, mut t2) = exec::Connection::new();
-        task::spawn(move || {
+        let reader_thread = Thread::spawn(move || {
             let mut reader = MemReader::new(bottom.as_bytes().to_vec());
             dumpfile::read_values(&mut reader, &mut s2);
         });
-        task::spawn(move || {
+        let writer_thread = Thread::spawn(move || {
             let mut writer = MemWriter::new();
             dumpfile::write_values(&mut writer, &mut t2);
             let v = writer.into_inner();
@@ -151,6 +151,12 @@ impl Program {
         let mut state = eval::State::new();
 
         let r = exec::exec(&mut state, &self.step, &mut s1, &mut t1);
+
+        drop(s1);
+        drop(t1);
+        reader_thread.join().ok().unwrap();
+        writer_thread.join().ok().unwrap();
+
         (r, state)
     }
 

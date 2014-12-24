@@ -1,4 +1,5 @@
 use std::comm;
+use std::iter::repeat;
 
 use resolve::scope::{ValueRef, Dynamic};
 use resolve::context::ValueID;
@@ -62,7 +63,7 @@ fn first(s: &Step) -> Option<&Step> {
 }
 
 pub fn print_step_tree(s: &Step, indent: uint) {
-    let i = " ".repeat(indent);
+    let i: String = repeat(" ").take(indent).collect();
     match *s {
         Step::Nop => println!("{}NOP", i),
         Step::Token(_, ref message) => {
@@ -73,7 +74,7 @@ pub fn print_step_tree(s: &Step, indent: uint) {
             print_step_tree(body, indent+1);
         }
         Step::Seq(ref steps) => {
-            println!("{}Seq", i)
+            println!("{}Seq", i);
             for c in steps.iter() {
                 print_step_tree(c, indent+1);
             }
@@ -205,7 +206,7 @@ pub fn exec(state: &mut eval::State, s: &Step, parent: &mut Connection, child: &
             match child.recv() {
                 Ok(m) => {
                     debug!("tokentop: {}, {}", ops, msg);
-                    debug!("down: {}", m)
+                    debug!("down: {}", m);
 
                     let mut iter = m.into_iter();
                     // TODO: replace the dummy value with .expect("Not enough values in message")
