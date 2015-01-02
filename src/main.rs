@@ -53,26 +53,26 @@ fn main() {
     data_usage::pass(&mut event, &mut signal_info);
     //exec::print_step_tree(&event, 0);
 
-    let (s1, mut s2) = exec::Connection::new();
-    let (mut t1, t2) = exec::Connection::new();
+    let (mut s1, s2) = exec::Connection::new(&signal_info.downwards);
+    let (t1, mut t2) = exec::Connection::new(&signal_info.upwards);
 
     let reader_thread = Thread::spawn(move || {
-        let mut s1 = s1;
+        let mut s2 = s2;
         let mut i = io::stdin();
-        dumpfile::read_values(&mut i, &mut s1);
+        dumpfile::read_values(&mut i, &mut s2);
     });
 
     let writer_thread = Thread::spawn(move || {
-        let mut t2 = t2;
+        let mut t1 = t1;
         let mut o = io::stdout();
-        dumpfile::write_values(&mut o, &mut t2);
+        dumpfile::write_values(&mut o, &mut t1);
     });
 
     let mut state = eval::State::new();
-    let r = exec::exec(&mut state, &event, &mut s2, &mut t1);
+    let r = exec::exec(&mut state, &event, &mut s1, &mut t2);
 
-    drop(s2);
-    drop(t1);
+    drop(s1);
+    drop(t2);
     reader_thread.join().ok().unwrap();
     writer_thread.join().ok().unwrap();
 

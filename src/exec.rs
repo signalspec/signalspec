@@ -3,6 +3,7 @@ use std::iter::repeat;
 
 use resolve::scope::{ValueRef, Dynamic};
 use resolve::context::ValueID;
+use resolve::types::Shape;
 use ast::Value;
 use eval;
 
@@ -93,8 +94,8 @@ pub fn print_step_tree(s: &Step, indent: uint) {
 }
 
 pub struct Connection {
-    rx: comm::Receiver<Vec<Value>>,
-    tx: comm::Sender<Vec<Value>>,
+    rx: Option<comm::Receiver<Vec<Value>>>,
+    tx: Option<comm::Sender<Vec<Value>>>,
 
     lookahead_tx: Option<Vec<Value>>,
     lookahead_rx: Option<Vec<Value>>,
@@ -103,27 +104,48 @@ pub struct Connection {
 }
 
 impl Connection {
-    pub fn new() -> (Connection, Connection) {
-        let (s1, r1) = comm::channel();
-        let (s2, r2) = comm::channel();
-        (Connection{ tx: s1, rx: r2, lookahead_tx: None, lookahead_rx: None, alive: true },
-         Connection{ tx: s2, rx: r1, lookahead_tx: None, lookahead_rx: None, alive: true })
+    pub fn new(s: &Shape) -> (Connection, Connection) {
+        let (is_down, is_up) = s.contains_direction();
+
+        let (s1, r1) = if is_down {
+            let (a, b) = comm::channel();
+            (Some(a), Some(b))
+        } else { (None, None) };
+
+        let (s2, r2) = if is_up {
+            let (a, b) = comm::channel();
+            (Some(a), Some(b))
+        } else { (None, None) };
+
+        let alive = is_up || is_down;
+
+        (Connection{ tx: s1, rx: r2, lookahead_tx: None, lookahead_rx: None, alive: alive },
+         Connection{ tx: s2, rx: r1, lookahead_tx: None, lookahead_rx: None, alive: alive })
     }
 
     pub fn send(&mut self, v: Vec<Value>) -> Result<(), Vec<Value>> {
-        let r = self.tx.send_opt(v);
-        if r.is_err() {
-            self.alive = false;
+        if let Some(ref tx) = self.tx {
+            let r = tx.send_opt(v);
+            if r.is_err() {
+                self.alive = false;
+            }
+            r
+        } else {
+            assert!(v.len() == 0);
+            if self.alive { Ok(()) } else { Err(v) }
         }
-        r
     }
 
     pub fn recv(&mut self) -> Result<Vec<Value>, ()> {
-        let r = self.rx.recv_opt();
-        if r.is_err() {
-            self.alive = false;
+        if let Some(ref rx) = self.rx {
+            let r = rx.recv_opt();
+            if r.is_err() {
+                self.alive = false;
+            }
+            r
+        } else {
+            if self.alive { Ok(vec![]) } else { Err(()) }
         }
-        r
     }
 
     pub fn lookahead_send(&mut self, v: Vec<Value>) {

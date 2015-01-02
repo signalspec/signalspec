@@ -13,7 +13,7 @@ use data_usage;
 use grammar;
 
 use std::str;
-use std::io::{MemReader, MemWriter};
+use std::io::{IoResult, MemReader, MemWriter};
 use std::thread::Thread;
 use exec;
 use dumpfile;
@@ -82,7 +82,7 @@ pub struct Var {
     pub up: ValueRef,
 }
 
-impl <'s> IntoItem<'s> for Var {
+impl<'s> IntoItem<'s> for Var {
     fn into_item(self) -> Item<'s> { Item::Value(self.ty, self.down, self.up) }
 }
 
@@ -136,24 +136,24 @@ pub struct Program {
 
 impl Program {
     pub fn run_test(&self, bottom: &'static str, top: &'static str) -> (bool, eval::State) {
-        let (mut s1, mut s2) = exec::Connection::new();
-        let (mut t1, mut t2) = exec::Connection::new();
+        let (mut s1, mut s2) = exec::Connection::new(&self.signals.downwards);
+        let (mut t1, mut t2) = exec::Connection::new(&self.signals.upwards);
         let reader_thread = Thread::spawn(move || {
             let mut reader = MemReader::new(bottom.as_bytes().to_vec());
             dumpfile::read_values(&mut reader, &mut s2);
         });
         let writer_thread = Thread::spawn(move || {
             let mut writer = MemWriter::new();
-            dumpfile::write_values(&mut writer, &mut t2);
+            dumpfile::write_values(&mut writer, &mut t1);
             let v = writer.into_inner();
             assert_eq!(top, str::from_utf8(v[]).unwrap());
         });
         let mut state = eval::State::new();
 
-        let r = exec::exec(&mut state, &self.step, &mut s1, &mut t1);
+        let r = exec::exec(&mut state, &self.step, &mut s1, &mut t2);
 
         drop(s1);
-        drop(t1);
+        drop(t2);
         reader_thread.join().ok().unwrap();
         writer_thread.join().ok().unwrap();
 
@@ -175,4 +175,18 @@ impl Program {
         }
         r
     }
+}
+
+pub trait Process {
+    fn run(&self, state: &mut eval::State, downwards: &mut exec::Connection, upwards: &mut exec::Connection) -> bool;
+}
+
+impl Process for Program {
+    fn run(&self, state: &mut eval::State, downwards: &mut exec::Connection, upwards: &mut exec::Connection) -> bool {
+        exec::exec(state, &self.step, downwards, upwards)
+    }
+}
+
+pub trait IoProcess {
+    fn run(&mut self, upwards: &mut exec::Connection) -> IoResult<()>;
 }
