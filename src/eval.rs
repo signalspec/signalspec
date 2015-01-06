@@ -2,14 +2,14 @@ use std::collections::VecMap;
 use ast::Value;
 use resolve::context::{ValueID};
 
-#[deriving(PartialEq, Show)]
+#[derive(PartialEq, Show)]
 pub enum ValueSrc {
     ConstSlice(Vec<Value>),
     DynElem(ValueID),
     DynSlice(ValueID, uint),
 }
 
-#[deriving(PartialEq, Show)]
+#[derive(PartialEq, Show)]
 pub enum ValOp {
     Const(Value),
     Check(ValueID, Value),
@@ -56,7 +56,7 @@ impl ValOp {
 }
 
 /// Binary numeric operators
-#[deriving(Copy, PartialEq, Eq, Show)]
+#[derive(Copy, PartialEq, Eq, Show)]
 pub enum BinOp {
     Add,       // a + b
     Sub,       // a - b
@@ -105,7 +105,7 @@ impl BinOp {
     }
 }
 
-#[deriving(Show)]
+#[derive(Show)]
 pub struct Ops {
     pub entry: Vec<(ValueID, ValOp)>,
     pub exit: Vec<(ValueID, ValOp)>,

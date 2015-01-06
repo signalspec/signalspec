@@ -32,7 +32,7 @@ pub struct Def {
 pub struct UseDef(pub String);
 pub struct LetDef(pub String, pub Expr);
 
-#[deriving(PartialEq, Clone)]
+#[derive(PartialEq, Clone)]
 pub enum Value {
     Number(f64),
     Integer(i64),

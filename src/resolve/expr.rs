@@ -6,7 +6,7 @@ use eval;
 use resolve::context::Context;
 use resolve::scope::{ Scope, Item };
 use resolve::scope::{ ValueRef, Dynamic, Ignored, Poison, propagate_pair };
-use resolve::types::{ mod, Type };
+use resolve::types::{ self, Type };
 
 pub fn resolve_expr<'s>(ctx: &mut Context<'s>, scope: &Scope<'s>, e: &ast::Expr) -> Item<'s> {
     match *e {

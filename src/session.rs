@@ -75,7 +75,7 @@ impl <'s> IntoItem<'s> for Value {
     fn into_item(self) -> Item<'s> { Item::Constant(self) }
 }
 
-#[deriving(Copy, Clone, Show)]
+#[derive(Copy, Clone, Show)]
 pub struct Var {
     pub ty: resolve::types::Type,
     pub down: ValueRef,

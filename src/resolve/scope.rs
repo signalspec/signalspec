@@ -10,7 +10,7 @@ use ast::Value;
 pub use self::ValueRef::{ Ignored, Dynamic, Poison };
 
 /// A collection of named Items.
-#[deriving(Clone)]
+#[derive(Clone)]
 pub struct Scope<'s>{
     pub names: HashMap<String, Item<'s>>,
 }
@@ -38,7 +38,7 @@ impl<'s> Scope<'s> {
 }
 
 /// A thing associated with a name in a Scope
-#[deriving(Clone)]
+#[derive(Clone)]
 pub enum Item<'s> {
     Constant(Value),
     Value(Type, ValueRef /*Down*/, ValueRef /*Up*/),
@@ -82,7 +82,7 @@ impl<'s> fmt::Show for Item<'s> {
 }
 
 /// A constant value or ID for obtaining a value at runtime
-#[deriving(Copy, PartialEq, Clone)]
+#[derive(Copy, PartialEq, Clone)]
 pub enum ValueRef {
     Ignored,
 

@@ -1,14 +1,13 @@
-use std::vec;
 use session::Session;
 use eval;
 use exec;
-use resolve::types::{ mod, Shape };
+use resolve::types::{ self, Shape };
 use resolve::scope::{ ValueRef, Dynamic, Item };
 
 /// Dynamic Cell
 pub type ValueID = uint;
 
-#[deriving(Show)]
+#[derive(Show)]
 pub struct SignalInfo {
     pub downwards: Shape,
     pub upwards: Shape,
@@ -79,7 +78,7 @@ impl<'session> Context<'session> {
             // If the shape is unknown, fill it in based on the item
             if let Shape::Unknown(is_down, is_up) = *shape {
                 *shape = match item {
-                    Item::Tuple(ref t) => Shape::Tup(Vec::from_elem(t.len(), Shape::Unknown(is_down, is_up))),
+                    Item::Tuple(ref t) => Shape::Tup(t.iter().map(|_| Shape::Unknown(is_down, is_up)).collect()),
                     _ => Shape::Val(types::Bottom, is_down, is_up)
                 }
             }
@@ -119,7 +118,7 @@ impl<'session> Context<'session> {
                     (exec::Message::Value(d, u), Item::Value(t, d, u))
                 }
                 Shape::Tup(ref v) => {
-                    let (ms, is) = vec::unzip(v.iter().map(|s| recurse(ctx, s)));
+                    let (ms, is) = v.iter().map(|s| recurse(ctx, s)).unzip();
                     (exec::Message::Tuple(ms), Item::Tuple(is))
                 }
                 Shape::Unknown(..) => panic!("Signal shape not fully constrained"),

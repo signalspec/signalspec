@@ -1,4 +1,4 @@
-use std::comm;
+use std::sync::mpsc::{Receiver, Sender, channel};
 use std::iter::repeat;
 
 use resolve::scope::{ValueRef, Dynamic};
@@ -15,7 +15,7 @@ pub trait PrimitiveStep {
 
 pub type ValuePair = (/*down*/ ValueRef, /*up*/ ValueRef);
 
-#[deriving(Show)]
+#[derive(Show)]
 pub enum Message {
     Value(/*down*/ ValueRef, /*up*/ ValueRef),
     Tuple(Vec<Message>),
@@ -43,7 +43,7 @@ impl Message {
     }
 }
 
-#[deriving(Show)]
+#[derive(Show)]
 pub enum Step {
     Nop,
     Token(eval::Ops, Message),
@@ -94,8 +94,8 @@ pub fn print_step_tree(s: &Step, indent: uint) {
 }
 
 pub struct Connection {
-    rx: Option<comm::Receiver<Vec<Value>>>,
-    tx: Option<comm::Sender<Vec<Value>>>,
+    rx: Option<Receiver<Vec<Value>>>,
+    tx: Option<Sender<Vec<Value>>>,
 
     lookahead_tx: Option<Vec<Value>>,
     lookahead_rx: Option<Vec<Value>>,
@@ -108,12 +108,12 @@ impl Connection {
         let (is_down, is_up) = s.contains_direction();
 
         let (s1, r1) = if is_down {
-            let (a, b) = comm::channel();
+            let (a, b) = channel();
             (Some(a), Some(b))
         } else { (None, None) };
 
         let (s2, r2) = if is_up {
-            let (a, b) = comm::channel();
+            let (a, b) = channel();
             (Some(a), Some(b))
         } else { (None, None) };
 
@@ -123,22 +123,22 @@ impl Connection {
          Connection{ tx: s2, rx: r1, lookahead_tx: None, lookahead_rx: None, alive: alive })
     }
 
-    pub fn send(&mut self, v: Vec<Value>) -> Result<(), Vec<Value>> {
+    pub fn send(&mut self, v: Vec<Value>) -> Result<(), ()> {
         if let Some(ref tx) = self.tx {
-            let r = tx.send_opt(v);
+            let r = tx.send(v).map_err(|_| ());
             if r.is_err() {
                 self.alive = false;
             }
             r
         } else {
             assert!(v.len() == 0);
-            if self.alive { Ok(()) } else { Err(v) }
+            if self.alive { Ok(()) } else { Err(()) }
         }
     }
 
     pub fn recv(&mut self) -> Result<Vec<Value>, ()> {
         if let Some(ref rx) = self.rx {
-            let r = rx.recv_opt();
+            let r = rx.recv().map_err(|_| ());
             if r.is_err() {
                 self.alive = false;
             }
