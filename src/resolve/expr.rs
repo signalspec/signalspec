@@ -199,6 +199,8 @@ pub fn resolve_expr<'s>(ctx: &mut Context<'s>, scope: &Scope<'s>, e: &ast::Expr)
             Item::Tuple(items.iter().map(|i| resolve_expr(ctx, scope, i)).collect())
         }
 
+        ast::Expr::String(ref s) => Item::String(s.clone()),
+
         ast::Expr::Dot(box ref _lexpr, ref _name) => unimplemented!(),
     }
 }
@@ -254,6 +256,7 @@ pub fn resolve_pattern<'s>(ctx: &mut Context<'s>, scope: &mut Scope<'s>, l: &ast
             }
         }
 
+        ast::Expr::String(_) => panic!("Cannot declare a string"),
         ast::Expr::Dot(box ref _lexpr, ref _name) => panic!("Cannot declare a property"),
     }
 }
@@ -267,6 +270,7 @@ pub fn expr_shape(a: &ast::Expr) -> types::Shape {
         | ast::Expr::Bin(..) | ast::Expr::Var(..) => types::Shape::Val(types::Bottom, true, true),
         ast::Expr::Tup(ref exprs) => types::Shape::Tup(exprs.iter().map(|e| expr_shape(e)).collect()),
         ast::Expr::Dot(box ref _lexpr, ref _name) => panic!("Cannot declare a property"),
+        ast::Expr::String(_) => panic!("Strings cannot be sent"),
     }
 }
 
@@ -336,5 +340,10 @@ mod test {
     #[should_fail]
     fn test_add_wrongtype() {
         check_const("2 + #test", Value::Number(2.)); // TODO: make sure it fails for the right reason
+    }
+
+    #[test]
+    fn test_string() {
+        check("\"foo\"", |i| assert_eq!(i, Item::String("foo".to_string())))
     }
 }

@@ -1,6 +1,7 @@
 use ast;
 use eval;
 use std::num::from_str_radix;
+use std::char;
 
 #[export]
 module -> ast::Module
@@ -94,6 +95,7 @@ valexpr -> ast::Expr
 
     literal_expr -> ast::Expr
         = v:literal { ast::Expr::Value(v) }
+        / s:doubleQuotedString { ast::Expr::String(s) } // Not technically a value
 
     #[export]
     literal -> ast::Value
@@ -177,3 +179,18 @@ integer -> i64 = "-"?[0-9]+
 
 floatnumber -> f64 = "-"?[0-9]+("."[0-9]+)?
     { match_str.parse().unwrap() }
+
+doubleQuotedString -> String
+  = '"' s:doubleQuotedCharacter* '"' { s.into_iter().collect() }
+
+doubleQuotedCharacter -> char
+  = simpleDoubleQuotedCharacter
+  / unicodeEscapeSequence
+
+simpleDoubleQuotedCharacter -> char
+  = !('"' / "\\" / TERM) . { match_str.char_at(0) }
+
+unicodeEscapeSequence -> char
+  = "\\u{" value:([0-9a-fA-F]+ { from_str_radix::<int>(match_str, 16)}) "}" {
+      char::from_u32(value.unwrap() as u32).unwrap()
+    }

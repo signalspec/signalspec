@@ -68,6 +68,7 @@ impl fmt::Show for Value {
 
 pub enum Expr {
     Value(Value),
+    String(String), // Produces an Item, not a Value, because it isn't fixed size
     Tup(Vec<Expr>),
     Ignore,
 

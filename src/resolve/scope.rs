@@ -43,7 +43,8 @@ pub enum Item<'s> {
     Constant(Value),
     Value(Type, ValueRef /*Down*/, ValueRef /*Up*/),
     Def(&'s EventClosure<'s>),
-    Tuple(Vec<Item<'s>>) // TODO: named components
+    Tuple(Vec<Item<'s>>), // TODO: named components
+    String(String), // Not a Value because it is not of constant size
 }
 
 impl<'s> PartialEq for Item<'s> {
@@ -52,6 +53,7 @@ impl<'s> PartialEq for Item<'s> {
             (&Item::Value(ref ta, ref da, ref ua), &Item::Value(ref tb, ref db, ref ub))
                 if ta==tb && da==db && ua==ub => true,
             (&Item::Constant(ref a), &Item::Constant(ref b)) if a == b => true,
+            (&Item::String(ref a), &Item::String(ref b)) if a == b => true,
             _ => false
         }
     }
@@ -77,6 +79,7 @@ impl<'s> fmt::Show for Item<'s> {
                 }
                 write!(f, ")")
             }
+            Item::String(ref s) => write!(f, "\"{}\"", s),
         }
     }
 }
