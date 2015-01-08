@@ -1,11 +1,11 @@
 #![allow(dead_code)]
-#![feature(phase, slicing_syntax, macro_rules, globs)]
+#![feature(phase, slicing_syntax, plugin)]
 
 extern crate arena;
 extern crate collections;
 
-#[phase(plugin, link)] extern crate log;
-#[phase(plugin)] extern crate peg_syntax_ext;
+#[macro_use] extern crate log;
+#[plugin] extern crate peg_syntax_ext;
 
 use std::os;
 use std::str;
@@ -14,14 +14,12 @@ use std::io::fs::File;
 use std::thread::Thread;
 use std::default::Default;
 
-#[macro_escape]
-mod session;
+#[macro_use] mod session;
 mod resolve;
 mod eval;
 mod ast;
 mod exec;
 mod dumpfile;
-mod interner;
 mod data_usage;
 #[cfg(test)] mod test;
 

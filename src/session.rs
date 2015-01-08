@@ -1,4 +1,4 @@
-use std::sync::atomic::{AtomicUint, Relaxed};
+use std::sync::atomic::{AtomicUint, Ordering};
 use arena::{TypedArena};
 
 use ast;
@@ -38,7 +38,7 @@ impl<'session> Session<'session> {
     }
 
     pub fn make_id(&self) -> uint {
-        self.id_counter.fetch_add(1, Relaxed)
+        self.id_counter.fetch_add(1, Ordering::Relaxed)
     }
 
     pub fn parse_module(&'session self, source: &str) -> Result<Module<'session>, String> {

@@ -22,22 +22,23 @@ pub enum Message {
 }
 
 impl Message {
-    pub fn each_down_ref(&self, f: |ValueID| -> ()) {
+    // TODO(rust #18835): shouldn't need &mut; see https://github.com/rust-lang/rust/pull/20578
+    pub fn each_down_ref(&self, f: &mut FnMut(ValueID)) {
         match *self {
             Message::Value(Dynamic(id), _) => f(id),
             Message::Value(_, _) => (),
             Message::Tuple(ref children) => {
-                for i in children.iter() { i.each_down_ref(|i| f(i)) }
+                for i in children.iter() { i.each_down_ref(f) }
             }
         }
     }
 
-    pub fn each_up_ref(&self, f: |ValueID| -> ()) {
+    pub fn each_up_ref(&self, f: &mut FnMut(ValueID)) {
         match *self {
             Message::Value(_, Dynamic(id)) => f(id),
             Message::Value(_, _) => (),
             Message::Tuple(ref children) => {
-                for i in children.iter() { i.each_up_ref(|i| f(i)) }
+                for i in children.iter() { i.each_up_ref(f) }
             }
         }
     }
@@ -192,7 +193,7 @@ pub fn try_token(state: &mut eval::State, parent: &mut Connection,
     state.enter(ops);
 
     let mut m = Vec::new();
-    msg.each_down_ref(|id| m.push(state.get(id).clone()) );
+    msg.each_down_ref(&mut |id| m.push(state.get(id).clone()) );
 
     debug!("  down: {}", m);
     parent.lookahead_send(m);
@@ -203,7 +204,7 @@ pub fn try_token(state: &mut eval::State, parent: &mut Connection,
 
             let mut iter = m.into_iter();
             // TODO: replace the dummy value with .expect("Not enough values in message")
-            msg.each_up_ref(|id| {
+            msg.each_up_ref(&mut |id| {
                 state.set(id, iter.next().unwrap_or(Value::Number(0.)));
             });
 
@@ -232,7 +233,7 @@ pub fn exec(state: &mut eval::State, s: &Step, parent: &mut Connection, child: &
 
                     let mut iter = m.into_iter();
                     // TODO: replace the dummy value with .expect("Not enough values in message")
-                    msg.each_down_ref(|id| {
+                    msg.each_down_ref(&mut |id| {
                         state.set(id, iter.next().unwrap_or(Value::Number(0.)));
                     });
 
@@ -243,7 +244,7 @@ pub fn exec(state: &mut eval::State, s: &Step, parent: &mut Connection, child: &
                     state.exit(ops);
 
                     let mut m = Vec::new();
-                    msg.each_up_ref(|id| m.push(state.get(id).clone()) );
+                    msg.each_up_ref(&mut |id| m.push(state.get(id).clone()) );
 
                     debug!("up: {}", m);
                     if child.send(m).is_err() { return false; }

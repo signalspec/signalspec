@@ -98,7 +98,7 @@ pub enum ValueRef {
 }
 
 impl ValueRef {
-    pub fn propagate(self, f: |ValueID| -> ValueRef) -> ValueRef {
+    pub fn propagate<F: FnOnce(ValueID)->ValueRef>(self, f: F) -> ValueRef {
         match self {
             Dynamic(id) => f(id),
             _ => self,
@@ -114,7 +114,7 @@ impl ValueRef {
     }
 }
 
-pub fn propagate_pair(a: ValueRef, b: ValueRef, f: |ValueID, ValueID| -> ValueRef) -> ValueRef {
+pub fn propagate_pair<F: FnOnce(ValueID, ValueID)->ValueRef>(a: ValueRef, b: ValueRef, f: F) -> ValueRef {
     match (a, b) {
         (Dynamic(id_a), Dynamic(id_b)) => f(id_a, id_b),
         (p @ Poison(..), _) | (_, p @ Poison(..)) => p,

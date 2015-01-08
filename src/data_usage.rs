@@ -43,7 +43,7 @@ impl UsageSet {
     /// Propagate the `written` bit.
     /// Consumes an iterator of (dest, op) tuples, marking destination variables written if all
     /// source variables are marked written
-    fn update_written<'a, I: DoubleEndedIterator<&'a (ValueID, ValOp)>>(&mut self, mut ops: I) {
+    fn update_written<'a, I: DoubleEndedIterator<Item=&'a (ValueID, ValOp)>>(&mut self, mut ops: I) {
         for &(id, ref op) in ops {
             if op.all_deps(|dep| self.written.contains(&dep)) {
                 self.written.insert(id);
@@ -54,7 +54,7 @@ impl UsageSet {
     /// Propagate the `read` bit.
     /// Consume an iterator of (dest, op) tuples, marking source variables read if the destination
     /// variable is read.
-    fn update_read<'a, I: DoubleEndedIterator<&'a(ValueID, ValOp)>>(&mut self, ops: I) {
+    fn update_read<'a, I: DoubleEndedIterator<Item=&'a(ValueID, ValOp)>>(&mut self, ops: I) {
         for &(id, ref op) in ops.rev() {
             if self.read.contains(&id) {
                 op.each_dep(|id| { self.read.insert(id); })

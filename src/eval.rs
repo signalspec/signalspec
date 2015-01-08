@@ -26,7 +26,7 @@ pub enum ValOp {
 }
 
 impl ValOp {
-    pub fn each_dep(&self, f: |ValueID| -> ()) {
+    pub fn each_dep<F: FnMut(ValueID)>(&self, mut f: F) {
         match *self {
             ValOp::Const(..) => (),
             ValOp::Check(i, _) => f(i),
@@ -48,7 +48,7 @@ impl ValOp {
         }
     }
 
-    pub fn all_deps(&self, f: |ValueID| -> bool) -> bool {
+    pub fn all_deps<F: Fn(ValueID) -> bool>(&self, f: F) -> bool {
         let mut r = true;
         self.each_dep(|id| r &= f(id));
         r

@@ -51,7 +51,7 @@ impl<'session> Context<'session> {
         self.ops.exit.push((id, op));
     }
 
-    pub fn up_op(&mut self, dest: ValueID, v: |ValueID| -> eval::ValOp) -> ValueRef {
+    pub fn up_op<F: FnOnce(ValueID) -> eval::ValOp>(&mut self, dest: ValueID, v: F) -> ValueRef {
         let cell = self.make_register();
         self.add_up_op(dest, v(cell));
         Dynamic(cell)

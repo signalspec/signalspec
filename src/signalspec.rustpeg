@@ -117,11 +117,11 @@ valexpr -> ast::Expr
 
             bitsliteral -> ast::Value
                 = "'h" v:(hexchar+) {
-                    ast::Value::Vector(Vec::from_fn(v.len()*4, |i| {
+                    ast::Value::Vector((0..v.len()*4).map(|i| {
                         let n = i/4;
                         let b = i%4;
                         ast::Value::Integer((v.as_slice()[n] & (1 << (4-b))) as i64)
-                    }))
+                    }).collect())
                 }
                 / "'" "b"? v:(binbit+)
                     { ast::Value::Vector(v.iter().map(|&b| ast::Value::Integer(b as i64)).collect()) }
