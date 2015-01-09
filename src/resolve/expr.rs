@@ -321,6 +321,20 @@ mod test {
     #[test] fn literal_symbol() { check_const("#foo", Value::Symbol("foo".to_string())); }
     #[test] fn literal_int()    { check_const("#10",  Value::Integer(10)); }
 
+    #[test] fn literal_bin() {
+        check_const("'101",  Value::Vector(vec![Value::Integer(1), Value::Integer(0), Value::Integer(1)]));
+        check_const("'b11",  Value::Vector(vec![Value::Integer(1), Value::Integer(1)]));
+    }
+
+    #[test] fn literal_hex() {
+        check_const("'hA517",  Value::Vector(vec![
+            Value::Integer(1), Value::Integer(0), Value::Integer(1), Value::Integer(0),
+            Value::Integer(0), Value::Integer(1), Value::Integer(0), Value::Integer(1),
+            Value::Integer(0), Value::Integer(0), Value::Integer(0), Value::Integer(1),
+            Value::Integer(0), Value::Integer(1), Value::Integer(1), Value::Integer(1),
+        ]));
+    }
+
     #[test] fn const_add()      { check_const("2 + 3", Value::Number(5f64)); }
     #[test] fn const_switch()   { check_const("(#bar)[#foo=#a, #bar=#b, #baz=#c]", Value::Symbol("b".to_string())); }
     #[test] fn const_concat()   { check_const("[#1, #2]", Value::Vector(vec![Value::Integer(1), Value::Integer(2)])); }
