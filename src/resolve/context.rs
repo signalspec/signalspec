@@ -5,7 +5,7 @@ use resolve::types::{ self, Shape };
 use resolve::scope::{ ValueRef, Dynamic, Item };
 
 /// Dynamic Cell
-pub type ValueID = uint;
+pub type ValueID = usize;
 
 #[derive(Show)]
 pub struct SignalInfo {

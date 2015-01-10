@@ -5,8 +5,7 @@ pub use self::Type::*;
 pub enum Type {
     Symbol, // TODO: include variants?
     Integer, // TODO: range
-    Bits(uint),
-    Vector(uint), //TODO: element type
+    Vector(usize), //TODO: element type
     Number,
     /// Type containing no values. No-op union with any type
     Bottom,

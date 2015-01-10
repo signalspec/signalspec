@@ -64,8 +64,8 @@ fn first(s: &Step) -> Option<&Step> {
     }
 }
 
-pub fn print_step_tree(s: &Step, indent: uint) {
-    let i: String = repeat(" ").take(indent).collect();
+pub fn print_step_tree(s: &Step, indent: u32) {
+    let i: String = repeat(" ").take(indent as usize).collect();
     match *s {
         Step::Nop => println!("{}NOP", i),
         Step::Token(_, ref message) => {

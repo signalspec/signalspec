@@ -37,7 +37,7 @@ impl<'session> Session<'session> {
         }
     }
 
-    pub fn make_id(&self) -> uint {
+    pub fn make_id(&self) -> usize {
         self.id_counter.fetch_add(1, Ordering::Relaxed)
     }
 

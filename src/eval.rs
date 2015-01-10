@@ -6,7 +6,7 @@ use resolve::context::{ValueID};
 pub enum ValueSrc {
     ConstSlice(Vec<Value>),
     DynElem(ValueID),
-    DynSlice(ValueID, uint),
+    DynSlice(ValueID, usize),
 }
 
 #[derive(PartialEq, Show)]
@@ -17,8 +17,8 @@ pub enum ValOp {
 
     Choose(ValueID, Vec<(Value, Value)>),
 
-    Slice(ValueID, /*offset*/ uint, /*length*/ uint),
-    Elem(ValueID, uint),
+    Slice(ValueID, /*offset*/ usize, /*length*/ usize),
+    Elem(ValueID, usize),
     Concat(Vec<ValueSrc>),
 
     Binary(ValueID, BinOp, ValueID),
@@ -113,7 +113,7 @@ pub struct Ops {
 
 impl Ops {
     pub fn new() -> Ops { Ops{ entry: Vec::new(), exit: Vec::new() } }
-    pub fn count(&self) -> uint { self.entry.len() + self.exit.len() }
+    pub fn count(&self) -> usize { self.entry.len() + self.exit.len() }
 }
 
 pub struct State {

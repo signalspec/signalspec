@@ -190,6 +190,6 @@ simpleDoubleQuotedCharacter -> char
   = !('"' / "\\" / TERM) . { match_str.char_at(0) }
 
 unicodeEscapeSequence -> char
-  = "\\u{" value:([0-9a-fA-F]+ { from_str_radix::<int>(match_str, 16)}) "}" {
-      char::from_u32(value.unwrap() as u32).unwrap()
+  = "\\u{" value:([0-9a-fA-F]+ { from_str_radix(match_str, 16)}) "}" {
+      char::from_u32(value.unwrap()).unwrap()
     }

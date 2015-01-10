@@ -37,7 +37,7 @@ impl<'s> Interner<'s> {
 
     fn get(&'s self, n: Name) -> &'s str {
         let Name(i) = n;
-        (*self.backward.borrow())[i as uint]
+        (*self.backward.borrow())[i as usize]
     }
 }
 

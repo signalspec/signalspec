@@ -1,4 +1,4 @@
-#![allow(dead_code)]
+#![allow(dead_code, unstable)]
 #![feature(slicing_syntax, plugin, box_syntax)]
 
 extern crate arena;
