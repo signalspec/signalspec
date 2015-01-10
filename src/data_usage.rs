@@ -139,7 +139,7 @@ pub fn direction_analysis(cx: &mut UsageSet, step: &Step, down: &mut Shape, up: 
 
     fn update_upward_shape(set: &UsageSet, message: &Message, shape: &mut Shape) {
         match (message, shape) {
-            (&Message::Value(down, up), &Shape::Val(_, ref mut is_down, ref mut is_up)) => {
+            (&Message::Value(down, up), &mut Shape::Val(_, ref mut is_down, ref mut is_up)) => {
                 *is_down |= match down {
                   Dynamic(id) => set.read.contains(&id),
                   Ignored => false,
@@ -151,7 +151,7 @@ pub fn direction_analysis(cx: &mut UsageSet, step: &Step, down: &mut Shape, up: 
                   Poison(s) => panic!("Poison value used: {}", s)
                 };
             }
-            (&Message::Tuple(ref ms), &Shape::Tup(ref mut ss)) => {
+            (&Message::Tuple(ref ms), &mut Shape::Tup(ref mut ss)) => {
                 for (m, s) in ms.iter().zip(ss.iter_mut()) {
                     update_upward_shape(set, m, s);
                 }
@@ -209,11 +209,11 @@ pub fn sweep_unused(cx: &mut UsageSet, step: &mut Step, down: &Shape, up: &Shape
 
     fn sweep_msg(cx: &UsageSet, message: &mut Message, shape: &Shape) {
         match (message, shape) {
-            (&Message::Value(ref mut down, ref mut up), &Shape::Val(_, is_down, is_up)) => {
+            (&mut Message::Value(ref mut down, ref mut up), &Shape::Val(_, is_down, is_up)) => {
                 if !is_down { *down = Ignored }
                 if !is_up   { *up = Ignored }
             }
-            (&Message::Tuple(ref mut ms), &Shape::Tup(ref ss)) => {
+            (&mut Message::Tuple(ref mut ms), &Shape::Tup(ref ss)) => {
                 for (m, s) in ms.iter_mut().zip(ss.iter()) {
                     sweep_msg(cx, m, s);
                 }
@@ -257,12 +257,12 @@ pub fn sweep_unused(cx: &mut UsageSet, step: &mut Step, down: &Shape, up: &Shape
 /// Run both data usage passes
 pub fn pass(step: &mut Step, signals: &mut resolve::SignalInfo) {
     let mut dctx = UsageSet::new();
-    debug!("before: {}", signals);
-    debug!("step: {}", step);
+    debug!("before: {:?}", signals);
+    debug!("step: {:?}", step);
     direction_analysis(&mut dctx, step, &mut signals.downwards, &mut signals.upwards);
 
     let mut dctx = UsageSet::new();
     sweep_unused(&mut dctx, step, &signals.downwards, &signals.upwards);
-    debug!("after: {}", signals);
-    debug!("step: {}", step);
+    debug!("after: {:?}", signals);
+    debug!("step: {:?}", step);
 }

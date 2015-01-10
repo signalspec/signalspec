@@ -187,7 +187,7 @@ pub fn resolve_expr<'s>(ctx: &mut Context<'s>, scope: &Scope<'s>, e: &ast::Expr)
                         Poison("At least one side of an up-evaluated binary operator must be constant")
                     )
                 }
-                _ => panic!("Invalid types in binary {}", op)
+                _ => panic!("Invalid types in binary {:?}", op)
             }
         }
 
@@ -238,7 +238,7 @@ pub fn resolve_pattern<'s>(ctx: &mut Context<'s>, scope: &mut Scope<'s>, l: &ast
         ast::Expr::Bin(box ref _a, _op, box ref _b) => unimplemented!(),
 
         ast::Expr::Var(ref name) => {
-            debug!("defined {} = {}", name, r);
+            debug!("defined {} = {:?}", name, r);
             scope.bind(name.as_slice(), r);
         }
 

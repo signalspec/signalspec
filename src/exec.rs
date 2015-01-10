@@ -69,10 +69,10 @@ pub fn print_step_tree(s: &Step, indent: uint) {
     match *s {
         Step::Nop => println!("{}NOP", i),
         Step::Token(_, ref message) => {
-            println!("{}Token: {}", i, message);
+            println!("{}Token: {:?}", i, message);
         }
         Step::TokenTop(_, ref message, box ref body) => {
-            println!("{}Up: {}", i, message);
+            println!("{}Up: {:?}", i, message);
             print_step_tree(body, indent+1);
         }
         Step::Seq(ref steps) => {
@@ -82,7 +82,7 @@ pub fn print_step_tree(s: &Step, indent: uint) {
             }
         }
         Step::Repeat(ref count, box ref inner) => {
-            println!("{}Repeat: {}", i, count);
+            println!("{}Repeat: {:?}", i, count);
             print_step_tree(inner, indent + 1);
         }
         /*PrimitiveStep(ref h) => {
@@ -152,7 +152,7 @@ impl Connection {
     pub fn lookahead_send(&mut self, v: Vec<Value>) {
         match self.lookahead_tx {
             Some(ref lv) => {
-                if v != *lv { panic!("Committed {}, but sending {}", lv, v); }
+                if v != *lv { panic!("Committed {:?}, but sending {:?}", lv, v); }
             }
             None => {
                 match self.send(v.clone()) {
@@ -171,7 +171,7 @@ impl Connection {
             None => {
                 match self.recv() {
                     Ok(r) => {
-                        debug!("recv: {}", r);
+                        debug!("recv: {:?}", r);
                         self.lookahead_rx = Some(r.clone());
                         Some(r)
                     },
@@ -189,18 +189,18 @@ impl Connection {
 
 pub fn try_token(state: &mut eval::State, parent: &mut Connection,
                    ops: &eval::Ops, msg: &Message) -> bool {
-    debug!("tokenstep {} {}", ops, msg);
+    debug!("tokenstep {:?} {:?}", ops, msg);
     state.enter(ops);
 
     let mut m = Vec::new();
     msg.each_down_ref(&mut |id| m.push(state.get(id).clone()) );
 
-    debug!("  down: {}", m);
+    debug!("  down: {:?}", m);
     parent.lookahead_send(m);
 
     match parent.lookahead_receive() {
         Some(m) => {
-            debug!("  up: {}", m);
+            debug!("  up: {:?}", m);
 
             let mut iter = m.into_iter();
             // TODO: replace the dummy value with .expect("Not enough values in message")
@@ -228,8 +228,8 @@ pub fn exec(state: &mut eval::State, s: &Step, parent: &mut Connection, child: &
         Step::TokenTop(ref ops, ref msg, box ref body) => {
             match child.recv() {
                 Ok(m) => {
-                    debug!("tokentop: {}, {}", ops, msg);
-                    debug!("down: {}", m);
+                    debug!("tokentop: {:?}, {:?}", ops, msg);
+                    debug!("down: {:?}", m);
 
                     let mut iter = m.into_iter();
                     // TODO: replace the dummy value with .expect("Not enough values in message")
@@ -246,7 +246,7 @@ pub fn exec(state: &mut eval::State, s: &Step, parent: &mut Connection, child: &
                     let mut m = Vec::new();
                     msg.each_up_ref(&mut |id| m.push(state.get(id).clone()) );
 
-                    debug!("up: {}", m);
+                    debug!("up: {:?}", m);
                     if child.send(m).is_err() { return false; }
                     r
                 }

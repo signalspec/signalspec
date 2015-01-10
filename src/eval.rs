@@ -131,12 +131,12 @@ impl State {
     }
 
     pub fn get(&self, reg: ValueID) -> &Value {
-        debug!("get {}: {}", reg, self.registers.get(&reg));
+        debug!("get {}: {:?}", reg, self.registers.get(&reg));
         &self.registers[reg]
     }
 
     pub fn set(&mut self, reg: ValueID, v: Value) -> bool {
-        debug!("set {}: {}", reg, v);
+        debug!("set {}: {:?}", reg, v);
         // TODO: should assert the register is not already set, once exec doesn't run things twice
         self.registers.insert(reg, v);
         true
@@ -165,7 +165,7 @@ impl State {
     }
 
     fn execute(&mut self, dest: ValueID, op: &ValOp) -> bool {
-        debug!("execute: {} = {}", dest, op);
+        debug!("execute: {} = {:?}", dest, op);
         let v = match *op {
             ValOp::Const(ref v) => v.clone(),
             ValOp::Check(reg, ref v) => return self.get(reg) == v,
@@ -218,7 +218,7 @@ impl State {
         for &(dest, ref op) in ops.exit.iter().rev() {
                 success &= self.execute(dest, op);
         }
-        debug!("success: {}", success);
+        debug!("success: {:?}", success);
         success
     }
 }

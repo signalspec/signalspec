@@ -60,8 +60,8 @@ impl fmt::Show for Value {
         match *self {
             Value::Number(n) => write!(f, "{}", n),
             Value::Integer(n) => write!(f, "{}", n),
-            Value::Symbol(ref s) => write!(f, "#{}", *s),
-            Value::Vector(ref n) => write!(f, "{}", n.to_string()),
+            Value::Symbol(ref s) => write!(f, "#{:?}", *s),
+            Value::Vector(ref n) => write!(f, "{:?}", n),
         }
     }
 }

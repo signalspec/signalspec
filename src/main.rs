@@ -1,5 +1,5 @@
 #![allow(dead_code)]
-#![feature(phase, slicing_syntax, plugin)]
+#![feature(slicing_syntax, plugin, box_syntax)]
 
 extern crate arena;
 extern crate collections;
@@ -29,7 +29,7 @@ fn main() {
     let sess = session::Session::new();
 
     let args = os::args();
-    let source_utf8 = File::open(&Path::new(args[1][])).read_to_end().unwrap();
+    let source_utf8 = File::open(&Path::new(&args[1][])).read_to_end().unwrap();
     let source = str::from_utf8(source_utf8.as_slice());
     let module = grammar::module(source.unwrap()).unwrap();
 
@@ -54,13 +54,13 @@ fn main() {
     let (mut s1, s2) = exec::Connection::new(&signal_info.downwards);
     let (t1, mut t2) = exec::Connection::new(&signal_info.upwards);
 
-    let reader_thread = Thread::spawn(move || {
+    let reader_thread = Thread::scoped(move || {
         let mut s2 = s2;
         let mut i = io::stdin();
         dumpfile::read_values(&mut i, &mut s2);
     });
 
-    let writer_thread = Thread::spawn(move || {
+    let writer_thread = Thread::scoped(move || {
         let mut t1 = t1;
         let mut o = io::stdout();
         dumpfile::write_values(&mut o, &mut t1);

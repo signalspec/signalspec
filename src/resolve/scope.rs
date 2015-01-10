@@ -68,8 +68,8 @@ impl <'s> Default for Item<'s> {
 impl<'s> fmt::Show for Item<'s> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            Item::Constant(ref v) => write!(f, "{}", v),
-            Item::Value(t, d, u) => write!(f, "[{}: {} {}]", t, d, u),
+            Item::Constant(ref v) => write!(f, "{:?}", v),
+            Item::Value(t, d, u) => write!(f, "[{:?}: {:?} {:?}]", t, d, u),
             Item::Def(..) => write!(f, "<def>"),
             Item::Tuple(ref v) => {
                 try!(write!(f, "("));
@@ -79,7 +79,7 @@ impl<'s> fmt::Show for Item<'s> {
                 }
                 write!(f, ")")
             }
-            Item::String(ref s) => write!(f, "\"{}\"", s),
+            Item::String(ref s) => write!(f, "{:?}", s),
         }
     }
 }

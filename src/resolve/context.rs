@@ -65,7 +65,7 @@ impl<'session> Context<'session> {
                 self.up_op(0, |c| eval::ValOp::Check(c, v.clone()))
             ),
             Item::Value(t, d, u) => (t, d, u),
-            _ => panic!("Item does not match shape: expected value, found {}", item),
+            _ => panic!("Item does not match shape: expected value, found {:?}", item),
         }
     }
 
@@ -97,7 +97,7 @@ impl<'session> Context<'session> {
                             .collect()
                         )
                     } else {
-                        panic!("Item does not match shape: expected tuple, found {}", item)
+                        panic!("Item does not match shape: expected tuple, found {:?}", item)
                     }
                 }
 
