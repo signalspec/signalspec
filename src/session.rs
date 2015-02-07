@@ -13,7 +13,7 @@ use data_usage;
 use grammar;
 
 use std::str;
-use std::io::{IoResult, MemReader, MemWriter};
+use std::old_io::{IoResult, MemReader, MemWriter};
 use std::thread::Thread;
 use exec;
 use dumpfile;
@@ -75,7 +75,7 @@ impl <'s> IntoItem<'s> for Value {
     fn into_item(self) -> Item<'s> { Item::Constant(self) }
 }
 
-#[derive(Copy, Clone, Show)]
+#[derive(Copy, Clone, Debug)]
 pub struct Var {
     pub ty: resolve::types::Type,
     pub down: ValueRef,
@@ -107,7 +107,7 @@ pub struct Module<'s> {
 
 
 impl <'s> Module<'s> {
-    pub fn get_def(&'s self, name: &str) -> &'s EventClosure {
+    pub fn get_def<'a>(&'a self, name: &str) -> &'a EventClosure<'s> {
         // TODO: return Result
         match self.scope.get(name).unwrap() {
             resolve::scope::Item::Def(s) => s,
@@ -115,7 +115,7 @@ impl <'s> Module<'s> {
         }
     }
 
-    pub fn compile_call<T: IntoItem<'s>>(&'s self, name: &str,
+    pub fn compile_call<T: IntoItem<'s>>(&self, name: &str,
                         shape_down: Shape, shape_up: Shape,
                         param: T) -> Result<Program, ()> {
         let def = self.get_def(name);

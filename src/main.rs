@@ -1,5 +1,5 @@
-#![allow(dead_code, unstable)]
-#![feature(slicing_syntax, plugin, box_syntax)]
+#![allow(dead_code)]
+#![feature(slicing_syntax, plugin, box_syntax, rustc_private, collections, core, io, std_misc, os, path)]
 
 extern crate arena;
 extern crate collections;
@@ -9,8 +9,7 @@ extern crate collections;
 
 use std::os;
 use std::str;
-use std::io;
-use std::io::fs::File;
+use std::old_io as io;
 use std::thread::Thread;
 use std::default::Default;
 
@@ -29,18 +28,12 @@ fn main() {
     let sess = session::Session::new();
 
     let args = os::args();
-    let source_utf8 = File::open(&Path::new(&args[1][])).read_to_end().unwrap();
+    let source_utf8 = io::File::open(&Path::new(&args[1][])).read_to_end().unwrap();
     let source = str::from_utf8(source_utf8.as_slice());
-    let module = grammar::module(source.unwrap()).unwrap();
 
     let mut ctx = resolve::Context::new(&sess);
-
-    let modscope = resolve::resolve_module(&sess, &module);
-
-    let main = match modscope.get("main").unwrap() {
-        resolve::scope::Item::Def(s) => s,
-        _ => panic!("Main is not an event"),
-    };
+    let modscope = sess.parse_module(source.unwrap()).unwrap();
+    let main = modscope.get_def("main");
 
     let mut signal_info = resolve::context::SignalInfo {
         downwards: resolve::types::Shape::Unknown(false, true),

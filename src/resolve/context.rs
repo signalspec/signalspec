@@ -7,7 +7,7 @@ use resolve::scope::{ ValueRef, Dynamic, Item };
 /// Dynamic Cell
 pub type ValueID = usize;
 
-#[derive(Show)]
+#[derive(Debug)]
 pub struct SignalInfo {
     pub downwards: Shape,
     pub upwards: Shape,

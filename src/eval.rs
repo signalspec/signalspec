@@ -2,14 +2,14 @@ use std::collections::VecMap;
 use ast::Value;
 use resolve::context::{ValueID};
 
-#[derive(PartialEq, Show)]
+#[derive(PartialEq, Debug)]
 pub enum ValueSrc {
     ConstSlice(Vec<Value>),
     DynElem(ValueID),
     DynSlice(ValueID, usize),
 }
 
-#[derive(PartialEq, Show)]
+#[derive(PartialEq, Debug)]
 pub enum ValOp {
     Const(Value),
     Check(ValueID, Value),
@@ -56,7 +56,7 @@ impl ValOp {
 }
 
 /// Binary numeric operators
-#[derive(Copy, PartialEq, Eq, Show)]
+#[derive(Copy, PartialEq, Eq, Debug)]
 pub enum BinOp {
     Add,       // a + b
     Sub,       // a - b
@@ -105,7 +105,7 @@ impl BinOp {
     }
 }
 
-#[derive(Show)]
+#[derive(Debug)]
 pub struct Ops {
     pub entry: Vec<(ValueID, ValOp)>,
     pub exit: Vec<(ValueID, ValOp)>,
@@ -180,7 +180,7 @@ impl State {
             ValOp::Elem(reg, index) => self.get_vec(reg)[index].clone(),
 
             ValOp::Slice(reg, offset, length) =>
-                Value::Vector(self.get_vec(reg).slice(offset, offset+length).to_vec()),
+                Value::Vector(self.get_vec(reg)[offset..offset+length].to_vec()),
 
             ValOp::Concat(ref parts) => {
                 let mut v = Vec::new();

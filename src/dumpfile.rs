@@ -1,4 +1,4 @@
-use std::io::{BufferedReader};
+use std::old_io::{BufferedReader};
 use grammar::literal;
 use ast::Value;
 use exec;
@@ -25,10 +25,10 @@ pub fn write_values(w: &mut Writer, port: &mut exec::Connection) {
         match port.recv() {
             Ok(v) => {
                 for (i, v) in v.iter().enumerate() {
-                    if i != 0 { w.write(b", ").unwrap(); }
+                    if i != 0 { w.write_all(b", ").unwrap(); }
                     (write!(w, "{:?}", v)).unwrap();
                 }
-                w.write(b"\n").unwrap();
+                w.write_all(b"\n").unwrap();
             }
             Err(..) => break,
         }

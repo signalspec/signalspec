@@ -55,7 +55,7 @@ impl Value {
     }
 }
 
-impl fmt::Show for Value {
+impl fmt::Debug for Value {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             Value::Number(n) => write!(f, "{}", n),

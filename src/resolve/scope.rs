@@ -65,7 +65,7 @@ impl <'s> Default for Item<'s> {
     }
 }
 
-impl<'s> fmt::Show for Item<'s> {
+impl<'s> fmt::Debug for Item<'s> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             Item::Constant(ref v) => write!(f, "{:?}", v),
@@ -122,7 +122,7 @@ pub fn propagate_pair<F: FnOnce(ValueID, ValueID)->ValueRef>(a: ValueRef, b: Val
     }
 }
 
-impl fmt::Show for ValueRef {
+impl fmt::Debug for ValueRef {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         match *self {
             Ignored => write!(f, "ignore"),

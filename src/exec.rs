@@ -15,7 +15,7 @@ pub trait PrimitiveStep {
 
 pub type ValuePair = (/*down*/ ValueRef, /*up*/ ValueRef);
 
-#[derive(Show)]
+#[derive(Debug)]
 pub enum Message {
     Value(/*down*/ ValueRef, /*up*/ ValueRef),
     Tuple(Vec<Message>),
@@ -44,7 +44,7 @@ impl Message {
     }
 }
 
-#[derive(Show)]
+#[derive(Debug)]
 pub enum Step {
     Nop,
     Token(eval::Ops, Message),

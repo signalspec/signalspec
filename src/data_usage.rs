@@ -43,7 +43,7 @@ impl UsageSet {
     /// Propagate the `written` bit.
     /// Consumes an iterator of (dest, op) tuples, marking destination variables written if all
     /// source variables are marked written
-    fn update_written<'a, I: DoubleEndedIterator<Item=&'a (ValueID, ValOp)>>(&mut self, mut ops: I) {
+    fn update_written<'a, I: DoubleEndedIterator<Item=&'a (ValueID, ValOp)>>(&mut self, ops: I) {
         for &(id, ref op) in ops {
             if op.all_deps(|dep| self.written.contains(&dep)) {
                 self.written.insert(id);

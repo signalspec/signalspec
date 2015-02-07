@@ -1,6 +1,6 @@
 pub use self::Type::*;
 
-#[derive(Copy, Show, PartialEq, Clone)]
+#[derive(Copy, Debug, PartialEq, Clone)]
 /// A type represents a set of possible values
 pub enum Type {
     Symbol, // TODO: include variants?
@@ -25,7 +25,7 @@ pub fn common_all<T:Iterator<Item=Type>>(l: T) -> Option<Type> {
     l.fold(Some(Bottom), |opt_a, b|{ opt_a.and_then(|a| common(a, b)) })
 }
 
-#[derive(Clone, Show, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Shape {
     Unknown(bool, bool),
     Tup(Vec<Shape>),
