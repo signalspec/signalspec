@@ -1,5 +1,5 @@
 //! Data usage passes: Shape direction inference and unused value elimination
-use std::collections::BitvSet;
+use std::collections::BitSet;
 use eval::{Ops, ValOp};
 use exec::{ Message, Step };
 use resolve::types::Shape;
@@ -24,15 +24,15 @@ Down data in the Up direction.
 
 /// A set tracking which SSA variables are read and written
 pub struct UsageSet {
-    written: BitvSet,
-    read: BitvSet,
+    written: BitSet,
+    read: BitSet,
 }
 
 impl UsageSet {
     pub fn new() -> UsageSet {
       let mut c = UsageSet {
-        written: BitvSet::new(),
-        read: BitvSet::new(),
+        written: BitSet::new(),
+        read: BitSet::new(),
       };
       // 0 is used for Check operations that don't have an output, but have a side effect on the
       // success of the basic block. Propagate the values it reads.

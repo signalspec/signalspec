@@ -1,16 +1,14 @@
 #![allow(dead_code)]
-#![feature(slicing_syntax, plugin, box_syntax, rustc_private, collections, core, io, std_misc, os, path)]
+#![feature(plugin, box_syntax, box_patterns, rustc_private, collections, core, std_misc, old_io, io, fs, env)]
+#![plugin(peg_syntax_ext)]
 
 extern crate arena;
 extern crate collections;
 
 #[macro_use] extern crate log;
-#[plugin] extern crate peg_syntax_ext;
 
-use std::os;
-use std::str;
-use std::old_io as io;
-use std::thread::Thread;
+use std::{env, fs, thread};
+use std::io::prelude::*;
 use std::default::Default;
 
 #[macro_use] mod session;
@@ -27,12 +25,12 @@ peg_file! grammar("signalspec.rustpeg");
 fn main() {
     let sess = session::Session::new();
 
-    let args = os::args();
-    let source_utf8 = io::File::open(&Path::new(&args[1][])).read_to_end().unwrap();
-    let source = str::from_utf8(source_utf8.as_slice());
+    let args: Vec<String> = env::args().collect();
+    let mut source = String::new();
+    fs::File::open(&args[1]).unwrap().read_to_string(&mut source).unwrap();
 
     let mut ctx = resolve::Context::new(&sess);
-    let modscope = sess.parse_module(source.unwrap()).unwrap();
+    let modscope = sess.parse_module(&source).unwrap();
     let main = modscope.get_def("main");
 
     let mut signal_info = resolve::context::SignalInfo {
@@ -47,15 +45,15 @@ fn main() {
     let (mut s1, s2) = exec::Connection::new(&signal_info.downwards);
     let (t1, mut t2) = exec::Connection::new(&signal_info.upwards);
 
-    let reader_thread = Thread::scoped(move || {
+    let reader_thread = thread::scoped(move || {
         let mut s2 = s2;
-        let mut i = io::stdin();
+        let mut i = std::old_io::stdin();
         dumpfile::read_values(&mut i, &mut s2);
     });
 
-    let writer_thread = Thread::scoped(move || {
+    let writer_thread = thread::scoped(move || {
         let mut t1 = t1;
-        let mut o = io::stdout();
+        let mut o = std::old_io::stdout();
         dumpfile::write_values(&mut o, &mut t1);
     });
 
@@ -64,8 +62,8 @@ fn main() {
 
     drop(s1);
     drop(t2);
-    reader_thread.join().ok().unwrap();
-    writer_thread.join().ok().unwrap();
+    reader_thread.join();
+    writer_thread.join();
 
-    os::set_exit_status(if r { 0 } else { 1 });
+    env::set_exit_status(if r { 0 } else { 1 });
 }

@@ -105,6 +105,6 @@ fn resolve_seq<'s>(ctx: &mut Context<'s>, signals: &mut SignalInfo, pscope: &Sco
 pub fn resolve_letdef<'s>(ctx: &mut Context<'s>, scope: &mut Scope<'s>, lets: &[ast::LetDef]) {
     for &ast::LetDef(ref name, ref expr) in lets.iter() {
         let item = resolve_expr(ctx, scope, expr);
-        scope.bind(&name[], item);
+        scope.bind(&name, item);
     }
 }

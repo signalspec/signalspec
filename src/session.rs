@@ -14,7 +14,7 @@ use grammar;
 
 use std::str;
 use std::old_io::{IoResult, MemReader, MemWriter};
-use std::thread::Thread;
+use std::thread;
 use exec;
 use dumpfile;
 use eval;
@@ -138,15 +138,15 @@ impl Program {
     pub fn run_test(&self, bottom: &'static str, top: &'static str) -> (bool, eval::State) {
         let (mut s1, mut s2) = exec::Connection::new(&self.signals.downwards);
         let (mut t1, mut t2) = exec::Connection::new(&self.signals.upwards);
-        let reader_thread = Thread::scoped(move || {
+        let reader_thread = thread::scoped(move || {
             let mut reader = MemReader::new(bottom.as_bytes().to_vec());
             dumpfile::read_values(&mut reader, &mut s2);
         });
-        let writer_thread = Thread::scoped(move || {
+        let writer_thread = thread::scoped(move || {
             let mut writer = MemWriter::new();
             dumpfile::write_values(&mut writer, &mut t1);
             let v = writer.into_inner();
-            assert_eq!(top, str::from_utf8(&v[]).unwrap());
+            assert_eq!(top, str::from_utf8(&v).unwrap());
         });
         let mut state = eval::State::new();
 
@@ -154,8 +154,8 @@ impl Program {
 
         drop(s1);
         drop(t2);
-        reader_thread.join().ok().unwrap();
-        writer_thread.join().ok().unwrap();
+        reader_thread.join();
+        writer_thread.join();
 
         (r, state)
     }
