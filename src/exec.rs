@@ -1,11 +1,10 @@
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::iter::repeat;
 
-use resolve::scope::{ValueRef, Dynamic};
-use resolve::context::ValueID;
+use session::ValueID;
 use resolve::types::Shape;
 use ast::Value;
-use eval;
+use eval::{ self, Expr };
 
 pub trait PrimitiveStep {
     fn display(&self) -> String;
@@ -13,44 +12,41 @@ pub trait PrimitiveStep {
     fn exec(&self);
 }
 
-pub type ValuePair = (/*down*/ ValueRef, /*up*/ ValueRef);
-
 #[derive(Debug)]
-pub enum Message {
-    Value(/*down*/ ValueRef, /*up*/ ValueRef),
-    Tuple(Vec<Message>),
+pub struct Message {
+    pub components: Vec<Expr>
 }
 
 impl Message {
-    // TODO(rust #18835): shouldn't need &mut; see https://github.com/rust-lang/rust/pull/20578
-    pub fn each_down_ref(&self, f: &mut FnMut(ValueID)) {
-        match *self {
-            Message::Value(Dynamic(id), _) => f(id),
-            Message::Value(_, _) => (),
-            Message::Tuple(ref children) => {
-                for i in children.iter() { i.each_down_ref(f) }
+    pub fn eval_down(&self, state: &eval::State) -> Vec<Value> {
+        self.components.iter().map(|e| {
+            if e.exists_down() {
+                e.eval_down(state)
+            } else {
+                Value::Number(0.0)
             }
-        }
+        }).collect()
     }
 
-    pub fn each_up_ref(&self, f: &mut FnMut(ValueID)) {
-        match *self {
-            Message::Value(_, Dynamic(id)) => f(id),
-            Message::Value(_, _) => (),
-            Message::Tuple(ref children) => {
-                for i in children.iter() { i.each_up_ref(f) }
-            }
+    pub fn eval_up(&self, state: &mut eval::State, values: Vec<Value>) -> bool {
+        debug!("eval_up: {:?}", self);
+        let mut matched = true;
+        let mut vi = values.into_iter().fuse();
+        for e in &self.components {
+            let v = vi.next().unwrap_or(Value::Number(0.0));
+            matched &= e.eval_up(state, v);
         }
+        matched
     }
 }
 
 #[derive(Debug)]
 pub enum Step {
     Nop,
-    Token(eval::Ops, Message),
-    TokenTop(eval::Ops, Message, Box<Step>),
+    Token(Message),
+    TokenTop(Message, Box<Step>),
     Seq(Vec<Step>),
-    Repeat(ValuePair, Box<Step>),
+    Repeat(Expr, Box<Step>),
     //PrimitiveStep(Box<PrimitiveStep>),
 }
 
@@ -68,10 +64,10 @@ pub fn print_step_tree(s: &Step, indent: u32) {
     let i: String = repeat(" ").take(indent as usize).collect();
     match *s {
         Step::Nop => println!("{}NOP", i),
-        Step::Token(_, ref message) => {
+        Step::Token(ref message) => {
             println!("{}Token: {:?}", i, message);
         }
-        Step::TokenTop(_, ref message, box ref body) => {
+        Step::TokenTop(ref message, box ref body) => {
             println!("{}Up: {:?}", i, message);
             print_step_tree(body, indent+1);
         }
@@ -105,8 +101,8 @@ pub struct Connection {
 }
 
 impl Connection {
-    pub fn new(s: &Shape) -> (Connection, Connection) {
-        let (is_down, is_up) = s.contains_direction();
+    pub fn new() -> (Connection, Connection) {
+        let (is_down, is_up) = (true, true);
 
         let (s1, r1) = if is_down {
             let (a, b) = channel();
@@ -187,13 +183,9 @@ impl Connection {
     }
 }
 
-pub fn try_token(state: &mut eval::State, parent: &mut Connection,
-                   ops: &eval::Ops, msg: &Message) -> bool {
-    debug!("tokenstep {:?} {:?}", ops, msg);
-    state.enter(ops);
-
-    let mut m = Vec::new();
-    msg.each_down_ref(&mut |id| m.push(state.get(id).clone()) );
+pub fn try_token(state: &mut eval::State, parent: &mut Connection, msg: &Message) -> bool {
+    debug!("tokenstep {:?}", msg);
+    let mut m = msg.eval_down(state);
 
     debug!("  down: {:?}", m);
     parent.lookahead_send(m);
@@ -201,14 +193,7 @@ pub fn try_token(state: &mut eval::State, parent: &mut Connection,
     match parent.lookahead_receive() {
         Some(m) => {
             debug!("  up: {:?}", m);
-
-            let mut iter = m.into_iter();
-            // TODO: replace the dummy value with .expect("Not enough values in message")
-            msg.each_up_ref(&mut |id| {
-                state.set(id, iter.next().unwrap_or(Value::Number(0.)));
-            });
-
-            state.exit(ops)
+            msg.eval_up(state, m)
         }
         None => false
     }
@@ -217,34 +202,23 @@ pub fn try_token(state: &mut eval::State, parent: &mut Connection,
 pub fn exec(state: &mut eval::State, s: &Step, parent: &mut Connection, child: &mut Connection) -> bool {
     match *s {
         Step::Nop => true,
-        Step::Token(ref ops, ref msg) => {
-            let r = try_token(state, parent, ops, msg);
+        Step::Token(ref msg) => {
+            let r = try_token(state, parent, msg);
             if r {
                 debug!("  matched");
                 parent.accept();
             }
             r
         }
-        Step::TokenTop(ref ops, ref msg, box ref body) => {
+        Step::TokenTop(ref msg, box ref body) => {
+            debug!("tokentop: {:?}", msg);
             match child.recv() {
                 Ok(m) => {
-                    debug!("tokentop: {:?}, {:?}", ops, msg);
                     debug!("down: {:?}", m);
 
-                    let mut iter = m.into_iter();
-                    // TODO: replace the dummy value with .expect("Not enough values in message")
-                    msg.each_down_ref(&mut |id| {
-                        state.set(id, iter.next().unwrap_or(Value::Number(0.)));
-                    });
-
-                    state.enter(ops);
-
+                    msg.eval_up(state, m);
                     let r = exec(state, body, parent, child);
-
-                    state.exit(ops);
-
-                    let mut m = Vec::new();
-                    msg.each_up_ref(&mut |id| m.push(state.get(id).clone()) );
+                    let mut m = msg.eval_down(state);
 
                     debug!("up: {:?}", m);
                     if child.send(m).is_err() { return false; }
@@ -262,13 +236,13 @@ pub fn exec(state: &mut eval::State, s: &Step, parent: &mut Connection, child: &
             }
             true
         }
-        Step::Repeat((_cd, cu), box ref inner) => {
+        Step::Repeat(ref count_expr, box ref inner) => {
             let f = first(inner).expect("Loop has no body");
             let mut count = 0;
             loop {
                 match *f {
-                    Step::Token(ref ops, ref msg) => {
-                        if !try_token(state, parent, ops, msg) {
+                    Step::Token(ref msg) => {
+                        if !try_token(state, parent, msg) {
                             debug!("  loop exit");
                             break;
                         }
@@ -286,10 +260,8 @@ pub fn exec(state: &mut eval::State, s: &Step, parent: &mut Connection, child: &
                 }
                 count += 1;
             }
-            if let Dynamic(id) = cu {
-                state.set(id, Value::Integer(count));
-            }
-            true
+
+            count_expr.eval_up(state, Value::Integer(count))
         }
         //PrimitiveStep(..) => unimplemented!()
     }

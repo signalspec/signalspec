@@ -3,11 +3,11 @@ use std::collections::HashMap;
 use std::default::Default;
 
 use resolve::block::{EventClosure};
-use resolve::context::ValueID;
+use session::ValueID;
 use resolve::types::Type;
 use ast::Value;
-
-pub use self::ValueRef::{ Ignored, Dynamic, Poison };
+use eval::Expr;
+use exec::Message;
 
 /// A collection of named Items.
 #[derive(Clone)]
@@ -40,20 +40,36 @@ impl<'s> Scope<'s> {
 /// A thing associated with a name in a Scope
 #[derive(Clone)]
 pub enum Item<'s> {
-    Constant(Value),
-    Value(Type, ValueRef /*Down*/, ValueRef /*Up*/),
+    Value(Expr),
     Def(&'s EventClosure<'s>),
     Tuple(Vec<Item<'s>>), // TODO: named components
     String(String), // Not a Value because it is not of constant size
 }
 
+impl<'s> Item<'s> {
+    pub fn into_message(self) -> Message {
+        let mut components = Vec::new();
+
+        fn inner<'s>(i: Item<'s>, components: &mut Vec<Expr>) {
+            match i {
+                Item::Value(v) => components.push(v),
+                Item::Tuple(t) => for i in t { inner(i, components) },
+                other => panic!("Can't send {:?}", other),
+            }
+        }
+
+        inner(self, &mut components);
+
+        Message { components: components }
+    }
+}
+
 impl<'s> PartialEq for Item<'s> {
     fn eq(&self, other: &Item<'s>) -> bool {
         match (self, other) {
-            (&Item::Value(ref ta, ref da, ref ua), &Item::Value(ref tb, ref db, ref ub))
-                if ta==tb && da==db && ua==ub => true,
-            (&Item::Constant(ref a), &Item::Constant(ref b)) if a == b => true,
-            (&Item::String(ref a), &Item::String(ref b)) if a == b => true,
+            (&Item::Value(ref va), &Item::Value(ref vb)) => va == vb,
+            (&Item::Tuple(ref va), &Item::Tuple(ref vb)) => va == vb,
+            (&Item::String(ref a), &Item::String(ref b)) => a == b,
             _ => false
         }
     }
@@ -68,8 +84,7 @@ impl <'s> Default for Item<'s> {
 impl<'s> fmt::Debug for Item<'s> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            Item::Constant(ref v) => write!(f, "{:?}", v),
-            Item::Value(t, d, u) => write!(f, "[{:?}: {:?} {:?}]", t, d, u),
+            Item::Value(ref v) => write!(f, "{:?}", v),
             Item::Def(..) => write!(f, "<def>"),
             Item::Tuple(ref v) => {
                 try!(write!(f, "("));
@@ -80,54 +95,6 @@ impl<'s> fmt::Debug for Item<'s> {
                 write!(f, ")")
             }
             Item::String(ref s) => write!(f, "{:?}", s),
-        }
-    }
-}
-
-/// A constant value or ID for obtaining a value at runtime
-#[derive(Copy, PartialEq, Clone)]
-pub enum ValueRef {
-    Ignored,
-
-    /// down: register to load the value from
-    /// up: the register to store the value into
-    Dynamic(ValueID),
-
-    /// The use of the value is illegal. Contains the error message to show if the value is used.
-    Poison(&'static str),
-}
-
-impl ValueRef {
-    pub fn propagate<F: FnOnce(ValueID)->ValueRef>(self, f: F) -> ValueRef {
-        match self {
-            Dynamic(id) => f(id),
-            _ => self,
-        }
-    }
-
-    pub fn value_id(self) -> Option<ValueID> {
-        match self {
-            Dynamic(id) => Some(id),
-            Ignored => None,
-            Poison(s) => panic!("Use of an invalid value: {}", s),
-        }
-    }
-}
-
-pub fn propagate_pair<F: FnOnce(ValueID, ValueID)->ValueRef>(a: ValueRef, b: ValueRef, f: F) -> ValueRef {
-    match (a, b) {
-        (Dynamic(id_a), Dynamic(id_b)) => f(id_a, id_b),
-        (p @ Poison(..), _) | (_, p @ Poison(..)) => p,
-        (Ignored, _) | (_, Ignored) => Ignored,
-    }
-}
-
-impl fmt::Debug for ValueRef {
-    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        match *self {
-            Ignored => write!(f, "ignore"),
-            Dynamic(c) => write!(f, "%{}", c),
-            Poison(s) => write!(f, "poison: {}", s),
         }
     }
 }

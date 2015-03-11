@@ -9,11 +9,13 @@ pub struct Module {
     pub defs: Vec<Def>,
 }
 
+#[derive(Debug)]
 pub struct Block {
     pub lets: Vec<LetDef>,
     pub actions: Vec<Action>,
 }
 
+#[derive(Debug)]
 pub enum Action {
     Seq(Block),
     //Par(Block),
@@ -29,7 +31,10 @@ pub struct Def {
     pub block: Block,
 }
 
+#[derive(Debug)]
 pub struct UseDef(pub String);
+
+#[derive(Debug)]
 pub struct LetDef(pub String, pub Expr);
 
 #[derive(PartialEq, Clone)]
@@ -66,6 +71,7 @@ impl fmt::Debug for Value {
     }
 }
 
+#[derive(Debug)]
 pub enum Expr {
     Value(Value),
     String(String), // Produces an Item, not a Value, because it isn't fixed size

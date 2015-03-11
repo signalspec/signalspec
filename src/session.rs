@@ -7,10 +7,11 @@ use resolve::Scope;
 use resolve::block::EventClosure;
 use exec::Step;
 use ast::Value;
-use resolve::scope::{ Item, ValueRef, Dynamic, Ignored };
+use resolve::scope::Item;
 use resolve::types::Shape;
 use data_usage;
 use grammar;
+use eval::Expr;
 
 use std::str;
 use std::io::{self, Cursor};
@@ -18,6 +19,8 @@ use std::thread;
 use exec;
 use dumpfile;
 use eval;
+
+pub type ValueID = usize;
 
 /// The data common to an entire resolve pass
 pub struct Session<'session> {
@@ -56,9 +59,9 @@ impl<'session> Session<'session> {
 
     pub fn var(&self, ty: resolve::types::Type, is_down: bool, is_up: bool) -> Var {
         Var {
-            ty: ty,
-            down: if is_down { Dynamic(self.make_id()) } else { Ignored },
-            up:   if is_up   { Dynamic(self.make_id()) } else { Ignored },
+            id: self.make_id(),
+            is_down: is_down,
+            is_up: is_up,
         }
     }
 }
@@ -72,19 +75,32 @@ impl <'s> IntoItem<'s> for Item<'s> {
 }
 
 impl <'s> IntoItem<'s> for Value {
-    fn into_item(self) -> Item<'s> { Item::Constant(self) }
+    fn into_item(self) -> Item<'s> { Item::Value(Expr::Const(self)) }
+}
+
+impl <'s> IntoItem<'s> for Expr {
+    fn into_item(self) -> Item<'s> { Item::Value(self) }
 }
 
 #[derive(Copy, Clone, Debug)]
 pub struct Var {
-    pub ty: resolve::types::Type,
-    pub down: ValueRef,
-    pub up: ValueRef,
+    pub id: ValueID,
+    pub is_down: bool,
+    pub is_up: bool,
 }
 
-impl<'s> IntoItem<'s> for Var {
-    fn into_item(self) -> Item<'s> { Item::Value(self.ty, self.down, self.up) }
+impl <'s> IntoItem<'s> for Var {
+    fn into_item(self) -> Item<'s> {
+        let var = Expr::Variable(self.id);
+        Item::Value(match (self.is_down, self.is_up) {
+            (true, true) => var,
+            (false, true) => Expr::Flip(box Expr::Ignored, box var),
+            (true, false) => Expr::Flip(box var, box Expr::Ignored),
+            (false, false) => Expr::Ignored
+        })
+    }
 }
+
 
 #[macro_escape]
 macro_rules! tuple_item[
@@ -119,25 +135,21 @@ impl <'s> Module<'s> {
                         shape_down: Shape, shape_up: Shape,
                         param: T) -> Result<Program, ()> {
         let def = self.get_def(name);
-        let mut signal_info = resolve::SignalInfo { downwards: shape_down, upwards: shape_up };
-        let mut ctx = resolve::Context::new(self.session);
 
-        let mut step = def.resolve_call(&mut ctx, &mut signal_info, param.into_item(), None);
-        data_usage::pass(&mut step, &mut signal_info);
+        let mut step = def.resolve_call(&self.session, param.into_item(), None);
 
-        Ok(Program{ step: step, signals: signal_info })
+        Ok(Program{ step: step })
     }
 }
 
 pub struct Program {
     pub step: Step,
-    pub signals: resolve::SignalInfo,
 }
 
 impl Program {
     pub fn run_test(&self, bottom: &'static str, top: &'static str) -> (bool, eval::State) {
-        let (mut s1, mut s2) = exec::Connection::new(&self.signals.downwards);
-        let (mut t1, mut t2) = exec::Connection::new(&self.signals.upwards);
+        let (mut s1, mut s2) = exec::Connection::new();
+        let (mut t1, mut t2) = exec::Connection::new();
         let reader_thread = thread::scoped(move || {
             let mut reader = Cursor::new(bottom.as_bytes().to_vec());
             dumpfile::read_values(&mut reader, &mut s2);

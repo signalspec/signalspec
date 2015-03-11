@@ -44,6 +44,12 @@ impl Shape {
     }
 }
 
+#[derive(Debug)]
+pub struct SignalInfo {
+    pub downwards: Shape,
+    pub upwards: Shape,
+}
+
 #[test]
 fn shape_contains_direction() {
     assert_eq!(Shape::Tup(vec![Shape::Unknown(true, false)])

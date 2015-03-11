@@ -83,10 +83,10 @@ fn test_loop() {
         #a
         #b
         repeat x {
-            #c
-            #d
+            :> #c
+            :> #d
         }
-        #a
+        :> #a
     }
     ").unwrap();
 
@@ -111,17 +111,17 @@ fn test_nested_loop() {
     let s = Session::new();
     let m = s.parse_module("
     def main() {
-        #a
+        :> #a
         repeat {
             repeat {
-                #b
+                :> #b
             }
             repeat {
-                #c
+                :> #c
             }
-            #d
+            :> #d
         }
-        #e
+        :> #e
     }
     ").unwrap();
 
@@ -140,8 +140,8 @@ fn test_unbounded_loop() {
     def main() {
       repeat {
         on v {
-          repeat v { #h }
-          repeat ignore { #l }
+          repeat v { :> #h }
+          repeat ignore { :> #l }
         }
       }
     }
