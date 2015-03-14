@@ -1,4 +1,4 @@
-use std::sync::atomic::{AtomicUint, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use arena::{TypedArena};
 
 use ast;
@@ -13,7 +13,7 @@ use data_usage;
 use grammar;
 
 use std::str;
-use std::old_io::{IoResult, MemReader, MemWriter};
+use std::io::{self, Cursor};
 use std::thread;
 use exec;
 use dumpfile;
@@ -23,7 +23,7 @@ use eval;
 pub struct Session<'session> {
     pub closure_arena: TypedArena<EventClosure<'session>>,
     module_ast_arena: TypedArena<ast::Module>,
-    id_counter: AtomicUint,
+    id_counter: AtomicUsize,
     pub prelude: Scope<'session>,
 }
 
@@ -32,7 +32,7 @@ impl<'session> Session<'session> {
         Session {
             closure_arena: TypedArena::new(),
             module_ast_arena: TypedArena::new(),
-            id_counter: AtomicUint::new(1),
+            id_counter: AtomicUsize::new(1),
             prelude: Scope::new(),
         }
     }
@@ -41,7 +41,7 @@ impl<'session> Session<'session> {
         self.id_counter.fetch_add(1, Ordering::Relaxed)
     }
 
-    pub fn parse_module(&'session self, source: &str) -> Result<Module<'session>, String> {
+    pub fn parse_module(&'session self, source: &str) -> Result<Module<'session>, grammar::ParseError> {
         grammar::module(source).map(|ast|
             self.resolve_module(self.module_ast_arena.alloc(ast))
         )
@@ -139,14 +139,13 @@ impl Program {
         let (mut s1, mut s2) = exec::Connection::new(&self.signals.downwards);
         let (mut t1, mut t2) = exec::Connection::new(&self.signals.upwards);
         let reader_thread = thread::scoped(move || {
-            let mut reader = MemReader::new(bottom.as_bytes().to_vec());
+            let mut reader = Cursor::new(bottom.as_bytes().to_vec());
             dumpfile::read_values(&mut reader, &mut s2);
         });
         let writer_thread = thread::scoped(move || {
-            let mut writer = MemWriter::new();
+            let mut writer = Vec::new();
             dumpfile::write_values(&mut writer, &mut t1);
-            let v = writer.into_inner();
-            assert_eq!(top, str::from_utf8(&v).unwrap());
+            assert_eq!(top, str::from_utf8(&writer).unwrap());
         });
         let mut state = eval::State::new();
 
@@ -188,5 +187,5 @@ impl Process for Program {
 }
 
 pub trait IoProcess {
-    fn run(&mut self, upwards: &mut exec::Connection) -> IoResult<()>;
+    fn run(&mut self, upwards: &mut exec::Connection) -> io::Result<()>;
 }

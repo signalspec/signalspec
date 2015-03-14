@@ -351,7 +351,7 @@ mod test {
     }
 
     #[test]
-    #[should_fail]
+    #[should_panic]
     fn test_add_wrongtype() {
         check_const("2 + #test", Value::Number(2.)); // TODO: make sure it fails for the right reason
     }

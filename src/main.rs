@@ -1,5 +1,5 @@
 #![allow(dead_code)]
-#![feature(plugin, box_syntax, box_patterns, rustc_private, collections, core, std_misc, old_io, io, fs, env)]
+#![feature(plugin, box_syntax, box_patterns, rustc_private, collections, core, std_misc, exit_status)]
 #![plugin(peg_syntax_ext)]
 
 extern crate arena;
@@ -9,6 +9,7 @@ extern crate collections;
 
 use std::{env, fs, thread};
 use std::io::prelude::*;
+use std::io::BufReader;
 use std::default::Default;
 
 #[macro_use] mod session;
@@ -47,13 +48,13 @@ fn main() {
 
     let reader_thread = thread::scoped(move || {
         let mut s2 = s2;
-        let mut i = std::old_io::stdin();
+        let mut i = BufReader::new(std::io::stdin());
         dumpfile::read_values(&mut i, &mut s2);
     });
 
     let writer_thread = thread::scoped(move || {
         let mut t1 = t1;
-        let mut o = std::old_io::stdout();
+        let mut o = std::io::stdout();
         dumpfile::write_values(&mut o, &mut t1);
     });
 
