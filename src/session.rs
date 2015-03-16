@@ -9,7 +9,6 @@ use exec::Step;
 use ast::Value;
 use resolve::scope::Item;
 use resolve::types::Shape;
-use data_usage;
 use grammar;
 use eval::Expr;
 
@@ -57,7 +56,7 @@ impl<'session> Session<'session> {
         }
     }
 
-    pub fn var(&self, ty: resolve::types::Type, is_down: bool, is_up: bool) -> Var {
+    pub fn var(&self, _ty: resolve::types::Type, is_down: bool, is_up: bool) -> Var {
         Var {
             id: self.make_id(),
             is_down: is_down,
@@ -132,11 +131,11 @@ impl <'s> Module<'s> {
     }
 
     pub fn compile_call<T: IntoItem<'s>>(&self, name: &str,
-                        shape_down: Shape, shape_up: Shape,
+                        _shape_down: Shape, _shape_up: Shape,
                         param: T) -> Result<Program, ()> {
         let def = self.get_def(name);
 
-        let mut step = def.resolve_call(&self.session, param.into_item(), None);
+        let step = def.resolve_call(&self.session, param.into_item(), None);
 
         Ok(Program{ step: step })
     }

@@ -1,8 +1,6 @@
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::iter::repeat;
 
-use session::ValueID;
-use resolve::types::Shape;
 use ast::Value;
 use eval::{ self, Expr };
 
@@ -55,7 +53,7 @@ fn first(s: &Step) -> Option<&Step> {
         Step::Nop => None,
         Step::Token(..) => Some(s),
         Step::TokenTop(..) => Some(s),
-        Step::Seq(ref steps) => steps.as_slice().get(0).and_then(first),
+        Step::Seq(ref steps) => steps.get(0).and_then(first),
         Step::Repeat(_, box ref inner) => first(inner),
     }
 }
@@ -185,7 +183,7 @@ impl Connection {
 
 pub fn try_token(state: &mut eval::State, parent: &mut Connection, msg: &Message) -> bool {
     debug!("tokenstep {:?}", msg);
-    let mut m = msg.eval_down(state);
+    let m = msg.eval_down(state);
 
     debug!("  down: {:?}", m);
     parent.lookahead_send(m);
@@ -218,7 +216,7 @@ pub fn exec(state: &mut eval::State, s: &Step, parent: &mut Connection, child: &
 
                     msg.eval_up(state, m);
                     let r = exec(state, body, parent, child);
-                    let mut m = msg.eval_down(state);
+                    let m = msg.eval_down(state);
 
                     debug!("up: {:?}", m);
                     if child.send(m).is_err() { return false; }

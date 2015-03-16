@@ -84,7 +84,7 @@ pub fn value<'s>(session: &'s Session<'s>, scope: &Scope<'s>, e: &ast::Expr) -> 
 pub fn rexpr<'s>(session: &'s Session<'s>, scope: &Scope<'s>, e: &ast::Expr) -> Item<'s> {
     match *e {
         ast::Expr::Var(ref name) => {
-            scope.get(name.as_slice()).expect("Undefined variable")
+            scope.get(name).expect("Undefined variable")
         }
 
         ast::Expr::Tup(ref items) => {
@@ -122,7 +122,7 @@ pub fn assign<'s>(session: &'s Session<'s>, scope: &mut Scope<'s>, l: &ast::Expr
 
         ast::Expr::Var(ref name) => {
             debug!("defined {} = {:?}", name, r);
-            scope.bind(name.as_slice(), r);
+            scope.bind(name, r);
         }
 
         ast::Expr::Tup(ref exprs) => {

@@ -3,9 +3,6 @@ use std::collections::HashMap;
 use std::default::Default;
 
 use resolve::block::{EventClosure};
-use session::ValueID;
-use resolve::types::Type;
-use ast::Value;
 use eval::Expr;
 use exec::Message;
 

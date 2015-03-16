@@ -1,7 +1,6 @@
 use std::collections::VecMap;
 use ast::Value;
 use session::{ValueID};
-use resolve::types::Type;
 
 #[derive(PartialEq, Debug, Clone)]
 pub enum ConcatElem {
@@ -68,8 +67,8 @@ impl Expr {
     pub fn exists_down(&self) -> bool {
         match *self {
             Expr::Ignored | Expr::Range(..) => false,
-            Expr::Variable(id) => true,
-            Expr::Const(ref v) => true,
+            Expr::Variable(..) => true,
+            Expr::Const(..) => true,
             Expr::Flip(ref d, _) => d.exists_down(),
             Expr::Choose(ref e, _) => e.exists_down(),
             Expr::Concat(_) => unimplemented!(),
@@ -88,7 +87,7 @@ impl Expr {
             Expr::Const(ref p) => &v == p,
 
             Expr::Flip(_, ref u) => u.eval_up(state, v),
-            Expr::Choose(ref e, ref c) => unimplemented!(),
+            Expr::Choose(ref _e, ref _c) => unimplemented!(),
             Expr::Concat(_) => unimplemented!(),
 
             Expr::BinaryConst(ref e, op, c) => {
@@ -193,7 +192,7 @@ impl State {
 
     fn get_vec<'s>(&'s self, reg: ValueID) -> &'s [Value] {
         match *self.get(reg) {
-            Value::Vector(ref v) => v.as_slice(),
+            Value::Vector(ref v) => v,
             _ => panic!(),
         }
     }

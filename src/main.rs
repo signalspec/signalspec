@@ -33,7 +33,7 @@ fn main() {
     let modscope = sess.parse_module(&source).unwrap();
     let main = modscope.get_def("main");
 
-    let mut event = main.resolve_call(&sess, Default::default(), None);
+    let event = main.resolve_call(&sess, Default::default(), None);
 
     let (mut s1, s2) = exec::Connection::new();
     let (t1, mut t2) = exec::Connection::new();

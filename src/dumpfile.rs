@@ -13,7 +13,7 @@ pub fn parse_line(line: &str) -> Vec<Value> {
 
 pub fn read_values(reader: &mut BufRead, port: &mut exec::Connection) {
     for line in reader.lines() {
-        let lit = parse_line(line.unwrap().as_slice());
+        let lit = parse_line(&line.unwrap());
         if port.recv().is_err() { break; }
         if port.send(lit).is_err() { break; }
     }

@@ -12,7 +12,7 @@ pub fn resolve_module<'s>(session: &'s Session<'s>, ast: &'s ast::Module) -> Sco
         panic!("Imports unimplemented");
     }
 
-    resolve_letdef(session, &mut scope, ast.lets.as_slice());
+    resolve_letdef(session, &mut scope, &ast.lets);
 
     for def in ast.defs.iter() {
         let ed = Item::Def(session.closure_arena.alloc(EventClosure{ ast:def, parent_scope: scope.clone() }));
@@ -85,7 +85,7 @@ fn resolve_action<'s>(session: &'s Session<'s>,
 
 fn resolve_seq<'s>(session: &'s Session<'s>, pscope: &Scope<'s>, block: &'s ast::Block) -> Step {
     let mut scope = pscope.child();
-    resolve_letdef(session, &mut scope, block.lets.as_slice());
+    resolve_letdef(session, &mut scope, &block.lets);
 
     let steps = block.actions.iter().map(|action| resolve_action(session, &scope, action)).collect();
 
