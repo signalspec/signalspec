@@ -105,7 +105,6 @@ pub fn resolve<'s, 'a>(session: &'s Session<'s>, scope: &mut Vars<'s, 'a>, e: &a
 
         ast::Expr::String(ref s) => Item::String(s.clone()),
 
-        ast::Expr::Dot(box ref _lexpr, ref _name) => unimplemented!(),
     }
 }
 
@@ -142,6 +141,5 @@ pub fn pattern<'s>(session: &'s Session<'s>, scope: &mut Scope<'s>, l: &ast::Exp
         }
 
         ast::Expr::String(_) => panic!("Cannot declare a string"),
-        ast::Expr::Dot(box ref _lexpr, ref _name) => panic!("Cannot declare a property"),
     }
 }

@@ -90,8 +90,8 @@ valexpr -> ast::Expr
         { ast::Expr::Concat(vs) }
 
     varexpr -> ast::Expr
-        = i:identifier accessors:("." i:identifier {i} )*
-        { accessors.into_iter().fold(ast::Expr::Var(i), |base, accessor| ast::Expr::Dot(box base, accessor)) }
+        = i:identifier
+        { ast::Expr::Var(i) }
 
     literal_expr -> ast::Expr
         = v:literal { ast::Expr::Value(v) }

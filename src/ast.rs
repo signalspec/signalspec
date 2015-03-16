@@ -86,5 +86,4 @@ pub enum Expr {
     Bin(Box<Expr>, BinOp, Box<Expr>),
 
     Var(String),
-    Dot(Box<Expr>, String),
 }
