@@ -1,6 +1,6 @@
 use ast;
 
-use session::{ Session, ValueID };
+use session::Session;
 use resolve::expr;
 pub use exec::Step;
 pub use resolve::scope::{ Scope, Item };
@@ -35,7 +35,7 @@ impl<'s> EventClosure<'s> {
                         body: Option<&EventBodyClosure<'s>>) -> Step {
         if body.is_some() { panic!("Body unimplemented"); }
         let mut scope = self.parent_scope.child(); // Base on lexical parent
-        expr::pattern(session, &mut scope, &self.ast.param, param);
+        expr::assign(session, &mut scope, &self.ast.param, param);
         resolve_seq(session, &scope, &self.ast.block)
     }
 }
@@ -52,12 +52,12 @@ fn resolve_action<'s>(session: &'s Session<'s>,
     match *action {
         ast::Action::Seq(ref block) => resolve_seq(session, scope, block),
         ast::Action::Call(ref expr, ref arg, ref body) => {
-            let arg = expr::resolve(session, &mut expr::Vars::Use(scope), arg);
+            let arg = expr::rexpr(session, scope, arg);
             let body = body.as_ref().map(|x| {
                 EventBodyClosure { ast: x, parent_scope: scope.child() }
             });
 
-            match expr::resolve(session, &mut expr::Vars::Use(scope), expr) {
+            match expr::rexpr(session, scope, expr) {
                 Item::Def(entity) => entity.resolve_call(session, arg, body.as_ref()),
                 _ => panic!("Not callable"),
             }
@@ -65,11 +65,11 @@ fn resolve_action<'s>(session: &'s Session<'s>,
         ast::Action::Token(ref expr, ref body) => {
             debug!("Token: {:?}", expr);
             if body.is_some() { panic!("Body unimplemented"); }
-            Step::Token(expr::resolve(session, &mut expr::Vars::Use(scope), expr).into_message())
+            Step::Token(expr::rexpr(session, scope, expr).into_message())
         }
         ast::Action::On(ref expr, ref body) => {
             let mut body_scope = scope.child();
-            let msg = expr::resolve(session, &mut expr::Vars::Define(&mut body_scope), expr).into_message();
+            let msg = expr::lexpr(session, &mut body_scope, expr).into_message();
             let body_step = match *body {
                 Some(ref body) => resolve_seq(session, &body_scope, body),
                 None => Step::Nop,
@@ -77,7 +77,7 @@ fn resolve_action<'s>(session: &'s Session<'s>,
             Step::TokenTop(msg, box body_step)
         }
         ast::Action::Repeat(ref count_ast, ref block) => {
-            let count = expr::resolve_value(session, &mut expr::Vars::Use(scope), count_ast);
+            let count = expr::value(session, scope, count_ast);
             Step::Repeat(count, box resolve_seq(session, scope, block))
         }
     }
@@ -94,7 +94,7 @@ fn resolve_seq<'s>(session: &'s Session<'s>, pscope: &Scope<'s>, block: &'s ast:
 
 pub fn resolve_letdef<'s>(session: &'s Session<'s>, scope: &mut Scope<'s>, lets: &[ast::LetDef]) {
     for &ast::LetDef(ref name, ref expr) in lets.iter() {
-        let item = expr::resolve(session, &mut expr::Vars::Use(scope), expr);
+        let item = expr::rexpr(session, scope, expr);
         scope.bind(&name, item);
     }
 }
