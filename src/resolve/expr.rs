@@ -1,4 +1,3 @@
-use std::num::Float;
 use ast;
 use ast::Value;
 use eval::{Expr, ConcatElem};
@@ -24,8 +23,8 @@ fn resolve<'s>(session: &'s Session<'s>, var_handler: &mut FnMut(&str) -> Expr, 
                 else { panic!("Range expressions must be numeric constant") }
             }
 
-            let min = get_const_default_num(resolve(session, var_handler, min_expr), Float::neg_infinity());
-            let max = get_const_default_num(resolve(session, var_handler, max_expr), Float::infinity());
+            let min = get_const_default_num(resolve(session, var_handler, min_expr), ::std::f64::NEG_INFINITY);
+            let max = get_const_default_num(resolve(session, var_handler, max_expr), ::std::f64::INFINITY);
 
             Expr::Range(min, max)
         }
