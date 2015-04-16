@@ -1,5 +1,5 @@
 #![allow(dead_code)]
-#![feature(plugin, box_syntax, box_patterns, rustc_private, collections, exit_status, str_char)]
+#![feature(plugin, box_syntax, box_patterns, rustc_private, collections, exit_status, str_char, scoped)]
 #![plugin(peg_syntax_ext)]
 
 extern crate arena;
