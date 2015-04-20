@@ -33,7 +33,10 @@ fn main() {
     let modscope = sess.parse_module(&source).unwrap();
     let main = modscope.get_def("main");
 
-    let shape_down = resolve::types::Shape::Val(resolve::types::Bottom);
+    let shape_down = resolve::types::Shape::Val(resolve::types::Bottom, ::eval::DataMode {
+        down: false, up: true
+    });
+
     let (_shape, event) = main.resolve_call(&sess, &shape_down, Default::default());
 
     let (mut s1, s2) = exec::Connection::new();

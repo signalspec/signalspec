@@ -50,9 +50,9 @@ impl<'s> Item<'s> {
 
         fn inner<'s>(i: Item<'s>, shape: &Shape, components: &mut Vec<Expr>) {
             match shape {
-                &Shape::Val(ref _t) => {
+                &Shape::Val(ref _t, dir) => {
                     if let Item::Value(v) = i {
-                        components.push(v)
+                        components.push(v.limit_direction(dir))
                     } else {
                         panic!("Expected value but found {:?}", i);
                     }

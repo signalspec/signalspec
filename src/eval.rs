@@ -2,6 +2,12 @@ use std::collections::VecMap;
 use ast::Value;
 use session::{ValueID};
 
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub struct DataMode {
+    pub down: bool,
+    pub up: bool,
+}
+
 #[derive(PartialEq, Debug, Clone)]
 pub enum ConcatElem {
     Elem(Expr),
@@ -64,15 +70,38 @@ impl Expr {
         }
     }
 
-    pub fn exists_down(&self) -> bool {
+    pub fn mode(&self) -> DataMode {
         match *self {
-            Expr::Ignored | Expr::Range(..) => false,
-            Expr::Variable(..) => true,
-            Expr::Const(..) => true,
-            Expr::Flip(ref d, _) => d.exists_down(),
-            Expr::Choose(ref e, _) => e.exists_down(),
+            Expr::Ignored => DataMode { down: false, up: false },
+            Expr::Range(..) => DataMode { down: false, up: true },
+            Expr::Variable(..) => DataMode { down: true, up: true }, //TODO: results after inference?
+            Expr::Const(..) => DataMode { down: true, up: true },
+            Expr::Flip(ref d, ref u) => {
+                let d = d.mode();
+                let u = u.mode();
+                DataMode { down: d.down, up: u.up }
+            },
+            Expr::Choose(ref e, _) => e.mode(),
             Expr::Concat(_) => unimplemented!(),
-            Expr::BinaryConst(ref e, _, _) => e.exists_down()
+            Expr::BinaryConst(ref e, _, _) => e.mode()
+        }
+    }
+
+    pub fn exists_down(&self) -> bool {
+        self.mode().down
+    }
+
+    pub fn limit_direction(self, target: DataMode) -> Expr {
+        let mode = self.mode();
+
+        if !target.down && !target.up {
+            Expr::Ignored
+        } else if !target.up && mode.up {
+            Expr::Flip(box self, box Expr::Ignored)
+        } else if !target.down && mode.down {
+            Expr::Flip(box Expr::Ignored, box self)
+        } else {
+            self
         }
     }
 

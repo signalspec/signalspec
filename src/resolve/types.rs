@@ -1,4 +1,5 @@
 pub use self::Type::*;
+use eval::DataMode;
 
 #[derive(Copy, Debug, PartialEq, Clone)]
 /// A type represents a set of possible values
@@ -28,5 +29,5 @@ pub fn common_all<T:Iterator<Item=Type>>(l: T) -> Option<Type> {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Shape {
     Tup(Vec<Shape>),
-    Val(Type),
+    Val(Type, DataMode),
 }

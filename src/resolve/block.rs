@@ -5,6 +5,7 @@ use resolve::expr;
 pub use exec::Step;
 pub use resolve::scope::{ Scope, Item };
 use resolve::types::{self, Shape};
+use eval::DataMode;
 
 
 pub fn resolve_module<'s>(session: &'s Session<'s>, ast: &'s ast::Module) -> Scope<'s> {
@@ -35,7 +36,10 @@ impl<'s> EventClosure<'s> {
                         session: &'s Session<'s>,
                         shape_down: &Shape,
                         param: Item<'s>) -> (Shape, Step) {
-        let shape_up = Shape::Val(types::Bottom); // TODO: use declared shape
+
+        // TODO: use declared shape
+        let shape_up = Shape::Val(types::Bottom, DataMode{ up: true, down: true });
+
         let mut scope = self.parent_scope.child(); // Base on lexical parent
         expr::assign(session, &mut scope, &self.ast.param, param);
         let steptree = resolve_seq(session, &scope, shape_down, &shape_up, &self.ast.block);
