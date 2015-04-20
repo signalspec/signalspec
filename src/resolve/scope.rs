@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use std::default::Default;
 
 use resolve::block::{EventClosure};
+use resolve::types::Shape;
 use eval::Expr;
 use exec::Message;
 
@@ -44,18 +45,35 @@ pub enum Item<'s> {
 }
 
 impl<'s> Item<'s> {
-    pub fn into_message(self) -> Message {
+    pub fn into_message(self, shape: &Shape) -> Message {
         let mut components = Vec::new();
 
-        fn inner<'s>(i: Item<'s>, components: &mut Vec<Expr>) {
-            match i {
-                Item::Value(v) => components.push(v),
-                Item::Tuple(t) => for i in t { inner(i, components) },
-                other => panic!("Can't send {:?}", other),
+        fn inner<'s>(i: Item<'s>, shape: &Shape, components: &mut Vec<Expr>) {
+            match shape {
+                &Shape::Val(ref _t) => {
+                    if let Item::Value(v) = i {
+                        components.push(v)
+                    } else {
+                        panic!("Expected value but found {:?}", i);
+                    }
+                }
+                &Shape::Tup(ref m) => {
+                    if let Item::Tuple(t) = i {
+                        if t.len() == m.len() {
+                            for (mi, i) in m.iter().zip(t.into_iter()) {
+                                inner(i, mi, components)
+                            }
+                        } else {
+                            panic!("Expected tuple length {}, found {}", m.len(), t.len());
+                        }
+                    } else {
+                        panic!("Expected tuple of length {}, found {:?}", m.len(), i);
+                    }
+                }
             }
         }
 
-        inner(self, &mut components);
+        inner(self, shape, &mut components);
 
         Message { components: components }
     }

@@ -1,5 +1,4 @@
 pub use self::scope::Scope;
-pub use self::types::SignalInfo;
 pub use self::block::resolve_module;
 
 pub mod scope;

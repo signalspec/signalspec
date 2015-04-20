@@ -27,41 +27,6 @@ pub fn common_all<T:Iterator<Item=Type>>(l: T) -> Option<Type> {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Shape {
-    Unknown(bool, bool),
     Tup(Vec<Shape>),
-    Val(Type, bool, bool),
-}
-
-impl Shape {
-    pub fn contains_direction(&self) -> (bool, bool) {
-        match *self {
-            Shape::Unknown(d, u) | Shape::Val(_, d, u) => (d, u),
-            Shape::Tup(ref x) => {
-                x.iter().map(Shape::contains_direction)
-                        .fold((false, false), |(d1,u1),(d2,u2)| (d1|d2, u1|u2))
-            }
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct SignalInfo {
-    pub downwards: Shape,
-    pub upwards: Shape,
-}
-
-#[test]
-fn shape_contains_direction() {
-    assert_eq!(Shape::Tup(vec![Shape::Unknown(true, false)])
-        .contains_direction(), (true, false));
-
-    assert_eq!(Shape::Tup(vec![
-            Shape::Unknown(true, false),
-            Shape::Unknown(false, true)
-        ]).contains_direction(), (true, true));
-
-    assert_eq!(Shape::Tup(vec![
-            Shape::Unknown(false, false),
-            Shape::Unknown(false, true)
-        ]).contains_direction(), (false, true));
+    Val(Type),
 }

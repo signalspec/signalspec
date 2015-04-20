@@ -131,18 +131,20 @@ impl <'s> Module<'s> {
     }
 
     pub fn compile_call<T: IntoItem<'s>>(&self, name: &str,
-                        _shape_down: Shape, _shape_up: Shape,
+                        shape_down: Shape,
                         param: T) -> Result<Program, ()> {
         let def = self.get_def(name);
 
-        let step = def.resolve_call(&self.session, param.into_item(), None);
+        let (shape_up, step) = def.resolve_call(&self.session, &shape_down, param.into_item());
 
-        Ok(Program{ step: step })
+        Ok(Program{ step: step, shape_down: shape_down, shape_up: shape_up})
     }
 }
 
 pub struct Program {
     pub step: Step,
+    pub shape_down: Shape,
+    pub shape_up: Shape,
 }
 
 impl Program {
