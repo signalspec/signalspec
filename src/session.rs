@@ -189,13 +189,18 @@ impl Program {
     }
 }
 
-pub trait Process {
+pub trait Process: Send {
     fn run(&self, state: &mut eval::State, downwards: &mut exec::Connection, upwards: &mut exec::Connection) -> bool;
+    fn shape_up(&self) -> &Shape;
 }
 
 impl Process for Program {
     fn run(&self, state: &mut eval::State, downwards: &mut exec::Connection, upwards: &mut exec::Connection) -> bool {
         exec::exec(state, &self.step, downwards, upwards)
+    }
+
+    fn shape_up(&self) -> &Shape {
+        &self.shape_up
     }
 }
 
