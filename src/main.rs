@@ -54,6 +54,7 @@ fn main() {
 
             let main = match &call.name[..] {
                 "file" => connection_io::file_process(arg),
+                "dump" => dumpfile::process(&shape, arg),
                 name => (box modscope.compile_call(name, shape, arg)
                   .ok().expect("Failed to compile call") as Box<session::Process>)
             };
