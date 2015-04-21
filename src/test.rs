@@ -148,7 +148,7 @@ fn test_unbounded_loop() {
 
     let p = m.compile_call("main", SHAPE_ANY, ()).unwrap();
 
-    p.run_test_pass("#h \n #l \n #h \n #h \n #l \n #h \n #h \n #h", "1\n2\n3\n");
+    p.run_test_pass("#h \n #l \n #h \n #h \n #l \n #h \n #h \n #h", "#1\n#2\n#3\n");
 }
 
 #[test]

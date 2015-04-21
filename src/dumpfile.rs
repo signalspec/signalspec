@@ -26,7 +26,7 @@ pub fn write_values(w: &mut Write, port: &mut exec::Connection) {
             Ok(v) => {
                 for (i, v) in v.iter().enumerate() {
                     if i != 0 { w.write_all(b", ").unwrap(); }
-                    (write!(w, "{:?}", v)).unwrap();
+                    (write!(w, "{}", v)).unwrap();
                 }
                 w.write_all(b"\n").unwrap();
             }

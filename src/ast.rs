@@ -60,14 +60,20 @@ impl Value {
     }
 }
 
-impl fmt::Debug for Value {
+impl fmt::Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             Value::Number(n) => write!(f, "{}", n),
-            Value::Integer(n) => write!(f, "{}", n),
-            Value::Symbol(ref s) => write!(f, "#{:?}", *s),
+            Value::Integer(n) => write!(f, "#{}", n),
+            Value::Symbol(ref s) => write!(f, "#{}", *s),
             Value::Vector(ref n) => write!(f, "{:?}", n),
         }
+    }
+}
+
+impl fmt::Debug for Value {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        fmt::Display::fmt(self, f)
     }
 }
 
