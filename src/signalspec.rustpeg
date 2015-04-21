@@ -20,7 +20,7 @@ def -> ast::Def
     { ast::Def{ name:name, param:param, block:block } }
 
     block -> ast::Block
-        = "{" _ lets:letstmt* actions:action ** BREAK _ "}"
+        = "{" _ lets:letstmt* actions:action ** (BREAK / (_ ";" _)) _ "}"
         { ast::Block{ lets:lets, actions:actions } }
 
     action -> ast::Action
