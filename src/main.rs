@@ -9,8 +9,8 @@ extern crate collections;
 
 use std::{env, fs, thread};
 use std::io::prelude::*;
-use std::io::BufReader;
-use std::default::Default;
+
+use session::Process;
 
 #[macro_use] mod session;
 mod resolve;
@@ -29,38 +29,53 @@ fn main() {
     let args: Vec<String> = env::args().collect();
     let mut source = String::new();
     fs::File::open(&args[1]).unwrap().read_to_string(&mut source).unwrap();
-
     let modscope = sess.parse_module(&source).unwrap();
-    let main = modscope.get_def("main");
 
-    let shape_down = resolve::types::Shape::Val(resolve::types::Bottom, ::eval::DataMode {
-        down: false, up: true
-    });
+    let mut processes = vec![];
+    let mut shape = resolve::types::NULL_SHAPE.clone();
+    let scope = resolve::scope::Scope::new();
 
-    let (_shape, event) = main.resolve_call(&sess, &shape_down, Default::default());
+    for arg in &args[2..] {
+        if arg.starts_with("{") {
+            let block = grammar::block(&arg)
+                .unwrap_or_else(|e| panic!("Error parsing block: {}", e));
 
-    let (mut s1, s2) = exec::Connection::new();
-    let (t1, mut t2) = exec::Connection::new();
+            let shape_up = resolve::types::NULL_SHAPE.clone();
+            let steptree = resolve::block::resolve_seq(&sess, &scope, &shape, &shape_up, &block);
 
-    let reader_thread = thread::scoped(move || {
-        let mut s2 = s2;
-        let mut i = BufReader::new(std::io::stdin());
-        dumpfile::read_values(&mut i, &mut s2);
-    });
+            processes.push(box session::Program { step: steptree,
+                                                  shape_down: shape.clone(),
+                                                  shape_up: shape_up }
+                                                  as Box<session::Process>);
+        } else {
+            let call = grammar::process(&arg)
+                .unwrap_or_else(|e| panic!("Error parsing argument: {}", e));
+            let arg = resolve::expr::rexpr(&sess, &scope, &call.arg);
 
-    let writer_thread = thread::scoped(move || {
-        let mut t1 = t1;
-        let mut o = std::io::stdout();
-        dumpfile::write_values(&mut o, &mut t1);
-    });
+            let main = match &call.name[..] {
+                "file" => connection_io::file_process(arg),
+                name => (box modscope.compile_call(name, shape, arg)
+                  .ok().expect("Failed to compile call") as Box<session::Process>)
+            };
+            shape = main.shape_up().clone();
+            debug!("shape: {:?}", shape);
+            processes.push(main);
+        }
+    }
 
-    let mut state = eval::State::new();
-    let r = exec::exec(&mut state, &event, &mut s1, &mut t2);
+    let (_, mut connection) = exec::Connection::new(eval::DataMode { down: false, up: false });
+    let threads = processes.into_iter().map(|p| {
+        let (mut c2, c1) = exec::Connection::new(p.shape_up().data_mode());
+        ::std::mem::swap(&mut c2, &mut connection);
+        thread::scoped(move || {
+            let mut downward = c2;
+            let mut upward = c1;
+            let mut state = eval::State::new();
+            p.run(&mut state, &mut downward, &mut upward)
+        })
+    }).collect::<Vec<_>>();
 
-    drop(s1);
-    drop(t2);
-    reader_thread.join();
-    writer_thread.join();
+    let success = threads.into_iter().all(|x| x.join());
 
-    env::set_exit_status(if r { 0 } else { 1 });
+    env::set_exit_status(if success { 0 } else { 1 });
 }

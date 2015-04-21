@@ -19,6 +19,7 @@ def -> ast::Def
     = DEF _ name:identifier _ "(" _ param: expr_tup _ ")" _ block:block BREAK
     { ast::Def{ name:name, param:param, block:block } }
 
+    #[pub]
     block -> ast::Block
         = "{" _ lets:letstmt* actions:action ** (BREAK / (_ ";" _)) _ "}"
         { ast::Block{ lets:lets, actions:actions } }
@@ -33,9 +34,15 @@ def -> ast::Def
         / expr:expr body:block?
             { ast::Action::Token(expr, body) }
 
-// Expressions
 
-#[export]
+// Processes (for command line args)
+#[pub]
+process -> ast::Process
+  = name:identifier _ param:("(" _ param:expr_tup _ ")" {param})?
+      { ast::Process{ name: name, arg: param.unwrap_or(ast::Expr::Tup(vec![]))} }
+
+// Expressions
+#[pub]
 expr -> ast::Expr
     = "(" _ e:expr_tup _")" {e}
     / valexpr
@@ -44,7 +51,7 @@ expr_tup -> ast::Expr
     = es:(expr ** COMMA) COMMA?
     { if es.len() == 1 { es.into_iter().next().unwrap() } else { ast::Expr::Tup(es) } }
 
-#[export]
+#[pub]
 valexpr -> ast::Expr
   = valexpr_flip
 

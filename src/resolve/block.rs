@@ -99,7 +99,7 @@ fn resolve_action<'s>(session: &'s Session<'s>,
     }
 }
 
-fn resolve_seq<'s>(session: &'s Session<'s>,
+pub fn resolve_seq<'s>(session: &'s Session<'s>,
                   pscope: &Scope<'s>,
                   shape_down: &Shape,
                   shape_up: &Shape,

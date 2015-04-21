@@ -87,3 +87,9 @@ pub enum Expr {
 
     Var(String),
 }
+
+#[derive(Debug)]
+pub struct Process {
+    pub name: String,
+    pub arg: Expr,
+}
