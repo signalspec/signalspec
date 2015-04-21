@@ -31,3 +31,21 @@ pub enum Shape {
     Tup(Vec<Shape>),
     Val(Type, DataMode),
 }
+
+// TODO: should be fully empty, not a no-direction member
+pub static NULL_SHAPE: Shape = Shape::Val(Bottom, DataMode { down: false, up: false });
+
+impl Shape {
+    pub fn data_mode(&self) -> DataMode {
+        match *self {
+            Shape::Val(_, mode) => mode,
+            Shape::Tup(ref items) => items.iter().fold(
+                DataMode { down: false, up: false },
+                |am, b| {
+                    let bm = b.data_mode();
+                    DataMode { down: am.down || bm.down, up: am.up || bm.up  }
+                }
+            ),
+        }
+    }
+}

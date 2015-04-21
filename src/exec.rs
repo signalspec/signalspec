@@ -1,5 +1,6 @@
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::iter::repeat;
+use eval::DataMode;
 
 use ast::Value;
 use eval::{ self, Expr };
@@ -99,20 +100,19 @@ pub struct Connection {
 }
 
 impl Connection {
-    pub fn new() -> (Connection, Connection) {
-        let (is_down, is_up) = (true, true);
-
-        let (s1, r1) = if is_down {
+    pub fn new(direction: DataMode) -> (Connection, Connection) {
+        debug!("New connection: {:?}", direction);
+        let (s1, r1) = if direction.down {
             let (a, b) = channel();
             (Some(a), Some(b))
         } else { (None, None) };
 
-        let (s2, r2) = if is_up {
+        let (s2, r2) = if direction.up {
             let (a, b) = channel();
             (Some(a), Some(b))
         } else { (None, None) };
 
-        let alive = is_up || is_down;
+        let alive = direction.down || direction.up;
 
         (Connection{ tx: s1, rx: r2, lookahead_tx: None, lookahead_rx: None, alive: alive },
          Connection{ tx: s2, rx: r1, lookahead_tx: None, lookahead_rx: None, alive: alive })
@@ -126,7 +126,7 @@ impl Connection {
             }
             r
         } else {
-            assert!(v.len() == 0);
+            //assert!(v.len() == 0);
             if self.alive { Ok(()) } else { Err(()) }
         }
     }
@@ -179,6 +179,9 @@ impl Connection {
         self.lookahead_rx.take();
         self.lookahead_tx.take();
     }
+
+    pub fn can_tx(&self) -> bool { self.tx.is_some() }
+    pub fn can_rx(&self) -> bool { self.rx.is_some() }
 }
 
 pub fn try_token(state: &mut eval::State, parent: &mut Connection, msg: &Message) -> bool {
