@@ -57,7 +57,7 @@ fn resolve_action<'s>(session: &'s Session<'s>,
                       scope: &Scope<'s>,
                       shape_down: &Shape,
                       shape_up: &Shape,
-                      action: &'s ast::Action) -> Step {
+                      action: &ast::Action) -> Step {
     match *action {
         ast::Action::Seq(ref block) => resolve_seq(session, scope, shape_down, shape_up, block),
         ast::Action::Call(ref expr, ref arg, ref body) => {
@@ -103,7 +103,7 @@ fn resolve_seq<'s>(session: &'s Session<'s>,
                   pscope: &Scope<'s>,
                   shape_down: &Shape,
                   shape_up: &Shape,
-                  block: &'s ast::Block) -> Step {
+                  block: &ast::Block) -> Step {
     let mut scope = pscope.child();
     resolve_letdef(session, &mut scope, &block.lets);
 
