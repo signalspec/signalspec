@@ -18,6 +18,7 @@ mod eval;
 mod ast;
 mod exec;
 mod dumpfile;
+mod connection_io;
 #[cfg(test)] mod test;
 
 peg_file! grammar("signalspec.rustpeg");
