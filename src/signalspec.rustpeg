@@ -91,6 +91,9 @@ valexpr -> ast::Expr
         / varexpr
         / ("(" _ v:valexpr _ ")" _ {v})
 
+    ignoreliteral -> ast::Expr
+        = "_" { ast::Expr::Ignore }
+
     concatexpr -> ast::Expr
         = "[" _ vs:(valexpr ++ COMMA) COMMA? "]"
         { ast::Expr::Concat(vs) }
@@ -109,10 +112,6 @@ valexpr -> ast::Expr
         / integerliteral
         / bitsliteral
         / numberliteral
-
-            ignoreliteral -> ast::Expr
-                = "ignore"
-                { ast::Expr::Ignore }
 
             symbolliteral -> ast::Value
                 = "#" i:identifier

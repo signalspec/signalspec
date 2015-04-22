@@ -140,7 +140,7 @@ fn test_unbounded_loop() {
       repeat {
         on v {
           repeat v { #h }
-          repeat ignore { #l }
+          repeat _ { #l }
         }
       }
     }
