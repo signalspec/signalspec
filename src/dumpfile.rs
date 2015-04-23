@@ -10,7 +10,7 @@ use resolve::types::{self, Shape};
 use resolve::scope::Item;
 use connection_io::{ConnectionRead, ConnectionWrite};
 
-struct ValueDumpDown;
+struct ValueDumpDown(Shape);
 impl Process for ValueDumpDown {
     fn run(&self, _: &mut eval::State, downwards: &mut exec::Connection, upwards: &mut exec::Connection) -> bool {
         let mut c = ConnectionWrite(downwards);
@@ -19,12 +19,11 @@ impl Process for ValueDumpDown {
     }
 
     fn shape_up(&self) -> &Shape {
-        static SHAPE: Shape = Shape::Val(types::Bottom, DataMode { down: true, up: false });
-        &SHAPE
+        &self.0
     }
 }
 
-struct ValueDumpUp;
+struct ValueDumpUp(Shape);
 impl Process for ValueDumpUp {
     fn run(&self, _: &mut eval::State, downwards: &mut exec::Connection, upwards: &mut exec::Connection) -> bool {
         let mut c = io::BufReader::new(ConnectionRead(downwards));
@@ -33,16 +32,22 @@ impl Process for ValueDumpUp {
     }
 
     fn shape_up(&self) -> &Shape {
-        static SHAPE: Shape = Shape::Val(types::Bottom, DataMode { down: false, up: true });
-        &SHAPE
+        &self.0
     }
 }
 
-pub fn process(bottom_shape: &Shape, _arg: Item) -> Box<Process + 'static> {
-    match *bottom_shape {
-        Shape::Val(types::Integer, DataMode { down: false, up: true }) => box ValueDumpUp,
-        Shape::Val(types::Integer, DataMode { down: true, up: false }) => box ValueDumpDown,
-        _ => panic!("Invalid shape {:?} below dumpfile::process", bottom_shape)
+pub fn process(downward_shape: &Shape, arg: Item) -> Box<Process + 'static> {
+    let dir = match *downward_shape {
+        Shape::Val(types::Integer, dir) => dir,
+        _ => panic!("Invalid shape {:?} below dumpfile::process", downward_shape)
+    };
+
+    let upward_shape = arg.into_shape(dir);
+
+    match dir {
+        DataMode { down: false, up: true } => box ValueDumpUp(upward_shape),
+        DataMode { down: true, up: false } => box ValueDumpDown(upward_shape),
+        _ => panic!("Invalid shape {:?} below dumpfile::process", downward_shape)
     }
 }
 
