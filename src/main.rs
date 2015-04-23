@@ -64,6 +64,12 @@ fn main() {
         }
     }
 
+    let topmost_mode = shape.data_mode();
+
+    if topmost_mode.up {
+        processes.push(box dumpfile::ValueDumpPrint(shape));
+    }
+
     let (_, mut connection) = exec::Connection::new(eval::DataMode { down: false, up: false });
     let threads = processes.into_iter().map(|p| {
         let (mut c2, c1) = exec::Connection::new(p.shape_up().data_mode());

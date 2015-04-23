@@ -36,6 +36,19 @@ impl Process for ValueDumpUp {
     }
 }
 
+pub struct ValueDumpPrint(pub Shape);
+impl Process for ValueDumpPrint {
+    fn run(&self, _: &mut eval::State, downwards: &mut exec::Connection, _upwards: &mut exec::Connection) -> bool {
+        let mut stdout = ::std::io::stdout();
+        write_values(&mut stdout, downwards);
+        true
+    }
+
+    fn shape_up(&self) -> &Shape {
+        &types::NULL_SHAPE
+    }
+}
+
 pub fn process(downward_shape: &Shape, arg: Item) -> Box<Process + 'static> {
     let dir = match *downward_shape {
         Shape::Val(types::Integer, dir) => dir,
