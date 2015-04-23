@@ -213,9 +213,10 @@ pub fn exec(state: &mut eval::State, s: &Step, parent: &mut Connection, child: &
         }
         Step::TokenTop(ref msg, box ref body) => {
             debug!("tokentop: {:?}", msg);
-            match child.recv() {
-                Ok(m) => {
+            match child.lookahead_receive() {
+                Some(m) => {
                     debug!("down: {:?}", m);
+                    child.accept();
 
                     msg.eval_up(state, m);
                     let r = exec(state, body, parent, child);
@@ -225,7 +226,7 @@ pub fn exec(state: &mut eval::State, s: &Step, parent: &mut Connection, child: &
                     if child.send(m).is_err() { return false; }
                     r
                 }
-                Err(..) => false
+                None(..) => false
             }
         }
         Step::Seq(ref steps) => {
@@ -249,6 +250,7 @@ pub fn exec(state: &mut eval::State, s: &Step, parent: &mut Connection, child: &
                         }
                     }
                     Step::TokenTop(..) => {
+                        child.lookahead_receive();
                         if !parent.alive || !child.alive {
                             debug!("  loop done");
                             break;
