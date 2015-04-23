@@ -45,8 +45,21 @@ pub enum Step {
     Token(Message),
     TokenTop(Message, Box<Step>),
     Seq(Vec<Step>),
-    Repeat(Expr, Box<Step>),
+    Repeat(Expr, Box<Step>, bool),
     //PrimitiveStep(Box<PrimitiveStep>),
+}
+
+impl Step {
+    /// Returns true if any data is sent in the up direction in this step or its lexical children
+    pub fn any_up(&self) -> bool {
+        match *self {
+            Step::Nop => false,
+            Step::Token(ref m) => m.components.iter().any(Expr::exists_up),
+            Step::Seq(ref steps) => steps.iter().any(Step::any_up),
+            Step::TokenTop(_, box ref _c) => true, //TODO: works on simple cases, but is this the right heuristic?
+            Step::Repeat(_, box ref c, _) => c.any_up(),
+        }
+    }
 }
 
 fn first(s: &Step) -> Option<&Step> {
@@ -55,7 +68,7 @@ fn first(s: &Step) -> Option<&Step> {
         Step::Token(..) => Some(s),
         Step::TokenTop(..) => Some(s),
         Step::Seq(ref steps) => steps.get(0).and_then(first),
-        Step::Repeat(_, box ref inner) => first(inner),
+        Step::Repeat(_, box ref inner, _) => first(inner),
     }
 }
 
@@ -76,8 +89,8 @@ pub fn print_step_tree(s: &Step, indent: u32) {
                 print_step_tree(c, indent+1);
             }
         }
-        Step::Repeat(ref count, box ref inner) => {
-            println!("{}Repeat: {:?}", i, count);
+        Step::Repeat(ref count, box ref inner, up) => {
+            println!("{}Repeat: {:?} {}", i, count, up);
             print_step_tree(inner, indent + 1);
         }
         /*PrimitiveStep(ref h) => {
@@ -238,33 +251,52 @@ pub fn exec(state: &mut eval::State, s: &Step, parent: &mut Connection, child: &
             }
             true
         }
-        Step::Repeat(ref count_expr, box ref inner) => {
-            let f = first(inner).expect("Loop has no body");
-            let mut count = 0;
-            loop {
-                match *f {
-                    Step::Token(ref msg) => {
-                        if !try_token(state, parent, msg) {
-                            debug!("  loop exit");
-                            break;
+        Step::Repeat(ref count_expr, box ref inner, up) => {
+            if up {
+                let f = first(inner).expect("Loop has no body");
+                let mut count = 0;
+                loop {
+                    debug!("Loop up check {:?}", f);
+                    match *f {
+                        Step::Token(ref msg) => {
+                            if !try_token(state, parent, msg) {
+                                debug!("  loop exit");
+                                break;
+                            }
                         }
+                        Step::TokenTop(..) => {
+                            child.lookahead_receive();
+                            if !parent.alive || !child.alive {
+                                debug!("  loop done");
+                                break;
+                            }
+                        },
+                        _ => panic!(),
                     }
-                    Step::TokenTop(..) => {
-                        child.lookahead_receive();
-                        if !parent.alive || !child.alive {
-                            debug!("  loop done");
-                            break;
-                        }
-                    },
-                    _ => panic!(),
+                    if !exec(state, inner, parent, child) {
+                        debug!("loop up early exit");
+                        return false;
+                    }
+                    count += 1;
                 }
-                if !exec(state, inner, parent, child) {
-                    return false;
-                }
-                count += 1;
-            }
+                debug!("loop up exit {}", count);
+                count_expr.eval_up(state, Value::Integer(count))
+            } else {
+                let count = match count_expr.eval_down(state) {
+                    Value::Integer(count) => count,
+                    other => panic!("Count must be an integer, found {}", other),
+                };
 
-            count_expr.eval_up(state, Value::Integer(count))
+                for _ in 0..count {
+                    if !exec(state, inner, parent, child) {
+                        debug!("loop down early exit");
+                        return false;
+                    }
+                }
+
+                debug!("loop down exit {}", count);
+                true
+            }
         }
         //PrimitiveStep(..) => unimplemented!()
     }

@@ -94,7 +94,9 @@ fn resolve_action<'s>(session: &'s Session<'s>,
         }
         ast::Action::Repeat(ref count_ast, ref block) => {
             let count = expr::value(session, scope, count_ast);
-            Step::Repeat(count, box resolve_seq(session, scope, shape_down, shape_up, block))
+            let child = box resolve_seq(session, scope, shape_down, shape_up, block);
+            let any_up = child.any_up();
+            Step::Repeat(count, child, any_up)
         }
     }
 }

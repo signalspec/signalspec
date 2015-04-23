@@ -87,9 +87,8 @@ impl Expr {
         }
     }
 
-    pub fn exists_down(&self) -> bool {
-        self.mode().down
-    }
+    pub fn exists_down(&self) -> bool { self.mode().down }
+    pub fn exists_up(&self) -> bool { self.mode().up }
 
     pub fn limit_direction(self, target: DataMode) -> Expr {
         let mode = self.mode();
