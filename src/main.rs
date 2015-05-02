@@ -1,5 +1,5 @@
 #![allow(dead_code)]
-#![feature(plugin, box_syntax, box_patterns, rustc_private, collections, exit_status, str_char, scoped)]
+#![feature(plugin, box_syntax, box_patterns, rustc_private, collections, exit_status, str_char, scoped, core)]
 #![plugin(peg_syntax_ext)]
 
 extern crate arena;
@@ -18,6 +18,7 @@ mod eval;
 mod ast;
 mod exec;
 mod dumpfile;
+mod vcd;
 mod connection_io;
 #[cfg(test)] mod test;
 
@@ -55,6 +56,7 @@ fn main() {
             let main = match &call.name[..] {
                 "file" => connection_io::file_process(arg),
                 "dump" => dumpfile::process(&shape, arg),
+                "vcd" => vcd::process(&shape, arg),
                 name => (box modscope.compile_call(name, shape, arg)
                   .ok().expect("Failed to compile call") as Box<session::Process>)
             };

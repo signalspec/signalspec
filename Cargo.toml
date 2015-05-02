@@ -7,5 +7,8 @@ authors = [ "km@kevinmehall.net" ]
 [dependencies.peg]
 git = "https://github.com/kevinmehall/rust-peg.git"
 
+[dependencies.vcd]
+git = "https://github.com/kevinmehall/rust-vcd.git"
+
 [[bin]]
 name = "signalspec"
