@@ -4,6 +4,7 @@ use std::default::Default;
 
 use resolve::block::{EventClosure};
 use resolve::types::Shape;
+use session::{ Session, ValueID };
 use eval::{ Expr, DataMode };
 use exec::Message;
 use resolve::types;
@@ -23,6 +24,13 @@ impl<'s> Scope<'s> {
 
     pub fn bind(&mut self, name: &str, value: Item<'s>) {
         self.names.insert(name.to_string(), value);
+    }
+
+    pub fn new_variable(&mut self, session: &'s Session<'s>, name: &str) -> ValueID {
+        let id = session.make_id();
+        debug!("Variable {} {}", id, name);
+        self.bind(name, Item::Value(Expr::Variable(id)));
+        id
     }
 
     pub fn get(&self, name: &str) -> Option<Item<'s>> {

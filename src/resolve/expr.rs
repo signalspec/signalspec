@@ -106,9 +106,7 @@ pub fn lexpr<'s>(session: &'s Session<'s>, scope: &mut Scope<'s>, e: &ast::Expr)
         ast::Expr::String(..) => panic!("Can't pattern match into a string"),
 
         ref other => Item::Value(resolve(session, &mut |name| {
-            let id = session.make_id();
-            scope.bind(name, Item::Value(Expr::Variable(id)));
-            Expr::Variable(id)
+            Expr::Variable(scope.new_variable(session, name))
         }, other))
     }
 }
