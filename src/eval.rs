@@ -115,7 +115,17 @@ impl Expr {
             Expr::Const(ref p) => &v == p,
 
             Expr::Flip(_, ref u) => u.eval_up(state, v),
-            Expr::Choose(ref _e, ref _c) => unimplemented!(),
+            Expr::Choose(ref e, ref choices) => {
+                let r = choices.iter()
+                    .find(|& &(_, ref b)|{ value_match(b, &v) })
+                    .map(|&(ref a, _)| a.clone());
+
+                if let Some(v) = r {
+                    e.eval_up(state, v)
+                } else {
+                    false
+                }
+            },
             Expr::Concat(_) => unimplemented!(),
 
             Expr::BinaryConst(ref e, op, c) => {
