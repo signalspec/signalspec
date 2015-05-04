@@ -29,6 +29,8 @@ def -> ast::Def
             { ast::Action::Repeat(count.unwrap_or(ast::Expr::Ignore), block) }
         / ON _ expr:expr _ body:block?
             { ast::Action::On(expr, body) }
+        / FOR _ items:(l:identifier _ "=" _ r:expr { (l,r) })* _  body:block
+            { ast::Action::For(items, body) }
         / expr:varexpr _ "(" _ param:expr_tup _ ")" _ body:block?
             { ast::Action::Call(expr, param, body) }
         / expr:expr body:block?
@@ -174,6 +176,7 @@ LET    = "let"    !IDCHAR
 DEF    = "def"    !IDCHAR
 REPEAT = "repeat" !IDCHAR
 ON     = "on"     !IDCHAR
+FOR    = "for"    !IDCHAR
 
 identifier -> String = [a-zA-Z_][0-9a-zA-Z_]*
     { match_str.to_string() }

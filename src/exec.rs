@@ -1,9 +1,9 @@
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::iter::repeat;
-use eval::DataMode;
 
+use session::ValueID;
 use ast::Value;
-use eval::{ self, Expr };
+use eval::{ self, Expr, DataMode };
 
 pub trait PrimitiveStep {
     fn display(&self) -> String;
@@ -46,6 +46,7 @@ pub enum Step {
     TokenTop(Message, Box<Step>),
     Seq(Vec<Step>),
     Repeat(Expr, Box<Step>, bool),
+    Foreach(u32, Vec<(ValueID, Expr)>, Box<Step>)
     //PrimitiveStep(Box<PrimitiveStep>),
 }
 
@@ -57,7 +58,7 @@ impl Step {
             Step::Token(ref m) => m.components.iter().any(Expr::exists_up),
             Step::Seq(ref steps) => steps.iter().any(Step::any_up),
             Step::TokenTop(_, box ref _c) => true, //TODO: works on simple cases, but is this the right heuristic?
-            Step::Repeat(_, box ref c, _) => c.any_up(),
+            Step::Repeat(_, box ref c, _) | Step::Foreach(_, _, box ref c) => c.any_up(),
         }
     }
 }
@@ -81,6 +82,12 @@ pub fn print_step_tree(s: &Step, indent: u32) {
         }
         Step::Repeat(ref count, box ref inner, up) => {
             println!("{}Repeat: {:?} {}", i, count, up);
+            print_step_tree(inner, indent + 1);
+        }
+        Step::Foreach(width, ref vars, box ref inner) => {
+            print!("{}For: {} ", i, width);
+            for &(id, ref expr) in vars { print!("{}={:?}, ", id, expr); }
+            println!("");
             print_step_tree(inner, indent + 1);
         }
         /*PrimitiveStep(ref h) => {
@@ -264,6 +271,8 @@ pub fn exec(state: &mut eval::State, s: &Step, parent: &mut Connection, child: &
                                 .map_or(true, |x| try_first(state, x, parent, child)),
                             Step::Repeat(_, box ref inner, _) =>
                                 try_first(state, inner, parent, child),
+                            Step::Foreach(_, _, box ref inner) => {
+                                parent.tx.is_some() || try_first(state, inner, parent, child)
                             }
                         }
                     }
@@ -297,6 +306,36 @@ pub fn exec(state: &mut eval::State, s: &Step, parent: &mut Connection, child: &
                 debug!("loop down exit {}", count);
                 true
             }
+        }
+        Step::Foreach(width, ref vars, box ref inner) => {
+            let mut lstate = vars.iter().map(|&(id, ref expr)| {
+                let d = if expr.exists_down() {
+                    match expr.eval_down(state) {
+                        Value::Vector(v) => Some(v.into_iter()),
+                        Value::Number(0.0) => None, //TODO: placeholder value because exists_down doesn't work on variables
+                        other => panic!("For loop argument must be a vector, found {}", other)
+                    }
+                } else { None };
+                (id, d, Vec::new(), expr)
+            }).collect::<Vec<_>>();
+
+            for i in 0..width {
+                for &mut (id, ref mut down, _, _) in &mut lstate {
+                    let d = down.as_mut().map_or(Some(Value::Integer(0)), |x| x.next());
+                    debug!("Foreach {} {}, {:?}", i, id, d);
+                    state.set(id, d.unwrap());
+                }
+                if !exec(state, inner, parent, child) { return false; }
+                for &mut (id, _, ref mut up, _) in &mut lstate {
+                    up.push(state.get(id).clone())
+                }
+            }
+
+            for (_, _, up, expr) in lstate {
+                if !expr.eval_up(state, Value::Vector(up)) { return false; }
+            }
+
+            true
         }
         //PrimitiveStep(..) => unimplemented!()
     }

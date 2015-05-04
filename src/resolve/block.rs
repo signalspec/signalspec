@@ -98,6 +98,15 @@ fn resolve_action<'s>(session: &'s Session<'s>,
             let any_up = child.any_up();
             Step::Repeat(count, child, any_up)
         }
+        ast::Action::For(ref pairs, ref block) => {
+            let mut body_scope = scope.child();
+            let vars = pairs.iter().map(|&(ref name, ref expr)| {
+                (body_scope.new_variable(session, name), expr::value(session, scope, expr))
+            }).collect();
+
+            let child = box resolve_seq(session, &body_scope, shape_down, shape_up, block);
+            Step::Foreach(8, vars, child)
+        }
     }
 }
 

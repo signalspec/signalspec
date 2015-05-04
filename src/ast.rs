@@ -23,6 +23,7 @@ pub enum Action {
     Call(Expr, Expr, Option<Block>),
     Token(Expr, Option<Block>),
     On(Expr, Option<Block>),
+    For(Vec<(String, Expr)>, Block),
 }
 
 pub struct Def {
