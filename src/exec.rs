@@ -62,16 +62,6 @@ impl Step {
     }
 }
 
-fn first(s: &Step) -> Option<&Step> {
-    match *s {
-        Step::Nop => None,
-        Step::Token(..) => Some(s),
-        Step::TokenTop(..) => Some(s),
-        Step::Seq(ref steps) => steps.get(0).and_then(first),
-        Step::Repeat(_, box ref inner, _) => first(inner),
-    }
-}
-
 pub fn print_step_tree(s: &Step, indent: u32) {
     let i: String = repeat(" ").take(indent as usize).collect();
     match *s {
@@ -253,26 +243,36 @@ pub fn exec(state: &mut eval::State, s: &Step, parent: &mut Connection, child: &
         }
         Step::Repeat(ref count_expr, box ref inner, up) => {
             if up {
-                let f = first(inner).expect("Loop has no body");
                 let mut count = 0;
                 loop {
-                    debug!("Loop up check {:?}", f);
-                    match *f {
-                        Step::Token(ref msg) => {
-                            if !try_token(state, parent, msg) {
-                                debug!("  loop exit");
-                                break;
+                    fn try_first(state: &mut eval::State, f: &Step, parent: &mut Connection, child: &mut Connection) -> bool {
+                        match *f {
+                            Step::Nop => true,
+                            Step::Token(ref msg) => {
+                                try_token(state, parent, msg)
+                            }
+                            Step::TokenTop(_, box ref body) => {
+                                child.lookahead_receive();
+                                // TODO: variables in the block will not be assigned
+                                // so we can't evaluate the child expression if they might be used.
+                                // This works for unidirectional applications only.
+                                let down = parent.tx.is_some();
+                                parent.alive && child.alive &&
+                                    (down || try_first(state, body, parent, child))
+                            },
+                            Step::Seq(ref steps) => steps.get(0)
+                                .map_or(true, |x| try_first(state, x, parent, child)),
+                            Step::Repeat(_, box ref inner, _) =>
+                                try_first(state, inner, parent, child),
                             }
                         }
-                        Step::TokenTop(..) => {
-                            child.lookahead_receive();
-                            if !parent.alive || !child.alive {
-                                debug!("  loop done");
-                                break;
-                            }
-                        },
-                        _ => panic!(),
                     }
+
+                    if !try_first(state, inner, parent, child) {
+                        debug!("  loop done");
+                        break;
+                    }
+
                     if !exec(state, inner, parent, child) {
                         debug!("loop up early exit");
                         return false;
