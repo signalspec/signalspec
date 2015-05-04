@@ -52,7 +52,7 @@ struct VcdDown(Shape);
 impl Process for VcdDown {
     fn run(&self, _: &mut eval::State, downwards: &mut exec::Connection, upwards: &mut exec::Connection) -> bool {
         let mut c = ConnectionWrite(downwards);
-        let mut w = vcd::write::Writer::new(&mut c);
+        let mut w = vcd::Writer::new(&mut c);
 
         let (scope, ids) = shape_to_scope(&self.0);
 
@@ -129,7 +129,7 @@ struct VcdUp(Shape);
 impl Process for VcdUp {
     fn run(&self, _: &mut eval::State, downwards: &mut exec::Connection, upwards: &mut exec::Connection) -> bool {
         let mut c = io::BufReader::new(ConnectionRead(downwards));
-        let mut r = vcd::read::Parser::new(&mut c);
+        let mut r = vcd::Parser::new(&mut c);
         let h = r.parse_header().unwrap();
         let ids = shape_from_scope(&self.0, &h.scope);
 
