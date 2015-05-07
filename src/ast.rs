@@ -29,6 +29,7 @@ pub enum Action {
 pub struct Def {
     pub name: String,
     pub param: Expr,
+    pub interface: Option<Expr>,
     pub block: Block,
 }
 

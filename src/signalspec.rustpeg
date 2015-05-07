@@ -16,8 +16,8 @@ letstmt -> ast::LetDef
     { ast::LetDef(name, value) }
 
 def -> ast::Def
-    = DEF _ name:identifier _ "(" _ param: expr_tup _ ")" _ block:block BREAK
-    { ast::Def{ name:name, param:param, block:block } }
+    = DEF _ name:identifier _ "(" _ param: expr_tup _ ")" _ interface:(":" _ e:expr {e})? _ block:block BREAK
+    { ast::Def{ name:name, param:param, interface:interface, block:block } }
 
     #[pub]
     block -> ast::Block

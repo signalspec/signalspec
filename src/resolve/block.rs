@@ -37,12 +37,19 @@ impl<'s> EventClosure<'s> {
                         shape_down: &Shape,
                         param: Item<'s>) -> (Shape, Step) {
 
-        // TODO: use declared shape
-        let shape_up = Shape::Val(types::Bottom, DataMode{ up: true, down: true });
-
         let mut scope = self.parent_scope.child(); // Base on lexical parent
+
+        let shape_up = if let Some(ref intf_expr) = self.ast.interface {
+            expr::rexpr(session, &scope, intf_expr).into_shape(DataMode{ up: true, down: true })
+        } else {
+            types::NULL_SHAPE.clone()
+        };
+
         expr::assign(session, &mut scope, &self.ast.param, param);
         let steptree = resolve_seq(session, &scope, shape_down, &shape_up, &self.ast.block);
+
+        // TODO: analyze the data direction and clear direction bits in shape_up
+
         (shape_up, steptree)
     }
 }

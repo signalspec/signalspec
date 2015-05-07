@@ -136,7 +136,7 @@ fn test_nested_loop() {
 fn test_unbounded_loop() {
     let s = Session::new();
     let m = s.parse_module("
-    def main() {
+    def main(): #0 {
       repeat {
         on v {
           repeat v { #h }
@@ -171,7 +171,7 @@ fn test_tup() {
 fn test_on() {
     let s = Session::new();
     let m = s.parse_module("
-        def main() {
+        def main(): 0..10 {
             on 1 {}
             on 2 {}
             on a {
