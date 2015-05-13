@@ -8,7 +8,7 @@ use resolve::types::{self, Shape};
 use eval::DataMode;
 
 
-pub fn resolve_module<'s>(session: &'s Session<'s>, ast: &'s ast::Module) -> Scope<'s> {
+pub fn resolve_module<'s>(session: &'s Session<'s>, ast: ast::Module) -> Scope<'s> {
     let mut scope = session.prelude.clone();
 
     for _import in ast.imports.iter() {
@@ -17,9 +17,10 @@ pub fn resolve_module<'s>(session: &'s Session<'s>, ast: &'s ast::Module) -> Sco
 
     resolve_letdef(session, &mut scope, &ast.lets);
 
-    for def in ast.defs.iter() {
+    for def in ast.defs {
+        let name = def.name.clone();
         let ed = Item::Def(session.closure_arena.alloc(EventClosure{ ast:def, parent_scope: scope.clone() }));
-        scope.names.insert(def.name.to_string(), ed);
+        scope.names.insert(name, ed);
     }
 
     scope
@@ -27,7 +28,7 @@ pub fn resolve_module<'s>(session: &'s Session<'s>, ast: &'s ast::Module) -> Sco
 
 /// A user-defined event
 pub struct EventClosure<'s> {
-    pub ast: &'s ast::Def,
+    pub ast: ast::Def,
     pub parent_scope: Scope<'s>,
 }
 

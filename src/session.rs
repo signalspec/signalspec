@@ -24,7 +24,6 @@ pub type ValueID = usize;
 /// The data common to an entire resolve pass
 pub struct Session<'session> {
     pub closure_arena: TypedArena<EventClosure<'session>>,
-    module_ast_arena: TypedArena<ast::Module>,
     id_counter: AtomicUsize,
     pub prelude: Scope<'session>,
 }
@@ -33,7 +32,6 @@ impl<'session> Session<'session> {
     pub fn new() -> Session<'session> {
         Session {
             closure_arena: TypedArena::new(),
-            module_ast_arena: TypedArena::new(),
             id_counter: AtomicUsize::new(1),
             prelude: Scope::new(),
         }
@@ -44,12 +42,10 @@ impl<'session> Session<'session> {
     }
 
     pub fn parse_module(&'session self, source: &str) -> Result<Module<'session>, grammar::ParseError> {
-        grammar::module(source).map(|ast|
-            self.resolve_module(self.module_ast_arena.alloc(ast))
-        )
+        grammar::module(source).map(|ast| self.resolve_module(ast))
     }
 
-    pub fn resolve_module(&'session self, modast: &'session ast::Module) -> Module<'session> {
+    pub fn resolve_module(&'session self, modast: ast::Module) -> Module<'session> {
         Module {
             session: self,
             scope: resolve::block::resolve_module(self, modast),
