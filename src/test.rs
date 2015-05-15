@@ -42,9 +42,10 @@ fn test_arg() {
     }
     ").unwrap();
 
-    let a = s.var(types::Symbol, false, true);
-    let b = s.var(types::Symbol, false, true);
-    let c = s.var(types::Symbol, false, true);
+    let t = types::Symbol(vec!["x".to_string(), "y".to_string(), "z".to_string()]);
+    let a = s.var(t.clone(), false, true);
+    let b = s.var(t.clone(), false, true);
+    let c = s.var(t.clone(), false, true);
     let p = m.compile_call("main", SHAPE_ANY, tuple_item![a, b, c]).unwrap();
 
     let env = p.run_test_pass("#x \n #y \n #z", "");
@@ -67,7 +68,8 @@ fn test_let() {
         }
     ").unwrap();
 
-    let a = s.var(types::Symbol, false, true);
+    let t = types::Symbol(vec!["x".to_string(), "y".to_string(), "z".to_string()]);
+    let a = s.var(t, false, true);
     let p = m.compile_call("main", SHAPE_ANY, a).unwrap();
 
     let env = p.run_test_pass( "#x \n #y \n #z", "");
@@ -89,7 +91,7 @@ fn test_loop() {
     }
     ").unwrap();
 
-    let x = s.var(types::Integer, false, true);
+    let x = s.var(types::Integer(0, 10), false, true);
     let p = m.compile_call("main", SHAPE_ANY, x).unwrap();
 
     let env = p.run_test_pass("#a \n #b \n #a", "");

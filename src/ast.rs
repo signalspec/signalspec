@@ -50,10 +50,11 @@ pub enum Value {
 impl Value {
     pub fn get_type(&self) -> types::Type {
         match *self {
-            Value::Number(..) => types::Number,
-            Value::Integer(..) => types::Integer,
-            Value::Symbol(..) => types::Symbol,
-            Value::Vector(ref n) => types::Vector(n.len()),
+            Value::Number(v) => types::Number(v, v),
+            Value::Integer(v) => types::Integer(v, v),
+            Value::Symbol(ref v) => types::Symbol(vec![v.clone()]),
+            Value::Vector(ref n) => types::Vector(n.len(),
+                box n.first().map_or(types::Bottom, Value::get_type)),
         }
     }
 

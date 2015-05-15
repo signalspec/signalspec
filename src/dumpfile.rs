@@ -51,7 +51,7 @@ impl Process for ValueDumpPrint {
 
 pub fn process(downward_shape: &Shape, arg: Item) -> Box<Process + 'static> {
     let dir = match *downward_shape {
-        Shape::Val(types::Integer, dir) => dir,
+        Shape::Val(types::Integer(0, 255), dir) => dir,
         _ => panic!("Invalid shape {:?} below dumpfile::process", downward_shape)
     };
 

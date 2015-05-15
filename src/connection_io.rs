@@ -72,7 +72,7 @@ impl Process for ReaderProcess {
     }
 
     fn shape_up(&self) -> &Shape {
-        static SHAPE: Shape = Shape::Val(types::Integer, DataMode { down: false, up: true });
+        static SHAPE: Shape = Shape::Val(types::Integer(0, 255), DataMode { down: false, up: true });
         &SHAPE
     }
 }
@@ -88,7 +88,7 @@ impl Process for WriterProcess {
     }
 
     fn shape_up(&self) -> &Shape {
-        static SHAPE: Shape = Shape::Val(types::Integer, DataMode { down: true, up: false });
+        static SHAPE: Shape = Shape::Val(types::Integer(0, 255), DataMode { down: true, up: false });
         &SHAPE
     }
 }
