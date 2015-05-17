@@ -42,7 +42,7 @@ fn test_arg() {
     }
     ").unwrap();
 
-    let t = types::Symbol(vec!["x".to_string(), "y".to_string(), "z".to_string()]);
+    let t = types::Symbol(["x", "y", "z"].iter().map(ToString::to_string).collect());
     let a = s.var(t.clone(), false, true);
     let b = s.var(t.clone(), false, true);
     let c = s.var(t.clone(), false, true);
@@ -68,7 +68,7 @@ fn test_let() {
         }
     ").unwrap();
 
-    let t = types::Symbol(vec!["x".to_string(), "y".to_string(), "z".to_string()]);
+    let t = types::Symbol(["x", "y", "z"].iter().map(ToString::to_string).collect());
     let a = s.var(t, false, true);
     let p = m.compile_call("main", SHAPE_ANY, a).unwrap();
 

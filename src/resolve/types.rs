@@ -1,10 +1,11 @@
 pub use self::Type::*;
 use eval::DataMode;
+use std::collections::HashSet;
 
 #[derive(Debug, PartialEq, Clone)]
 /// A type represents a set of possible values
 pub enum Type {
-    Symbol(Vec<String>),
+    Symbol(HashSet<String>),
     Integer(i64, i64),
     Vector(usize, Box<Type>),
     Number(f64, f64),

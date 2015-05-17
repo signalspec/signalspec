@@ -52,7 +52,7 @@ impl Value {
         match *self {
             Value::Number(v) => types::Number(v, v),
             Value::Integer(v) => types::Integer(v, v),
-            Value::Symbol(ref v) => types::Symbol(vec![v.clone()]),
+            Value::Symbol(ref v) => types::Symbol(Some(v.clone()).into_iter().collect()),
             Value::Vector(ref n) => types::Vector(n.len(),
                 box n.first().map_or(types::Bottom, Value::get_type)),
         }
