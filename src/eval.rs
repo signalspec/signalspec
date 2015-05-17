@@ -1,6 +1,7 @@
 use std::collections::VecMap;
 use ast::Value;
 use session::{ValueID};
+use resolve::types::Type;
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub struct DataMode {
@@ -12,6 +13,29 @@ pub struct DataMode {
 pub enum ConcatElem {
     Elem(Expr),
     Slice(Expr, usize),
+}
+
+impl ConcatElem {
+    fn elem_type(&self) -> Type {
+        match *self {
+            ConcatElem::Elem(ref v) => v.get_type(),
+            ConcatElem::Slice(ref e, count) => {
+                if let Type::Vector(c, box ref t) = e.get_type() {
+                    assert!(c == count);
+                    t.clone()
+                } else {
+                    panic!("Concatenated slice is not a vector")
+                }
+            }
+        }
+    }
+
+    fn elem_count(&self) -> usize {
+        match *self {
+            ConcatElem::Elem(..) => 1,
+            ConcatElem::Slice(_, s) => s,
+        }
+    }
 }
 
 #[derive(PartialEq, Debug, Clone)]
@@ -137,6 +161,40 @@ impl Expr {
             }
         }
     }
+
+    pub fn get_type(&self) -> Type {
+        match *self {
+            Expr::Ignored => Type::Bottom,
+            Expr::Range(lo, hi) => Type::Number(lo, hi),
+            Expr::Variable(..) => unimplemented!(),
+            Expr::Const(ref v) => v.get_type(),
+            Expr::Flip(ref d, ref u) => Type::union(d.get_type(), u.get_type()),
+            Expr::Choose(_, ref choices) => {
+                Type::union_iter(choices.iter().map(|&(_, ref r)| r.get_type()))
+            },
+            Expr::Concat(ref elems) => {
+                let t = box Type::union_iter(elems.iter().map(ConcatElem::elem_type));
+                let c = elems.iter().map(ConcatElem::elem_count).sum();
+                Type::Vector(c, t)
+            },
+            Expr::BinaryConst(ref e, op, c) => {
+                match e.get_type() {
+                    Type::Number(min, max) => {
+                        assert!(min <= max);
+                        let (a, b) = (op.eval(min, c), op.eval(max, c));
+                        if op == BinOp::SubSwap || op == BinOp::DivSwap {
+                            assert!(b <= a);
+                            Type::Number(b, a)
+                        } else {
+                            assert!(a <= b);
+                            Type::Number(a, b)
+                        }
+                    }
+                    _ => panic!("Arithmetic on non-number type")
+                }
+            }
+        }
+    }
 }
 
 /// Binary numeric operators
@@ -252,7 +310,7 @@ fn exprs() {
     use resolve;
     let sess = Session::new();
     let scope = resolve::scope::Scope::new();
-    let mut state = State::new();
+    let state = State::new();
 
     fn expr<'s>(sess: &'s Session<'s>, scope: &resolve::scope::Scope<'s>, e: &str) -> Expr {
         resolve::expr::value(sess, scope, &grammar::valexpr(e).unwrap())
@@ -261,10 +319,18 @@ fn exprs() {
     let two = expr(&sess, &scope, "2");
     assert_eq!(two.mode(), DataMode { up: true, down: true });
     assert_eq!(two.eval_down(&state), Value::Number(2.0));
+    assert_eq!(two.get_type(), Type::Number(2.0, 2.0));
 
     let ignore = expr(&sess, &scope, "_");
     assert_eq!(ignore.mode(), DataMode { up: false, down: false });
+    assert_eq!(ignore.get_type(), Type::Bottom);
 
     let down = expr(&sess, &scope, "<: #h");
     assert_eq!(down.mode(), DataMode { up: false, down: true });
+    assert_eq!(down.get_type(), Type::Symbol(Some("h".to_string()).into_iter().collect()));
+
+    let range = expr(&sess, &scope, "0..5");
+    assert_eq!(range.mode(), DataMode { up: true, down: false });
+    assert_eq!(range.get_type(), Type::Number(0.0, 5.0));
+
 }
