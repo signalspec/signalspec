@@ -244,3 +244,27 @@ fn value_match(a: &Value, b: &Value) -> bool {
 pub fn eval_choose(v: &Value, choices: &[(Value, Value)]) -> Option<Value> {
     choices.iter().find(|& &(ref a, _)|{ value_match(a, v) }).map(|&(_, ref b)| b.clone())
 }
+
+#[test]
+fn exprs() {
+    use session::Session;
+    use grammar;
+    use resolve;
+    let sess = Session::new();
+    let scope = resolve::scope::Scope::new();
+    let mut state = State::new();
+
+    fn expr<'s>(sess: &'s Session<'s>, scope: &resolve::scope::Scope<'s>, e: &str) -> Expr {
+        resolve::expr::value(sess, scope, &grammar::valexpr(e).unwrap())
+    }
+
+    let two = expr(&sess, &scope, "2");
+    assert_eq!(two.mode(), DataMode { up: true, down: true });
+    assert_eq!(two.eval_down(&state), Value::Number(2.0));
+
+    let ignore = expr(&sess, &scope, "_");
+    assert_eq!(ignore.mode(), DataMode { up: false, down: false });
+
+    let down = expr(&sess, &scope, "<: #h");
+    assert_eq!(down.mode(), DataMode { up: false, down: true });
+}
