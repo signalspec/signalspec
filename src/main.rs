@@ -42,9 +42,9 @@ fn main() {
                 .unwrap_or_else(|e| panic!("Error parsing block: {}", e));
 
             let shape_up = resolve::types::NULL_SHAPE.clone();
-            let steptree = resolve::block::resolve_seq(&sess, &scope, &shape, &shape_up, &block);
+            let (step, _) = resolve::block::resolve_seq(&sess, &scope, &shape, &shape_up, &block);
 
-            processes.push(box session::Program { step: steptree,
+            processes.push(box session::Program { step: step,
                                                   shape_down: shape.clone(),
                                                   shape_up: shape_up }
                                                   as Box<session::Process>);

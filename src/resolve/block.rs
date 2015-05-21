@@ -1,12 +1,12 @@
+use std::collections::BitSet;
 use ast;
 
-use session::Session;
+use session::{Session, ValueID};
 use resolve::expr;
 pub use exec::{ Step, Message };
 pub use resolve::scope::{ Scope, Item };
 use resolve::types::{self, Shape, Type};
-use eval::DataMode;
-
+use eval::{Expr, DataMode};
 
 pub fn resolve_module<'s>(session: &'s Session<'s>, ast: ast::Module) -> Scope<'s> {
     let mut scope = session.prelude.clone();
@@ -26,6 +26,33 @@ pub fn resolve_module<'s>(session: &'s Session<'s>, ast: ast::Module) -> Scope<'
     scope
 }
 
+pub struct ResolveInfo {
+    pub vars_down: BitSet,
+    pub vars_up: BitSet,
+}
+
+impl ResolveInfo {
+    fn new() -> ResolveInfo {
+        ResolveInfo { vars_down: BitSet::new(), vars_up: BitSet::new() }
+    }
+
+    fn mode_of(&self, id: ValueID) -> DataMode {
+        DataMode { up: self.vars_up.contains(&id), down: self.vars_down.contains(&id)}
+    }
+
+    fn use_expr(&mut self, e: &Expr, dir: DataMode) {
+        e.each_var(&mut |id| {
+            if dir.down { self.vars_down.insert(id); }
+            if dir.up { self.vars_up.insert(id); }
+        });
+    }
+
+    fn merge_seq(&mut self, o: &ResolveInfo) {
+        self.vars_down.union_with(&o.vars_down);
+        self.vars_up.union_with(&o.vars_up);
+    }
+}
+
 /// A user-defined event
 pub struct EventClosure<'s> {
     pub ast: ast::Def,
@@ -36,7 +63,7 @@ impl<'s> EventClosure<'s> {
     pub fn resolve_call(&self,
                         session: &'s Session<'s>,
                         shape_down: &Shape,
-                        param: Item<'s>) -> (Shape, Step) {
+                        param: Item<'s>) -> (Shape, Step, ResolveInfo) {
 
         let mut scope = self.parent_scope.child(); // Base on lexical parent
 
@@ -47,11 +74,11 @@ impl<'s> EventClosure<'s> {
         };
 
         expr::assign(session, &mut scope, &self.ast.param, param);
-        let steptree = resolve_seq(session, &scope, shape_down, &shape_up, &self.ast.block);
+        let (step, ri) = resolve_seq(session, &scope, shape_down, &shape_up, &self.ast.block);
 
         // TODO: analyze the data direction and clear direction bits in shape_up
 
-        (shape_up, steptree)
+        (shape_up, step, ri)
     }
 }
 
@@ -65,7 +92,7 @@ fn resolve_action<'s>(session: &'s Session<'s>,
                       scope: &Scope<'s>,
                       shape_down: &Shape,
                       shape_up: &Shape,
-                      action: &ast::Action) -> Step {
+                      action: &ast::Action) -> (Step, ResolveInfo) {
     match *action {
         ast::Action::Seq(ref block) => resolve_seq(session, scope, shape_down, shape_up, block),
         ast::Action::Call(ref expr, ref arg, ref body) => {
@@ -80,8 +107,8 @@ fn resolve_action<'s>(session: &'s Session<'s>,
 
             match expr::rexpr(session, scope, expr) {
                 Item::Def(entity) => {
-                    let (_shape_child, step) = entity.resolve_call(session, shape_down, arg);
-                    step
+                    let (_shape_child, step, ri) = entity.resolve_call(session, shape_down, arg);
+                    (step, ri)
                 }
                 _ => panic!("Not callable"),
             }
@@ -91,8 +118,9 @@ fn resolve_action<'s>(session: &'s Session<'s>,
             if body.is_some() { panic!("Body unimplemented"); }
 
             let item = expr::rexpr(session, scope, expr);
-            let message = resolve_token(item, shape_down);
-            Step::Token(message)
+            let (message, ri) = resolve_token(item, shape_down);
+
+            (Step::Token(message), ri)
         }
         ast::Action::On(ref expr, ref body) => {
             let mut body_scope = scope.child();
@@ -100,17 +128,18 @@ fn resolve_action<'s>(session: &'s Session<'s>,
             debug!("Upper message, shape: {:?}", shape_up);
             let msg = expr::on_expr_message(session, &mut body_scope, shape_up, expr);
 
-            let body_step = match *body {
-                Some(ref body) => resolve_seq(session, &body_scope, shape_down, shape_up, body),
-                None => Step::Nop,
-            };
-            Step::TokenTop(msg, box body_step)
+            let (step, ri) = body.as_ref().map(|body| {
+                resolve_seq(session, &body_scope, shape_down, shape_up, body)
+            }).unwrap_or((Step::Nop, ResolveInfo::new()));
+
+            (Step::TokenTop(msg, box step), ri)
         }
         ast::Action::Repeat(ref count_ast, ref block) => {
             let count = expr::value(session, scope, count_ast);
-            let child = box resolve_seq(session, scope, shape_down, shape_up, block);
-            let any_up = child.any_up();
-            Step::Repeat(count, child, any_up)
+            let (step, mut ri) = resolve_seq(session, scope, shape_down, shape_up, block);
+            let any_up = step.any_up();
+            ri.use_expr(&count, DataMode { down: !any_up, up: any_up });
+            (Step::Repeat(count, box step, any_up), ri)
         }
         ast::Action::For(ref pairs, ref block) => {
             let mut body_scope = scope.child();
@@ -134,8 +163,14 @@ fn resolve_action<'s>(session: &'s Session<'s>,
 
             debug!("Foreach count: {:?}", count);
 
-            let child = box resolve_seq(session, &body_scope, shape_down, shape_up, block);
-            Step::Foreach(count.unwrap_or(0) as u32, inner_vars, child)
+            let (step, mut ri) = resolve_seq(session, &body_scope, shape_down, shape_up, block);
+
+            for &(id, ref e) in &inner_vars {
+                let dir = ri.mode_of(id);
+                ri.use_expr(e, dir);
+            }
+
+            (Step::Foreach(count.unwrap_or(0) as u32, inner_vars, box step), ri)
         }
     }
 }
@@ -144,15 +179,19 @@ pub fn resolve_seq<'s>(session: &'s Session<'s>,
                   pscope: &Scope<'s>,
                   shape_down: &Shape,
                   shape_up: &Shape,
-                  block: &ast::Block) -> Step {
+                  block: &ast::Block) -> (Step, ResolveInfo) {
     let mut scope = pscope.child();
     resolve_letdef(session, &mut scope, &block.lets);
 
-    let steps = block.actions.iter().map(|action|
-        resolve_action(session, &scope, shape_down, shape_up, action)
-    ).collect();
+    let mut ri = ResolveInfo::new();
 
-    Step::Seq(steps)
+    let steps = block.actions.iter().map(|action| {
+        let (step, i) = resolve_action(session, &scope, shape_down, shape_up, action);
+        ri.merge_seq(&i);
+        step
+    }).collect();
+
+    (Step::Seq(steps), ri)
 }
 
 pub fn resolve_letdef<'s>(session: &'s Session<'s>, scope: &mut Scope<'s>, lets: &[ast::LetDef]) {
@@ -162,14 +201,18 @@ pub fn resolve_letdef<'s>(session: &'s Session<'s>, scope: &mut Scope<'s>, lets:
     }
 }
 
-pub fn resolve_token(item: Item, shape: &Shape) -> Message {
-    let mut state = Message { components: Vec::new() };
+fn resolve_token(item: Item, shape: &Shape) -> (Message, ResolveInfo) {
+    let mut state = (
+        Message { components: Vec::new() },
+        ResolveInfo::new(),
+    );
 
-    fn inner<'s>(i: Item<'s>, shape: &Shape, state: &mut Message) {
+    fn inner<'s>(i: Item<'s>, shape: &Shape, state: &mut (Message, ResolveInfo)) {
         match shape {
             &Shape::Val(ref _t, dir) => {
                 if let Item::Value(v) = i {
-                    state.components.push(v.limit_direction(dir))
+                    state.1.use_expr(&v, dir);
+                    state.0.components.push(v.limit_direction(dir))
                 } else {
                     panic!("Expected value but found {:?}", i);
                 }

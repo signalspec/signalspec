@@ -133,8 +133,7 @@ impl <'s> Module<'s> {
                         param: T) -> Result<Program, ()> {
         let def = self.get_def(name);
 
-        let (shape_up, step) = def.resolve_call(&self.session, &shape_down, param.into_item());
-
+        let (shape_up, step, _) = def.resolve_call(&self.session, &shape_down, param.into_item());
         Ok(Program{ step: step, shape_down: shape_down, shape_up: shape_up})
     }
 }
