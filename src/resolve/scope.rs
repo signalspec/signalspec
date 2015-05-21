@@ -7,7 +7,6 @@ use resolve::types::{Shape, Type};
 use session::{ Session, ValueID };
 use eval::{ Expr, DataMode };
 use exec::Message;
-use resolve::types;
 
 /// A collection of named Items.
 #[derive(Clone)]
@@ -56,7 +55,7 @@ pub enum Item<'s> {
 impl<'s> Item<'s> {
     pub fn into_shape(self, dir: DataMode) -> Shape {
         match self {
-            Item::Value(..) => Shape::Val(types::Bottom, dir),
+            Item::Value(ref e) => Shape::Val(e.get_type(), dir),
             Item::Tuple(items) => Shape::Tup(items.into_iter().map(|x| x.into_shape(dir)).collect()),
             other => panic!("{:?} isn't a valid shape", other),
         }

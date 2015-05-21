@@ -4,7 +4,7 @@ use session::Session;
 use resolve::expr;
 pub use exec::Step;
 pub use resolve::scope::{ Scope, Item };
-use resolve::types::{self, Shape};
+use resolve::types::{self, Shape, Type};
 use eval::DataMode;
 
 
@@ -111,12 +111,28 @@ fn resolve_action<'s>(session: &'s Session<'s>,
         }
         ast::Action::For(ref pairs, ref block) => {
             let mut body_scope = scope.child();
-            let vars = pairs.iter().map(|&(ref name, ref expr)| {
-                (body_scope.new_variable(session, name, super::types::Type::Bottom), expr::value(session, scope, expr))
-            }).collect();
+            let mut count = None;
+            let mut inner_vars = Vec::with_capacity(pairs.len());
+
+            for &(ref name, ref expr) in pairs {
+                let e = expr::value(session, scope, expr);
+                let t = e.get_type();
+                if let Type::Vector(c, box ty) = t {
+                    match count {
+                        Some(count) => assert_eq!(count, c),
+                        None => count = Some(c),
+                    }
+                    let id = body_scope.new_variable(session, name, ty);
+                    inner_vars.push((id, e));
+                } else {
+                    panic!("Foreach must loop over vector type, not {:?}", t)
+                }
+            }
+
+            debug!("Foreach count: {:?}", count);
 
             let child = box resolve_seq(session, &body_scope, shape_down, shape_up, block);
-            Step::Foreach(8, vars, child)
+            Step::Foreach(count.unwrap_or(0) as u32, inner_vars, child)
         }
     }
 }
