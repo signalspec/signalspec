@@ -46,12 +46,12 @@ fn test_arg() {
     let a = s.var(t.clone(), false, true);
     let b = s.var(t.clone(), false, true);
     let c = s.var(t.clone(), false, true);
-    let p = m.compile_call("main", SHAPE_ANY, tuple_item![a, b, c]).unwrap();
+    let p = m.compile_call("main", SHAPE_ANY, tuple_item![a.clone(), b.clone(), c.clone()]).unwrap();
 
     let env = p.run_test_pass("#x \n #y \n #z", "");
-    assert_eq!(env.get_var(a), &v("#x"));
-    assert_eq!(env.get_var(b), &v("#y"));
-    assert_eq!(env.get_var(c), &v("#z"));
+    assert_eq!(env.get_var(&a), &v("#x"));
+    assert_eq!(env.get_var(&b), &v("#y"));
+    assert_eq!(env.get_var(&c), &v("#z"));
 }
 
 #[test]
@@ -70,10 +70,10 @@ fn test_let() {
 
     let t = types::Symbol(["x", "y", "z"].iter().map(ToString::to_string).collect());
     let a = s.var(t, false, true);
-    let p = m.compile_call("main", SHAPE_ANY, a).unwrap();
+    let p = m.compile_call("main", SHAPE_ANY, a.clone()).unwrap();
 
     let env = p.run_test_pass( "#x \n #y \n #z", "");
-    assert_eq!(env.get_var(a), &v("#y"));
+    assert_eq!(env.get_var(&a), &v("#y"));
 }
 
 #[test]
@@ -92,16 +92,16 @@ fn test_loop() {
     ").unwrap();
 
     let x = s.var(types::Integer(0, 10), false, true);
-    let p = m.compile_call("main", SHAPE_ANY, x).unwrap();
+    let p = m.compile_call("main", SHAPE_ANY, x.clone()).unwrap();
 
     let env = p.run_test_pass("#a \n #b \n #a", "");
-    assert_eq!(env.get_var(x), &v("#0"));
+    assert_eq!(env.get_var(&x), &v("#0"));
 
     let env = p.run_test_pass("#a \n #b \n #c \n #d \n #a", "");
-    assert_eq!(env.get_var(x), &v("#1"));
+    assert_eq!(env.get_var(&x), &v("#1"));
 
     let env = p.run_test_pass("#a \n #b \n #c \n #d \n #c \n #d \n #a", "");
-    assert_eq!(env.get_var(x), &v("#2"));
+    assert_eq!(env.get_var(&x), &v("#2"));
 
     p.run_test_fail("#a \n #b \n #c \n #a", "");
     p.run_test_fail("#a \n #b \n #c \n #d", "");

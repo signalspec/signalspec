@@ -8,7 +8,7 @@ use resolve::block::EventClosure;
 use exec::Step;
 use ast::Value;
 use resolve::scope::Item;
-use resolve::types::Shape;
+use resolve::types::{ Type, Shape };
 use grammar;
 use eval::Expr;
 
@@ -52,11 +52,12 @@ impl<'session> Session<'session> {
         }
     }
 
-    pub fn var(&self, _ty: resolve::types::Type, is_down: bool, is_up: bool) -> Var {
+    pub fn var(&self, ty: resolve::types::Type, is_down: bool, is_up: bool) -> Var {
         Var {
             id: self.make_id(),
             is_down: is_down,
             is_up: is_up,
+            ty: ty,
         }
     }
 }
@@ -77,16 +78,17 @@ impl <'s> IntoItem<'s> for Expr {
     fn into_item(self) -> Item<'s> { Item::Value(self) }
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Clone, Debug)]
 pub struct Var {
     pub id: ValueID,
     pub is_down: bool,
     pub is_up: bool,
+    pub ty: Type,
 }
 
 impl <'s> IntoItem<'s> for Var {
     fn into_item(self) -> Item<'s> {
-        let var = Expr::Variable(self.id);
+        let var = Expr::Variable(self.id, self.ty.clone());
         Item::Value(match (self.is_down, self.is_up) {
             (true, true) => var,
             (false, true) => Expr::Flip(box Expr::Ignored, box var),

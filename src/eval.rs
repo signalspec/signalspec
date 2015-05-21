@@ -42,7 +42,7 @@ impl ConcatElem {
 pub enum Expr {
     Ignored,
     Const(Value),
-    Variable(ValueID),
+    Variable(ValueID, Type),
 
     Range(f64, f64),
 
@@ -55,7 +55,7 @@ pub enum Expr {
 impl Expr {
     pub fn each_var(&self, f: &mut FnMut(ValueID)) {
         match *self {
-            Expr::Variable(id) => f(id),
+            Expr::Variable(id, _) => f(id),
             Expr::Ignored | Expr::Const(..) | Expr::Range(..) => (),
             Expr::Choose(ref i, _)
             | Expr::BinaryConst(ref i, _, _) => i.each_var(f),
@@ -76,7 +76,7 @@ impl Expr {
     pub fn eval_down(&self, state: &State) -> Value {
         match *self {
             Expr::Ignored | Expr::Range(..) => panic!("{:?} can't be down-evaluated", self),
-            Expr::Variable(id) => state.get(id).clone(),
+            Expr::Variable(id, _) => state.get(id).clone(),
             Expr::Const(ref v) => v.clone(),
 
             Expr::Flip(ref d, _) => d.eval_down(state),
@@ -135,7 +135,7 @@ impl Expr {
                 Value::Number(n) => n>a && n<b,
                 _ => false,
             },
-            Expr::Variable(id) => state.set(id, v),
+            Expr::Variable(id, _) => state.set(id, v),
             Expr::Const(ref p) => &v == p,
 
             Expr::Flip(_, ref u) => u.eval_up(state, v),
@@ -166,7 +166,7 @@ impl Expr {
         match *self {
             Expr::Ignored => Type::Bottom,
             Expr::Range(lo, hi) => Type::Number(lo, hi),
-            Expr::Variable(..) => unimplemented!(),
+            Expr::Variable(_, ref ty) => ty.clone(),
             Expr::Const(ref v) => v.get_type(),
             Expr::Flip(ref d, ref u) => Type::union(d.get_type(), u.get_type()),
             Expr::Choose(_, ref choices) => {
@@ -274,7 +274,7 @@ impl State {
         true
     }
 
-    pub fn get_var(&self, v: ::session::Var) -> &Value {
+    pub fn get_var(&self, v: &::session::Var) -> &Value {
         self.get(v.id)
     }
 

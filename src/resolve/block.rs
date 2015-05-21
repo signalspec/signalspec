@@ -112,7 +112,7 @@ fn resolve_action<'s>(session: &'s Session<'s>,
         ast::Action::For(ref pairs, ref block) => {
             let mut body_scope = scope.child();
             let vars = pairs.iter().map(|&(ref name, ref expr)| {
-                (body_scope.new_variable(session, name), expr::value(session, scope, expr))
+                (body_scope.new_variable(session, name, super::types::Type::Bottom), expr::value(session, scope, expr))
             }).collect();
 
             let child = box resolve_seq(session, &body_scope, shape_down, shape_up, block);

@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::default::Default;
 
 use resolve::block::{EventClosure};
-use resolve::types::Shape;
+use resolve::types::{Shape, Type};
 use session::{ Session, ValueID };
 use eval::{ Expr, DataMode };
 use exec::Message;
@@ -26,10 +26,10 @@ impl<'s> Scope<'s> {
         self.names.insert(name.to_string(), value);
     }
 
-    pub fn new_variable(&mut self, session: &'s Session<'s>, name: &str) -> ValueID {
+    pub fn new_variable(&mut self, session: &'s Session<'s>, name: &str, ty: Type) -> ValueID {
         let id = session.make_id();
         debug!("Variable {} {}", id, name);
-        self.bind(name, Item::Value(Expr::Variable(id)));
+        self.bind(name, Item::Value(Expr::Variable(id, ty)));
         id
     }
 

@@ -106,10 +106,10 @@ pub fn on_expr_message<'s>(sess: &'s Session<'s>, scope: &mut Scope<'s>,
     fn inner<'s>(sess: &'s Session<'s>, scope: &mut Scope<'s>, msg: &mut Message,
                 shape: &Shape, e: &ast::Expr) {
         match (shape, e) {
-            (&Shape::Val(ref _ty, _dir), expr) => {
+            (&Shape::Val(ref ty, _), expr) => {
                 msg.components.push(resolve(sess, &mut |name| {
-                    let id = scope.new_variable(sess, name);
-                    Expr::Variable(id)
+                    let id = scope.new_variable(sess, name, ty.clone());
+                    Expr::Variable(id, ty.clone())
                 }, expr));
             }
             (&Shape::Tup(ref ss), &ast::Expr::Tup(ref se)) => {
