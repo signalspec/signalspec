@@ -6,7 +6,6 @@ use resolve::block::{EventClosure};
 use resolve::types::{Shape, Type};
 use session::{ Session, ValueID };
 use eval::{ Expr, DataMode };
-use exec::Message;
 
 /// A collection of named Items.
 #[derive(Clone)]
@@ -59,39 +58,6 @@ impl<'s> Item<'s> {
             Item::Tuple(items) => Shape::Tup(items.into_iter().map(|x| x.into_shape(dir)).collect()),
             other => panic!("{:?} isn't a valid shape", other),
         }
-    }
-
-    pub fn into_message(self, shape: &Shape) -> Message {
-        let mut components = Vec::new();
-
-        fn inner<'s>(i: Item<'s>, shape: &Shape, components: &mut Vec<Expr>) {
-            match shape {
-                &Shape::Val(ref _t, dir) => {
-                    if let Item::Value(v) = i {
-                        components.push(v.limit_direction(dir))
-                    } else {
-                        panic!("Expected value but found {:?}", i);
-                    }
-                }
-                &Shape::Tup(ref m) => {
-                    if let Item::Tuple(t) = i {
-                        if t.len() == m.len() {
-                            for (mi, i) in m.iter().zip(t.into_iter()) {
-                                inner(i, mi, components)
-                            }
-                        } else {
-                            panic!("Expected tuple length {}, found {}", m.len(), t.len());
-                        }
-                    } else {
-                        panic!("Expected tuple of length {}, found {:?}", m.len(), i);
-                    }
-                }
-            }
-        }
-
-        inner(self, shape, &mut components);
-
-        Message { components: components }
     }
 }
 

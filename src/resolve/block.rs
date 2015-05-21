@@ -2,7 +2,7 @@ use ast;
 
 use session::Session;
 use resolve::expr;
-pub use exec::Step;
+pub use exec::{ Step, Message };
 pub use resolve::scope::{ Scope, Item };
 use resolve::types::{self, Shape, Type};
 use eval::DataMode;
@@ -89,7 +89,10 @@ fn resolve_action<'s>(session: &'s Session<'s>,
         ast::Action::Token(ref expr, ref body) => {
             debug!("Token: {:?}", expr);
             if body.is_some() { panic!("Body unimplemented"); }
-            Step::Token(expr::rexpr(session, scope, expr).into_message(shape_down))
+
+            let item = expr::rexpr(session, scope, expr);
+            let message = resolve_token(item, shape_down);
+            Step::Token(message)
         }
         ast::Action::On(ref expr, ref body) => {
             let mut body_scope = scope.child();
@@ -157,4 +160,36 @@ pub fn resolve_letdef<'s>(session: &'s Session<'s>, scope: &mut Scope<'s>, lets:
         let item = expr::rexpr(session, scope, expr);
         scope.bind(&name, item);
     }
+}
+
+pub fn resolve_token(item: Item, shape: &Shape) -> Message {
+    let mut state = Message { components: Vec::new() };
+
+    fn inner<'s>(i: Item<'s>, shape: &Shape, state: &mut Message) {
+        match shape {
+            &Shape::Val(ref _t, dir) => {
+                if let Item::Value(v) = i {
+                    state.components.push(v.limit_direction(dir))
+                } else {
+                    panic!("Expected value but found {:?}", i);
+                }
+            }
+            &Shape::Tup(ref m) => {
+                if let Item::Tuple(t) = i {
+                    if t.len() == m.len() {
+                        for (mi, i) in m.iter().zip(t.into_iter()) {
+                            inner(i, mi, state)
+                        }
+                    } else {
+                        panic!("Expected tuple length {}, found {}", m.len(), t.len());
+                    }
+                } else {
+                    panic!("Expected tuple of length {}, found {:?}", m.len(), i);
+                }
+            }
+        }
+    }
+
+    inner(item, shape, &mut state);
+    state
 }
