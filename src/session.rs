@@ -146,8 +146,8 @@ pub struct Program {
 
 impl Program {
     pub fn run_test(&self, bottom: &'static str, top: &'static str) -> (bool, eval::State) {
-        let (mut s1, mut s2) = exec::Connection::new(self.shape_down.data_mode());
-        let (mut t1, mut t2) = exec::Connection::new(self.shape_up.data_mode());
+        let (mut s1, mut s2) = exec::Connection::new(&self.shape_down);
+        let (mut t1, mut t2) = exec::Connection::new(&self.shape_up);
         let reader_thread = thread::scoped(move || {
             let mut reader = Cursor::new(bottom.as_bytes().to_vec());
             dumpfile::read_values(&mut reader, &mut s2);

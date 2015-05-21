@@ -4,6 +4,7 @@ use std::iter::repeat;
 use session::ValueID;
 use ast::Value;
 use eval::{ self, Expr, DataMode };
+use resolve::types::{ Type, Shape };
 
 pub trait PrimitiveStep {
     fn display(&self) -> String;
@@ -14,29 +15,6 @@ pub trait PrimitiveStep {
 #[derive(Debug)]
 pub struct Message {
     pub components: Vec<Expr>
-}
-
-impl Message {
-    pub fn eval_down(&self, state: &eval::State) -> Vec<Value> {
-        self.components.iter().map(|e| {
-            if e.exists_down() {
-                e.eval_down(state)
-            } else {
-                Value::Number(0.0)
-            }
-        }).collect()
-    }
-
-    pub fn eval_up(&self, state: &mut eval::State, values: Vec<Value>) -> bool {
-        debug!("eval_up: {:?}", self);
-        let mut matched = true;
-        let mut vi = values.into_iter().fuse();
-        for e in &self.components {
-            let v = vi.next().unwrap_or(Value::Number(0.0));
-            matched &= e.eval_up(state, v);
-        }
-        matched
-    }
 }
 
 #[derive(Debug)]
@@ -100,6 +78,8 @@ pub fn print_step_tree(s: &Step, indent: u32) {
 }
 
 pub struct Connection {
+    types: Vec<(Type, /*tx*/ bool, /* rx */ bool)>,
+
     rx: Option<Receiver<Vec<Value>>>,
     tx: Option<Sender<Vec<Value>>>,
 
@@ -110,8 +90,10 @@ pub struct Connection {
 }
 
 impl Connection {
-    pub fn new(direction: DataMode) -> (Connection, Connection) {
-        debug!("New connection: {:?}", direction);
+    pub fn new(shape: &Shape) -> (Connection, Connection) {
+        let direction = shape.data_mode();
+        debug!("New connection: {:?} {:?}", shape, direction);
+
         let (s1, r1) = if direction.down {
             let (a, b) = channel();
             (Some(a), Some(b))
@@ -124,8 +106,11 @@ impl Connection {
 
         let alive = direction.down || direction.up;
 
-        (Connection{ tx: s1, rx: r2, lookahead_tx: None, lookahead_rx: None, alive: alive },
-         Connection{ tx: s2, rx: r1, lookahead_tx: None, lookahead_rx: None, alive: alive })
+        let t1 = shape.values().map(|(t, d)| (t.clone(), d.down, d.up)).collect();
+        let t2 = shape.values().map(|(t, d)| (t.clone(), d.up, d.down)).collect();
+
+        (Connection{ types: t1, tx: s1, rx: r2, lookahead_tx: None, lookahead_rx: None, alive: alive },
+         Connection{ types: t2, tx: s2, rx: r1, lookahead_tx: None, lookahead_rx: None, alive: alive })
     }
 
     pub fn send(&mut self, v: Vec<Value>) -> Result<(), ()> {
@@ -175,7 +160,6 @@ impl Connection {
             None => {
                 match self.recv() {
                     Ok(r) => {
-                        debug!("recv: {:?}", r);
                         self.lookahead_rx = Some(r.clone());
                         Some(r)
                     },
@@ -192,22 +176,35 @@ impl Connection {
 
     pub fn can_tx(&self) -> bool { self.tx.is_some() }
     pub fn can_rx(&self) -> bool { self.rx.is_some() }
+
+    pub fn lookahead_eval_down(&mut self, state: &eval::State, message: &Message) {
+        let m = self.types.iter().zip(message.components.iter())
+            .filter(|&(&(_, tx, _), _)| tx)
+            .map(|(_, ref e)| e.eval_down(state))
+            .collect();
+        debug!("tx: {:?}", m);
+        self.lookahead_send(m);
+    }
+
+    pub fn lookahead_eval_up(&mut self, state: &mut eval::State, message: &Message) -> bool {
+        let m = match self.lookahead_receive() {
+            Some(m) => m,
+            None => return false,
+        };
+        debug!("rx: {:?}", m);
+        self.types.iter().zip(message.components.iter())
+            .filter(|&(&(_, _, rx), _)| rx)
+            .map(|(_, e)| e)
+            .zip(m.into_iter())
+            .map(|(e, v)| e.eval_up(state, v))
+            .fold(true, |a, b| { a && b })
+    }
 }
 
 pub fn try_token(state: &mut eval::State, parent: &mut Connection, msg: &Message) -> bool {
     debug!("tokenstep {:?}", msg);
-    let m = msg.eval_down(state);
-
-    debug!("  down: {:?}", m);
-    parent.lookahead_send(m);
-
-    match parent.lookahead_receive() {
-        Some(m) => {
-            debug!("  up: {:?}", m);
-            msg.eval_up(state, m)
-        }
-        None => false
-    }
+    parent.lookahead_eval_down(state, msg);
+    parent.lookahead_eval_up(state, msg)
 }
 
 pub fn exec(state: &mut eval::State, s: &Step, parent: &mut Connection, child: &mut Connection) -> bool {
@@ -223,20 +220,14 @@ pub fn exec(state: &mut eval::State, s: &Step, parent: &mut Connection, child: &
         }
         Step::TokenTop(ref msg, box ref body) => {
             debug!("tokentop: {:?}", msg);
-            match child.lookahead_receive() {
-                Some(m) => {
-                    debug!("down: {:?}", m);
-                    child.accept();
 
-                    msg.eval_up(state, m);
-                    let r = exec(state, body, parent, child);
-                    let m = msg.eval_down(state);
-
-                    debug!("up: {:?}", m);
-                    if child.send(m).is_err() { return false; }
-                    r
-                }
-                None(..) => false
+            if child.lookahead_eval_up(state, msg) {
+                child.accept();
+                let r = exec(state, body, parent, child);
+                child.lookahead_eval_down(state, msg);
+                r
+            } else {
+                false
             }
         }
         Step::Seq(ref steps) => {

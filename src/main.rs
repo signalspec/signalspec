@@ -72,9 +72,9 @@ fn main() {
         processes.push(box dumpfile::ValueDumpPrint(shape));
     }
 
-    let (_, mut connection) = exec::Connection::new(eval::DataMode { down: false, up: false });
+    let (_, mut connection) = exec::Connection::new(&resolve::types::NULL_SHAPE);
     let threads = processes.into_iter().map(|p| {
-        let (mut c2, c1) = exec::Connection::new(p.shape_up().data_mode());
+        let (mut c2, c1) = exec::Connection::new(p.shape_up());
         ::std::mem::swap(&mut c2, &mut connection);
         thread::scoped(move || {
             let mut downward = c2;
