@@ -96,20 +96,36 @@ pub fn rexpr<'s>(session: &'s Session<'s>, scope: &Scope<'s>, e: &ast::Expr) -> 
     }
 }
 
-pub fn lexpr<'s>(session: &'s Session<'s>, scope: &mut Scope<'s>, e: &ast::Expr) -> Item<'s> {
-    match *e {
-        // TODO: ast::Expr::Var(ref name) to create a tuple of variables based on expected shape
-        ast::Expr::Tup(ref items) => {
-            Item::Tuple(items.iter().map(|i| rexpr(session, scope, i)).collect())
+use resolve::types::Shape;
+use exec::Message;
+
+pub fn on_expr_message<'s>(sess: &'s Session<'s>, scope: &mut Scope<'s>,
+        shape: &Shape, expr: &ast::Expr) -> Message {
+    let mut msg = Message { components: vec![] };
+
+    fn inner<'s>(sess: &'s Session<'s>, scope: &mut Scope<'s>, msg: &mut Message,
+                shape: &Shape, e: &ast::Expr) {
+        match (shape, e) {
+            (&Shape::Val(ref _ty, _dir), expr) => {
+                msg.components.push(resolve(sess, &mut |name| {
+                    let id = scope.new_variable(sess, name);
+                    Expr::Variable(id)
+                }, expr));
+            }
+            (&Shape::Tup(ref ss), &ast::Expr::Tup(ref se)) => {
+                for (s, i) in ss.iter().zip(se.iter()) {
+                    inner(sess, scope, msg, s, i);
+                }
+            }
+            // TODO: Tup, Var => create tuple item of variables
+            (shape, expr) => panic!("Expression {:?} doesn't match shape {:?}", expr, shape)
         }
-
-        ast::Expr::String(..) => panic!("Can't pattern match into a string"),
-
-        ref other => Item::Value(resolve(session, &mut |name| {
-            Expr::Variable(scope.new_variable(session, name))
-        }, other))
     }
+
+    inner(sess, scope, &mut msg, shape, expr);
+    msg
 }
+
 
 /// Irrefutable destructuring of an item into an expression, such as the LHS of a `let` or a
 /// function argument. Only breaks down tuples and assigns variables.

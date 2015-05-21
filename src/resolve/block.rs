@@ -93,7 +93,10 @@ fn resolve_action<'s>(session: &'s Session<'s>,
         }
         ast::Action::On(ref expr, ref body) => {
             let mut body_scope = scope.child();
-            let msg = expr::lexpr(session, &mut body_scope, expr).into_message(shape_up);
+
+            debug!("Upper message, shape: {:?}", shape_up);
+            let msg = expr::on_expr_message(session, &mut body_scope, shape_up, expr);
+
             let body_step = match *body {
                 Some(ref body) => resolve_seq(session, &body_scope, shape_down, shape_up, body),
                 None => Step::Nop,
