@@ -163,7 +163,7 @@ fn resolve_action<'s>(session: &'s Session<'s>,
                         None => count = Some(c),
                     }
                     let id = body_scope.new_variable(session, name, ty);
-                    inner_vars.push((id, e));
+                    inner_vars.push((id, e, DataMode { up: false, down: false}));
                 } else {
                     panic!("Foreach must loop over vector type, not {:?}", t)
                 }
@@ -173,9 +173,9 @@ fn resolve_action<'s>(session: &'s Session<'s>,
 
             let (step, mut ri) = resolve_seq(session, &body_scope, shape_down, shape_up, block);
 
-            for &(id, ref e) in &inner_vars {
-                let dir = ri.mode_of(id);
-                ri.use_expr(e, dir);
+            for &mut (id, ref e, ref mut dir) in &mut inner_vars {
+                *dir = ri.mode_of(id);
+                ri.use_expr(e, *dir);
             }
 
             (Step::Foreach(count.unwrap_or(0) as u32, inner_vars, box step), ri)

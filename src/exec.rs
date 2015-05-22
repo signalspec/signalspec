@@ -46,7 +46,7 @@ pub enum Step {
     TokenTop(Message, Box<Step>),
     Seq(Vec<Step>),
     Repeat(Expr, Box<Step>, bool),
-    Foreach(u32, Vec<(ValueID, Expr)>, Box<Step>)
+    Foreach(u32, Vec<(ValueID, Expr, DataMode)>, Box<Step>)
     //PrimitiveStep(Box<PrimitiveStep>),
 }
 
@@ -86,7 +86,7 @@ pub fn print_step_tree(s: &Step, indent: u32) {
         }
         Step::Foreach(width, ref vars, box ref inner) => {
             print!("{}For: {} ", i, width);
-            for &(id, ref expr) in vars { print!("{}={:?}, ", id, expr); }
+            for &(id, ref expr, dir) in vars { print!("{}={:?} {:?}, ", id, expr, dir); }
             println!("");
             print_step_tree(inner, indent + 1);
         }
@@ -308,11 +308,11 @@ pub fn exec(state: &mut eval::State, s: &Step, parent: &mut Connection, child: &
             }
         }
         Step::Foreach(width, ref vars, box ref inner) => {
-            let mut lstate = vars.iter().map(|&(id, ref expr)| {
-                let d = if expr.exists_down() {
+            let mut lstate = vars.iter().map(|&(id, ref expr, ref dir)| {
+                debug!("foreach var {}, {:?} {:?}", id, expr, dir);
+                let d = if dir.down {
                     match expr.eval_down(state) {
                         Value::Vector(v) => Some(v.into_iter()),
-                        Value::Number(0.0) => None, //TODO: placeholder value because exists_down doesn't work on variables
                         other => panic!("For loop argument must be a vector, found {}", other)
                     }
                 } else { None };
