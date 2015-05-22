@@ -29,11 +29,16 @@ pub fn resolve_module<'s>(session: &'s Session<'s>, ast: ast::Module) -> Scope<'
 pub struct ResolveInfo {
     pub vars_down: BitSet,
     pub vars_up: BitSet,
+    pub repeat_up_heuristic: bool,
 }
 
 impl ResolveInfo {
     fn new() -> ResolveInfo {
-        ResolveInfo { vars_down: BitSet::new(), vars_up: BitSet::new() }
+        ResolveInfo {
+            vars_down: BitSet::new(),
+            vars_up: BitSet::new(),
+            repeat_up_heuristic: false,
+        }
     }
 
     fn mode_of(&self, id: ValueID) -> DataMode {
@@ -45,11 +50,13 @@ impl ResolveInfo {
             if dir.down { self.vars_down.insert(id); }
             if dir.up { self.vars_up.insert(id); }
         });
+        self.repeat_up_heuristic |= dir.up && e.refutable();
     }
 
     fn merge_seq(&mut self, o: &ResolveInfo) {
         self.vars_down.union_with(&o.vars_down);
         self.vars_up.union_with(&o.vars_up);
+        self.repeat_up_heuristic |= o.repeat_up_heuristic;
     }
 }
 
@@ -128,7 +135,7 @@ fn resolve_action<'s>(session: &'s Session<'s>,
             debug!("Upper message, shape: {:?}", shape_up);
             let msg = expr::on_expr_message(session, &mut body_scope, shape_up, expr);
 
-            let (step, ri) = body.as_ref().map(|body| {
+            let (step, mut ri) = body.as_ref().map(|body| {
                 resolve_seq(session, &body_scope, shape_down, shape_up, body)
             }).unwrap_or((Step::Nop, ResolveInfo::new()));
 
@@ -140,12 +147,15 @@ fn resolve_action<'s>(session: &'s Session<'s>,
                 }
             }
 
+            ri.repeat_up_heuristic = true;
+
             (Step::TokenTop(msg, box step), ri)
         }
         ast::Action::Repeat(ref count_ast, ref block) => {
             let count = expr::value(session, scope, count_ast);
             let (step, mut ri) = resolve_seq(session, scope, shape_down, shape_up, block);
-            let any_up = step.any_up();
+            let any_up = ri.repeat_up_heuristic;
+            debug!("repeat: any_up {}", any_up);
             ri.use_expr(&count, DataMode { down: !any_up, up: any_up });
             (Step::Repeat(count, box step, any_up), ri)
         }
@@ -220,7 +230,7 @@ fn resolve_token(item: Item, shape: &Shape) -> (Message, ResolveInfo) {
             &Shape::Val(ref _t, dir) => {
                 if let Item::Value(v) = i {
                     state.1.use_expr(&v, dir);
-                    state.0.components.push(v.limit_direction(dir))
+                    state.0.components.push(v)
                 } else {
                     panic!("Expected value but found {:?}", i);
                 }

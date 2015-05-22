@@ -28,19 +28,6 @@ pub enum Step {
     //PrimitiveStep(Box<PrimitiveStep>),
 }
 
-impl Step {
-    /// Returns true if any data is sent in the up direction in this step or its lexical children
-    pub fn any_up(&self) -> bool {
-        match *self {
-            Step::Nop => false,
-            Step::Token(ref m) => m.components.iter().any(Expr::exists_up),
-            Step::Seq(ref steps) => steps.iter().any(Step::any_up),
-            Step::TokenTop(_, box ref _c) => true, //TODO: works on simple cases, but is this the right heuristic?
-            Step::Repeat(_, box ref c, _) | Step::Foreach(_, _, box ref c) => c.any_up(),
-        }
-    }
-}
-
 pub fn print_step_tree(s: &Step, indent: u32) {
     let i: String = repeat(" ").take(indent as usize).collect();
     match *s {

@@ -94,37 +94,16 @@ impl Expr {
         }
     }
 
-    pub fn mode(&self) -> DataMode {
+    pub fn refutable(&self) -> bool {
         match *self {
-            Expr::Ignored => DataMode { down: false, up: false },
-            Expr::Range(..) => DataMode { down: false, up: true },
-            Expr::Variable(..) => DataMode { down: true, up: true }, //TODO: results after inference?
-            Expr::Const(..) => DataMode { down: true, up: true },
-            Expr::Flip(ref d, ref u) => {
-                let d = d.mode();
-                let u = u.mode();
-                DataMode { down: d.down, up: u.up }
-            },
-            Expr::Choose(ref e, _) => e.mode(),
+            Expr::Ignored => false,
+            Expr::Range(..) => true,
+            Expr::Variable(..) => false,
+            Expr::Const(..) => true,
+            Expr::Flip(_, ref u) => u.refutable(),
+            Expr::Choose(ref e, _) => e.refutable(),
             Expr::Concat(_) => unimplemented!(),
-            Expr::BinaryConst(ref e, _, _) => e.mode()
-        }
-    }
-
-    pub fn exists_down(&self) -> bool { self.mode().down }
-    pub fn exists_up(&self) -> bool { self.mode().up }
-
-    pub fn limit_direction(self, target: DataMode) -> Expr {
-        let mode = self.mode();
-
-        if !target.down && !target.up {
-            Expr::Ignored
-        } else if !target.up && mode.up {
-            Expr::Flip(box self, box Expr::Ignored)
-        } else if !target.down && mode.down {
-            Expr::Flip(box Expr::Ignored, box self)
-        } else {
-            self
+            Expr::BinaryConst(ref e, _, _) => e.refutable(),
         }
     }
 
@@ -317,20 +296,16 @@ fn exprs() {
     }
 
     let two = expr(&sess, &scope, "2");
-    assert_eq!(two.mode(), DataMode { up: true, down: true });
     assert_eq!(two.eval_down(&state), Value::Number(2.0));
     assert_eq!(two.get_type(), Type::Number(2.0, 2.0));
 
     let ignore = expr(&sess, &scope, "_");
-    assert_eq!(ignore.mode(), DataMode { up: false, down: false });
     assert_eq!(ignore.get_type(), Type::Bottom);
 
     let down = expr(&sess, &scope, "<: #h");
-    assert_eq!(down.mode(), DataMode { up: false, down: true });
     assert_eq!(down.get_type(), Type::Symbol(Some("h".to_string()).into_iter().collect()));
 
     let range = expr(&sess, &scope, "0..5");
-    assert_eq!(range.mode(), DataMode { up: true, down: false });
     assert_eq!(range.get_type(), Type::Number(0.0, 5.0));
 
 }
