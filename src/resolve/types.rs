@@ -2,6 +2,7 @@ pub use self::Type::*;
 use eval::DataMode;
 use std::collections::HashSet;
 use std::cmp::{min, max};
+use std::slice;
 
 #[derive(Debug, PartialEq, Clone)]
 /// A type represents a set of possible values
@@ -45,15 +46,83 @@ pub static NULL_SHAPE: Shape = Shape::Val(Bottom, DataMode { down: false, up: fa
 
 impl Shape {
     pub fn data_mode(&self) -> DataMode {
-        match *self {
-            Shape::Val(_, mode) => mode,
-            Shape::Tup(ref items) => items.iter().fold(
-                DataMode { down: false, up: false },
-                |am, b| {
-                    let bm = b.data_mode();
-                    DataMode { down: am.down || bm.down, up: am.up || bm.up  }
-                }
-            ),
+        self.values().fold(
+            DataMode { down: false, up: false },
+            |am, (_, bm)| { DataMode { down: am.down || bm.down, up: am.up || bm.up  }}
+        )
+    }
+
+    pub fn values(&self) -> ShapeValIterator {
+        ShapeValIterator { stack: vec![slice::ref_slice(self).iter()] }
+    }
+
+    pub fn values_mut(&mut self) -> ShapeValIteratorMut {
+        ShapeValIteratorMut { stack: vec![slice::mut_ref_slice(self).iter_mut()] }
+    }
+}
+
+struct ShapeValIterator<'shape> {
+    stack: Vec<slice::Iter<'shape, Shape>>
+}
+
+impl<'shape> Iterator for ShapeValIterator<'shape> {
+    type Item = (&'shape Type, &'shape DataMode);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            let next = match self.stack.last_mut() {
+                Some(iter) => iter.next(),
+                None => return None,
+            };
+
+            match next {
+                Some(&Shape::Tup(ref items)) => { self.stack.push(items.iter()); }
+                Some(&Shape::Val(ref ty, ref dir)) => { return Some((ty, dir)); }
+                None => { self.stack.pop(); }
+            }
         }
     }
+}
+
+struct ShapeValIteratorMut<'shape> {
+    stack: Vec<slice::IterMut<'shape, Shape>>
+}
+
+impl<'shape> Iterator for ShapeValIteratorMut<'shape> {
+    type Item = (&'shape mut Type, &'shape mut DataMode);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            let next = match self.stack.last_mut() {
+                Some(iter) => iter.next(),
+                None => return None,
+            };
+
+            match next {
+                Some(&mut Shape::Tup(ref mut items)) => { self.stack.push(items.iter_mut()); }
+                Some(&mut Shape::Val(ref mut ty, ref mut dir)) => { return Some((ty, dir)); }
+                None => { self.stack.pop(); }
+            }
+        }
+    }
+}
+
+#[test]
+fn test_shape_iter() {
+    let dm = DataMode { down: true, up: false };
+    let shape = Shape::Tup(vec![
+        Shape::Val(Type::Integer(1, 1), dm),
+        Shape::Tup(vec![
+            Shape::Val(Type::Integer(2, 2), dm),
+            Shape::Val(Type::Integer(3, 3), dm),
+        ]),
+        Shape::Val(Type::Integer(4, 4), dm),
+    ]);
+
+    let mut iter = shape.values();
+    assert_eq!(iter.next(), Some((&Type::Integer(1, 1), &dm)));
+    assert_eq!(iter.next(), Some((&Type::Integer(2, 2), &dm)));
+    assert_eq!(iter.next(), Some((&Type::Integer(3, 3), &dm)));
+    assert_eq!(iter.next(), Some((&Type::Integer(4, 4), &dm)));
+    assert_eq!(iter.next(), None);
 }

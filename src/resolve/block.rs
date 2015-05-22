@@ -67,14 +67,14 @@ impl<'s> EventClosure<'s> {
 
         let mut scope = self.parent_scope.child(); // Base on lexical parent
 
-        let shape_up = if let Some(ref intf_expr) = self.ast.interface {
-            expr::rexpr(session, &scope, intf_expr).into_shape(DataMode{ up: true, down: true })
+        let mut shape_up = if let Some(ref intf_expr) = self.ast.interface {
+            expr::rexpr(session, &scope, intf_expr).into_shape(DataMode { down: false, up: true })
         } else {
             types::NULL_SHAPE.clone()
         };
 
         expr::assign(session, &mut scope, &self.ast.param, param);
-        let (step, ri) = resolve_seq(session, &scope, shape_down, &shape_up, &self.ast.block);
+        let (step, ri) = resolve_seq(session, &scope, shape_down, &mut shape_up, &self.ast.block);
 
         // TODO: analyze the data direction and clear direction bits in shape_up
 
@@ -91,7 +91,7 @@ pub struct EventBodyClosure<'s> {
 fn resolve_action<'s>(session: &'s Session<'s>,
                       scope: &Scope<'s>,
                       shape_down: &Shape,
-                      shape_up: &Shape,
+                      shape_up: &mut Shape,
                       action: &ast::Action) -> (Step, ResolveInfo) {
     match *action {
         ast::Action::Seq(ref block) => resolve_seq(session, scope, shape_down, shape_up, block),
@@ -131,6 +131,14 @@ fn resolve_action<'s>(session: &'s Session<'s>,
             let (step, ri) = body.as_ref().map(|body| {
                 resolve_seq(session, &body_scope, shape_down, shape_up, body)
             }).unwrap_or((Step::Nop, ResolveInfo::new()));
+
+            for (e, (_, ref mut dir)) in msg.components.iter().zip(shape_up.values_mut()) {
+                if let &Expr::Variable(id, _) = e {
+                    let DataMode { up, down } = ri.mode_of(id);
+                    dir.up &= up;
+                    dir.down |= down;
+                }
+            }
 
             (Step::TokenTop(msg, box step), ri)
         }
@@ -178,7 +186,7 @@ fn resolve_action<'s>(session: &'s Session<'s>,
 pub fn resolve_seq<'s>(session: &'s Session<'s>,
                   pscope: &Scope<'s>,
                   shape_down: &Shape,
-                  shape_up: &Shape,
+                  shape_up: &mut Shape,
                   block: &ast::Block) -> (Step, ResolveInfo) {
     let mut scope = pscope.child();
     resolve_letdef(session, &mut scope, &block.lets);
