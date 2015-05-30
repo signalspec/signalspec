@@ -36,13 +36,22 @@ impl Type {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum Shape {
-    Tup(Vec<Shape>),
+pub struct Shape {
+    pub data: ShapeData,
+    pub child: Option<Box<Shape>>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum ShapeData {
+    Tup(Vec<ShapeData>),
     Val(Type, DataMode),
 }
 
 // TODO: should be fully empty, not a no-direction member
-pub static NULL_SHAPE: Shape = Shape::Val(Bottom, DataMode { down: false, up: false });
+pub static NULL_SHAPE: Shape = Shape {
+    data: ShapeData::Val(Bottom, DataMode { down: false, up: false }),
+    child: None,
+};
 
 impl Shape {
     pub fn data_mode(&self) -> DataMode {
@@ -53,16 +62,16 @@ impl Shape {
     }
 
     pub fn values(&self) -> ShapeValIterator {
-        ShapeValIterator { stack: vec![slice::ref_slice(self).iter()] }
+        ShapeValIterator { stack: vec![slice::ref_slice(&self.data).iter()] }
     }
 
     pub fn values_mut(&mut self) -> ShapeValIteratorMut {
-        ShapeValIteratorMut { stack: vec![slice::mut_ref_slice(self).iter_mut()] }
+        ShapeValIteratorMut { stack: vec![slice::mut_ref_slice(&mut self.data).iter_mut()] }
     }
 }
 
 struct ShapeValIterator<'shape> {
-    stack: Vec<slice::Iter<'shape, Shape>>
+    stack: Vec<slice::Iter<'shape, ShapeData>>
 }
 
 impl<'shape> Iterator for ShapeValIterator<'shape> {
@@ -76,8 +85,8 @@ impl<'shape> Iterator for ShapeValIterator<'shape> {
             };
 
             match next {
-                Some(&Shape::Tup(ref items)) => { self.stack.push(items.iter()); }
-                Some(&Shape::Val(ref ty, ref dir)) => { return Some((ty, dir)); }
+                Some(&ShapeData::Tup(ref items)) => { self.stack.push(items.iter()); }
+                Some(&ShapeData::Val(ref ty, ref dir)) => { return Some((ty, dir)); }
                 None => { self.stack.pop(); }
             }
         }
@@ -85,7 +94,7 @@ impl<'shape> Iterator for ShapeValIterator<'shape> {
 }
 
 struct ShapeValIteratorMut<'shape> {
-    stack: Vec<slice::IterMut<'shape, Shape>>
+    stack: Vec<slice::IterMut<'shape, ShapeData>>
 }
 
 impl<'shape> Iterator for ShapeValIteratorMut<'shape> {
@@ -99,8 +108,8 @@ impl<'shape> Iterator for ShapeValIteratorMut<'shape> {
             };
 
             match next {
-                Some(&mut Shape::Tup(ref mut items)) => { self.stack.push(items.iter_mut()); }
-                Some(&mut Shape::Val(ref mut ty, ref mut dir)) => { return Some((ty, dir)); }
+                Some(&mut ShapeData::Tup(ref mut items)) => { self.stack.push(items.iter_mut()); }
+                Some(&mut ShapeData::Val(ref mut ty, ref mut dir)) => { return Some((ty, dir)); }
                 None => { self.stack.pop(); }
             }
         }
@@ -110,14 +119,17 @@ impl<'shape> Iterator for ShapeValIteratorMut<'shape> {
 #[test]
 fn test_shape_iter() {
     let dm = DataMode { down: true, up: false };
-    let shape = Shape::Tup(vec![
-        Shape::Val(Type::Integer(1, 1), dm),
-        Shape::Tup(vec![
-            Shape::Val(Type::Integer(2, 2), dm),
-            Shape::Val(Type::Integer(3, 3), dm),
+    let shape = Shape {
+        data: ShapeData::Tup(vec![
+            ShapeData::Val(Type::Integer(1, 1), dm),
+            ShapeData::Tup(vec![
+                ShapeData::Val(Type::Integer(2, 2), dm),
+                ShapeData::Val(Type::Integer(3, 3), dm),
+            ]),
+            ShapeData::Val(Type::Integer(4, 4), dm),
         ]),
-        Shape::Val(Type::Integer(4, 4), dm),
-    ]);
+        child: None,
+    };
 
     let mut iter = shape.values();
     assert_eq!(iter.next(), Some((&Type::Integer(1, 1), &dm)));

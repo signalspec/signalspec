@@ -96,7 +96,7 @@ pub fn rexpr<'s>(session: &'s Session<'s>, scope: &Scope<'s>, e: &ast::Expr) -> 
     }
 }
 
-use resolve::types::Shape;
+use resolve::types::{ Shape, ShapeData };
 use exec::Message;
 
 pub fn on_expr_message<'s>(sess: &'s Session<'s>, scope: &mut Scope<'s>,
@@ -104,15 +104,15 @@ pub fn on_expr_message<'s>(sess: &'s Session<'s>, scope: &mut Scope<'s>,
     let mut msg = Message { components: vec![] };
 
     fn inner<'s>(sess: &'s Session<'s>, scope: &mut Scope<'s>, msg: &mut Message,
-                shape: &Shape, e: &ast::Expr) {
+                shape: &ShapeData, e: &ast::Expr) {
         match (shape, e) {
-            (&Shape::Val(ref ty, _), expr) => {
+            (&ShapeData::Val(ref ty, _), expr) => {
                 msg.components.push(resolve(sess, &mut |name| {
                     let id = scope.new_variable(sess, name, ty.clone());
                     Expr::Variable(id, ty.clone())
                 }, expr));
             }
-            (&Shape::Tup(ref ss), &ast::Expr::Tup(ref se)) => {
+            (&ShapeData::Tup(ref ss), &ast::Expr::Tup(ref se)) => {
                 for (s, i) in ss.iter().zip(se.iter()) {
                     inner(sess, scope, msg, s, i);
                 }
@@ -122,7 +122,7 @@ pub fn on_expr_message<'s>(sess: &'s Session<'s>, scope: &mut Scope<'s>,
         }
     }
 
-    inner(sess, scope, &mut msg, shape, expr);
+    inner(sess, scope, &mut msg, &shape.data, expr);
     msg
 }
 

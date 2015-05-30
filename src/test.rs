@@ -7,9 +7,10 @@ fn v(s: &str) -> ast::Value{
     grammar::literal(s).unwrap()
 }
 
-const SHAPE_ANY: types::Shape = types::Shape::Val(types::Bottom, DataMode {
-    down: false, up: true
-});
+const SHAPE_ANY: types::Shape = types::Shape {
+    data: types::ShapeData::Val(types::Bottom, DataMode { down: false, up: true }),
+    child: None,
+};
 
 #[test]
 fn test_seq() {
@@ -163,7 +164,13 @@ fn test_tup() {
         }
     ").unwrap();
 
-    let p = m.compile_call("main", types::Shape::Tup(vec!(SHAPE_ANY, SHAPE_ANY)), ()).unwrap();
+    let p = m.compile_call("main", types::Shape {
+        data: types::ShapeData::Tup(vec![
+            types::ShapeData::Val(types::Bottom, DataMode { down: false, up: true }),
+            types::ShapeData::Val(types::Bottom, DataMode { down: false, up: true })
+        ]),
+        child: None
+    }, ()).unwrap();
 
     p.run_test_pass("#a, #b \n #c, #d", "");
     p.run_test_fail("#a, #d \n #c, #b", "");

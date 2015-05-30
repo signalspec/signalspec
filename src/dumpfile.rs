@@ -6,7 +6,7 @@ use ast::Value;
 use exec;
 use eval::{self, DataMode};
 use session::Process;
-use resolve::types::{self, Shape};
+use resolve::types::{self, Shape, ShapeData};
 use resolve::scope::Item;
 use connection_io::{ConnectionRead, ConnectionWrite};
 
@@ -51,11 +51,11 @@ impl Process for ValueDumpPrint {
 
 pub fn process(downward_shape: &Shape, arg: Item) -> Box<Process + 'static> {
     let dir = match *downward_shape {
-        Shape::Val(types::Integer(0, 255), dir) => dir,
+        Shape { data: ShapeData::Val(types::Integer(0, 255), dir), .. } => dir,
         _ => panic!("Invalid shape {:?} below dumpfile::process", downward_shape)
     };
 
-    let upward_shape = arg.into_shape(dir);
+    let upward_shape = Shape { data: arg.into_data_shape(dir), child: None };
 
     match dir {
         DataMode { down: false, up: true } => box ValueDumpUp(upward_shape),

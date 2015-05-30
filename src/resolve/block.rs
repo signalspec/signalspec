@@ -5,7 +5,7 @@ use session::{Session, ValueID};
 use resolve::expr;
 pub use exec::{ Step, Message };
 pub use resolve::scope::{ Scope, Item };
-use resolve::types::{self, Shape, Type};
+use resolve::types::{self, Shape, ShapeData, Type};
 use eval::{Expr, DataMode};
 
 pub fn resolve_module<'s>(session: &'s Session<'s>, ast: ast::Module) -> Scope<'s> {
@@ -75,7 +75,10 @@ impl<'s> EventClosure<'s> {
         let mut scope = self.parent_scope.child(); // Base on lexical parent
 
         let mut shape_up = if let Some(ref intf_expr) = self.ast.interface {
-            expr::rexpr(session, &scope, intf_expr).into_shape(DataMode { down: false, up: true })
+            Shape {
+                data: expr::rexpr(session, &scope, intf_expr).into_data_shape(DataMode { down: false, up: true }),
+                child: None,
+            }
         } else {
             types::NULL_SHAPE.clone()
         };
@@ -225,9 +228,9 @@ fn resolve_token(item: Item, shape: &Shape) -> (Message, ResolveInfo) {
         ResolveInfo::new(),
     );
 
-    fn inner<'s>(i: Item<'s>, shape: &Shape, state: &mut (Message, ResolveInfo)) {
+    fn inner<'s>(i: Item<'s>, shape: &ShapeData, state: &mut (Message, ResolveInfo)) {
         match shape {
-            &Shape::Val(ref _t, dir) => {
+            &ShapeData::Val(ref _t, dir) => {
                 if let Item::Value(v) = i {
                     state.1.use_expr(&v, dir);
                     state.0.components.push(v)
@@ -235,7 +238,7 @@ fn resolve_token(item: Item, shape: &Shape) -> (Message, ResolveInfo) {
                     panic!("Expected value but found {:?}", i);
                 }
             }
-            &Shape::Tup(ref m) => {
+            &ShapeData::Tup(ref m) => {
                 if let Item::Tuple(t) = i {
                     if t.len() == m.len() {
                         for (mi, i) in m.iter().zip(t.into_iter()) {
@@ -251,6 +254,6 @@ fn resolve_token(item: Item, shape: &Shape) -> (Message, ResolveInfo) {
         }
     }
 
-    inner(item, shape, &mut state);
+    inner(item, &shape.data, &mut state);
     state
 }

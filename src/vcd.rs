@@ -4,7 +4,7 @@ use std::slice::ref_slice;
 use exec;
 use eval::{self, DataMode};
 use session::Process;
-use resolve::types::{self, Shape};
+use resolve::types::{self, Shape, ShapeData};
 use resolve::scope::Item;
 use connection_io::{ConnectionRead, ConnectionWrite};
 use ast::Value;
@@ -14,7 +14,7 @@ extern crate vcd;
 fn shape_to_scope(s: &Shape) -> (vcd::Scope, Vec<vcd::IdCode>) {
     let mut ids = Vec::new();
 
-    fn scope(ids: &mut Vec<vcd::IdCode>, l: &[Shape], name: String) -> vcd::Scope {
+    fn scope(ids: &mut Vec<vcd::IdCode>, l: &[ShapeData], name: String) -> vcd::Scope {
         vcd::Scope {
             scope_type: vcd::ScopeType::Module,
             identifier: name,
@@ -23,9 +23,9 @@ fn shape_to_scope(s: &Shape) -> (vcd::Scope, Vec<vcd::IdCode>) {
         }
     }
 
-    fn inner(ids: &mut Vec<vcd::IdCode>, s: &Shape, name: String) -> vcd::ScopeItem {
+    fn inner(ids: &mut Vec<vcd::IdCode>, s: &ShapeData, name: String) -> vcd::ScopeItem {
         match *s {
-            Shape::Val(_, _) => {
+            ShapeData::Val(_, _) => {
                 let code = vcd::IdCode::from(ids.len() as u32);
                 ids.push(code);
 
@@ -36,13 +36,13 @@ fn shape_to_scope(s: &Shape) -> (vcd::Scope, Vec<vcd::IdCode>) {
                     reference: name
                 })
             }
-            Shape::Tup(ref l) => vcd::ScopeItem::Scope(scope(ids, &l[..], name))
+            ShapeData::Tup(ref l) => vcd::ScopeItem::Scope(scope(ids, &l[..], name))
         }
     }
 
-    let top = scope(&mut ids, match *s {
-        Shape::Val(..) => ref_slice(s),
-        Shape::Tup(ref l) => &l[..],
+    let top = scope(&mut ids, match s.data {
+        ShapeData::Val(..) => ref_slice(&s.data),
+        ShapeData::Tup(ref l) => &l[..],
     }, "top".to_string());
 
     (top, ids)
@@ -91,18 +91,18 @@ impl Process for VcdDown {
 fn shape_from_scope(s: &Shape, v: &vcd::Scope) -> Vec<vcd::IdCode> {
     let mut ids = Vec::new();
 
-    fn inner_tuple(ids: &mut Vec<vcd::IdCode>, shapes: &[Shape], scope: &vcd::Scope) {
+    fn inner_tuple(ids: &mut Vec<vcd::IdCode>, shapes: &[ShapeData], scope: &vcd::Scope) {
         for (child_shape, child_scope) in shapes.iter().zip(scope.children.iter()) {
             inner(ids, child_shape, child_scope);
         }
     }
 
-    fn inner(ids: &mut Vec<vcd::IdCode>, shape: &Shape, scope_item: &vcd::ScopeItem) {
+    fn inner(ids: &mut Vec<vcd::IdCode>, shape: &ShapeData, scope_item: &vcd::ScopeItem) {
         match (shape, scope_item) {
-            (&Shape::Val(..), &vcd::ScopeItem::Var(ref var)) => {
+            (&ShapeData::Val(..), &vcd::ScopeItem::Var(ref var)) => {
                 ids.push(var.code)
             }
-            (&Shape::Tup(ref t), &vcd::ScopeItem::Scope(ref scope)) => {
+            (&ShapeData::Tup(ref t), &vcd::ScopeItem::Scope(ref scope)) => {
                 inner_tuple(ids, &t[..], scope)
             }
             (shape, scope) => {
@@ -111,11 +111,11 @@ fn shape_from_scope(s: &Shape, v: &vcd::Scope) -> Vec<vcd::IdCode> {
         }
     }
 
-    match s {
-        &Shape::Tup(ref t) => inner_tuple(&mut ids, &t[..], v),
-        &Shape::Val(..) => {
+    match s.data {
+        ShapeData::Tup(ref t) => inner_tuple(&mut ids, &t[..], v),
+        ShapeData::Val(..) => {
             if let Some(first_child) = v.children.first() {
-                inner(&mut ids, s, first_child);
+                inner(&mut ids, &s.data, first_child);
             } else {
                 panic!("Shape {:?} doesn't match scope {:?}", s, v)
             }
@@ -189,11 +189,11 @@ impl Process for VcdUp {
 
 pub fn process(downward_shape: &Shape, arg: Item) -> Box<Process + 'static> {
     let dir = match *downward_shape {
-        Shape::Val(types::Integer(0, 255), dir) => dir,
+        Shape { data: ShapeData::Val(types::Integer(0, 255), dir), .. } => dir,
         _ => panic!("Invalid shape {:?} below vcd::process", downward_shape)
     };
 
-    let upward_shape = arg.into_shape(dir);
+    let upward_shape = Shape { data: arg.into_data_shape(dir), child: None };
 
     match dir {
         DataMode { down: false, up: true } => box VcdUp(upward_shape),

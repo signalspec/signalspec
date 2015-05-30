@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::default::Default;
 
 use resolve::block::{EventClosure};
-use resolve::types::{Shape, Type};
+use resolve::types::{ShapeData, Type};
 use session::{ Session, ValueID };
 use eval::{ Expr, DataMode };
 
@@ -52,10 +52,10 @@ pub enum Item<'s> {
 }
 
 impl<'s> Item<'s> {
-    pub fn into_shape(self, dir: DataMode) -> Shape {
+    pub fn into_data_shape(self, dir: DataMode) -> ShapeData {
         match self {
-            Item::Value(ref e) => Shape::Val(e.get_type(), dir),
-            Item::Tuple(items) => Shape::Tup(items.into_iter().map(|x| x.into_shape(dir)).collect()),
+            Item::Value(ref e) => ShapeData::Val(e.get_type(), dir),
+            Item::Tuple(items) => ShapeData::Tup(items.into_iter().map(|x| x.into_data_shape(dir)).collect()),
             other => panic!("{:?} isn't a valid shape", other),
         }
     }

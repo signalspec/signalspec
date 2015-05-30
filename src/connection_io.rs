@@ -7,7 +7,7 @@ use ast::Value;
 use exec;
 use eval::{self, DataMode, Expr};
 use session::Process;
-use resolve::types::{self, Shape};
+use resolve::types::{self, Shape, ShapeData};
 use resolve::scope::Item;
 use session;
 use ast;
@@ -72,7 +72,10 @@ impl Process for ReaderProcess {
     }
 
     fn shape_up(&self) -> &Shape {
-        static SHAPE: Shape = Shape::Val(types::Integer(0, 255), DataMode { down: false, up: true });
+        static SHAPE: Shape = Shape {
+            data: ShapeData::Val(types::Integer(0, 255), DataMode { down: false, up: true }),
+            child: None,
+        };
         &SHAPE
     }
 }
@@ -88,7 +91,10 @@ impl Process for WriterProcess {
     }
 
     fn shape_up(&self) -> &Shape {
-        static SHAPE: Shape = Shape::Val(types::Integer(0, 255), DataMode { down: true, up: false });
+        static SHAPE: Shape = Shape {
+            data: ShapeData::Val(types::Integer(0, 255), DataMode { down: true, up: false }),
+            child: None,
+        };
         &SHAPE
     }
 }
