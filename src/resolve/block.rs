@@ -1,6 +1,7 @@
 use std::collections::BitSet;
-use ast;
+use std::cell::RefCell;
 
+use ast;
 use session::{Session, ValueID};
 use resolve::expr;
 pub use exec::{ Step, Message };
@@ -8,8 +9,9 @@ pub use resolve::scope::{ Scope, Item };
 use resolve::types::{self, Shape, ShapeData, Type};
 use eval::{Expr, DataMode};
 
-pub fn resolve_module<'s>(session: &'s Session<'s>, ast: ast::Module) -> Scope<'s> {
-    let mut scope = session.prelude.clone();
+pub fn resolve_module<'s>(session: &'s Session<'s>, ast: &'s ast::Module) -> &'s RefCell<Scope<'s>> {
+    let ref_scope = session.scope_arena.alloc(RefCell::new(session.prelude.clone()));
+    let mut scope = ref_scope.borrow_mut();
 
     for _import in ast.imports.iter() {
         panic!("Imports unimplemented");
@@ -17,13 +19,12 @@ pub fn resolve_module<'s>(session: &'s Session<'s>, ast: ast::Module) -> Scope<'
 
     resolve_letdef(session, &mut scope, &ast.lets);
 
-    for def in ast.defs {
-        let name = def.name.clone();
-        let ed = Item::Def(session.closure_arena.alloc(EventClosure{ ast:def, parent_scope: scope.clone() }));
-        scope.names.insert(name, ed);
+    for def in &ast.defs {
+        let ed = Item::Def(def, ref_scope);
+        scope.names.insert(def.name.clone(), ed);
     }
 
-    scope
+    ref_scope
 }
 
 pub struct ResolveInfo {
@@ -60,42 +61,29 @@ impl ResolveInfo {
     }
 }
 
-/// A user-defined event
-pub struct EventClosure<'s> {
-    pub ast: ast::Def,
-    pub parent_scope: Scope<'s>,
-}
+pub fn call<'s>(item: &Item<'s>, session: &'s Session<'s>, shape_down: &Shape, param: Item<'s>) ->
+        (Shape, Step, ResolveInfo) {
 
-impl<'s> EventClosure<'s> {
-    pub fn resolve_call(&self,
-                        session: &'s Session<'s>,
-                        shape_down: &Shape,
-                        param: Item<'s>) -> (Shape, Step, ResolveInfo) {
+    match *item {
+        Item::Def(ast, scope) => {
+            let mut scope = scope.borrow().child(); // Base on lexical parent
 
-        let mut scope = self.parent_scope.child(); // Base on lexical parent
+            let mut shape_up = if let Some(ref intf_expr) = ast.interface {
+                Shape {
+                    data: expr::rexpr(session, &scope, intf_expr).into_data_shape(DataMode { down: false, up: true }),
+                    child: None,
+                }
+            } else {
+                types::NULL_SHAPE.clone()
+            };
 
-        let mut shape_up = if let Some(ref intf_expr) = self.ast.interface {
-            Shape {
-                data: expr::rexpr(session, &scope, intf_expr).into_data_shape(DataMode { down: false, up: true }),
-                child: None,
-            }
-        } else {
-            types::NULL_SHAPE.clone()
-        };
+            expr::assign(session, &mut scope, &ast.param, param);
+            let (step, ri) = resolve_seq(session, &scope, shape_down, &mut shape_up, &ast.block);
 
-        expr::assign(session, &mut scope, &self.ast.param, param);
-        let (step, ri) = resolve_seq(session, &scope, shape_down, &mut shape_up, &self.ast.block);
-
-        // TODO: analyze the data direction and clear direction bits in shape_up
-
-        (shape_up, step, ri)
+            (shape_up, step, ri)
+        }
+        _ => panic!("Not callable")
     }
-}
-
-/// A body associated with an event call
-pub struct EventBodyClosure<'s> {
-    ast: &'s ast::Block,
-    parent_scope: Scope<'s>,
 }
 
 fn resolve_action<'s>(session: &'s Session<'s>,
@@ -107,21 +95,14 @@ fn resolve_action<'s>(session: &'s Session<'s>,
         ast::Action::Seq(ref block) => resolve_seq(session, scope, shape_down, shape_up, block),
         ast::Action::Call(ref expr, ref arg, ref body) => {
             let arg = expr::rexpr(session, scope, arg);
-            let body = body.as_ref().map(|x| {
-                EventBodyClosure { ast: x, parent_scope: scope.child() }
-            });
 
             if body.is_some() {
                 unimplemented!();
             }
 
-            match expr::rexpr(session, scope, expr) {
-                Item::Def(entity) => {
-                    let (_shape_child, step, ri) = entity.resolve_call(session, shape_down, arg);
-                    (step, ri)
-                }
-                _ => panic!("Not callable"),
-            }
+            let item = expr::rexpr(session, scope, expr);
+            let (_shape_child, step, ri) = call(&item, session, shape_down, arg);
+            (step, ri)
         }
         ast::Action::Token(ref expr, ref body) => {
             debug!("Token: {:?}", expr);

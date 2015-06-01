@@ -1,8 +1,9 @@
 use std::fmt;
 use std::collections::HashMap;
 use std::default::Default;
+use std::cell::RefCell;
 
-use resolve::block::{EventClosure};
+use ast;
 use resolve::types::{ShapeData, Type};
 use session::{ Session, ValueID };
 use eval::{ Expr, DataMode };
@@ -46,7 +47,7 @@ impl<'s> Scope<'s> {
 #[derive(Clone)]
 pub enum Item<'s> {
     Value(Expr),
-    Def(&'s EventClosure<'s>),
+    Def(&'s ast::Def, &'s RefCell<Scope<'s>>),
     Tuple(Vec<Item<'s>>), // TODO: named components
     String(String), // Not a Value because it is not of constant size
 }

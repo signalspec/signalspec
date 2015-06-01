@@ -1,10 +1,13 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 use arena::{TypedArena};
+use std::str;
+use std::io::{self, Cursor};
+use std::thread;
+use std::cell::RefCell;
 
 use ast;
 use resolve;
 use resolve::Scope;
-use resolve::block::EventClosure;
 use exec::Step;
 use ast::Value;
 use resolve::scope::Item;
@@ -12,9 +15,7 @@ use resolve::types::{ Type, Shape };
 use grammar;
 use eval::Expr;
 
-use std::str;
-use std::io::{self, Cursor};
-use std::thread;
+
 use exec;
 use dumpfile;
 use eval;
@@ -23,7 +24,8 @@ pub type ValueID = usize;
 
 /// The data common to an entire resolve pass
 pub struct Session<'session> {
-    pub closure_arena: TypedArena<EventClosure<'session>>,
+    pub scope_arena: TypedArena<RefCell<Scope<'session>>>,
+    pub ast_arena: TypedArena<ast::Module>,
     id_counter: AtomicUsize,
     pub prelude: Scope<'session>,
 }
@@ -31,7 +33,8 @@ pub struct Session<'session> {
 impl<'session> Session<'session> {
     pub fn new() -> Session<'session> {
         Session {
-            closure_arena: TypedArena::new(),
+            scope_arena: TypedArena::new(),
+            ast_arena: TypedArena::new(),
             id_counter: AtomicUsize::new(1),
             prelude: Scope::new(),
         }
@@ -42,10 +45,10 @@ impl<'session> Session<'session> {
     }
 
     pub fn parse_module(&'session self, source: &str) -> Result<Module<'session>, grammar::ParseError> {
-        grammar::module(source).map(|ast| self.resolve_module(ast))
+        grammar::module(source).map(|ast| self.resolve_module(self.ast_arena.alloc(ast)))
     }
 
-    pub fn resolve_module(&'session self, modast: ast::Module) -> Module<'session> {
+    pub fn resolve_module(&'session self, modast: &'session ast::Module) -> Module<'session> {
         Module {
             session: self,
             scope: resolve::block::resolve_module(self, modast),
@@ -115,26 +118,19 @@ impl <'s> IntoItem<'s> for () {
 
 pub struct Module<'s> {
     session: &'s Session<'s>,
-    scope: Scope<'s>,
+    scope: &'s RefCell<Scope<'s>>,
 }
 
-
 impl <'s> Module<'s> {
-    pub fn get_def<'a>(&'a self, name: &str) -> &'a EventClosure<'s> {
-        // TODO: return Result
-        match self.scope.get(name).unwrap() {
-            resolve::scope::Item::Def(s) => s,
-            _ => panic!("Main is not an event"),
-        }
-    }
-
     pub fn compile_call<T: IntoItem<'s>>(&self, name: &str,
                         shape_down: Shape,
                         param: T) -> Result<Program, ()> {
-        let def = self.get_def(name);
-
-        let (shape_up, step, _) = def.resolve_call(&self.session, &shape_down, param.into_item());
-        Ok(Program{ step: step, shape_down: shape_down, shape_up: shape_up})
+        if let Some(item) = self.scope.borrow().get(name) {
+            let (shape_up, step, _) = resolve::block::call(&item, &self.session, &shape_down, param.into_item());
+            Ok(Program{ step: step, shape_down: shape_down, shape_up: shape_up})
+        } else {
+            Err(())
+        }
     }
 }
 
