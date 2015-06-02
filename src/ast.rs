@@ -6,7 +6,7 @@ use resolve::types;
 pub struct Module {
     pub imports: Vec<UseDef>,
     pub lets: Vec<LetDef>,
-    pub defs: Vec<Def>,
+    pub defs: Vec<ModuleEntry>,
 }
 
 #[derive(Debug)]
@@ -26,11 +26,25 @@ pub enum Action {
     For(Vec<(String, Expr)>, Block),
 }
 
+pub enum ModuleEntry {
+    Signal(Def),
+    Interface(Interface),
+}
+
 pub struct Def {
     pub name: String,
     pub param: Expr,
     pub interface: Option<Expr>,
     pub block: Block,
+}
+
+pub struct Interface {
+    pub name: String,
+    pub entries: Vec<InterfaceEntry>,
+}
+
+pub enum InterfaceEntry {
+    Shape(Expr, Vec<InterfaceEntry>),
 }
 
 #[derive(Debug)]

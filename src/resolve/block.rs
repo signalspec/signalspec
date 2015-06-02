@@ -20,8 +20,16 @@ pub fn resolve_module<'s>(session: &'s Session<'s>, ast: &'s ast::Module) -> &'s
     resolve_letdef(session, &mut scope, &ast.lets);
 
     for def in &ast.defs {
-        let ed = Item::Def(def, ref_scope);
-        scope.names.insert(def.name.clone(), ed);
+        match *def {
+            ast::ModuleEntry::Signal(ref d) => {
+                let ed = Item::Def(d, ref_scope);
+                scope.names.insert(d.name.clone(), ed);
+            }
+            ast::ModuleEntry::Interface(ref d) => {
+                let ed = Item::Interface(d, ref_scope);
+                scope.names.insert(d.name.clone(), ed);
+            }
+        }
     }
 
     ref_scope
@@ -69,10 +77,7 @@ pub fn call<'s>(item: &Item<'s>, session: &'s Session<'s>, shape_down: &Shape, p
             let mut scope = scope.borrow().child(); // Base on lexical parent
 
             let mut shape_up = if let Some(ref intf_expr) = ast.interface {
-                Shape {
-                    data: expr::rexpr(session, &scope, intf_expr).into_data_shape(DataMode { down: false, up: true }),
-                    child: None,
-                }
+                expr::rexpr(session, &scope, intf_expr).into_shape(session, DataMode { down: false, up: true })
             } else {
                 types::NULL_SHAPE.clone()
             };

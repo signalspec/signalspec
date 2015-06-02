@@ -4,7 +4,8 @@ use std::default::Default;
 use std::cell::RefCell;
 
 use ast;
-use resolve::types::{ShapeData, Type};
+use resolve;
+use resolve::types::{ Shape, ShapeData, Type };
 use session::{ Session, ValueID };
 use eval::{ Expr, DataMode };
 
@@ -48,6 +49,7 @@ impl<'s> Scope<'s> {
 pub enum Item<'s> {
     Value(Expr),
     Def(&'s ast::Def, &'s RefCell<Scope<'s>>),
+    Interface(&'s ast::Interface, &'s RefCell<Scope<'s>>),
     Tuple(Vec<Item<'s>>), // TODO: named components
     String(String), // Not a Value because it is not of constant size
 }
@@ -58,6 +60,13 @@ impl<'s> Item<'s> {
             Item::Value(ref e) => ShapeData::Val(e.get_type(), dir),
             Item::Tuple(items) => ShapeData::Tup(items.into_iter().map(|x| x.into_data_shape(dir)).collect()),
             other => panic!("{:?} isn't a valid shape", other),
+        }
+    }
+
+    pub fn into_shape(self, sess: &'s Session<'s>, dir: DataMode) -> Shape {
+        match self {
+            Item::Interface(ast, scope) =>  resolve::interface(sess, ast, &*scope.borrow(), dir),
+            i => Shape { data: i.into_data_shape(dir), child: None }
         }
     }
 }
@@ -84,6 +93,7 @@ impl<'s> fmt::Debug for Item<'s> {
         match *self {
             Item::Value(ref v) => write!(f, "{:?}", v),
             Item::Def(..) => write!(f, "<def>"),
+            Item::Interface(..) => write!(f, "<interface>"),
             Item::Tuple(ref v) => {
                 try!(write!(f, "("));
                 for i in v.iter() {

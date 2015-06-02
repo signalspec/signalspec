@@ -15,14 +15,16 @@ letstmt -> ast::LetDef
     = LET _ name:identifier _ "=" _ value:expr BREAK
     { ast::LetDef(name, value) }
 
-def -> ast::Def
+def -> ast::ModuleEntry
     = DEF _ name:identifier _ "(" _ param: expr_tup _ ")" _ interface:(":" _ e:expr {e})? _ block:block BREAK
-    { ast::Def{ name:name, param:param, interface:interface, block:block } }
+      { ast::ModuleEntry::Signal(ast::Def { name:name, param:param, interface:interface, block:block }) }
+    / INTERFACE _ name:identifier _ entries:intf_block BREAK
+      { ast::ModuleEntry::Interface(ast::Interface { name:name, entries: entries  }) }
 
-    #[pub]
-    block -> ast::Block
-        = "{" _ lets:letstmt* actions:action ** (BREAK / (_ ";" _)) _ "}"
-        { ast::Block{ lets:lets, actions:actions } }
+#[pub]
+block -> ast::Block
+    = "{" _ lets:letstmt* actions:action ** (BREAK / (_ ";" _)) _ "}"
+    { ast::Block{ lets:lets, actions:actions } }
 
     action -> ast::Action
         = REPEAT _ count:expr? _ block:block
@@ -36,6 +38,14 @@ def -> ast::Def
         / expr:expr body:block?
             { ast::Action::Token(expr, body) }
 
+intf_block -> Vec<ast::InterfaceEntry>
+  = _ "{" _ entries:(entry:intf_entry ** (BREAK / (_ ";" _)) {entry}) _ "}"
+    { entries }
+  / "" { Vec::new() }
+
+  intf_entry -> ast::InterfaceEntry
+     = e:expr b:intf_block BREAK
+     { ast::InterfaceEntry::Shape(e, b) }
 
 // Processes (for command line args)
 #[pub]
@@ -174,6 +184,7 @@ IDCHAR = [0-9a-zA-Z_]
 USE    = "use"    !IDCHAR
 LET    = "let"    !IDCHAR
 DEF    = "def"    !IDCHAR
+INTERFACE = "interface"    !IDCHAR
 REPEAT = "repeat" !IDCHAR
 ON     = "on"     !IDCHAR
 FOR    = "for"    !IDCHAR

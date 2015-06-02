@@ -5,3 +5,6 @@ pub mod scope;
 pub mod types;
 pub mod expr;
 pub mod block;
+mod interface;
+
+pub use self::interface::resolve_interface as interface;
