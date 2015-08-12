@@ -1,13 +1,23 @@
 #![allow(dead_code)]
-#![feature(plugin, box_syntax, box_patterns, rustc_private, collections, exit_status, str_char, scoped, core)]
+#![feature(plugin)]
+#![feature(box_syntax)]
+#![feature(box_patterns)]
+#![feature(rustc_private)]
+#![feature(collections)]
+#![feature(str_char)]
+#![feature(scoped)]
+#![feature(ref_slice)]
+#![feature(iter_arith)]
 #![plugin(peg_syntax_ext)]
 
 extern crate arena;
 extern crate collections;
+extern crate bit_set;
+extern crate vec_map;
 
 #[macro_use] extern crate log;
 
-use std::{env, fs, thread};
+use std::{env, process, fs, thread};
 use std::io::prelude::*;
 
 use session::Process;
@@ -86,5 +96,5 @@ fn main() {
 
     let success = threads.into_iter().all(|x| x.join());
 
-    env::set_exit_status(if success { 0 } else { 1 });
+    process::exit(if success { 0 } else { 1 });
 }

@@ -1,4 +1,4 @@
-use std::collections::VecMap;
+use vec_map::VecMap;
 use ast::Value;
 use session::{ValueID};
 use resolve::types::Type;

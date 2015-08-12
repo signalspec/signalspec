@@ -1,4 +1,4 @@
-use std::collections::BitSet;
+use bit_set::BitSet;
 use std::cell::RefCell;
 
 use ast;
