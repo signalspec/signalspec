@@ -5,7 +5,6 @@
 #![feature(rustc_private)]
 #![feature(collections)]
 #![feature(str_char)]
-#![feature(scoped)]
 #![feature(ref_slice)]
 #![feature(iter_arith)]
 #![plugin(peg_syntax_ext)]
@@ -86,7 +85,7 @@ fn main() {
     let threads = processes.into_iter().map(|p| {
         let (mut c2, c1) = exec::Connection::new(p.shape_up());
         ::std::mem::swap(&mut c2, &mut connection);
-        thread::scoped(move || {
+        thread::spawn(move || {
             let mut downward = c2;
             let mut upward = c1;
             let mut state = eval::State::new();
@@ -94,7 +93,7 @@ fn main() {
         })
     }).collect::<Vec<_>>();
 
-    let success = threads.into_iter().all(|x| x.join());
+    let success = threads.into_iter().all(|x| x.join().unwrap());
 
     process::exit(if success { 0 } else { 1 });
 }

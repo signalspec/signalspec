@@ -144,11 +144,11 @@ impl Program {
     pub fn run_test(&self, bottom: &'static str, top: &'static str) -> (bool, eval::State) {
         let (mut s1, mut s2) = exec::Connection::new(&self.shape_down);
         let (mut t1, mut t2) = exec::Connection::new(&self.shape_up);
-        let reader_thread = thread::scoped(move || {
+        let reader_thread = thread::spawn(move || {
             let mut reader = Cursor::new(bottom.as_bytes().to_vec());
             dumpfile::read_values(&mut reader, &mut s2);
         });
-        let writer_thread = thread::scoped(move || {
+        let writer_thread = thread::spawn(move || {
             let mut writer = Vec::new();
             dumpfile::write_values(&mut writer, &mut t1);
             assert_eq!(top, str::from_utf8(&writer).unwrap());
@@ -159,8 +159,8 @@ impl Program {
 
         drop(s1);
         drop(t2);
-        reader_thread.join();
-        writer_thread.join();
+        reader_thread.join().unwrap();
+        writer_thread.join().unwrap();
 
         (r, state)
     }
