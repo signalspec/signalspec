@@ -3,6 +3,8 @@ use ast::Value;
 use eval::{Expr, ConcatElem};
 use session::Session;
 use resolve::scope::{ Scope, Item };
+use resolve::types::{ Shape, ShapeData };
+use exec::Message;
 
 fn resolve<'s>(session: &'s Session<'s>, var_handler: &mut FnMut(&str) -> Expr, e: &ast::Expr) -> Expr {
     match *e {
@@ -80,6 +82,7 @@ pub fn value<'s>(session: &'s Session<'s>, scope: &Scope<'s>, e: &ast::Expr) -> 
     }, e)
 }
 
+/// Resolve an expression as used in an argument or right hand side of an assignment
 pub fn rexpr<'s>(session: &'s Session<'s>, scope: &Scope<'s>, e: &ast::Expr) -> Item<'s> {
     match *e {
         ast::Expr::Var(ref name) => {
@@ -96,9 +99,7 @@ pub fn rexpr<'s>(session: &'s Session<'s>, scope: &Scope<'s>, e: &ast::Expr) -> 
     }
 }
 
-use resolve::types::{ Shape, ShapeData };
-use exec::Message;
-
+/// Resolve an expression as used in the argument of an `on` block, defining variables
 pub fn on_expr_message<'s>(sess: &'s Session<'s>, scope: &mut Scope<'s>,
         shape: &Shape, expr: &ast::Expr) -> Message {
     let mut msg = Message { components: vec![] };

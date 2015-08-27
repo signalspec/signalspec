@@ -35,9 +35,17 @@ pub fn resolve_module<'s>(session: &'s Session<'s>, ast: &'s ast::Module) -> &'s
     ref_scope
 }
 
+/// Summary of the usage of values within an block and its children
 pub struct ResolveInfo {
+    /// The set of variable IDs that will be down-evaluated to produce a value used by the
+    /// block. The enclosing expression must set these variables.
     pub vars_down: BitSet,
+
+    /// The set of variable IDs that are produced in up-evaluation within the block.
     pub vars_up: BitSet,
+
+    /// Whether the expression contains blocks that force an enclosing repeat block to always
+    /// up-evaluate its count.
     pub repeat_up_heuristic: bool,
 }
 
@@ -128,6 +136,8 @@ fn resolve_action<'s>(session: &'s Session<'s>,
                 resolve_seq(session, &body_scope, shape_down, shape_up, body)
             }).unwrap_or((Step::Nop, ResolveInfo::new()));
 
+            // Update the upward shape's direction with results of analyzing the usage of
+            // its data in the `on x { ... }` body.
             for (e, (_, ref mut dir)) in msg.components.iter().zip(shape_up.values_mut()) {
                 if let &Expr::Variable(id, _) = e {
                     let DataMode { up, down } = ri.mode_of(id);
@@ -144,7 +154,6 @@ fn resolve_action<'s>(session: &'s Session<'s>,
             let count = expr::value(session, scope, count_ast);
             let (step, mut ri) = resolve_seq(session, scope, shape_down, shape_up, block);
             let any_up = ri.repeat_up_heuristic;
-            debug!("repeat: any_up {}", any_up);
             ri.use_expr(&count, DataMode { down: !any_up, up: any_up });
             (Step::Repeat(count, box step, any_up), ri)
         }

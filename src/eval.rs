@@ -3,15 +3,20 @@ use ast::Value;
 use session::{ValueID};
 use resolve::types::Type;
 
+/// Flags indicating the directions data flows
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub struct DataMode {
     pub down: bool,
     pub up: bool,
 }
 
+/// Element of Expr::Concat
 #[derive(PartialEq, Debug, Clone)]
 pub enum ConcatElem {
+    /// An `Expr` included directly in a concatenation (`[a]`)
     Elem(Expr),
+
+    /// An `Expr` for a `Vector` value whose elements are included in a concatenation (`[8:a]`)
     Slice(Expr, usize),
 }
 
@@ -38,6 +43,7 @@ impl ConcatElem {
     }
 }
 
+/// An expression representing a runtime computation
 #[derive(PartialEq, Debug, Clone)]
 pub enum Expr {
     Ignored,
@@ -53,6 +59,7 @@ pub enum Expr {
 }
 
 impl Expr {
+    /// Call `f` with the ID of each runtime variable referenced in the expression
     pub fn each_var(&self, f: &mut FnMut(ValueID)) {
         match *self {
             Expr::Variable(id, _) => f(id),
@@ -73,6 +80,8 @@ impl Expr {
         }
     }
 
+    /// Down-evaluate the expression in the given state map. This takes values from the state map,
+    /// and produces a value.
     pub fn eval_down(&self, state: &State) -> Value {
         match *self {
             Expr::Ignored | Expr::Range(..) => panic!("{:?} can't be down-evaluated", self),
@@ -94,6 +103,7 @@ impl Expr {
         }
     }
 
+    /// Check whether the expression might fail to match a value on up-evaluation.
     pub fn refutable(&self) -> bool {
         match *self {
             Expr::Ignored => false,
@@ -107,6 +117,8 @@ impl Expr {
         }
     }
 
+    /// Up-evaluate a value with the given state map. This accepts a value and may write variables
+    /// to the state map. It returns whether the expression matched the value.
     pub fn eval_up(&self, state: &mut State, v: Value) -> bool {
         match *self {
             Expr::Ignored => true,
@@ -120,7 +132,7 @@ impl Expr {
             Expr::Flip(_, ref u) => u.eval_up(state, v),
             Expr::Choose(ref e, ref choices) => {
                 let r = choices.iter()
-                    .find(|& &(_, ref b)|{ value_match(b, &v) })
+                    .find(|& &(_, ref b)|{ *b == v })
                     .map(|&(ref a, _)| a.clone());
 
                 if let Some(v) = r {
@@ -141,6 +153,8 @@ impl Expr {
         }
     }
 
+    /// Return the `Type` for the set of possible values this expression may down-evaluate to or
+    /// match on up-evaluation.
     pub fn get_type(&self) -> Type {
         match *self {
             Expr::Ignored => Type::Bottom,
@@ -179,13 +193,18 @@ impl Expr {
 /// Binary numeric operators
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum BinOp {
-    Add,       // a + b
-    Sub,       // a - b
-    SubSwap,   // b - a
-
-    Mul,       // a * b
-    Div,       // a / b
-    DivSwap,   // b / a
+    /// a + b
+    Add,
+    /// a - b
+    Sub,
+    /// b - a
+    SubSwap,
+    /// a * b
+    Mul,
+    /// a / b
+    Div,
+    /// b / a
+    DivSwap,
 }
 
 impl BinOp {
@@ -226,7 +245,7 @@ impl BinOp {
     }
 }
 
-
+/// Map of register IDs to values
 pub struct State {
     registers: VecMap<Value>,
 }
@@ -274,12 +293,10 @@ impl State {
 
 }
 
-fn value_match(a: &Value, b: &Value) -> bool {
-    a == b
-}
-
-pub fn eval_choose(v: &Value, choices: &[(Value, Value)]) -> Option<Value> {
-    choices.iter().find(|& &(ref a, _)|{ value_match(a, v) }).map(|&(_, ref b)| b.clone())
+fn eval_choose(v: &Value, choices: &[(Value, Value)]) -> Option<Value> {
+    choices.iter()
+        .find(|& &(ref a, _)|{ a == v })
+        .map(|&(_, ref b)| b.clone())
 }
 
 #[test]

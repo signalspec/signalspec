@@ -4,8 +4,8 @@ use std::collections::HashSet;
 use std::cmp::{min, max};
 use std::slice;
 
-#[derive(Debug, PartialEq, Clone)]
 /// A type represents a set of possible values
+#[derive(Debug, PartialEq, Clone)]
 pub enum Type {
     Symbol(HashSet<String>),
     Integer(i64, i64),
@@ -35,6 +35,8 @@ impl Type {
     }
 }
 
+/// Representation of token alphabet between state machine layers of abstraction.
+/// Produced from an Interface by name resolution and direction inference.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Shape {
     pub data: ShapeData,
@@ -61,15 +63,20 @@ impl Shape {
         )
     }
 
+    /// Iterator that produces (&Type, &DataMode) pairs in an in-order traversal over the leaf
+    /// nodes of the ShapeData tree.
     pub fn values(&self) -> ShapeValIterator {
         ShapeValIterator { stack: vec![slice::ref_slice(&self.data).iter()] }
     }
 
+    /// Iterator that produces (&mut Type, &mut DataMode) pairs in an in-order traversal over the
+    /// leaf nodes of the ShapeData tree.
     pub fn values_mut(&mut self) -> ShapeValIteratorMut {
         ShapeValIteratorMut { stack: vec![slice::mut_ref_slice(&mut self.data).iter_mut()] }
     }
 }
 
+/// `Shape::values` iterator
 struct ShapeValIterator<'shape> {
     stack: Vec<slice::Iter<'shape, ShapeData>>
 }
@@ -93,6 +100,7 @@ impl<'shape> Iterator for ShapeValIterator<'shape> {
     }
 }
 
+/// `Shape::values_mut` iterator
 struct ShapeValIteratorMut<'shape> {
     stack: Vec<slice::IterMut<'shape, ShapeData>>
 }

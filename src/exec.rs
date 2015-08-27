@@ -76,6 +76,7 @@ pub struct Connection {
     pub alive: bool,
 }
 
+/// Transfers data between two stacked abstractions
 impl Connection {
     pub fn new(shape: &Shape) -> (Connection, Connection) {
         let direction = shape.data_mode();
@@ -194,6 +195,7 @@ pub fn try_token(state: &mut eval::State, parent: &mut Connection, msg: &Message
     parent.lookahead_eval_up(state, msg)
 }
 
+/// Proof-of-concept direct execution of a Step tree
 pub fn exec(state: &mut eval::State, s: &Step, parent: &mut Connection, child: &mut Connection) -> bool {
     match *s {
         Step::Nop => true,
