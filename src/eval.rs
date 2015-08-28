@@ -1,14 +1,6 @@
 use vec_map::VecMap;
-use ast::Value;
+use data::{ Value, Type };
 use session::{ValueID};
-use resolve::types::Type;
-
-/// Flags indicating the directions data flows
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
-pub struct DataMode {
-    pub down: bool,
-    pub up: bool,
-}
 
 /// Element of Expr::Concat
 #[derive(PartialEq, Debug, Clone)]

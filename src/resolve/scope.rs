@@ -5,9 +5,9 @@ use std::cell::RefCell;
 
 use ast;
 use resolve;
-use resolve::types::{ Shape, ShapeData, Type };
+use data::{ DataMode, Shape, ShapeData, Type };
 use session::{ Session, ValueID };
-use eval::{ Expr, DataMode };
+use eval::Expr;
 
 /// A collection of named Items.
 #[derive(Clone)]

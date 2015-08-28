@@ -1,9 +1,9 @@
 use ast;
+use data::{ DataMode, Shape, NULL_SHAPE };
 use session::Session;
 use resolve;
-use resolve::types::{ Shape, NULL_SHAPE };
 use resolve::scope::Scope;
-use eval::{ Expr, DataMode };
+use eval::Expr;
 
 fn entry<'s>(session: &'s Session<'s>, scope: &Scope<'s>, expr: &ast::Expr,
         children: &[ast::InterfaceEntry], dir: DataMode) -> Shape {

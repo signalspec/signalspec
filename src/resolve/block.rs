@@ -6,8 +6,8 @@ use session::{Session, ValueID};
 use resolve::expr;
 pub use exec::{ Step, Message };
 pub use resolve::scope::{ Scope, Item };
-use resolve::types::{self, Shape, ShapeData, Type};
-use eval::{Expr, DataMode};
+use data::{Shape, DataMode, ShapeData, NULL_SHAPE, Type};
+use eval::Expr;
 
 pub fn resolve_module<'s>(session: &'s Session<'s>, ast: &'s ast::Module) -> &'s RefCell<Scope<'s>> {
     let ref_scope = session.scope_arena.alloc(RefCell::new(session.prelude.clone()));
@@ -87,7 +87,7 @@ pub fn call<'s>(item: &Item<'s>, session: &'s Session<'s>, shape_down: &Shape, p
             let mut shape_up = if let Some(ref intf_expr) = ast.interface {
                 expr::rexpr(session, &scope, intf_expr).into_shape(session, DataMode { down: false, up: true })
             } else {
-                types::NULL_SHAPE.clone()
+                NULL_SHAPE.clone()
             };
 
             expr::assign(session, &mut scope, &ast.param, param);

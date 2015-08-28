@@ -3,14 +3,12 @@ use std::io::prelude::*;
 use std::path::PathBuf;
 use std::fs::File;
 
-use ast::Value;
+use data::{ Value, Type, DataMode, Shape, ShapeData };
 use exec;
-use eval::{self, DataMode, Expr};
+use eval::{self, Expr};
 use session::Process;
-use resolve::types::{self, Shape, ShapeData};
 use resolve::scope::Item;
 use session;
-use ast;
 
 pub struct ConnectionRead<'a>(pub &'a mut exec::Connection);
 impl<'a> Read for ConnectionRead<'a> {
@@ -73,7 +71,7 @@ impl Process for ReaderProcess {
 
     fn shape_up(&self) -> &Shape {
         static SHAPE: Shape = Shape {
-            data: ShapeData::Val(types::Integer(0, 255), DataMode { down: false, up: true }),
+            data: ShapeData::Val(Type::Integer(0, 255), DataMode { down: false, up: true }),
             child: None,
         };
         &SHAPE
@@ -92,7 +90,7 @@ impl Process for WriterProcess {
 
     fn shape_up(&self) -> &Shape {
         static SHAPE: Shape = Shape {
-            data: ShapeData::Val(types::Integer(0, 255), DataMode { down: true, up: false }),
+            data: ShapeData::Val(Type::Integer(0, 255), DataMode { down: true, up: false }),
             child: None,
         };
         &SHAPE
@@ -111,7 +109,7 @@ pub fn file_process(arg: Item) -> Box<session::Process + 'static> {
     };
 
     match &args[1] {
-        &Item::Value(Expr::Const(ast::Value::Symbol(ref v))) => {
+        &Item::Value(Expr::Const(Value::Symbol(ref v))) => {
             match &v[..] {
                 "r" => box ReaderProcess(path),
                 "w" => box WriterProcess(path),

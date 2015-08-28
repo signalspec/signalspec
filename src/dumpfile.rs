@@ -2,11 +2,10 @@ use std::io;
 use std::io::prelude::*;
 
 use grammar::literal;
-use ast::Value;
+use data::{ Value, Type, DataMode, Shape, ShapeData, NULL_SHAPE };
 use exec;
-use eval::{self, DataMode};
+use eval;
 use session::Process;
-use resolve::types::{self, Shape, ShapeData};
 use resolve::scope::Item;
 use connection_io::{ConnectionRead, ConnectionWrite};
 
@@ -45,13 +44,13 @@ impl Process for ValueDumpPrint {
     }
 
     fn shape_up(&self) -> &Shape {
-        &types::NULL_SHAPE
+        &NULL_SHAPE
     }
 }
 
 pub fn process(downward_shape: &Shape, arg: Item) -> Box<Process + 'static> {
     let dir = match *downward_shape {
-        Shape { data: ShapeData::Val(types::Integer(0, 255), dir), .. } => dir,
+        Shape { data: ShapeData::Val(Type::Integer(0, 255), dir), .. } => dir,
         _ => panic!("Invalid shape {:?} below dumpfile::process", downward_shape)
     };
 

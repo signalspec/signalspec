@@ -1,9 +1,8 @@
 use ast;
-use ast::Value;
+use data::{ Value, Shape, ShapeData };
 use eval::{Expr, ConcatElem};
 use session::Session;
 use resolve::scope::{ Scope, Item };
-use resolve::types::{ Shape, ShapeData };
 use exec::Message;
 
 fn resolve<'s>(session: &'s Session<'s>, var_handler: &mut FnMut(&str) -> Expr, e: &ast::Expr) -> Expr {

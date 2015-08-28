@@ -1,14 +1,13 @@
 use {ast, grammar};
-use resolve::types;
+use data::{ Type, DataMode, Shape, ShapeData };
 use session::Session;
-use eval::DataMode;
 
 fn v(s: &str) -> ast::Value{
     grammar::literal(s).unwrap()
 }
 
-const SHAPE_ANY: types::Shape = types::Shape {
-    data: types::ShapeData::Val(types::Bottom, DataMode { down: false, up: true }),
+const SHAPE_ANY: Shape = Shape {
+    data: ShapeData::Val(Type::Bottom, DataMode { down: false, up: true }),
     child: None,
 };
 
@@ -43,7 +42,7 @@ fn test_arg() {
     }
     ").unwrap();
 
-    let t = types::Symbol(["x", "y", "z"].iter().map(ToString::to_string).collect());
+    let t = Type::Symbol(["x", "y", "z"].iter().map(ToString::to_string).collect());
     let a = s.var(t.clone(), false, true);
     let b = s.var(t.clone(), false, true);
     let c = s.var(t.clone(), false, true);
@@ -69,7 +68,7 @@ fn test_let() {
         }
     ").unwrap();
 
-    let t = types::Symbol(["x", "y", "z"].iter().map(ToString::to_string).collect());
+    let t = Type::Symbol(["x", "y", "z"].iter().map(ToString::to_string).collect());
     let a = s.var(t, false, true);
     let p = m.compile_call("main", SHAPE_ANY, a.clone()).unwrap();
 
@@ -92,7 +91,7 @@ fn test_loop() {
     }
     ").unwrap();
 
-    let x = s.var(types::Integer(0, 10), false, true);
+    let x = s.var(Type::Integer(0, 10), false, true);
     let p = m.compile_call("main", SHAPE_ANY, x.clone()).unwrap();
 
     let env = p.run_test_pass("#a \n #b \n #a", "");
@@ -164,10 +163,10 @@ fn test_tup() {
         }
     ").unwrap();
 
-    let p = m.compile_call("main", types::Shape {
-        data: types::ShapeData::Tup(vec![
-            types::ShapeData::Val(types::Bottom, DataMode { down: false, up: true }),
-            types::ShapeData::Val(types::Bottom, DataMode { down: false, up: true })
+    let p = m.compile_call("main", Shape {
+        data: ShapeData::Tup(vec![
+            ShapeData::Val(Type::Bottom, DataMode { down: false, up: true }),
+            ShapeData::Val(Type::Bottom, DataMode { down: false, up: true })
         ]),
         child: None
     }, ()).unwrap();

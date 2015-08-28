@@ -1,10 +1,9 @@
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::iter::repeat;
 
+use data::{ Value, DataMode, Type, Shape };
 use session::ValueID;
-use ast::Value;
-use eval::{ self, Expr, DataMode };
-use resolve::types::{ Type, Shape };
+use eval::{ self, Expr };
 
 pub trait PrimitiveStep {
     fn display(&self) -> String;

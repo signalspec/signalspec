@@ -1,8 +1,48 @@
-pub use self::Type::*;
-use eval::DataMode;
 use std::collections::HashSet;
 use std::cmp::{min, max};
 use std::slice;
+use std::fmt;
+
+#[derive(PartialEq, Clone)]
+pub enum Value {
+    Number(f64),
+    Integer(i64),
+    Symbol(String),
+    Vector(Vec<Value>),
+}
+
+impl Value {
+    pub fn get_type(&self) -> Type {
+        match *self {
+            Value::Number(v) => Type::Number(v, v),
+            Value::Integer(v) => Type::Integer(v, v),
+            Value::Symbol(ref v) => Type::Symbol(Some(v.clone()).into_iter().collect()),
+            Value::Vector(ref n) => Type::Vector(n.len(),
+                box n.first().map_or(Type::Bottom, Value::get_type)),
+        }
+    }
+
+    pub fn matches(&self, other: &Value) -> bool {
+        *self == *other
+    }
+}
+
+impl fmt::Display for Value {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            Value::Number(n) => write!(f, "{}", n),
+            Value::Integer(n) => write!(f, "#{}", n),
+            Value::Symbol(ref s) => write!(f, "#{}", *s),
+            Value::Vector(ref n) => write!(f, "{:?}", n),
+        }
+    }
+}
+
+impl fmt::Debug for Value {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        fmt::Display::fmt(self, f)
+    }
+}
 
 /// A type represents a set of possible values
 #[derive(Debug, PartialEq, Clone)]
@@ -17,6 +57,7 @@ pub enum Type {
 
 impl Type {
     pub fn union(t1: Type, t2: Type) -> Type {
+        use self::Type::*;
         match (t1, t2) {
             (Bottom, x) | (x, Bottom) => x,
             (Symbol(a), Symbol(b)) => Symbol(a.union(&b).cloned().collect()),
@@ -35,6 +76,13 @@ impl Type {
     }
 }
 
+/// Flags indicating the directions data flows
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub struct DataMode {
+    pub down: bool,
+    pub up: bool,
+}
+
 /// Representation of token alphabet between state machine layers of abstraction.
 /// Produced from an Interface by name resolution and direction inference.
 #[derive(Clone, Debug, PartialEq)]
@@ -51,7 +99,7 @@ pub enum ShapeData {
 
 // TODO: should be fully empty, not a no-direction member
 pub static NULL_SHAPE: Shape = Shape {
-    data: ShapeData::Val(Bottom, DataMode { down: false, up: false }),
+    data: ShapeData::Val(Type::Bottom, DataMode { down: false, up: false }),
     child: None,
 };
 

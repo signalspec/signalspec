@@ -1,7 +1,5 @@
-use std::fmt;
-
 use eval::BinOp;
-use resolve::types;
+pub use data::Value;
 
 pub struct Module {
     pub imports: Vec<UseDef>,
@@ -52,47 +50,6 @@ pub struct UseDef(pub String);
 
 #[derive(Debug)]
 pub struct LetDef(pub String, pub Expr);
-
-#[derive(PartialEq, Clone)]
-pub enum Value {
-    Number(f64),
-    Integer(i64),
-    Symbol(String),
-    Vector(Vec<Value>),
-}
-
-impl Value {
-    pub fn get_type(&self) -> types::Type {
-        match *self {
-            Value::Number(v) => types::Number(v, v),
-            Value::Integer(v) => types::Integer(v, v),
-            Value::Symbol(ref v) => types::Symbol(Some(v.clone()).into_iter().collect()),
-            Value::Vector(ref n) => types::Vector(n.len(),
-                box n.first().map_or(types::Bottom, Value::get_type)),
-        }
-    }
-
-    pub fn matches(&self, other: &Value) -> bool {
-        *self == *other
-    }
-}
-
-impl fmt::Display for Value {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
-            Value::Number(n) => write!(f, "{}", n),
-            Value::Integer(n) => write!(f, "#{}", n),
-            Value::Symbol(ref s) => write!(f, "#{}", *s),
-            Value::Vector(ref n) => write!(f, "{:?}", n),
-        }
-    }
-}
-
-impl fmt::Debug for Value {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        fmt::Display::fmt(self, f)
-    }
-}
 
 #[derive(Debug)]
 pub enum Expr {

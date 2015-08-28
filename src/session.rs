@@ -8,13 +8,11 @@ use std::cell::RefCell;
 use ast;
 use resolve;
 use resolve::Scope;
-use exec::Step;
-use ast::Value;
 use resolve::scope::Item;
-use resolve::types::{ Type, Shape };
+use exec::Step;
+use data::{ Value, Type, Shape };
 use grammar;
 use eval::Expr;
-
 
 use exec;
 use dumpfile;
@@ -55,7 +53,7 @@ impl<'session> Session<'session> {
         }
     }
 
-    pub fn var(&self, ty: resolve::types::Type, is_down: bool, is_up: bool) -> Var {
+    pub fn var(&self, ty: Type, is_down: bool, is_up: bool) -> Var {
         Var {
             id: self.make_id(),
             is_down: is_down,
