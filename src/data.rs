@@ -106,7 +106,7 @@ pub static NULL_SHAPE: Shape = Shape {
 impl Shape {
     pub fn data_mode(&self) -> DataMode {
         self.values().fold(
-            DataMode { down: false, up: false },
+            self.child.as_ref().map_or(DataMode { down: false, up: false }, |&box ref x| x.data_mode()),
             |am, (_, bm)| { DataMode { down: am.down || bm.down, up: am.up || bm.up  }}
         )
     }

@@ -132,9 +132,17 @@ fn resolve_action<'s>(session: &'s Session<'s>,
             debug!("Upper message, shape: {:?}", shape_up);
             let msg = expr::on_expr_message(session, &mut body_scope, shape_up, expr);
 
-            let (step, mut ri) = body.as_ref().map(|body| {
-                resolve_seq(session, &body_scope, shape_down, shape_up, body)
-            }).unwrap_or((Step::Nop, ResolveInfo::new()));
+            let (step, mut ri) = {
+                let mut dummy_shape = NULL_SHAPE.clone();
+                let inner_shape_up = match shape_up.child {
+                    Some(box ref mut x) => x,
+                    None => &mut dummy_shape,
+                };
+
+                body.as_ref().map(|body| {
+                    resolve_seq(session, &body_scope, shape_down, inner_shape_up, body)
+                }).unwrap_or((Step::Nop, ResolveInfo::new()))
+            };
 
             // Update the upward shape's direction with results of analyzing the usage of
             // its data in the `on x { ... }` body.

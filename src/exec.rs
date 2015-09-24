@@ -213,6 +213,7 @@ pub fn exec(state: &mut eval::State, s: &Step, parent: &mut Connection, child: &
                 child.accept();
                 let r = exec(state, body, parent, child);
                 child.lookahead_eval_down(state, msg);
+                child.accept();
                 r
             } else {
                 false
