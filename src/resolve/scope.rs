@@ -5,7 +5,7 @@ use std::cell::RefCell;
 
 use ast;
 use resolve;
-use data::{ DataMode, Shape, ShapeData, Type };
+use data::{ DataMode, Shape, ShapeVariant, ShapeData, Type };
 use session::{ Session, ValueID };
 use eval::Expr;
 
@@ -82,7 +82,7 @@ impl<'s> Item<'s> {
     pub fn into_shape(self, sess: &'s Session<'s>, dir: DataMode) -> Shape {
         match self {
             Item::Interface(ast, scope) =>  resolve::interface(sess, ast, &*scope.borrow(), dir),
-            i => Shape { data: i.into_data_shape(dir), child: None }
+            i => Shape { variants: vec![ ShapeVariant { data: i.into_data_shape(dir), child: Shape::null() } ] }
         }
     }
 }

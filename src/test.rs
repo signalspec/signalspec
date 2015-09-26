@@ -1,15 +1,21 @@
 use {ast, grammar};
-use data::{ Type, DataMode, Shape, ShapeData };
+use data::{ Type, DataMode, Shape, ShapeVariant, ShapeData };
 use session::Session;
 
 fn v(s: &str) -> ast::Value{
     grammar::literal(s).unwrap()
 }
 
-const SHAPE_ANY: Shape = Shape {
-    data: ShapeData::Val(Type::Bottom, DataMode { down: false, up: true }),
-    child: None,
-};
+fn shape_any() -> Shape {
+    Shape {
+        variants: vec! [
+            ShapeVariant {
+                data: ShapeData::Val(Type::Bottom, DataMode { down: false, up: true }),
+                child: Shape::null(),
+            }
+        ]
+    }
+}
 
 #[test]
 fn test_seq() {
@@ -23,7 +29,7 @@ fn test_seq() {
     "
     ).unwrap();
 
-    let p = m.compile_call("main", SHAPE_ANY, ()).unwrap();
+    let p = m.compile_call("main", shape_any(), ()).unwrap();
 
     p.run_test_pass("#a \n #b \n #c", "");
     //p.down_pass("", "#a \n #b \n #c", "");
@@ -46,7 +52,7 @@ fn test_arg() {
     let a = s.var(t.clone(), false, true);
     let b = s.var(t.clone(), false, true);
     let c = s.var(t.clone(), false, true);
-    let p = m.compile_call("main", SHAPE_ANY, tuple_item![a.clone(), b.clone(), c.clone()]).unwrap();
+    let p = m.compile_call("main", shape_any(), tuple_item![a.clone(), b.clone(), c.clone()]).unwrap();
 
     let env = p.run_test_pass("#x \n #y \n #z", "");
     assert_eq!(env.get_var(&a), &v("#x"));
@@ -70,7 +76,7 @@ fn test_let() {
 
     let t = Type::Symbol(["x", "y", "z"].iter().map(ToString::to_string).collect());
     let a = s.var(t, false, true);
-    let p = m.compile_call("main", SHAPE_ANY, a.clone()).unwrap();
+    let p = m.compile_call("main", shape_any(), a.clone()).unwrap();
 
     let env = p.run_test_pass( "#x \n #y \n #z", "");
     assert_eq!(env.get_var(&a), &v("#y"));
@@ -92,7 +98,7 @@ fn test_loop() {
     ").unwrap();
 
     let x = s.var(Type::Integer(0, 10), false, true);
-    let p = m.compile_call("main", SHAPE_ANY, x.clone()).unwrap();
+    let p = m.compile_call("main", shape_any(), x.clone()).unwrap();
 
     let env = p.run_test_pass("#a \n #b \n #a", "");
     assert_eq!(env.get_var(&x), &v("#0"));
@@ -126,7 +132,7 @@ fn test_nested_loop() {
     }
     ").unwrap();
 
-    let p = m.compile_call("main", SHAPE_ANY, ()).unwrap();
+    let p = m.compile_call("main", shape_any(), ()).unwrap();
 
     p.run_test_pass("#a \n #e", "");
     p.run_test_pass("#a \n #b \n #c \n #d \n #e", "");
@@ -148,7 +154,7 @@ fn test_unbounded_loop() {
     }
     ").unwrap();
 
-    let p = m.compile_call("main", SHAPE_ANY, ()).unwrap();
+    let p = m.compile_call("main", shape_any(), ()).unwrap();
 
     p.run_test_pass("#h \n #l \n #h \n #h \n #l \n #h \n #h \n #h", "#1\n#2\n#3\n");
 }
@@ -164,11 +170,15 @@ fn test_tup() {
     ").unwrap();
 
     let p = m.compile_call("main", Shape {
-        data: ShapeData::Tup(vec![
-            ShapeData::Val(Type::Bottom, DataMode { down: false, up: true }),
-            ShapeData::Val(Type::Bottom, DataMode { down: false, up: true })
-        ]),
-        child: None
+        variants: vec![
+            ShapeVariant {
+                data: ShapeData::Tup(vec![
+                    ShapeData::Val(Type::Bottom, DataMode { down: false, up: true }),
+                    ShapeData::Val(Type::Bottom, DataMode { down: false, up: true })
+                ]),
+                child: Shape::null(),
+            }
+        ]
     }, ()).unwrap();
 
     p.run_test_pass("#a, #b \n #c, #d", "");
@@ -188,7 +198,7 @@ fn test_on() {
         }
     ").unwrap();
 
-    let p = m.compile_call("main", SHAPE_ANY, ()).unwrap();
+    let p = m.compile_call("main", shape_any(), ()).unwrap();
 
     p.run_test_pass("5", "1\n2\n4\n");
 }

@@ -1,5 +1,5 @@
 use ast;
-use data::{ Value, Shape, ShapeData };
+use data::{ Value, Shape, ShapeVariant, ShapeData };
 use eval::{Expr, ConcatElem};
 use session::Session;
 use resolve::scope::{ Scope, Item };
@@ -99,8 +99,8 @@ pub fn rexpr<'s>(session: &'s Session<'s>, scope: &Scope<'s>, e: &ast::Expr) -> 
 }
 
 /// Resolve an expression as used in the argument of an `on` block, defining variables
-pub fn on_expr_message<'s>(sess: &'s Session<'s>, scope: &mut Scope<'s>,
-        shape: &Shape, expr: &ast::Expr) -> Message {
+pub fn on_expr_message<'s, 'shape>(sess: &'s Session<'s>, scope: &mut Scope<'s>,
+        shape: &'shape mut Shape, expr: &ast::Expr) -> (&'shape mut ShapeVariant, Message) {
     let mut msg = Message { components: vec![] };
 
     fn inner<'s>(sess: &'s Session<'s>, scope: &mut Scope<'s>, msg: &mut Message,
@@ -122,8 +122,11 @@ pub fn on_expr_message<'s>(sess: &'s Session<'s>, scope: &mut Scope<'s>,
         }
     }
 
-    inner(sess, scope, &mut msg, &shape.data, expr);
-    msg
+    if shape.variants.len() != 1 { unimplemented!() }
+    let variant = &mut shape.variants[0];
+
+    inner(sess, scope, &mut msg, &variant.data, expr);
+    (variant, msg)
 }
 
 

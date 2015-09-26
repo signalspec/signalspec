@@ -87,8 +87,13 @@ pub struct DataMode {
 /// Produced from an Interface by name resolution and direction inference.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Shape {
+    pub variants: Vec<ShapeVariant>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct ShapeVariant {
     pub data: ShapeData,
-    pub child: Option<Box<Shape>>,
+    pub child: Shape,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -97,16 +102,46 @@ pub enum ShapeData {
     Val(Type, DataMode),
 }
 
-// TODO: should be fully empty, not a no-direction member
-pub static NULL_SHAPE: Shape = Shape {
-    data: ShapeData::Val(Type::Bottom, DataMode { down: false, up: false }),
-    child: None,
-};
-
 impl Shape {
+    /// Produces a shape with no variants
+    pub fn null() -> Shape {
+        Shape { variants: vec![] }
+    }
+
+    /// Produces a shape for a stream of bytes in the specified direction
+    pub fn bytes(dir: DataMode) -> Shape {
+        Shape { variants: vec![
+            ShapeVariant {
+                data: ShapeData::Val(Type::Integer(0, 255), dir),
+                child: Shape::null(),
+            }
+        ]}
+    }
+
+    /// If the shape represents a stream of bytes, returns Some(data direction)
+    pub fn match_bytes(&self) -> Option<DataMode> {
+        if self.variants.len() != 1 {
+            return None;
+        }
+
+        match self.variants[0] {
+            ShapeVariant { data: ShapeData::Val(Type::Integer(0, 255), dir), .. } => Some(dir),
+            _ => None,
+        }
+    }
+
+    pub fn data_mode(&self) -> DataMode {
+        self.variants.iter().map(ShapeVariant::data_mode).fold(
+            DataMode { down: false, up: false },
+            |am, bm| { DataMode { down: am.down || bm.down, up: am.up || bm.up  }}
+        )
+    }
+}
+
+impl ShapeVariant {
     pub fn data_mode(&self) -> DataMode {
         self.values().fold(
-            self.child.as_ref().map_or(DataMode { down: false, up: false }, |&box ref x| x.data_mode()),
+            self.child.data_mode(),
             |am, (_, bm)| { DataMode { down: am.down || bm.down, up: am.up || bm.up  }}
         )
     }
@@ -175,7 +210,7 @@ impl<'shape> Iterator for ShapeValIteratorMut<'shape> {
 #[test]
 fn test_shape_iter() {
     let dm = DataMode { down: true, up: false };
-    let shape = Shape {
+    let shape = ShapeVariant {
         data: ShapeData::Tup(vec![
             ShapeData::Val(Type::Integer(1, 1), dm),
             ShapeData::Tup(vec![
@@ -184,7 +219,7 @@ fn test_shape_iter() {
             ]),
             ShapeData::Val(Type::Integer(4, 4), dm),
         ]),
-        child: None,
+        child: Shape::null(),
     };
 
     let mut iter = shape.values();

@@ -3,7 +3,7 @@ use std::io::prelude::*;
 use std::path::PathBuf;
 use std::fs::File;
 
-use data::{ Value, Type, DataMode, Shape, ShapeData };
+use data::{ Value, DataMode, Shape };
 use exec;
 use eval::{self, Expr};
 use session::Process;
@@ -70,10 +70,9 @@ impl Process for ReaderProcess {
     }
 
     fn shape_up(&self) -> &Shape {
-        static SHAPE: Shape = Shape {
-            data: ShapeData::Val(Type::Integer(0, 255), DataMode { down: false, up: true }),
-            child: None,
-        };
+        lazy_static! {
+            static ref SHAPE: Shape = Shape::bytes(DataMode { down: false, up: true });
+        }
         &SHAPE
     }
 }
@@ -89,10 +88,9 @@ impl Process for WriterProcess {
     }
 
     fn shape_up(&self) -> &Shape {
-        static SHAPE: Shape = Shape {
-            data: ShapeData::Val(Type::Integer(0, 255), DataMode { down: true, up: false }),
-            child: None,
-        };
+        lazy_static! {
+            static ref SHAPE: Shape = Shape::bytes(DataMode { down: true, up: false });
+        }
         &SHAPE
     }
 }

@@ -6,7 +6,7 @@ use session::{Session, ValueID};
 use resolve::expr;
 pub use exec::{ Step, Message };
 pub use resolve::scope::{ Scope, Item };
-use data::{Shape, DataMode, ShapeData, NULL_SHAPE, Type};
+use data::{Shape, DataMode, ShapeVariant, ShapeData, Type};
 use eval::Expr;
 
 pub fn resolve_module<'s>(session: &'s Session<'s>, ast: &'s ast::Module) -> &'s RefCell<Scope<'s>> {
@@ -87,7 +87,7 @@ pub fn call<'s>(item: &Item<'s>, session: &'s Session<'s>, shape_down: &Shape, p
             let mut shape_up = if let Some(ref intf_expr) = ast.interface {
                 expr::rexpr(session, &scope, intf_expr).into_shape(session, DataMode { down: false, up: true })
             } else {
-                NULL_SHAPE.clone()
+                Shape::null()
             };
 
             expr::assign(session, &mut scope, &ast.param, param);
@@ -122,7 +122,7 @@ fn resolve_action<'s>(session: &'s Session<'s>,
             if body.is_some() { panic!("Body unimplemented"); }
 
             let item = expr::rexpr(session, scope, expr);
-            let (message, ri) = resolve_token(item, shape_down);
+            let (_variant, message, ri) = resolve_token(item, shape_down);
 
             (Step::Token(message), ri)
         }
@@ -130,23 +130,15 @@ fn resolve_action<'s>(session: &'s Session<'s>,
             let mut body_scope = scope.child();
 
             debug!("Upper message, shape: {:?}", shape_up);
-            let msg = expr::on_expr_message(session, &mut body_scope, shape_up, expr);
+            let (variant, msg) = expr::on_expr_message(session, &mut body_scope, shape_up, expr);
 
-            let (step, mut ri) = {
-                let mut dummy_shape = NULL_SHAPE.clone();
-                let inner_shape_up = match shape_up.child {
-                    Some(box ref mut x) => x,
-                    None => &mut dummy_shape,
-                };
-
-                body.as_ref().map(|body| {
-                    resolve_seq(session, &body_scope, shape_down, inner_shape_up, body)
-                }).unwrap_or((Step::Nop, ResolveInfo::new()))
-            };
+            let (step, mut ri) = body.as_ref().map(|body| {
+                resolve_seq(session, &body_scope, shape_down, &mut variant.child, body)
+            }).unwrap_or((Step::Nop, ResolveInfo::new()));
 
             // Update the upward shape's direction with results of analyzing the usage of
             // its data in the `on x { ... }` body.
-            for (e, (_, ref mut dir)) in msg.components.iter().zip(shape_up.values_mut()) {
+            for (e, (_, ref mut dir)) in msg.components.iter().zip(variant.values_mut()) {
                 if let &Expr::Variable(id, _) = e {
                     let DataMode { up, down } = ri.mode_of(id);
                     dir.up &= up;
@@ -225,18 +217,17 @@ pub fn resolve_letdef<'s>(session: &'s Session<'s>, scope: &mut Scope<'s>, lets:
     }
 }
 
-fn resolve_token(item: Item, shape: &Shape) -> (Message, ResolveInfo) {
-    let mut state = (
-        Message { components: Vec::new() },
-        ResolveInfo::new(),
-    );
+fn resolve_token<'shape>(item: Item, shape: &'shape Shape) -> (&'shape ShapeVariant, Message, ResolveInfo) {
+    let variant = &shape.variants[0];
+    let mut msg = Message { components: Vec::new() };
+    let mut ri = ResolveInfo::new();
 
-    fn inner<'s>(i: Item<'s>, shape: &ShapeData, state: &mut (Message, ResolveInfo)) {
+    fn inner<'s>(i: Item<'s>, shape: &ShapeData, msg: &mut Message, ri: &mut ResolveInfo) {
         match shape {
             &ShapeData::Val(ref _t, dir) => {
                 if let Item::Value(v) = i {
-                    state.1.use_expr(&v, dir);
-                    state.0.components.push(v)
+                    ri.use_expr(&v, dir);
+                    msg.components.push(v)
                 } else {
                     panic!("Expected value but found {:?}", i);
                 }
@@ -245,7 +236,7 @@ fn resolve_token(item: Item, shape: &Shape) -> (Message, ResolveInfo) {
                 if let Item::Tuple(t) = i {
                     if t.len() == m.len() {
                         for (mi, i) in m.iter().zip(t.into_iter()) {
-                            inner(i, mi, state)
+                            inner(i, mi, msg, ri)
                         }
                     } else {
                         panic!("Expected tuple length {}, found {}", m.len(), t.len());
@@ -257,6 +248,6 @@ fn resolve_token(item: Item, shape: &Shape) -> (Message, ResolveInfo) {
         }
     }
 
-    inner(item, &shape.data, &mut state);
-    state
+    inner(item, &variant.data, &mut msg, &mut ri);
+    (variant, msg, ri)
 }

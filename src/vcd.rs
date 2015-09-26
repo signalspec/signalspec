@@ -4,13 +4,22 @@ use std::slice::ref_slice;
 use exec;
 use eval;
 use session::Process;
-use data::{Value, Type, DataMode, Shape, ShapeData};
+use data::{Value, DataMode, Shape, ShapeVariant, ShapeData};
 use resolve::scope::Item;
 use connection_io::{ConnectionRead, ConnectionWrite};
 
 extern crate vcd;
 
+/// Represent a shape as a VCD scope declaration, creating mapping from message index to VCD idcode
 fn shape_to_scope(s: &Shape) -> (vcd::Scope, Vec<vcd::IdCode>) {
+    if s.variants.len() != 1 {
+        panic!("VCD shape must have one variant");
+    }
+
+    if s.variants[0].child.variants.len() != 0 {
+        panic!("VCD shape must not have inner data");
+    }
+
     let mut ids = Vec::new();
 
     fn scope(ids: &mut Vec<vcd::IdCode>, l: &[ShapeData], name: String) -> vcd::Scope {
@@ -39,8 +48,8 @@ fn shape_to_scope(s: &Shape) -> (vcd::Scope, Vec<vcd::IdCode>) {
         }
     }
 
-    let top = scope(&mut ids, match s.data {
-        ShapeData::Val(..) => ref_slice(&s.data),
+    let top = scope(&mut ids, match s.variants[0].data {
+        ref d @ ShapeData::Val(..) => ref_slice(d),
         ShapeData::Tup(ref l) => &l[..],
     }, "top".to_string());
 
@@ -87,7 +96,16 @@ impl Process for VcdDown {
     }
 }
 
+/// Check that a shape matches a VCD scope declaration, creating a mapping from message index to VCD idcode
 fn shape_from_scope(s: &Shape, v: &vcd::Scope) -> Vec<vcd::IdCode> {
+    if s.variants.len() != 1 {
+        panic!("VCD shape must have one variant");
+    }
+
+    if s.variants[0].child.variants.len() != 0 {
+        panic!("VCD shape must not have inner data");
+    }
+
     let mut ids = Vec::new();
 
     fn inner_tuple(ids: &mut Vec<vcd::IdCode>, shapes: &[ShapeData], scope: &vcd::Scope) {
@@ -110,11 +128,11 @@ fn shape_from_scope(s: &Shape, v: &vcd::Scope) -> Vec<vcd::IdCode> {
         }
     }
 
-    match s.data {
+    match s.variants[0].data {
         ShapeData::Tup(ref t) => inner_tuple(&mut ids, &t[..], v),
-        ShapeData::Val(..) => {
+        ref d @ ShapeData::Val(..) => {
             if let Some(first_child) = v.children.first() {
-                inner(&mut ids, &s.data, first_child);
+                inner(&mut ids, d, first_child);
             } else {
                 panic!("Shape {:?} doesn't match scope {:?}", s, v)
             }
@@ -187,12 +205,12 @@ impl Process for VcdUp {
 }
 
 pub fn process(downward_shape: &Shape, arg: Item) -> Box<Process + 'static> {
-    let dir = match *downward_shape {
-        Shape { data: ShapeData::Val(Type::Integer(0, 255), dir), .. } => dir,
-        _ => panic!("Invalid shape {:?} below vcd::process", downward_shape)
-    };
+    let dir = downward_shape.match_bytes()
+        .expect("Invalid shape below vcd::process");
 
-    let upward_shape = Shape { data: arg.into_data_shape(dir), child: None };
+    let upward_shape = Shape { variants: vec![
+        ShapeVariant { data: arg.into_data_shape(dir), child: Shape::null() }
+    ]};
 
     match dir {
         DataMode { down: false, up: true } => box VcdUp(upward_shape),

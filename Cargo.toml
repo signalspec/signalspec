@@ -13,6 +13,7 @@ git = "https://github.com/kevinmehall/rust-vcd.git"
 [dependencies]
 bit-set = "0.2.0"
 vec_map = "0.3.0"
+lazy_static = "0.1.*"
 
 [[bin]]
 name = "signalspec"

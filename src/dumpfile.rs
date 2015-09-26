@@ -2,7 +2,7 @@ use std::io;
 use std::io::prelude::*;
 
 use grammar::literal;
-use data::{ Value, Type, DataMode, Shape, ShapeData, NULL_SHAPE };
+use data::{ Value, DataMode, Shape, ShapeVariant };
 use exec;
 use eval;
 use session::Process;
@@ -44,17 +44,20 @@ impl Process for ValueDumpPrint {
     }
 
     fn shape_up(&self) -> &Shape {
-        &NULL_SHAPE
+        lazy_static! {
+            static ref SHAPE: Shape = Shape::null();
+        }
+        &SHAPE
     }
 }
 
 pub fn process(downward_shape: &Shape, arg: Item) -> Box<Process + 'static> {
-    let dir = match *downward_shape {
-        Shape { data: ShapeData::Val(Type::Integer(0, 255), dir), .. } => dir,
-        _ => panic!("Invalid shape {:?} below dumpfile::process", downward_shape)
-    };
+    let dir = downward_shape.match_bytes()
+        .expect("Invalid shape below dumpfile::process");
 
-    let upward_shape = Shape { data: arg.into_data_shape(dir), child: None };
+    let upward_shape = Shape { variants: vec![
+        ShapeVariant { data: arg.into_data_shape(dir), child: Shape::null() }
+    ]};
 
     match dir {
         DataMode { down: false, up: true } => box ValueDumpUp(upward_shape),

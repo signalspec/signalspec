@@ -93,8 +93,14 @@ impl Connection {
 
         let alive = direction.down || direction.up;
 
-        let t1 = shape.values().map(|(t, d)| (t.clone(), d.down, d.up)).collect();
-        let t2 = shape.values().map(|(t, d)| (t.clone(), d.up, d.down)).collect();
+        let (t1, t2) = match shape.variants.len() {
+            0 => (vec![], vec![]),
+            1 => (
+                    shape.variants[0].values().map(|(t, d)| (t.clone(), d.down, d.up)).collect(),
+                    shape.variants[0].values().map(|(t, d)| (t.clone(), d.up, d.down)).collect()
+                ),
+            _ => unimplemented!(),
+        };
 
         (Connection{ types: t1, tx: s1, rx: r2, lookahead_tx: None, lookahead_rx: None, alive: alive },
          Connection{ types: t2, tx: s2, rx: r1, lookahead_tx: None, lookahead_rx: None, alive: alive })

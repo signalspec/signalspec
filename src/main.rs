@@ -13,6 +13,8 @@ extern crate arena;
 extern crate collections;
 extern crate bit_set;
 extern crate vec_map;
+#[macro_use] extern crate lazy_static;
+
 
 #[macro_use] extern crate log;
 
@@ -43,7 +45,7 @@ fn main() {
     let modscope = sess.parse_module(&source).unwrap();
 
     let mut processes = vec![];
-    let mut shape = data::NULL_SHAPE.clone();
+    let mut shape = data::Shape::null();
     let scope = resolve::scope::Scope::new();
 
     for arg in &args[2..] {
@@ -51,7 +53,7 @@ fn main() {
             let block = grammar::block(&arg)
                 .unwrap_or_else(|e| panic!("Error parsing block: {}", e));
 
-            let mut shape_up = data::NULL_SHAPE.clone();
+            let mut shape_up = data::Shape::null();
             let (step, _) = resolve::block::resolve_seq(&sess, &scope, &shape, &mut shape_up, &block);
 
             processes.push(box session::Program { step: step,
@@ -82,7 +84,7 @@ fn main() {
         processes.push(box dumpfile::ValueDumpPrint(shape));
     }
 
-    let (_, mut connection) = exec::Connection::new(&data::NULL_SHAPE);
+    let (_, mut connection) = exec::Connection::new(&data::Shape::null());
     let threads = processes.into_iter().map(|p| {
         let (mut c2, c1) = exec::Connection::new(p.shape_up());
         ::std::mem::swap(&mut c2, &mut connection);
