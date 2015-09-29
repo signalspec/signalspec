@@ -1,5 +1,5 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
-use arena::{TypedArena};
+use typed_arena::Arena;
 use std::str;
 use std::io::{self, Cursor};
 use std::thread;
@@ -22,8 +22,8 @@ pub type ValueID = usize;
 
 /// The data common to an entire resolve pass
 pub struct Session<'session> {
-    pub scope_arena: TypedArena<RefCell<Scope<'session>>>,
-    pub ast_arena: TypedArena<ast::Module>,
+    pub scope_arena: Arena<RefCell<Scope<'session>>>,
+    pub ast_arena: Arena<ast::Module>,
     id_counter: AtomicUsize,
     pub prelude: Scope<'session>,
 }
@@ -31,8 +31,8 @@ pub struct Session<'session> {
 impl<'session> Session<'session> {
     pub fn new() -> Session<'session> {
         Session {
-            scope_arena: TypedArena::new(),
-            ast_arena: TypedArena::new(),
+            scope_arena: Arena::new(),
+            ast_arena: Arena::new(),
             id_counter: AtomicUsize::new(1),
             prelude: Scope::new(),
         }

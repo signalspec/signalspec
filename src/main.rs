@@ -2,20 +2,17 @@
 #![feature(plugin)]
 #![feature(box_syntax)]
 #![feature(box_patterns)]
-#![feature(rustc_private)]
 #![feature(collections)]
 #![feature(str_char)]
 #![feature(ref_slice)]
 #![feature(iter_arith)]
 #![plugin(peg_syntax_ext)]
 
-extern crate arena;
+extern crate typed_arena;
 extern crate collections;
 extern crate bit_set;
 extern crate vec_map;
 #[macro_use] extern crate lazy_static;
-
-
 #[macro_use] extern crate log;
 
 use std::{env, process, fs, thread};
