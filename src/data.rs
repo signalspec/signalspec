@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 use std::cmp::{min, max};
 use std::slice;
+use ref_slice::{ref_slice, mut_ref_slice};
 use std::fmt;
 
 #[derive(PartialEq, Clone)]
@@ -149,13 +150,13 @@ impl ShapeVariant {
     /// Iterator that produces (&Type, &DataMode) pairs in an in-order traversal over the leaf
     /// nodes of the ShapeData tree.
     pub fn values(&self) -> ShapeValIterator {
-        ShapeValIterator { stack: vec![slice::ref_slice(&self.data).iter()] }
+        ShapeValIterator { stack: vec![ref_slice(&self.data).iter()] }
     }
 
     /// Iterator that produces (&mut Type, &mut DataMode) pairs in an in-order traversal over the
     /// leaf nodes of the ShapeData tree.
     pub fn values_mut(&mut self) -> ShapeValIteratorMut {
-        ShapeValIteratorMut { stack: vec![slice::mut_ref_slice(&mut self.data).iter_mut()] }
+        ShapeValIteratorMut { stack: vec![mut_ref_slice(&mut self.data).iter_mut()] }
     }
 }
 

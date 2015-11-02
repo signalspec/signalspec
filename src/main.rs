@@ -3,13 +3,13 @@
 #![feature(box_syntax)]
 #![feature(box_patterns)]
 #![feature(str_char)]
-#![feature(ref_slice)]
 #![feature(iter_arith)]
 #![plugin(peg_syntax_ext)]
 
 extern crate typed_arena;
 extern crate bit_set;
 extern crate vec_map;
+extern crate ref_slice;
 #[macro_use] extern crate lazy_static;
 #[macro_use] extern crate log;
 

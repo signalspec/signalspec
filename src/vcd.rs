@@ -1,6 +1,5 @@
 use std::io;
-use std::slice::ref_slice;
-
+use ref_slice::ref_slice;
 use exec;
 use eval;
 use session::Process;

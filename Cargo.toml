@@ -16,6 +16,7 @@ typed-arena = "1.0.1"
 bit-set = "0.2.0"
 vec_map = "0.3.0"
 lazy_static = "0.1.*"
+ref_slice = "0.1.*"
 
 [[bin]]
 name = "signalspec"
