@@ -8,6 +8,7 @@ use grammar;
 use session::Session;
 use process::Program;
 use exec;
+use nfa;
 
 pub struct ModuleLoader<'a> {
     pub session: &'a Session,
@@ -82,6 +83,12 @@ impl <'s> Module<'s> {
 
             if let Some(mut f) = self.loader.session.debug_file(|| format!("{}.steps", name)) {
                 exec::write_step_tree(&mut f, &step, 0).unwrap_or_else(|e| error!("{}", e));
+            }
+
+            let nfa = nfa::from_step_tree(&step);
+
+            if let Some(mut f) = self.loader.session.debug_file(|| format!("{}.nfa.dot", name)) {
+                nfa.to_graphviz(&mut f).unwrap_or_else(|e| error!("{}", e));
             }
 
             Ok(Program{ step: step, shape_down: shape_down, shape_up: shape_up})
