@@ -117,9 +117,8 @@ fn resolve_action<'s>(session: &'s Session<'s>,
             let (_shape_child, step, ri) = call(&item, session, shape_down, arg);
             (step, ri)
         }
-        ast::Action::Token(ref expr, ref body) => {
+        ast::Action::Token(ref expr) => {
             debug!("Token: {:?}", expr);
-            if body.is_some() { panic!("Body unimplemented"); }
 
             let item = expr::rexpr(session, scope, expr);
             let (_variant, message, ri) = resolve_token(item, shape_down);
@@ -133,7 +132,7 @@ fn resolve_action<'s>(session: &'s Session<'s>,
             let (variant, msg) = expr::on_expr_message(session, &mut body_scope, shape_up, expr);
 
             let (step, mut ri) = body.as_ref().map(|body| {
-                resolve_seq(session, &body_scope, shape_down, &mut variant.child, body)
+                resolve_seq(session, &body_scope, shape_down, &mut Shape::null(), body)
             }).unwrap_or((Step::Nop, ResolveInfo::new()));
 
             // Update the upward shape's direction with results of analyzing the usage of

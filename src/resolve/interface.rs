@@ -8,10 +8,9 @@ fn collect_variants<'s>(session: &'s Session<'s>, scope: &Scope<'s>, entries: &[
     Shape {
         variants: entries.iter().map(|entry| {
             match entry {
-                &ast::InterfaceEntry::Shape(ref expr, ref children) => {
+                &ast::InterfaceEntry::Shape(ref expr) => {
                     ShapeVariant {
                         data: resolve::expr::rexpr(session, scope, expr).into_data_shape(dir),
-                        child: collect_variants(session, scope, children, dir),
                     }
                 },
             }

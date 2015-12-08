@@ -82,7 +82,7 @@ impl<'s> Item<'s> {
     pub fn into_shape(self, sess: &'s Session<'s>, dir: DataMode) -> Shape {
         match self {
             Item::Interface(ast, scope) =>  resolve::interface(sess, ast, &*scope.borrow(), dir),
-            i => Shape { variants: vec![ ShapeVariant { data: i.into_data_shape(dir), child: Shape::null() } ] }
+            i => Shape { variants: vec![ ShapeVariant { data: i.into_data_shape(dir) } ] }
         }
     }
 }

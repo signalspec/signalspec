@@ -35,17 +35,16 @@ block -> ast::Block
             { ast::Action::For(items, body) }
         / expr:varexpr _ "(" _ param:expr_tup _ ")" _ body:block?
             { ast::Action::Call(expr, param, body) }
-        / expr:expr body:block?
-            { ast::Action::Token(expr, body) }
+        / expr:expr
+            { ast::Action::Token(expr) }
 
 intf_block -> Vec<ast::InterfaceEntry>
   = _ "{" _ entries:(entry:intf_entry ** (BREAK / (_ ";" _)) {entry}) _ "}"
     { entries }
-  / "" { Vec::new() }
 
   intf_entry -> ast::InterfaceEntry
-     = e:expr b:intf_block BREAK
-     { ast::InterfaceEntry::Shape(e, b) }
+     = e:expr
+     { ast::InterfaceEntry::Shape(e) }
 
 // Processes (for command line args)
 #[pub]

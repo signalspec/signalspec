@@ -56,7 +56,7 @@ pub fn process(downward_shape: &Shape, arg: Item) -> Box<Process + 'static> {
         .expect("Invalid shape below dumpfile::process");
 
     let upward_shape = Shape { variants: vec![
-        ShapeVariant { data: arg.into_data_shape(dir), child: Shape::null() }
+        ShapeVariant { data: arg.into_data_shape(dir) }
     ]};
 
     match dir {

@@ -94,7 +94,6 @@ pub struct Shape {
 #[derive(Clone, Debug, PartialEq)]
 pub struct ShapeVariant {
     pub data: ShapeData,
-    pub child: Shape,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -114,7 +113,6 @@ impl Shape {
         Shape { variants: vec![
             ShapeVariant {
                 data: ShapeData::Val(Type::Integer(0, 255), dir),
-                child: Shape::null(),
             }
         ]}
     }
@@ -142,7 +140,7 @@ impl Shape {
 impl ShapeVariant {
     pub fn data_mode(&self) -> DataMode {
         self.values().fold(
-            self.child.data_mode(),
+            DataMode { down: false, up: false },
             |am, (_, bm)| { DataMode { down: am.down || bm.down, up: am.up || bm.up  }}
         )
     }
@@ -220,7 +218,6 @@ fn test_shape_iter() {
             ]),
             ShapeData::Val(Type::Integer(4, 4), dm),
         ]),
-        child: Shape::null(),
     };
 
     let mut iter = shape.values();

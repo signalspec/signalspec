@@ -15,10 +15,6 @@ fn shape_to_scope(s: &Shape) -> (vcd::Scope, Vec<vcd::IdCode>) {
         panic!("VCD shape must have one variant");
     }
 
-    if s.variants[0].child.variants.len() != 0 {
-        panic!("VCD shape must not have inner data");
-    }
-
     let mut ids = Vec::new();
 
     fn scope(ids: &mut Vec<vcd::IdCode>, l: &[ShapeData], name: String) -> vcd::Scope {
@@ -99,10 +95,6 @@ impl Process for VcdDown {
 fn shape_from_scope(s: &Shape, v: &vcd::Scope) -> Vec<vcd::IdCode> {
     if s.variants.len() != 1 {
         panic!("VCD shape must have one variant");
-    }
-
-    if s.variants[0].child.variants.len() != 0 {
-        panic!("VCD shape must not have inner data");
     }
 
     let mut ids = Vec::new();
@@ -208,7 +200,7 @@ pub fn process(downward_shape: &Shape, arg: Item) -> Box<Process + 'static> {
         .expect("Invalid shape below vcd::process");
 
     let upward_shape = Shape { variants: vec![
-        ShapeVariant { data: arg.into_data_shape(dir), child: Shape::null() }
+        ShapeVariant { data: arg.into_data_shape(dir) }
     ]};
 
     match dir {

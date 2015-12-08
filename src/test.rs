@@ -11,7 +11,6 @@ fn shape_any() -> Shape {
         variants: vec! [
             ShapeVariant {
                 data: ShapeData::Val(Type::Bottom, DataMode { down: false, up: true }),
-                child: Shape::null(),
             }
         ]
     }
@@ -176,7 +175,6 @@ fn test_tup() {
                     ShapeData::Val(Type::Bottom, DataMode { down: false, up: true }),
                     ShapeData::Val(Type::Bottom, DataMode { down: false, up: true })
                 ]),
-                child: Shape::null(),
             }
         ]
     }, ()).unwrap();

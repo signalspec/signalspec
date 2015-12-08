@@ -19,7 +19,7 @@ pub enum Action {
     //Par(Block),
     Repeat(Expr, Block),
     Call(Expr, Expr, Option<Block>),
-    Token(Expr, Option<Block>),
+    Token(Expr),
     On(Expr, Option<Block>),
     For(Vec<(String, Expr)>, Block),
 }
@@ -42,7 +42,7 @@ pub struct Interface {
 }
 
 pub enum InterfaceEntry {
-    Shape(Expr, Vec<InterfaceEntry>),
+    Shape(Expr),
 }
 
 #[derive(Debug)]
