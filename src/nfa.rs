@@ -37,7 +37,13 @@ impl Nfa {
         try!(writeln!(f, "digraph G {{"));
         for (id, state) in self.states.iter().enumerate() {
             for transition in &state.transitions {
-                try!(writeln!(f, "{} -> {} [ label=\"{:?}\" ];", id, transition.target, transition.action));
+                let colorstr = match &transition.action {
+                    &Action::Epsilon => r#"fontcolor="gray""#,
+                    &Action::Lower(..) => r#"fontcolor="blue""#,
+                    &Action::UpperBegin(..) | &Action::UpperEnd(..) => r#"fontcolor="green""#,
+                    _ => ""
+                };
+                try!(writeln!(f, "{} -> {} [ label=\"{:?}\" {}];", id, transition.target, transition.action, colorstr));
             }
         }
         try!(writeln!(f, "}}"));
