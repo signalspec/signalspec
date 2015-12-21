@@ -65,8 +65,9 @@ pub struct Transition {
 #[derive(Clone, Debug)]
 pub enum Action {
     Epsilon,
-    Lower(Message, Option<(StateId, StateId)>),
-    Upper(Message, Option<(StateId, StateId)>),
+    Lower(Message),
+    UpperBegin(Message),
+    UpperEnd(Message),
 
     RepeatDnInit(CounterId, Expr), // Down-evaluate count, initialize counter to zero
     RepeatDnBack(CounterId), // Increment counter, guard on counter < count
@@ -95,13 +96,14 @@ pub fn from_step_tree(s: &Step) -> Nfa {
             Step::Nop => nfa.add_transition(from, to, Action::Epsilon),
             Step::Token(ref message) => {
                 let m: Message = message.clone();
-                nfa.add_transition(from, to, Action::Lower(m, None))
+                nfa.add_transition(from, to, Action::Lower(m))
             }
             Step::TokenTop(ref message, box ref body) => {
                 let is = nfa.add_state();
                 let ie = nfa.add_state();
+                nfa.add_transition(from, is, Action::UpperBegin(message.clone()));
                 from_step_tree_inner(body, nfa, is, ie);
-                nfa.add_transition(from, to, Action::Upper(message.clone(), Some((is, ie))))
+                nfa.add_transition(ie, to, Action::UpperEnd(message.clone()));
             }
             Step::Seq(ref steps) => {
                 if let Some((last, rest)) = steps.split_last() {
