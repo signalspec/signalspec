@@ -78,15 +78,15 @@ pub fn read_values(reader: &mut BufRead, port: &mut exec::Connection) {
     for line in reader.lines() {
         let lit = parse_line(&line.unwrap());
         if port.recv().is_err() { break; }
-        if port.send(lit).is_err() { break; }
+        if port.send((0, lit)).is_err() { break; }
     }
 }
 
 pub fn write_values(w: &mut Write, port: &mut exec::Connection) {
-    if port.send(Vec::new()).is_err() { return; }
+    if port.send((0, Vec::new())).is_err() { return; }
     loop {
         match port.recv() {
-            Ok(v) => {
+            Ok((_, v)) => {
                 for (i, v) in v.iter().enumerate() {
                     if i != 0 { w.write_all(b", ").unwrap(); }
                     (write!(w, "{}", v)).unwrap();
@@ -95,6 +95,6 @@ pub fn write_values(w: &mut Write, port: &mut exec::Connection) {
             }
             Err(..) => break,
         }
-        if port.send(Vec::new()).is_err() { break; }
+        if port.send((0, Vec::new())).is_err() { break; }
     }
 }

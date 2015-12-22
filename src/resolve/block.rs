@@ -217,13 +217,19 @@ pub fn resolve_letdef<'s>(session: &'s Session<'s>, scope: &mut Scope<'s>, lets:
 }
 
 fn resolve_token<'shape>(item: Item, shape: &'shape Shape) -> (&'shape ShapeVariant, Message, ResolveInfo) {
-    let variant = &shape.variants[0];
-    let mut msg = Message { components: Vec::new() };
-    let mut ri = ResolveInfo::new();
+    fn try_variant(shape: &ShapeData, item: &Item) -> bool {
+        match (shape, item) {
+            (&ShapeData::Val(ref t, _), &Item::Value(ref e)) => t.includes_type(&e.get_type()),
+            (&ShapeData::Tup(ref m), &Item::Tuple(ref t)) => {
+                m.len() == t.len() && m.iter().zip(t.iter()).all(|(i, s)| { try_variant(i, s) })
+            }
+            _ => false,
+        }
+    }
 
     fn inner<'s>(i: Item<'s>, shape: &ShapeData, msg: &mut Message, ri: &mut ResolveInfo) {
         match shape {
-            &ShapeData::Val(ref _t, dir) => {
+            &ShapeData::Val(_, dir) => {
                 if let Item::Value(v) = i {
                     ri.use_expr(&v, dir);
                     msg.components.push(v)
@@ -247,6 +253,14 @@ fn resolve_token<'shape>(item: Item, shape: &'shape Shape) -> (&'shape ShapeVari
         }
     }
 
-    inner(item, &variant.data, &mut msg, &mut ri);
-    (variant, msg, ri)
+    for (idx, variant) in shape.variants.iter().enumerate() {
+        if try_variant(&variant.data, &item) {
+            let mut msg = Message { tag: idx, components: Vec::new() };
+            let mut ri = ResolveInfo::new();
+            inner(item, &variant.data, &mut msg, &mut ri);
+            return (variant, msg, ri);
+        }
+    }
+
+    panic!("Item {:?} doesn't match shape", item);
 }

@@ -75,7 +75,7 @@ impl Process for VcdDown {
         }
 
         // TODO: more optimized VCD output
-        while let Ok(n) = upwards.recv() {
+        while let Ok((0, n)) = upwards.recv() {
             w.timestamp(time).unwrap();
             time += 1;
             for (i, v) in ids.iter().zip(n.into_iter().map(map_value)) {
@@ -180,7 +180,7 @@ impl Process for VcdUp {
 
             while time < next_time {
                 debug!("{} {}", time, next_time);
-                if upwards.send(values.clone()).is_err() {
+                if upwards.send((0, values.clone())).is_err() {
                     break;
                 }
                 time += 1;

@@ -18,7 +18,7 @@ impl<'a> Read for ConnectionRead<'a> {
         let mut num_read = 0;
         for p in buf.iter_mut() {
             match self.0.recv() {
-                Ok(v) => {
+                Ok((0, v)) => {
                     debug!("rx {:?}", v);
                     assert_eq!(v.len(), 1);
                     match v[0] {
@@ -26,6 +26,7 @@ impl<'a> Read for ConnectionRead<'a> {
                         ref x => panic!("Byte connection received {:?}", x)
                     }
                 }
+                Ok(..) => panic!("Received a message prohibited by shape"),
                 Err(..) => break,
             }
             num_read += 1;
@@ -44,7 +45,7 @@ impl<'a> Write for ConnectionWrite<'a> {
         debug!("write started: {}", buf.len());
 
         for b in buf.iter() {
-            if self.0.send(vec![Value::Integer(*b as i64)]).is_err() {
+            if self.0.send((0, vec![Value::Integer(*b as i64)])).is_err() {
                 return Err(io::Error::new(io::ErrorKind::BrokenPipe, "Stream ended"))
             }
         }

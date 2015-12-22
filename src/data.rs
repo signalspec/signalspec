@@ -75,6 +75,33 @@ impl Type {
     pub fn union_iter<T: Iterator<Item=Type>>(i: T) -> Type {
         i.fold(Type::Bottom, Type::union)
     }
+
+    /// Returns whether the passed value is a member of this type
+    pub fn includes(&self, val: &Value) -> bool {
+        match (self, val) {
+            (&Type::Bottom, _) => false,
+            (&Type::Symbol(ref _t), &Value::Symbol(ref _v)) => true, //TODO: t.contains(v),
+            (&Type::Vector(len, ref t), &Value::Vector(ref v)) => {
+                (v.len() == len) && v.iter().all(|i| t.includes(i))
+            }
+            (&Type::Integer(_lo, _hi), &Value::Integer(_v)) => true, //TODO: (v >= lo && v <= hi),
+            (&Type::Number(_lo, _hi), &Value::Number(_v)) => true, //TODO: (v >= lo && v <= hi),
+            _ => false,
+        }
+    }
+
+    pub fn includes_type(&self, other: &Type) -> bool {
+        match (self, other) {
+            (&Type::Bottom, &Type::Bottom) => true,
+            (&Type::Symbol(ref _v1), &Type::Symbol(ref _v2)) => true, //TODO: v1.is_superset(v2),
+            (&Type::Vector(len1, ref t1), &Type::Vector(len2, ref t2)) => {
+                (len1 == len2) && t1.includes_type(t2)
+            }
+            (&Type::Integer(_lo1, _hi1), &Type::Integer(_lo2, _hi2)) => true, //TODO: (lo2 >= lo1 && hi2 <= hi1),
+            (&Type::Number(_lo1, _hi1), &Type::Number(_lo2, _hi2)) => true, //TODO: (lo2 >= lo1 && hi2 <= hi1),
+            _ => false,
+        }
+    }
 }
 
 /// Flags indicating the directions data flows

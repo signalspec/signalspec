@@ -101,7 +101,22 @@ pub fn rexpr<'s>(session: &'s Session<'s>, scope: &Scope<'s>, e: &ast::Expr) -> 
 /// Resolve an expression as used in the argument of an `on` block, defining variables
 pub fn on_expr_message<'s, 'shape>(sess: &'s Session<'s>, scope: &mut Scope<'s>,
         shape: &'shape mut Shape, expr: &ast::Expr) -> (&'shape mut ShapeVariant, Message) {
-    let mut msg = Message { components: vec![] };
+
+    fn try_variant(shape: &ShapeData, e: &ast::Expr) -> bool {
+        match (shape, e) {
+            (&ShapeData::Val(ref ty, _), &ast::Expr::Value(ref val)) => {
+                ty.includes(val)
+            }
+            (&ShapeData::Val(..), _) => {
+                true
+            }
+            (&ShapeData::Tup(ref ss), &ast::Expr::Tup(ref se)) => {
+                ss.iter().zip(se.iter()).all(|(s,i)| try_variant(s, i))
+            }
+            (&ShapeData::Tup(..), &ast::Expr::Var(..)) => true,
+            _ => false
+        }
+    }
 
     fn inner<'s>(sess: &'s Session<'s>, scope: &mut Scope<'s>, msg: &mut Message,
                 shape: &ShapeData, e: &ast::Expr) {
@@ -122,11 +137,15 @@ pub fn on_expr_message<'s, 'shape>(sess: &'s Session<'s>, scope: &mut Scope<'s>,
         }
     }
 
-    if shape.variants.len() != 1 { unimplemented!() }
-    let variant = &mut shape.variants[0];
+    for (idx, variant) in shape.variants.iter_mut().enumerate() {
+        if try_variant(&variant.data, expr) {
+            let mut msg = Message { tag: idx, components: vec![] };
+            inner(sess, scope, &mut msg, &variant.data, expr);
+            return (variant, msg)
+        }
+    }
 
-    inner(sess, scope, &mut msg, &variant.data, expr);
-    (variant, msg)
+    panic!("Expression {:?} doesn't match shape", expr)
 }
 
 

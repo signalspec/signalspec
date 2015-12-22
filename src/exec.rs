@@ -11,8 +11,11 @@ pub trait PrimitiveStep {
     fn exec(&self);
 }
 
-#[derive(Debug)]
+pub type MessageTag = usize;
+
+#[derive(Debug, Clone)]
 pub struct Message {
+    pub tag: MessageTag,
     pub components: Vec<Expr>
 }
 
@@ -63,14 +66,16 @@ pub fn print_step_tree(s: &Step, indent: u32) {
     }
 }
 
+type ConnectionMessage = (MessageTag, Vec<Value>);
+
 pub struct Connection {
-    types: Vec<(Type, /*tx*/ bool, /* rx */ bool)>,
+    types: Vec<Vec<(Type, /*tx*/ bool, /* rx */ bool)>>,
 
-    rx: Option<Receiver<Vec<Value>>>,
-    tx: Option<Sender<Vec<Value>>>,
+    rx: Option<Receiver<ConnectionMessage>>,
+    tx: Option<Sender<ConnectionMessage>>,
 
-    lookahead_tx: Option<Vec<Value>>,
-    lookahead_rx: Option<Vec<Value>>,
+    lookahead_tx: Option<ConnectionMessage>,
+    lookahead_rx: Option<ConnectionMessage>,
 
     pub alive: bool,
 }
@@ -93,20 +98,16 @@ impl Connection {
 
         let alive = direction.down || direction.up;
 
-        let (t1, t2) = match shape.variants.len() {
-            0 => (vec![], vec![]),
-            1 => (
-                    shape.variants[0].values().map(|(t, d)| (t.clone(), d.down, d.up)).collect(),
-                    shape.variants[0].values().map(|(t, d)| (t.clone(), d.up, d.down)).collect()
-                ),
-            _ => unimplemented!(),
-        };
+        let (t1, t2) = shape.variants.iter().map(|variant| (
+            variant.values().map(|(t, d)| (t.clone(), d.down, d.up)).collect(),
+            variant.values().map(|(t, d)| (t.clone(), d.up, d.down)).collect()
+        )).unzip();
 
         (Connection{ types: t1, tx: s1, rx: r2, lookahead_tx: None, lookahead_rx: None, alive: alive },
          Connection{ types: t2, tx: s2, rx: r1, lookahead_tx: None, lookahead_rx: None, alive: alive })
     }
 
-    pub fn send(&mut self, v: Vec<Value>) -> Result<(), ()> {
+    pub fn send(&mut self, v: ConnectionMessage) -> Result<(), ()> {
         if let Some(ref tx) = self.tx {
             let r = tx.send(v).map_err(|_| ());
             if r.is_err() {
@@ -119,7 +120,7 @@ impl Connection {
         }
     }
 
-    pub fn recv(&mut self) -> Result<Vec<Value>, ()> {
+    pub fn recv(&mut self) -> Result<ConnectionMessage, ()> {
         if let Some(ref rx) = self.rx {
             let r = rx.recv().map_err(|_| ());
             if r.is_err() {
@@ -127,11 +128,11 @@ impl Connection {
             }
             r
         } else {
-            if self.alive { Ok(vec![]) } else { Err(()) }
+            if self.alive { Ok((0, vec![])) } else { Err(()) }
         }
     }
 
-    pub fn lookahead_send(&mut self, v: Vec<Value>) {
+    pub fn lookahead_send(&mut self, v: ConnectionMessage) {
         match self.lookahead_tx {
             Some(ref lv) => {
                 if v != *lv { panic!("Committed {:?}, but sending {:?}", lv, v); }
@@ -147,7 +148,7 @@ impl Connection {
         }
     }
 
-    pub fn lookahead_receive(&mut self) -> Option<Vec<Value>> {
+    pub fn lookahead_receive(&mut self) -> Option<ConnectionMessage> {
         match self.lookahead_rx {
             Some(ref lv) => Some(lv.clone()),
             None => {
@@ -171,21 +172,26 @@ impl Connection {
     pub fn can_rx(&self) -> bool { self.rx.is_some() }
 
     pub fn lookahead_eval_down(&mut self, state: &eval::State, message: &Message) {
-        let m = self.types.iter().zip(message.components.iter())
+        let m = self.types[message.tag].iter().zip(message.components.iter())
             .filter(|&(&(_, tx, _), _)| tx)
             .map(|(_, ref e)| e.eval_down(state))
             .collect();
-        debug!("tx: {:?}", m);
-        self.lookahead_send(m);
+        debug!("tx: {}:{:?}", message.tag, m);
+        self.lookahead_send((message.tag, m));
     }
 
     pub fn lookahead_eval_up(&mut self, state: &mut eval::State, message: &Message) -> bool {
-        let m = match self.lookahead_receive() {
-            Some(m) => m,
+        let (tag, m) = match self.lookahead_receive() {
+            Some((tag, m)) => (tag, m),
             None => return false,
         };
-        debug!("rx: {:?}", m);
-        self.types.iter().zip(message.components.iter())
+        debug!("rx: {}:{:?}", tag, m);
+
+        if self.rx.is_some() && message.tag != tag {
+            return false;
+        }
+
+        self.types[tag].iter().zip(message.components.iter())
             .filter(|&(&(_, _, rx), _)| rx)
             .map(|(_, e)| e)
             .zip(m.into_iter())
@@ -244,14 +250,17 @@ pub fn exec(state: &mut eval::State, s: &Step, parent: &mut Connection, child: &
                             Step::Token(ref msg) => {
                                 try_token(state, parent, msg)
                             }
-                            Step::TokenTop(_, box ref body) => {
-                                child.lookahead_receive();
-                                // TODO: variables in the block will not be assigned
-                                // so we can't evaluate the child expression if they might be used.
-                                // This works for unidirectional applications only.
-                                let down = parent.tx.is_some();
-                                parent.alive && child.alive &&
-                                    (down || try_first(state, body, parent, child))
+                            Step::TokenTop(ref msg, box ref body) => {
+                                if let Some((tag, _)) = child.lookahead_receive() {
+                                    // TODO: variables in the block will not be assigned
+                                    // so we can't evaluate the child expression if they might be used.
+                                    // This works for unidirectional applications only.
+                                    let down = parent.tx.is_some();
+                                    parent.alive && child.alive && (!child.rx.is_some() || tag == msg.tag) &&
+                                        (down || try_first(state, body, parent, child))
+                                } else {
+                                    false
+                                }
                             },
                             Step::Seq(ref steps) => steps.get(0)
                                 .map_or(true, |x| try_first(state, x, parent, child)),
