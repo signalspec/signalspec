@@ -12,6 +12,7 @@ git = "https://github.com/kevinmehall/rust-vcd.git"
 
 [dependencies]
 log = "0.3.2"
+env_logger = "0.3"
 typed-arena = "1.0.1"
 bit-set = "0.2.0"
 vec_map = "0.3.0"

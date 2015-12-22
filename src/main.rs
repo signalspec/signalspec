@@ -12,6 +12,7 @@ extern crate vec_map;
 extern crate ref_slice;
 #[macro_use] extern crate lazy_static;
 #[macro_use] extern crate log;
+extern crate env_logger;
 
 use std::{env, process, fs, thread};
 use std::io::prelude::*;
@@ -32,6 +33,7 @@ mod connection_io;
 peg_file! grammar("signalspec.rustpeg");
 
 fn main() {
+    env_logger::init().unwrap();
     let sess = session::Session::new();
 
     let args: Vec<String> = env::args().collect();
