@@ -155,6 +155,8 @@ valexpr -> ast::Expr
 #[pub]
 process -> ast::Process
   = b:block { ast::Process::Block(b) }
+  / dir:("@up" {true} / "@dn" {false}) _ "(" _ t: expr _ ")" _ b:block
+      { ast::Process::Literal(dir, t, b) }
   / name:identifier _ param:("(" _ param:expr_tup _ ")" {param})?
       { ast::Process::Call(name, param.unwrap_or(ast::Expr::Tup(vec![]))) }
 // Lexer

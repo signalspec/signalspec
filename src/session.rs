@@ -10,7 +10,7 @@ use resolve;
 use resolve::Scope;
 use resolve::scope::Item;
 use exec::Step;
-use data::{ Value, Type, Shape };
+use data::{ Value, Type, Shape, DataMode };
 use grammar;
 use eval::Expr;
 
@@ -199,6 +199,23 @@ impl Process for Program {
     }
 }
 
+pub struct ProgramFlip {
+    pub step: Step,
+    pub shape_down: Shape,
+    pub shape_up: Shape,
+}
+
+impl Process for ProgramFlip {
+    fn run(&self, state: &mut eval::State, downwards: &mut exec::Connection, upwards: &mut exec::Connection) -> bool {
+        exec::exec(state, &self.step, upwards, downwards)
+    }
+
+    fn shape_up(&self) -> &Shape {
+        &self.shape_up
+    }
+}
+
+
 
 pub fn resolve_process<'s>(sess: &'s Session<'s>, modscope: &Module<'s>, shape: &Shape, p: ast::Process) -> Box<Process> {
     use {connection_io, dumpfile, vcd};
@@ -218,6 +235,16 @@ pub fn resolve_process<'s>(sess: &'s Session<'s>, modscope: &Module<'s>, shape: 
             let (step, _) = resolve::block::resolve_seq(sess, &*modscope.scope.borrow(), shape, &mut shape_up, &block);
 
             box Program { step: step, shape_down: shape.clone(), shape_up: shape_up }
+        }
+        ast::Process::Literal(is_up, shape_up_expr, block) => {
+            let shape_item = resolve::expr::rexpr(sess, &*modscope.scope.borrow(), &shape_up_expr);
+            let shape_up = shape_item.clone().into_shape(sess, DataMode { down: !is_up, up: is_up });
+            let shape_flip = shape_item.into_shape(sess, DataMode { down: is_up, up: !is_up });
+
+            let mut shape_dn = Shape::null();
+            let (step, _) = resolve::block::resolve_seq(sess, &*modscope.scope.borrow(), &shape_flip, &mut shape_dn, &block);
+
+            box ProgramFlip { step: step, shape_down: shape_dn, shape_up: shape_up }
         }
     }
 }

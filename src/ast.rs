@@ -71,5 +71,6 @@ pub enum Expr {
 #[derive(Debug)]
 pub enum Process {
     Call(String, Expr),
+    Literal(/*is_up*/ bool, Expr, Block),
     Block(Block)
 }
