@@ -1,7 +1,7 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 use typed_arena::Arena;
 use std::str;
-use std::io::{self, Cursor};
+use std::io::Cursor;
 use std::thread;
 use std::cell::RefCell;
 
@@ -42,8 +42,12 @@ impl<'session> Session<'session> {
         self.id_counter.fetch_add(1, Ordering::Relaxed)
     }
 
+    pub fn parse(&'session self, source: &str) -> Result<&'session ast::Module, grammar::ParseError> {
+        grammar::module(source).map(|ast| &*self.ast_arena.alloc(ast))
+    }
+
     pub fn parse_module(&'session self, source: &str) -> Result<Module<'session>, grammar::ParseError> {
-        grammar::module(source).map(|ast| self.resolve_module(self.ast_arena.alloc(ast)))
+         self.parse(source).map(|ast| self.resolve_module(ast))
     }
 
     pub fn resolve_module(&'session self, modast: &'session ast::Module) -> Module<'session> {
@@ -116,7 +120,7 @@ impl <'s> IntoItem<'s> for () {
 
 pub struct Module<'s> {
     session: &'s Session<'s>,
-    scope: &'s RefCell<Scope<'s>>,
+    pub scope: &'s RefCell<Scope<'s>>,
 }
 
 impl <'s> Module<'s> {
@@ -195,6 +199,41 @@ impl Process for Program {
     }
 }
 
-pub trait IoProcess {
-    fn run(&mut self, upwards: &mut exec::Connection) -> io::Result<()>;
+
+pub fn resolve_process<'s>(sess: &'s Session<'s>, modscope: &Module<'s>, shape: &Shape, p: ast::Process) -> Box<Process> {
+    use {connection_io, dumpfile, vcd};
+    match p {
+        ast::Process::Call(name, arg) => {
+            let arg = resolve::expr::rexpr(sess, &*modscope.scope.borrow(), &arg);
+            match &name[..] {
+                "file" => connection_io::file_process(arg),
+                "dump" => dumpfile::process(shape, arg),
+                "vcd" => vcd::process(shape, arg),
+                name => (box modscope.compile_call(name, shape.clone(), arg)
+                  .ok().expect("Failed to compile call"))
+            }
+        }
+        ast::Process::Block(block) => {
+            let mut shape_up = Shape::null();
+            let (step, _) = resolve::block::resolve_seq(sess, &*modscope.scope.borrow(), shape, &mut shape_up, &block);
+
+            box Program { step: step, shape_down: shape.clone(), shape_up: shape_up }
+        }
+    }
+}
+
+pub fn run_process_chain(processes: Vec<Box<Process>>) -> bool {
+    let (_, mut connection) = exec::Connection::new(&Shape::null());
+    let threads = processes.into_iter().map(|p| {
+        let (mut c2, c1) = exec::Connection::new(p.shape_up());
+        ::std::mem::swap(&mut c2, &mut connection);
+        thread::spawn(move || {
+            let mut downward = c2;
+            let mut upward = c1;
+            let mut state = eval::State::new();
+            p.run(&mut state, &mut downward, &mut upward)
+        })
+    }).collect::<Vec<_>>();
+
+    threads.into_iter().all(|x| x.join().unwrap())
 }

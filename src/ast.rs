@@ -69,7 +69,7 @@ pub enum Expr {
 }
 
 #[derive(Debug)]
-pub struct Process {
-    pub name: String,
-    pub arg: Expr,
+pub enum Process {
+    Call(String, Expr),
+    Block(Block)
 }

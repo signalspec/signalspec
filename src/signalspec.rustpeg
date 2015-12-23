@@ -46,12 +46,6 @@ intf_block -> Vec<ast::InterfaceEntry>
      = e:expr
      { ast::InterfaceEntry::Shape(e) }
 
-// Processes (for command line args)
-#[pub]
-process -> ast::Process
-  = name:identifier _ param:("(" _ param:expr_tup _ ")" {param})?
-      { ast::Process{ name: name, arg: param.unwrap_or(ast::Expr::Tup(vec![]))} }
-
 // Expressions
 #[pub]
 expr -> ast::Expr
@@ -158,6 +152,11 @@ valexpr -> ast::Expr
                     = [a-zA-Z]+ { match_str.to_string() }
                     / "" { "".to_string() }
 
+#[pub]
+process -> ast::Process
+  = b:block { ast::Process::Block(b) }
+  / name:identifier _ param:("(" _ param:expr_tup _ ")" {param})?
+      { ast::Process::Call(name, param.unwrap_or(ast::Expr::Tup(vec![]))) }
 // Lexer
 
 WHITESPACE

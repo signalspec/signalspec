@@ -14,7 +14,7 @@ extern crate ref_slice;
 #[macro_use] extern crate log;
 extern crate env_logger;
 
-use std::{env, process, fs, thread};
+use std::{env, process, fs};
 use std::io::prelude::*;
 
 use session::Process;
@@ -43,36 +43,13 @@ fn main() {
 
     let mut processes = vec![];
     let mut shape = data::Shape::null();
-    let scope = resolve::scope::Scope::new();
 
     for arg in &args[2..] {
-        if arg.starts_with("{") {
-            let block = grammar::block(&arg)
-                .unwrap_or_else(|e| panic!("Error parsing block: {}", e));
-
-            let mut shape_up = data::Shape::null();
-            let (step, _) = resolve::block::resolve_seq(&sess, &scope, &shape, &mut shape_up, &block);
-
-            processes.push(box session::Program { step: step,
-                                                  shape_down: shape.clone(),
-                                                  shape_up: shape_up }
-                                                  as Box<session::Process>);
-        } else {
-            let call = grammar::process(&arg)
-                .unwrap_or_else(|e| panic!("Error parsing argument: {}", e));
-            let arg = resolve::expr::rexpr(&sess, &scope, &call.arg);
-
-            let main = match &call.name[..] {
-                "file" => connection_io::file_process(arg),
-                "dump" => dumpfile::process(&shape, arg),
-                "vcd" => vcd::process(&shape, arg),
-                name => (box modscope.compile_call(name, shape, arg)
-                  .ok().expect("Failed to compile call") as Box<session::Process>)
-            };
-            shape = main.shape_up().clone();
-            debug!("shape: {:?}", shape);
-            processes.push(main);
-        }
+        let process_ast = grammar::process(&arg)
+            .unwrap_or_else(|e| panic!("Error parsing argument: {}", e));
+        let process = session::resolve_process(&sess, &modscope, &shape, process_ast);
+        shape = process.shape_up().clone();
+        processes.push(process);
     }
 
     let topmost_mode = shape.data_mode();
@@ -81,19 +58,7 @@ fn main() {
         processes.push(box dumpfile::ValueDumpPrint(shape));
     }
 
-    let (_, mut connection) = exec::Connection::new(&data::Shape::null());
-    let threads = processes.into_iter().map(|p| {
-        let (mut c2, c1) = exec::Connection::new(p.shape_up());
-        ::std::mem::swap(&mut c2, &mut connection);
-        thread::spawn(move || {
-            let mut downward = c2;
-            let mut upward = c1;
-            let mut state = eval::State::new();
-            p.run(&mut state, &mut downward, &mut upward)
-        })
-    }).collect::<Vec<_>>();
-
-    let success = threads.into_iter().all(|x| x.join().unwrap());
+    let success = session::run_process_chain(processes);
 
     process::exit(if success { 0 } else { 1 });
 }
