@@ -7,7 +7,7 @@ use data::{ Value, DataMode, Shape };
 use exec;
 use eval::{self, Expr};
 use session::Process;
-use resolve::scope::Item;
+use resolve::Item;
 use session;
 
 pub struct ConnectionRead<'a>(pub &'a mut exec::Connection);

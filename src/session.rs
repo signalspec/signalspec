@@ -4,9 +4,7 @@ use std::thread;
 use std::cell::RefCell;
 
 use ast;
-use resolve;
-use resolve::Scope;
-use resolve::scope::Item;
+use resolve::{self, Scope, Item};
 use exec::Step;
 use data::{ Value, Type, Shape, DataMode };
 use grammar;
@@ -49,7 +47,7 @@ impl<'session> Session<'session> {
     pub fn resolve_module(&'session self, modast: &'session ast::Module) -> Module<'session> {
         Module {
             session: self,
-            scope: resolve::block::resolve_module(self, modast),
+            scope: resolve::module(self, modast),
         }
     }
 
@@ -124,7 +122,7 @@ impl <'s> Module<'s> {
                         shape_down: Shape,
                         param: T) -> Result<Program, ()> {
         if let Some(item) = self.scope.borrow().get(name) {
-            let (shape_up, step, _) = resolve::block::call(&item, &self.session, &shape_down, param.into_item());
+            let (shape_up, step, _) = resolve::call(&item, &self.session, &shape_down, param.into_item());
             Ok(Program{ step: step, shape_down: shape_down, shape_up: shape_up})
         } else {
             Err(())
@@ -175,7 +173,7 @@ pub fn resolve_process<'s>(sess: &'s Session<'s>, modscope: &Module<'s>, shape: 
     use {connection_io, dumpfile, vcd};
     match *p {
         ast::Process::Call(ref name, ref arg) => {
-            let arg = resolve::expr::rexpr(sess, &*modscope.scope.borrow(), arg);
+            let arg = resolve::rexpr(sess, &*modscope.scope.borrow(), arg);
             match &name[..] {
                 "file" => connection_io::file_process(arg),
                 "dump" => dumpfile::process(shape, arg),
@@ -186,12 +184,12 @@ pub fn resolve_process<'s>(sess: &'s Session<'s>, modscope: &Module<'s>, shape: 
         }
         ast::Process::Block(ref block) => {
             let mut shape_up = Shape::null();
-            let (step, _) = resolve::block::resolve_seq(sess, &*modscope.scope.borrow(), shape, &mut shape_up, block);
+            let (step, _) = resolve::seq(sess, &*modscope.scope.borrow(), shape, &mut shape_up, block);
 
             box Program { step: step, shape_down: shape.clone(), shape_up: shape_up }
         }
         ast::Process::Literal(dir, ref shape_up_expr, ref block) => {
-            let shape_item = resolve::expr::rexpr(sess, &*modscope.scope.borrow(), shape_up_expr);
+            let shape_item = resolve::rexpr(sess, &*modscope.scope.borrow(), shape_up_expr);
             let is_up = match dir {
                 ast::ProcessLiteralDirection::Up => true,
                 ast::ProcessLiteralDirection::Down => false,
@@ -201,7 +199,7 @@ pub fn resolve_process<'s>(sess: &'s Session<'s>, modscope: &Module<'s>, shape: 
             let shape_flip = shape_item.into_shape(sess, DataMode { down: is_up, up: !is_up });
 
             let mut shape_dn = Shape::null();
-            let (step, _) = resolve::block::resolve_seq(sess, &*modscope.scope.borrow(), &shape_flip, &mut shape_dn, block);
+            let (step, _) = resolve::seq(sess, &*modscope.scope.borrow(), &shape_flip, &mut shape_dn, block);
 
             box ProgramFlip { step: step, shape_down: shape_dn, shape_up: shape_up }
         }

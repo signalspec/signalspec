@@ -297,11 +297,11 @@ fn exprs() {
     use grammar;
     use resolve;
     let sess = Session::new();
-    let scope = resolve::scope::Scope::new();
+    let scope = resolve::Scope::new();
     let state = State::new();
 
-    fn expr<'s>(sess: &'s Session<'s>, scope: &resolve::scope::Scope<'s>, e: &str) -> Expr {
-        resolve::expr::value(sess, scope, &grammar::valexpr(e).unwrap())
+    fn expr<'s>(sess: &'s Session<'s>, scope: &resolve::Scope<'s>, e: &str) -> Expr {
+        resolve::value(sess, scope, &grammar::valexpr(e).unwrap())
     }
 
     let two = expr(&sess, &scope, "2");

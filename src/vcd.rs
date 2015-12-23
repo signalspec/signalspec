@@ -4,7 +4,7 @@ use exec;
 use eval;
 use session::Process;
 use data::{Value, DataMode, Shape, ShapeVariant, ShapeData};
-use resolve::scope::Item;
+use resolve::Item;
 use connection_io::{ConnectionRead, ConnectionWrite};
 
 extern crate vcd;

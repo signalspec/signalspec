@@ -6,7 +6,7 @@ use data::{ Value, DataMode, Shape, ShapeVariant };
 use exec;
 use eval;
 use session::Process;
-use resolve::scope::Item;
+use resolve::Item;
 use connection_io::{ConnectionRead, ConnectionWrite};
 
 struct ValueDumpDown(Shape);
