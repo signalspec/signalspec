@@ -21,3 +21,7 @@ ref_slice = "0.1.*"
 
 [[bin]]
 name = "signalspec"
+
+[[test]]
+name = "check"
+harness = false
