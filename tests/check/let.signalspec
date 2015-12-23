@@ -1,0 +1,11 @@
+let x = #x
+def main(a) {
+    let y = a
+    let z = #z
+    x
+    y
+    z
+}
+
+test @both(#x) { #x; #y; #z } main(#y);
+test fail @up(#x) { #x; #y; #z } main(#z);

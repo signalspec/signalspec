@@ -1,7 +1,5 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 use typed_arena::Arena;
-use std::str;
-use std::io::Cursor;
 use std::thread;
 use std::cell::RefCell;
 
@@ -13,9 +11,7 @@ use exec::Step;
 use data::{ Value, Type, Shape, DataMode };
 use grammar;
 use eval::Expr;
-
 use exec;
-use dumpfile;
 use eval;
 
 pub type ValueID = usize;
@@ -142,48 +138,6 @@ pub struct Program {
     pub shape_up: Shape,
 }
 
-impl Program {
-    pub fn run_test(&self, bottom: &'static str, top: &'static str) -> (bool, eval::State) {
-        let (mut s1, mut s2) = exec::Connection::new(&self.shape_down);
-        let (mut t1, mut t2) = exec::Connection::new(&self.shape_up);
-        let reader_thread = thread::spawn(move || {
-            let mut reader = Cursor::new(bottom.as_bytes().to_vec());
-            dumpfile::read_values(&mut reader, &mut s2);
-        });
-        let writer_thread = thread::spawn(move || {
-            let mut writer = Vec::new();
-            dumpfile::write_values(&mut writer, &mut t1);
-            assert_eq!(top, str::from_utf8(&writer).unwrap());
-        });
-        let mut state = eval::State::new();
-
-        let r = exec::exec(&mut state, &self.step, &mut s1, &mut t2);
-
-        drop(s1);
-        drop(t2);
-        reader_thread.join().unwrap();
-        writer_thread.join().unwrap();
-
-        (r, state)
-    }
-
-    pub fn run_test_pass(&self, bottom: &'static str, top: &'static str) -> eval::State {
-        let (m, r) = self.run_test(bottom, top);
-        if !m {
-            panic!("run_pass test failed to match: {}", bottom);
-        }
-        r
-    }
-
-    pub fn run_test_fail(&self, bottom: &'static str, top: &'static str) -> eval::State {
-        let (m, r) = self.run_test(bottom, top);
-        if m {
-            panic!("run_fail test matched: {}", bottom);
-        }
-        r
-    }
-}
-
 pub trait Process: Send {
     fn run(&self, state: &mut eval::State, downwards: &mut exec::Connection, upwards: &mut exec::Connection) -> bool;
     fn shape_up(&self) -> &Shape;
@@ -217,11 +171,11 @@ impl Process for ProgramFlip {
 
 
 
-pub fn resolve_process<'s>(sess: &'s Session<'s>, modscope: &Module<'s>, shape: &Shape, p: ast::Process) -> Box<Process> {
+pub fn resolve_process<'s>(sess: &'s Session<'s>, modscope: &Module<'s>, shape: &Shape, p: &ast::Process) -> Box<Process> {
     use {connection_io, dumpfile, vcd};
-    match p {
-        ast::Process::Call(name, arg) => {
-            let arg = resolve::expr::rexpr(sess, &*modscope.scope.borrow(), &arg);
+    match *p {
+        ast::Process::Call(ref name, ref arg) => {
+            let arg = resolve::expr::rexpr(sess, &*modscope.scope.borrow(), arg);
             match &name[..] {
                 "file" => connection_io::file_process(arg),
                 "dump" => dumpfile::process(shape, arg),
@@ -230,19 +184,24 @@ pub fn resolve_process<'s>(sess: &'s Session<'s>, modscope: &Module<'s>, shape: 
                   .ok().expect("Failed to compile call"))
             }
         }
-        ast::Process::Block(block) => {
+        ast::Process::Block(ref block) => {
             let mut shape_up = Shape::null();
-            let (step, _) = resolve::block::resolve_seq(sess, &*modscope.scope.borrow(), shape, &mut shape_up, &block);
+            let (step, _) = resolve::block::resolve_seq(sess, &*modscope.scope.borrow(), shape, &mut shape_up, block);
 
             box Program { step: step, shape_down: shape.clone(), shape_up: shape_up }
         }
-        ast::Process::Literal(is_up, shape_up_expr, block) => {
-            let shape_item = resolve::expr::rexpr(sess, &*modscope.scope.borrow(), &shape_up_expr);
+        ast::Process::Literal(dir, ref shape_up_expr, ref block) => {
+            let shape_item = resolve::expr::rexpr(sess, &*modscope.scope.borrow(), shape_up_expr);
+            let is_up = match dir {
+                ast::ProcessLiteralDirection::Up => true,
+                ast::ProcessLiteralDirection::Down => false,
+                ast::ProcessLiteralDirection::Both => panic!("@both is only usable in tests"),
+            };
             let shape_up = shape_item.clone().into_shape(sess, DataMode { down: !is_up, up: is_up });
             let shape_flip = shape_item.into_shape(sess, DataMode { down: is_up, up: !is_up });
 
             let mut shape_dn = Shape::null();
-            let (step, _) = resolve::block::resolve_seq(sess, &*modscope.scope.borrow(), &shape_flip, &mut shape_dn, &block);
+            let (step, _) = resolve::block::resolve_seq(sess, &*modscope.scope.borrow(), &shape_flip, &mut shape_dn, block);
 
             box ProgramFlip { step: step, shape_down: shape_dn, shape_up: shape_up }
         }

@@ -1,0 +1,10 @@
+def main(): #0 {
+  repeat {
+    on v {
+      repeat v { #h }
+      repeat _ { #l }
+    }
+  }
+}
+
+test @up(#a) { #h; #l; #h; #h; #l; #h; #h; #h } main() { #1; #2; #3 };

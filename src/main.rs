@@ -28,15 +28,21 @@ mod exec;
 mod dumpfile;
 mod vcd;
 mod connection_io;
-#[cfg(test)] mod test;
+mod test_runner;
 
 peg_file! grammar("signalspec.rustpeg");
 
 fn main() {
     env_logger::init().unwrap();
-    let sess = session::Session::new();
 
     let args: Vec<String> = env::args().collect();
+
+    if args[1] == "--test" {
+        return test_runner::run(&args[2]);
+    }
+
+    let sess = session::Session::new();
+
     let mut source = String::new();
     fs::File::open(&args[1]).unwrap().read_to_string(&mut source).unwrap();
     let modscope = sess.parse_module(&source).unwrap();
@@ -47,7 +53,7 @@ fn main() {
     for arg in &args[2..] {
         let process_ast = grammar::process(&arg)
             .unwrap_or_else(|e| panic!("Error parsing argument: {}", e));
-        let process = session::resolve_process(&sess, &modscope, &shape, process_ast);
+        let process = session::resolve_process(&sess, &modscope, &shape, &process_ast);
         shape = process.shape_up().clone();
         processes.push(process);
     }

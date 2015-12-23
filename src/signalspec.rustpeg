@@ -20,6 +20,7 @@ def -> ast::ModuleEntry
       { ast::ModuleEntry::Signal(ast::Def { name:name, param:param, interface:interface, block:block }) }
     / INTERFACE _ name:identifier _ entries:intf_block BREAK
       { ast::ModuleEntry::Interface(ast::Interface { name:name, entries: entries  }) }
+    / t:test_block BREAK { ast::ModuleEntry::Test(t) }
 
 #[pub]
 block -> ast::Block
@@ -155,10 +156,20 @@ valexpr -> ast::Expr
 #[pub]
 process -> ast::Process
   = b:block { ast::Process::Block(b) }
-  / dir:("@up" {true} / "@dn" {false}) _ "(" _ t: expr _ ")" _ b:block
+  / dir:literal_direction _ "(" _ t: expr _ ")" _ b:block
       { ast::Process::Literal(dir, t, b) }
   / name:identifier _ param:("(" _ param:expr_tup _ ")" {param})?
       { ast::Process::Call(name, param.unwrap_or(ast::Expr::Tup(vec![]))) }
+
+    literal_direction -> ast::ProcessLiteralDirection
+      = "@up"   { ast::ProcessLiteralDirection::Up }
+      / "@dn"   { ast::ProcessLiteralDirection::Down }
+      / "@both" { ast::ProcessLiteralDirection::Both }
+
+test_block -> ast::Test
+  = TEST _ fails:"fail"? _ processes:(process**_) ";"
+  { ast::Test { should_fail: fails.is_some(), processes: processes } }
+
 // Lexer
 
 WHITESPACE
@@ -188,6 +199,7 @@ INTERFACE = "interface"    !IDCHAR
 REPEAT = "repeat" !IDCHAR
 ON     = "on"     !IDCHAR
 FOR    = "for"    !IDCHAR
+TEST   = "test"   !IDCHAR
 
 identifier -> String = [a-zA-Z_][0-9a-zA-Z_]*
     { match_str.to_string() }

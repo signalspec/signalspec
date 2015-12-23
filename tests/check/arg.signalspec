@@ -1,0 +1,7 @@
+def main(a, b) {
+    a
+    b
+}
+
+test @both(#a){ #a; #b } main(#a, #b);
+test fail @up(#a){ #a; #a } main(#a, #b);

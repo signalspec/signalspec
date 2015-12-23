@@ -1,0 +1,18 @@
+def main() {
+    #a
+    repeat {
+        repeat {
+            #b
+        }
+        repeat {
+            #c
+        }
+        #d
+    }
+    #e
+}
+
+test @up(#a) { #a ; #e } main();
+test @up(#a) { #a ; #b ; #c ; #d ; #e } main();
+test @up(#a) { #a ; #b ; #b ; #c ; #c ; #c ; #d ; #b ; #d ; #e } main();
+test fail @up(#a){ #a ; #b ; #c } main();

@@ -7,13 +7,13 @@ pub struct Module {
     pub defs: Vec<ModuleEntry>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Block {
     pub lets: Vec<LetDef>,
     pub actions: Vec<Action>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Action {
     Seq(Block),
     //Par(Block),
@@ -27,6 +27,7 @@ pub enum Action {
 pub enum ModuleEntry {
     Signal(Def),
     Interface(Interface),
+    Test(Test),
 }
 
 pub struct Def {
@@ -45,13 +46,13 @@ pub enum InterfaceEntry {
     Shape(Expr),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct UseDef(pub String);
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct LetDef(pub String, pub Expr);
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Expr {
     Value(Value),
     String(String), // Produces an Item, not a Value, because it isn't fixed size
@@ -68,9 +69,22 @@ pub enum Expr {
     Var(String),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Process {
     Call(String, Expr),
-    Literal(/*is_up*/ bool, Expr, Block),
+    Literal(ProcessLiteralDirection, Expr, Block),
     Block(Block)
+}
+
+#[derive(Debug, Copy, Clone)]
+pub enum ProcessLiteralDirection {
+    Up,
+    Down,
+    Both,
+}
+
+#[derive(Debug)]
+pub struct Test {
+    pub should_fail: bool,
+    pub processes: Vec<Process>,
 }

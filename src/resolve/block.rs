@@ -29,6 +29,7 @@ pub fn resolve_module<'s>(session: &'s Session<'s>, ast: &'s ast::Module) -> &'s
                 let ed = Item::Interface(d, ref_scope);
                 scope.names.insert(d.name.clone(), ed);
             }
+            ast::ModuleEntry::Test(..) => {}
         }
     }
 

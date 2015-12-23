@@ -1,0 +1,16 @@
+def main(x) {
+    #a
+    #b
+    repeat x {
+        #c
+        #d
+    }
+    #a
+}
+
+test @both(#a) { #a ; #b ; #a } main(#0);
+test fail @up(#a) { #a ; #b ; #a } main(#1);
+test @both(#a) { #a ; #b ; #c ; #d ; #a } main(#1);
+test @both(#a) { #a ; #b ; #c ; #d ; #c ; #d ; #a } main(#2);
+test fail @up(#a) { #a ; #b ; #c ; #a } main(_);
+test fail @up(#a) { #a ; #b ; #c ; #d } main(_);
