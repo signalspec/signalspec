@@ -66,7 +66,7 @@ pub fn print_step_tree(s: &Step, indent: u32) {
     }
 }
 
-type ConnectionMessage = (MessageTag, Vec<Value>);
+pub type ConnectionMessage = (MessageTag, Vec<Value>);
 
 pub struct Connection {
     types: Vec<Vec<(Type, /*tx*/ bool, /* rx */ bool)>>,

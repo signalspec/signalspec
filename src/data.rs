@@ -186,7 +186,7 @@ impl ShapeVariant {
 }
 
 /// `Shape::values` iterator
-struct ShapeValIterator<'shape> {
+pub struct ShapeValIterator<'shape> {
     stack: Vec<slice::Iter<'shape, ShapeData>>
 }
 
@@ -210,7 +210,7 @@ impl<'shape> Iterator for ShapeValIterator<'shape> {
 }
 
 /// `Shape::values_mut` iterator
-struct ShapeValIteratorMut<'shape> {
+pub struct ShapeValIteratorMut<'shape> {
     stack: Vec<slice::IterMut<'shape, ShapeData>>
 }
 
