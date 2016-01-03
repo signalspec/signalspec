@@ -5,8 +5,8 @@ use eval::Expr;
 use data::DataMode;
 use session::ValueID;
 
-type StateId = u32;
-type CounterId = u32;
+pub type StateId = usize;
+pub type CounterId = usize;
 
 #[derive(Clone, Debug)]
 pub struct Nfa {
@@ -83,9 +83,11 @@ pub enum Action {
     RepeatUpBack(CounterId), // increment counter
     RepeatUpExit(CounterId, Expr), // Guard on up-evaluate count
 
-    // Down-evaluate outer variables, pop first inner variables down, set counter to zero
+    // Down-evaluate outer variables, set counter to zero
     ForInit(CounterId, u32, Vec<(ValueID, Expr, DataMode)>),
-    // guard on counter < size, push next outer variables up, pop next inner variables down
+    // guard on counter < size, pop next inner variables down,
+    ForEntry(CounterId, u32, Vec<(ValueID, Expr, DataMode)>),
+    // push next outer variables up, increment
     ForBack(CounterId, u32, Vec<(ValueID, Expr, DataMode)>),
     // guard on counter == size, Up-evaluate outer variables
     ForExit(CounterId, u32, Vec<(ValueID, Expr, DataMode)>),
@@ -131,23 +133,25 @@ pub fn from_step_tree(s: &Step) -> Nfa {
 
                 if up {
                     nfa.add_transition(from, start, Action::RepeatUpInit(counter));
-                    nfa.add_transition(end, start, Action::RepeatUpBack(counter));
-                    nfa.add_transition(end, to, Action::RepeatUpExit(counter, count.clone()));
+                    nfa.add_transition(start, end, Action::RepeatUpBack(counter));
+                    nfa.add_transition(start, to, Action::RepeatUpExit(counter, count.clone()));
                 } else {
                     nfa.add_transition(from, start, Action::RepeatDnInit(counter, count.clone()));
-                    nfa.add_transition(end, start, Action::RepeatDnBack(counter));
-                    nfa.add_transition(end, to, Action::RepeatDnExit(counter));
+                    nfa.add_transition(start, end, Action::RepeatDnBack(counter));
+                    nfa.add_transition(start, to, Action::RepeatDnExit(counter));
                 }
-                from_step_tree_inner(inner, nfa, start, end);
+                from_step_tree_inner(inner, nfa, end, start);
             }
             Step::Foreach(width, ref vars, box ref inner) => {
+                let entry = nfa.add_state();
                 let start = nfa.add_state();
-                let end = nfa.add_state();
-                let counter = start;
+                let end   = nfa.add_state();
+                let counter = entry;
 
-                nfa.add_transition(from, start, Action::ForInit(counter, width, vars.clone()));
-                nfa.add_transition(end, start, Action::ForBack(counter, width, vars.clone()));
-                nfa.add_transition(end, to, Action::ForExit(counter, width, vars.clone()));
+                nfa.add_transition(from,  entry, Action::ForInit(counter, width, vars.clone()));
+                nfa.add_transition(entry, start, Action::ForEntry(counter, width, vars.clone()));
+                nfa.add_transition(end,   entry, Action::ForBack(counter, width, vars.clone()));
+                nfa.add_transition(entry, to,    Action::ForExit(counter, width, vars.clone()));
 
                 from_step_tree_inner(inner, nfa, start, end);
             }
