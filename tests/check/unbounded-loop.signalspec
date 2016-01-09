@@ -2,9 +2,9 @@ def main(): #0 {
   repeat {
     on v {
       repeat v { #h }
-      repeat _ { #l }
+      repeat #1..#10 { #l }
     }
   }
 }
 
-test @up(#a) { #h; #l; #h; #h; #l; #h; #h; #h } main() { #1; #2; #3 };
+test @up(#a) { #h; #l; #h; #h; #l; #h; #h; #h; #l } main() { #1; #2; #3 };

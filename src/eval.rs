@@ -43,6 +43,7 @@ pub enum Expr {
     Variable(ValueID, Type),
 
     Range(f64, f64),
+    RangeInt(i64, i64),
 
     Flip(Box<Expr>, Box<Expr>),
     Choose(Box<Expr>, Vec<(Value, Value)>),
@@ -55,7 +56,7 @@ impl Expr {
     pub fn each_var(&self, f: &mut FnMut(ValueID)) {
         match *self {
             Expr::Variable(id, _) => f(id),
-            Expr::Ignored | Expr::Const(..) | Expr::Range(..) => (),
+            Expr::Ignored | Expr::Const(..) | Expr::Range(..) | Expr::RangeInt(..) => (),
             Expr::Choose(ref i, _)
             | Expr::BinaryConst(ref i, _, _) => i.each_var(f),
             Expr::Flip(ref a, ref b) => {
@@ -76,7 +77,9 @@ impl Expr {
     /// and produces a value.
     pub fn eval_down(&self, state: &State) -> Value {
         match *self {
-            Expr::Ignored | Expr::Range(..) => panic!("{:?} can't be down-evaluated", self),
+            Expr::Ignored | Expr::Range(..) | Expr::RangeInt(..) => {
+                panic!("{:?} can't be down-evaluated", self)
+            }
             Expr::Variable(id, _) => state.get(id).clone(),
             Expr::Const(ref v) => v.clone(),
 
@@ -99,7 +102,7 @@ impl Expr {
     pub fn refutable(&self) -> bool {
         match *self {
             Expr::Ignored => false,
-            Expr::Range(..) => true,
+            Expr::Range(..) | Expr::RangeInt(..) => true,
             Expr::Variable(..) => false,
             Expr::Const(..) => true,
             Expr::Flip(_, ref u) => u.refutable(),
@@ -116,6 +119,10 @@ impl Expr {
             Expr::Ignored => true,
             Expr::Range(a, b) => match v {
                 Value::Number(n) => n>a && n<b,
+                _ => false,
+            },
+            Expr::RangeInt(a, b) => match v {
+                Value::Integer(n) => n>=a && n<=b,
                 _ => false,
             },
             Expr::Variable(id, _) => state.set(id, v),
@@ -151,6 +158,7 @@ impl Expr {
         match *self {
             Expr::Ignored => Type::Bottom,
             Expr::Range(lo, hi) => Type::Number(lo, hi),
+            Expr::RangeInt(lo, hi) => Type::Integer(lo, hi),
             Expr::Variable(_, ref ty) => ty.clone(),
             Expr::Const(ref v) => v.get_type(),
             Expr::Flip(ref d, ref u) => Type::union(d.get_type(), u.get_type()),

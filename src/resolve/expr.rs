@@ -19,15 +19,14 @@ fn resolve<'s>(session: &'s Session<'s>, var_handler: &mut FnMut(&str) -> Expr, 
         }
 
         ast::Expr::Range(box ref min_expr, box ref max_expr) => {
-            fn get_const_default_num(i: Expr, _default: f64) -> f64 {
-                if let Expr::Const(Value::Number(v)) = i { v }
-                else { panic!("Range expressions must be numeric constant") }
+            let min = resolve(session, var_handler, min_expr);
+            let max = resolve(session, var_handler, max_expr);
+
+            match (min, max) {
+                (Expr::Const(Value::Number(l)), Expr::Const(Value::Number(h))) => Expr::Range(l, h),
+                (Expr::Const(Value::Integer(l)), Expr::Const(Value::Integer(h))) => Expr::RangeInt(l, h),
+                _ => panic!("Range expressions must be numeric constant")
             }
-
-            let min = get_const_default_num(resolve(session, var_handler, min_expr), ::std::f64::NEG_INFINITY);
-            let max = get_const_default_num(resolve(session, var_handler, max_expr), ::std::f64::INFINITY);
-
-            Expr::Range(min, max)
         }
 
         ast::Expr::Choose(box ref e, ref c) => {
