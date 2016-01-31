@@ -1,4 +1,5 @@
 use std::io::{ Write, Result as IoResult };
+use std::collections::HashSet;
 
 use exec::{Step, Message};
 use eval::Expr;
@@ -11,16 +12,13 @@ pub type CounterId = usize;
 #[derive(Clone, Debug)]
 pub struct Nfa {
     states: Vec<State>,
-    initial: StateId,
-    success: StateId,
+    initial: HashSet<StateId>,
+    accepting: HashSet<StateId>,
 }
 
 impl Nfa {
     pub fn new() -> Nfa {
-        let mut nfa = Nfa { states: vec![], initial: 0, success: 0 };
-        nfa.initial = nfa.add_state();
-        nfa.success = nfa.add_state();
-        nfa
+        Nfa { states: vec![], initial: HashSet::new(), accepting: HashSet::new() }
     }
 
     pub fn add_state(&mut self) -> StateId {
@@ -46,6 +44,15 @@ impl Nfa {
                 try!(writeln!(f, "{} -> {} [ label=\"{:?}\" {}];", id, transition.target, transition.action, colorstr));
             }
         }
+
+        for initial in &self.initial {
+            try!(writeln!(f, "start -> {};", initial));
+        }
+
+        for accepting in &self.accepting {
+            try!(writeln!(f, "{} -> end;", accepting));
+        }
+
         try!(writeln!(f, "}}"));
         Ok(())
     }
@@ -95,8 +102,10 @@ pub enum Action {
 
 pub fn from_step_tree(s: &Step) -> Nfa {
     let mut nfa = Nfa::new();
-    let initial = nfa.initial;
-    let success = nfa.success;
+    let initial = nfa.add_state();
+    let success = nfa.add_state();
+    nfa.initial.insert(initial);
+    nfa.accepting.insert(success);
     from_step_tree_inner(s, &mut nfa, initial, success);
 
     fn from_step_tree_inner(s: &Step, nfa: &mut Nfa, from: StateId, to: StateId) {
