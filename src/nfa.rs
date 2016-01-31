@@ -132,9 +132,15 @@ pub fn from_step_tree(s: &Step) -> Nfa {
                 let counter = start;
 
                 if up {
-                    nfa.add_transition(from, start, Action::RepeatUpInit(counter));
-                    nfa.add_transition(start, end, Action::RepeatUpBack(counter));
-                    nfa.add_transition(start, to, Action::RepeatUpExit(counter, count.clone()));
+                    if count.ignored() {
+                        nfa.add_transition(from, start, Action::Epsilon);
+                        nfa.add_transition(start, end, Action::Epsilon);
+                        nfa.add_transition(start, to, Action::Epsilon);
+                    } else {
+                        nfa.add_transition(from, start, Action::RepeatUpInit(counter));
+                        nfa.add_transition(start, end, Action::RepeatUpBack(counter));
+                        nfa.add_transition(start, to, Action::RepeatUpExit(counter, count.clone()));
+                    }
                 } else {
                     nfa.add_transition(from, start, Action::RepeatDnInit(counter, count.clone()));
                     nfa.add_transition(start, end, Action::RepeatDnBack(counter));

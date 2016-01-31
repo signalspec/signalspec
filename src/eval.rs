@@ -115,6 +115,21 @@ impl Expr {
         }
     }
 
+    /// Check whether the expression is ignored in all cases
+    pub fn ignored(&self) -> bool {
+        match *self {
+            Expr::Ignored => true,
+            Expr::Range(..) | Expr::RangeInt(..) => false,
+            Expr::Union(ref u) => u.iter().all(Expr::ignored),
+            Expr::Variable(..) => false,
+            Expr::Const(..) => false,
+            Expr::Flip(_, ref u) => u.ignored(),
+            Expr::Choose(ref e, _) => e.ignored(),
+            Expr::Concat(_) => unimplemented!(),
+            Expr::BinaryConst(ref e, _, _) => e.ignored(),
+        }
+    }
+
     /// Up-evaluate a value with the given state map. This accepts a value and may write variables
     /// to the state map. It returns whether the expression matched the value.
     pub fn eval_up(&self, state: &mut State, v: Value) -> bool {
