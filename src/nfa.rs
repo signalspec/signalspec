@@ -1,5 +1,6 @@
 use std::io::{ Write, Result as IoResult };
 use std::collections::HashSet;
+use std::mem::replace;
 
 use exec::{Step, Message};
 use eval::Expr;
@@ -29,6 +30,66 @@ impl Nfa {
 
     pub fn add_transition(&mut self, from: StateId, to: StateId, action: Action) {
         self.states[from as usize].transitions.push(Transition { target: to, action: action});
+    }
+
+    pub fn count_incoming_transitions(&self) -> Vec<usize> {
+        let mut counts: Vec<usize> = self.states.iter().map(|_| 0).collect();
+        for state in &self.states {
+            for transition in &state.transitions {
+                counts[transition.target] += 1;
+            }
+        }
+        counts
+    }
+
+    /// Remove epsilon transitions without duplicating non-epsilon transitions
+    pub fn remove_useless_epsilons(&mut self) {
+        let incoming_counts = self.count_incoming_transitions();
+
+        for src in 0..self.states.len() {
+            let mut new_transitions = vec![];
+            for mut transition in replace(&mut self.states[src].transitions, vec![]) {
+                if incoming_counts[transition.target] == 1 {
+                    let target_transitions = &mut self.states[transition.target].transitions;
+                    if transition.is_epsilon() {
+                        // If the only transition into a state is an epsilon, replace the epsilon
+                        // with the state's outgoing transitions
+                        new_transitions.append(target_transitions);
+
+                        if self.accepting.remove(&transition.target) {
+                            self.accepting.insert(src);
+                        }
+
+                        continue;
+                    } else if target_transitions.len() == 1 && target_transitions[0].is_epsilon() {
+                        // If there's only one transition into a state whose only outgoing
+                        // transition is epsilon, skip the state and go to the outgoing
+                        // transition's target directly
+                        if self.accepting.remove(&transition.target) {
+                            self.accepting.insert(target_transitions[0].target);
+                        }
+
+                        transition.target = target_transitions[0].target;
+                        target_transitions.clear();
+                    }
+                }
+                new_transitions.push(transition);
+            }
+            self.states[src].transitions = new_transitions;
+        }
+
+        let mut new_initial = HashSet::new();
+        for &i in &self.initial {
+            let transitions = &mut self.states[i].transitions;
+            if incoming_counts[i] == 0 && transitions.iter().all(|x| x.is_epsilon()) {
+                for t in transitions.drain(..) {
+                    new_initial.insert(t.target);
+                }
+            } else {
+                new_initial.insert(i);
+            }
+        }
+        self.initial = new_initial;
     }
 
     pub fn to_graphviz(&self, f: &mut Write) -> IoResult<()> {
@@ -73,6 +134,15 @@ impl State {
 pub struct Transition {
     target: StateId,
     action: Action,
+}
+
+impl Transition {
+    fn is_epsilon(&self) -> bool{
+        match self.action {
+            Action::Epsilon => true,
+            _ => false,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]

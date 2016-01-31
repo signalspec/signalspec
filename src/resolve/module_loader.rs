@@ -85,9 +85,15 @@ impl <'s> Module<'s> {
                 exec::write_step_tree(&mut f, &step, 0).unwrap_or_else(|e| error!("{}", e));
             }
 
-            let nfa = nfa::from_step_tree(&step);
+            let mut nfa = nfa::from_step_tree(&step);
 
             if let Some(mut f) = self.loader.session.debug_file(|| format!("{}.nfa.dot", name)) {
+                nfa.to_graphviz(&mut f).unwrap_or_else(|e| error!("{}", e));
+            }
+
+            nfa.remove_useless_epsilons();
+
+            if let Some(mut f) = self.loader.session.debug_file(|| format!("{}.cleaned.nfa.dot", name)) {
                 nfa.to_graphviz(&mut f).unwrap_or_else(|e| error!("{}", e));
             }
 
