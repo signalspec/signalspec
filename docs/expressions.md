@@ -4,7 +4,7 @@ Evaluation of expressions can occur in two directions: **Up** and **down** the a
 
 **Down-evaluation** works like evaluation in traditional programming languages: return value is a function of one or more subexpressions. Down-evaluation is functionally pure. In general, down-evaluation is used to prepare data for output from the computer through a device.
 
-**Up-evaluation** can be thought of as pushing a value into the expression from the "return" side, which then pushes values into its subexpressions. The evaluation either "matches" or "fails". It has semantics similar to the left side of a [destructuring assignment](http://coffeescript.org/#destructuring), but also like an assertion, both matching and capturing data like a regexp group. Up-evaluation is idempotent -- Only the first up-evaluation of an expression may have side effects. If a value matches, it will continue to match if up-evaluated with the same expression again. In general, up-evaluation is used to interpret input data from a device.
+**Up-evaluation** can be thought of as pushing a value into the expression from the "return" side, which then pushes values into its subexpressions. The evaluation either "matches" or "fails". It has semantics similar to the left side of a [destructuring assignment](http://coffeescript.org/#destructuring), but also like an assertion, both matching and capturing data like a regexp group. In general, up-evaluation is used to interpret input data from a device.
 
 ### Literals
 
@@ -13,7 +13,7 @@ symbol literals: `#abc`
 number literals: `42.1`  
 unit literals: `3.3V`  
 
-**down:** Evaluates to itself.  
+**down:** Evaluates to the literal value.
 **up:** Match if the pushed value is equal, or fail if the pushed value is not equal.
 
 ### Ignore
@@ -21,7 +21,7 @@ unit literals: `3.3V`
 	_
 (underscore `_` or `ignore`)
 
-**down:** Evaluates to itself. When used as an operand, that operator returns `ignore` too. It is an error for `ignore` to reach hardware.  
+**down:** When used as an operand, that operator returns `ignore` too. If `ignore` is sent as part of a signal, the implementation may warn or replace it with a convenient value of its choice.
 **up:** Pushed value is discarded, match always succeeds.
 
 ### Arithmetic expressions
@@ -84,7 +84,7 @@ Nominal value used for down-evaluation, match values between min..max on up-eval
 
 Because of the properties of `ignore`, it can be used as an "else" clause, in either direction.
 
-Mappings work like Haskell's case expressions, but bidirectionally.
+Mappings work like Haskell's `case` or Rust's `match` expressions, but bidirectionally.
 
 Example:
 `v[#l = 0V ! (..1.6V), #h = 3.3V ! (1.6V..)]` is a bidirectional definition of LVCMOS digital logic on top of an analog signal. On down-evaluation, if `v` is `#l`, the first arm matches, and the result is 0V; if `v` is `#h`, the second arm matches and the result is 3.3V. On up-evaluation, values below 1.6V cause `v` to be up-evaluated with `#l`, and values above 1.6V cause it to be up-evaluated with `#h`. A more robust implementation may want to use a Schmitt trigger, which is not a single expression because it maintains state between samples, but can be built out of `repeat` blocks.

@@ -61,25 +61,28 @@ def SPI {
 }
 ```
 
+This could be simplified by building it out of a "clocked signal" abstraction.
+
 ## Implementation
 
 ### Desktop CPUs
 
-  * threads
-  * SSE
+  * compile user-defined protocols to DFAs, then JIT with LLVM
+  * thread-per-protocol
 
 ### Microcontrollers
 
-  * coroutines
-  * Fractal bindings exposing peripherals as standardized interfaces
+  * compile to interrupt-driven state machines
 
 ### FPGAs
 
 IO pins could be represented as a tuple of #h, #l values, with one token per clock.
 
-Control flow transforms to a state machine via Brzozowski derivatives or NFA / DFA construction (much simplified because control flow is 1-unambiguous). Expressions would be compiled to HDL, and the state machine would mux expression inputs/outputs between the up and down streams.
+Control flow transforms to a state machine muxing expression inputs/outputs between the up and down streams.
 
 Blocks that operate irregularly, not at a factor of the clock frequency, would use strobe/acknowlege handshaking.
+
+Yosys / arachne-pnr / icestorm flow enables synthesis as a part of free and redistributable software.
 
 ### File IO
 

@@ -33,10 +33,6 @@ contains no tokens where data is used in the up direction, the count is down-eva
 is executed that number of times. Otherwise, it counts number of times the loop matches, and
 up-evaulates the count with that number.
 
-TODO: rules for loops containing `on` blocks.
-
-TODO: disambiguation of loop exit vs following actions
-
 In sampled signals, this is used to measure and set the time duration of signal features.
 
 ### `for`
@@ -53,8 +49,6 @@ In sampled signals, this is used to measure and set the time duration of signal 
 <code><b>switch</b> <var>expr</var> <b> { when</b> <var>expr1</var> <b> { </b><var>body1</var><b> } when</b> <var>expr2</var> <b> { </b><var>body2</var><b> }</b> <var>...</var> <b>}</b>
 
 Just like `repeat`, as a heuristic for determining the data direction of the expression: if the body of all cases contain no tokens where data is used in the up direction, the count is down-evaluated and the appropriate branch is chosen. Otherwise, the expression is up-evaluated with the value corresponding to the branch that matches.
-
-TODO: rules for disambiguating between branches and following actions
 
 ### `on`
 
