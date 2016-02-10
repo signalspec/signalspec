@@ -2,7 +2,7 @@ use std::io;
 use ref_slice::ref_slice;
 use exec;
 use eval;
-use session::Process;
+use process::Process;
 use data::{Value, DataMode, Shape, ShapeVariant, ShapeData};
 use resolve::Item;
 use connection_io::{ConnectionRead, ConnectionWrite};

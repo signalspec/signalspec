@@ -272,10 +272,6 @@ impl State {
         true
     }
 
-    pub fn get_var(&self, v: &::session::Var) -> &Value {
-        self.get(v.id)
-    }
-
     fn get_num(&self, reg: ValueID) -> f64 {
         match *self.get(reg) {
             Value::Number(v) => v,
@@ -308,7 +304,7 @@ fn exprs() {
     let scope = resolve::Scope::new();
     let state = State::new();
 
-    fn expr<'s>(sess: &'s Session<'s>, scope: &resolve::Scope<'s>, e: &str) -> Expr {
+    fn expr(sess: &Session, scope: &resolve::Scope, e: &str) -> Expr {
         resolve::value(sess, scope, &grammar::valexpr(e).unwrap())
     }
 

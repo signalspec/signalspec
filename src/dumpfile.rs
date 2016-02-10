@@ -5,7 +5,7 @@ use grammar::literal;
 use data::{ Value, DataMode, Shape, ShapeVariant };
 use exec;
 use eval;
-use session::Process;
+use process::Process;
 use resolve::Item;
 use connection_io::{ConnectionRead, ConnectionWrite};
 

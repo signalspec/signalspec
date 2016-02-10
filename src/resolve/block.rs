@@ -1,5 +1,4 @@
 use bit_set::BitSet;
-use std::cell::RefCell;
 
 use ast;
 use session::{Session, ValueID};
@@ -8,33 +7,6 @@ pub use exec::{ Step, Message };
 pub use resolve::scope::{ Scope, Item };
 use data::{Shape, DataMode, ShapeVariant, ShapeData, Type};
 use eval::Expr;
-
-pub fn resolve_module<'s>(session: &'s Session<'s>, ast: &'s ast::Module) -> &'s RefCell<Scope<'s>> {
-    let ref_scope = session.scope_arena.alloc(RefCell::new(session.prelude.clone()));
-    let mut scope = ref_scope.borrow_mut();
-
-    for _import in ast.imports.iter() {
-        panic!("Imports unimplemented");
-    }
-
-    resolve_letdef(session, &mut scope, &ast.lets);
-
-    for def in &ast.defs {
-        match *def {
-            ast::ModuleEntry::Signal(ref d) => {
-                let ed = Item::Def(d, ref_scope);
-                scope.names.insert(d.name.clone(), ed);
-            }
-            ast::ModuleEntry::Interface(ref d) => {
-                let ed = Item::Interface(d, ref_scope);
-                scope.names.insert(d.name.clone(), ed);
-            }
-            ast::ModuleEntry::Test(..) => {}
-        }
-    }
-
-    ref_scope
-}
 
 /// Summary of the usage of values within an block and its children
 pub struct ResolveInfo {
@@ -78,7 +50,7 @@ impl ResolveInfo {
     }
 }
 
-pub fn call<'s>(item: &Item<'s>, session: &'s Session<'s>, shape_down: &Shape, param: Item<'s>) ->
+pub fn call<'s>(item: &Item<'s>, session: &Session, shape_down: &Shape, param: Item<'s>) ->
         (Shape, Step, ResolveInfo) {
 
     match *item {
@@ -100,8 +72,8 @@ pub fn call<'s>(item: &Item<'s>, session: &'s Session<'s>, shape_down: &Shape, p
     }
 }
 
-fn resolve_action<'s>(session: &'s Session<'s>,
-                      scope: &Scope<'s>,
+fn resolve_action(session: &Session,
+                      scope: &Scope,
                       shape_down: &Shape,
                       shape_up: &mut Shape,
                       action: &ast::Action) -> (Step, ResolveInfo) {
@@ -191,8 +163,8 @@ fn resolve_action<'s>(session: &'s Session<'s>,
     }
 }
 
-pub fn resolve_seq<'s>(session: &'s Session<'s>,
-                  pscope: &Scope<'s>,
+pub fn resolve_seq(session: &Session,
+                  pscope: &Scope,
                   shape_down: &Shape,
                   shape_up: &mut Shape,
                   block: &ast::Block) -> (Step, ResolveInfo) {
@@ -210,7 +182,7 @@ pub fn resolve_seq<'s>(session: &'s Session<'s>,
     (Step::Seq(steps), ri)
 }
 
-pub fn resolve_letdef<'s>(session: &'s Session<'s>, scope: &mut Scope<'s>, lets: &[ast::LetDef]) {
+pub fn resolve_letdef(session: &Session, scope: &mut Scope, lets: &[ast::LetDef]) {
     for &ast::LetDef(ref name, ref expr) in lets.iter() {
         let item = expr::rexpr(session, scope, expr);
         scope.bind(&name, item);
@@ -228,7 +200,7 @@ fn resolve_token<'shape>(item: Item, shape: &'shape Shape) -> (&'shape ShapeVari
         }
     }
 
-    fn inner<'s>(i: Item<'s>, shape: &ShapeData, msg: &mut Message, ri: &mut ResolveInfo) {
+    fn inner(i: Item, shape: &ShapeData, msg: &mut Message, ri: &mut ResolveInfo) {
         match shape {
             &ShapeData::Val(_, dir) => {
                 if let Item::Value(v) = i {

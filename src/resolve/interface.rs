@@ -4,7 +4,7 @@ use session::Session;
 use resolve;
 use resolve::scope::Scope;
 
-fn collect_variants<'s>(session: &'s Session<'s>, scope: &Scope<'s>, entries: &[ast::InterfaceEntry], dir: DataMode) -> Shape {
+fn collect_variants(session: &Session, scope: &Scope, entries: &[ast::InterfaceEntry], dir: DataMode) -> Shape {
     Shape {
         variants: entries.iter().map(|entry| {
             match entry {
@@ -18,6 +18,6 @@ fn collect_variants<'s>(session: &'s Session<'s>, scope: &Scope<'s>, entries: &[
     }
 }
 
-pub fn resolve_interface<'s>(session: &'s Session<'s>, ast: &ast::Interface, scope: &Scope<'s>, dir: DataMode) -> Shape {
+pub fn resolve_interface(session: &Session, ast: &ast::Interface, scope: &Scope, dir: DataMode) -> Shape {
     collect_variants(session, scope, &ast.entries[..], dir)
 }

@@ -6,9 +6,8 @@ use std::fs::File;
 use data::{ Value, DataMode, Shape };
 use exec;
 use eval::{self, Expr};
-use session::Process;
+use process::Process;
 use resolve::Item;
-use session;
 
 pub struct ConnectionRead<'a>(pub &'a mut exec::Connection);
 impl<'a> Read for ConnectionRead<'a> {
@@ -96,7 +95,7 @@ impl Process for WriterProcess {
     }
 }
 
-pub fn file_process(arg: Item) -> Box<session::Process + 'static> {
+pub fn file_process(arg: Item) -> Box<Process + 'static> {
     let args = match arg {
         Item::Tuple(v) => v,
         x => panic!("Unknown args type: {:?}", x)

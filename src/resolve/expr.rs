@@ -5,7 +5,7 @@ use session::Session;
 use resolve::scope::{ Scope, Item };
 use exec::Message;
 
-fn resolve<'s>(session: &'s Session<'s>, var_handler: &mut FnMut(&str) -> Expr, e: &ast::Expr) -> Expr {
+fn resolve(session: &Session, var_handler: &mut FnMut(&str) -> Expr, e: &ast::Expr) -> Expr {
     match *e {
         ast::Expr::Ignore => Expr::Ignored,
         ast::Expr::Value(ref val) => Expr::Const(val.clone()),
@@ -70,7 +70,7 @@ fn resolve<'s>(session: &'s Session<'s>, var_handler: &mut FnMut(&str) -> Expr, 
     }
 }
 
-pub fn value<'s>(session: &'s Session<'s>, scope: &Scope<'s>, e: &ast::Expr) -> Expr {
+pub fn value(session: &Session, scope: &Scope, e: &ast::Expr) -> Expr {
     resolve(session, &mut |name| {
         match scope.get(name) {
             Some(Item::Value(v)) => v,
@@ -81,7 +81,7 @@ pub fn value<'s>(session: &'s Session<'s>, scope: &Scope<'s>, e: &ast::Expr) -> 
 }
 
 /// Resolve an expression as used in an argument or right hand side of an assignment
-pub fn rexpr<'s>(session: &'s Session<'s>, scope: &Scope<'s>, e: &ast::Expr) -> Item<'s> {
+pub fn rexpr<'s>(session: &Session, scope: &Scope<'s>, e: &ast::Expr) -> Item<'s> {
     match *e {
         ast::Expr::Var(ref name) => {
             scope.get(name).expect("Undefined variable")
@@ -98,7 +98,7 @@ pub fn rexpr<'s>(session: &'s Session<'s>, scope: &Scope<'s>, e: &ast::Expr) -> 
 }
 
 /// Resolve an expression as used in the argument of an `on` block, defining variables
-pub fn on_expr_message<'s, 'shape>(sess: &'s Session<'s>, scope: &mut Scope<'s>,
+pub fn on_expr_message<'shape>(sess: &Session, scope: &mut Scope,
         shape: &'shape mut Shape, expr: &ast::Expr) -> (&'shape mut ShapeVariant, Message) {
 
     fn try_variant(shape: &ShapeData, e: &ast::Expr) -> bool {
@@ -117,7 +117,7 @@ pub fn on_expr_message<'s, 'shape>(sess: &'s Session<'s>, scope: &mut Scope<'s>,
         }
     }
 
-    fn inner<'s>(sess: &'s Session<'s>, scope: &mut Scope<'s>, msg: &mut Message,
+    fn inner(sess: &Session, scope: &mut Scope, msg: &mut Message,
                 shape: &ShapeData, e: &ast::Expr) {
         match (shape, e) {
             (&ShapeData::Val(ref ty, _), expr) => {
@@ -150,7 +150,7 @@ pub fn on_expr_message<'s, 'shape>(sess: &'s Session<'s>, scope: &mut Scope<'s>,
 
 /// Irrefutable destructuring of an item into an expression, such as the LHS of a `let` or a
 /// function argument. Only breaks down tuples and assigns variables.
-pub fn assign<'s>(session: &'s Session<'s>, scope: &mut Scope<'s>, l: &ast::Expr, r: Item<'s>) {
+pub fn assign<'s>(session: &Session, scope: &mut Scope<'s>, l: &ast::Expr, r: Item<'s>) {
     match *l {
         ast::Expr::Ignore => (),
 

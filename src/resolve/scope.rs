@@ -29,7 +29,7 @@ impl<'s> Scope<'s> {
     }
 
     /// Create a new runtime variable, bind it to a name in this scope, and return its ID
-    pub fn new_variable(&mut self, session: &'s Session<'s>, name: &str, ty: Type) -> ValueID {
+    pub fn new_variable(&mut self, session: &Session, name: &str, ty: Type) -> ValueID {
         let id = session.make_id();
         debug!("Variable {} {}", id, name);
         self.bind(name, Item::Value(Expr::Variable(id, ty)));
@@ -79,7 +79,7 @@ impl<'s> Item<'s> {
     }
 
     /// Get a `Shape` corresponding to an `Interface` or data example
-    pub fn into_shape(self, sess: &'s Session<'s>, dir: DataMode) -> Shape {
+    pub fn into_shape(self, sess: &Session, dir: DataMode) -> Shape {
         match self {
             Item::Interface(ast, scope) =>  resolve::interface(sess, ast, &*scope.borrow(), dir),
             i => Shape { variants: vec![ ShapeVariant { data: i.into_data_shape(dir) } ] }

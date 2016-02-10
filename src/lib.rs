@@ -16,9 +16,8 @@ extern crate ref_slice;
 use std::fs;
 use std::io::prelude::*;
 
-use session::Process;
-
-#[macro_use] mod session;
+mod session;
+mod process;
 mod data;
 mod resolve;
 mod eval;
@@ -33,10 +32,11 @@ peg_file! grammar("signalspec.rustpeg");
 
 pub fn run(source_fname: &String, code: &[String]) -> bool {
     let sess = session::Session::new();
+    let loader = resolve::module_loader::ModuleLoader::new(&sess);
 
     let mut source = String::new();
     fs::File::open(source_fname).unwrap().read_to_string(&mut source).unwrap();
-    let modscope = sess.parse_module(&source).unwrap();
+    let modscope = loader.parse_module(&source).unwrap();
 
     let mut processes = vec![];
     let mut shape = data::Shape::null();
@@ -44,7 +44,7 @@ pub fn run(source_fname: &String, code: &[String]) -> bool {
     for arg in code {
         let process_ast = grammar::process(&arg)
             .unwrap_or_else(|e| panic!("Error parsing argument: {}", e));
-        let process = session::resolve_process(&sess, &modscope, &shape, &process_ast);
+        let process = process::resolve_process(&sess, &modscope, &shape, &process_ast);
         shape = process.shape_up().clone();
         processes.push(process);
     }
@@ -55,7 +55,7 @@ pub fn run(source_fname: &String, code: &[String]) -> bool {
         processes.push(box dumpfile::ValueDumpPrint(shape));
     }
 
-    session::run_process_chain(processes)
+    process::run_process_chain(processes)
 }
 
 pub use test_runner::run as run_test;
