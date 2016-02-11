@@ -15,6 +15,7 @@ extern crate ref_slice;
 
 use std::fs;
 use std::io::prelude::*;
+use std::path::PathBuf;
 
 mod session;
 mod process;
@@ -30,8 +31,8 @@ mod test_runner;
 
 peg_file! grammar("signalspec.rustpeg");
 
-pub fn run(source_fname: &String, code: &[String]) -> bool {
-    let sess = session::Session::new();
+pub fn run(source_fname: &String, code: &[String], debug_dir: Option<PathBuf>) -> bool {
+    let sess = session::Session::new(debug_dir);
     let loader = resolve::module_loader::ModuleLoader::new(&sess);
 
     let mut source = String::new();

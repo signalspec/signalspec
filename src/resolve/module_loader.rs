@@ -7,6 +7,7 @@ use data::Shape;
 use grammar;
 use session::Session;
 use process::Program;
+use exec;
 
 pub struct ModuleLoader<'a> {
     pub session: &'a Session,
@@ -78,6 +79,11 @@ impl <'s> Module<'s> {
                         param: Item<'s>) -> Result<Program, ()> {
         if let Some(item) = self.scope.borrow().get(name) {
             let (shape_up, step, _) = resolve::call(&item, self.loader.session, &shape_down, param);
+
+            if let Some(mut f) = self.loader.session.debug_file(|| format!("{}.steps", name)) {
+                exec::write_step_tree(&mut f, &step, 0).unwrap_or_else(|e| error!("{}", e));
+            }
+
             Ok(Program{ step: step, shape_down: shape_down, shape_up: shape_up})
         } else {
             Err(())

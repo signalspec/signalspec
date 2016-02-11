@@ -1,5 +1,6 @@
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::iter::repeat;
+use std::io::{Write, Result as IoResult};
 
 use data::{ Value, DataMode, Type, Shape };
 use session::ValueID;
@@ -30,40 +31,35 @@ pub enum Step {
     //PrimitiveStep(Box<PrimitiveStep>),
 }
 
-pub fn print_step_tree(s: &Step, indent: u32) {
+pub fn write_step_tree(f: &mut Write, s: &Step, indent: u32) -> IoResult<()> {
     let i: String = repeat(" ").take(indent as usize).collect();
     match *s {
-        Step::Nop => println!("{}NOP", i),
+        Step::Nop => {},
         Step::Token(ref message) => {
-            println!("{}Token: {:?}", i, message);
+            try!(writeln!(f, "{}Token: {:?}", i, message));
         }
         Step::TokenTop(ref message, box ref body) => {
-            println!("{}Up: {:?}", i, message);
-            print_step_tree(body, indent+1);
+            try!(writeln!(f, "{}Up: {:?}", i, message));
+            try!(write_step_tree(f, body, indent+1));
         }
         Step::Seq(ref steps) => {
-            println!("{}Seq", i);
+            try!(writeln!(f, "{}Seq", i));
             for c in steps.iter() {
-                print_step_tree(c, indent+1);
+                try!(write_step_tree(f, c, indent+1));
             }
         }
         Step::Repeat(ref count, box ref inner, up) => {
-            println!("{}Repeat: {:?} {}", i, count, up);
-            print_step_tree(inner, indent + 1);
+            try!(writeln!(f, "{}Repeat: {:?} {}", i, count, up));
+            try!(write_step_tree(f, inner, indent + 1));
         }
         Step::Foreach(width, ref vars, box ref inner) => {
-            print!("{}For: {} ", i, width);
-            for &(id, ref expr, dir) in vars { print!("{}={:?} {:?}, ", id, expr, dir); }
-            println!("");
-            print_step_tree(inner, indent + 1);
+            try!(write!(f, "{}For: {} ", i, width));
+            for &(id, ref expr, dir) in vars { try!(write!(f, "{}={:?} {:?}, ", id, expr, dir)); }
+            try!(writeln!(f, ""));
+            try!(write_step_tree(f, inner, indent + 1));
         }
-        /*PrimitiveStep(ref h) => {
-            println!("{}{}", i, h.display());
-            h.body().map(|body| {
-                print_step_tree(body, indent+1)
-            });
-        }*/
     }
+    Ok(())
 }
 
 pub type ConnectionMessage = (MessageTag, Vec<Value>);

@@ -300,7 +300,7 @@ fn exprs() {
     use session::Session;
     use grammar;
     use resolve;
-    let sess = Session::new();
+    let sess = Session::new(None);
     let scope = resolve::Scope::new();
     let state = State::new();
 

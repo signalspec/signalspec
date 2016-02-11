@@ -32,7 +32,7 @@ pub fn run(fname: &str) {
 pub fn run_file(fname: &Path) -> bool {
     println!("Running tests for {}", fname.to_string_lossy());
 
-    let sess = Session::new();
+    let sess = Session::new(None);
     let loader = ModuleLoader::new(&sess);
 
     let source = match fs::File::open(fname) {
