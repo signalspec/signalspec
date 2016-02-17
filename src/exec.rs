@@ -1,6 +1,7 @@
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::iter::repeat;
 use std::io::{Write, Result as IoResult};
+use std::fmt;
 
 use data::{ Value, DataMode, Type, Shape };
 use session::ValueID;
@@ -18,6 +19,17 @@ pub type MessageTag = usize;
 pub struct Message {
     pub tag: MessageTag,
     pub components: Vec<Expr>
+}
+
+impl fmt::Display for Message {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        try!(write!(f, "{}(", self.tag));
+        for (i, c) in self.components.iter().enumerate() {
+            if i != 0 { try!(write!(f, ", ")); }
+            try!(write!(f, "{}", c));
+        }
+        write!(f, ")")
+    }
 }
 
 #[derive(Debug)]

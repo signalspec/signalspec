@@ -1,6 +1,7 @@
 use std::io::{ Write, Result as IoResult };
 use std::collections::HashSet;
 use std::mem::replace;
+use std::fmt;
 
 use exec::{Step, Message};
 use eval::Expr;
@@ -102,7 +103,7 @@ impl Nfa {
                     &Action::UpperBegin(..) | &Action::UpperEnd(..) => r#"fontcolor="green""#,
                     _ => ""
                 };
-                try!(writeln!(f, "{} -> {} [ label=\"{:?}\" {}];", id, transition.target, transition.action, colorstr));
+                try!(writeln!(f, "{} -> {} [ label=\"{}\" {}];", id, transition.target, transition.action, colorstr));
             }
         }
 
@@ -168,6 +169,30 @@ pub enum Action {
     ForBack(CounterId, u32, Vec<(ValueID, Expr, DataMode)>),
     // guard on counter == size, Up-evaluate outer variables
     ForExit(CounterId, u32, Vec<(ValueID, Expr, DataMode)>),
+}
+
+impl fmt::Display for Action {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            Action::Epsilon => write!(f, "ε"),
+            Action::Lower(ref m) => write!(f, "Lower {}", m),
+            Action::UpperBegin(ref m) => write!(f, "UpperBegin {}", m),
+            Action::UpperEnd(ref m) => write!(f, "UpperEnd {}", m),
+
+            Action::RepeatDnInit(id, ref e) => write!(f, "RepeatDnInit {} {}", id, e),
+            Action::RepeatDnBack(id) => write!(f, "RepeatDnBack {}", id),
+            Action::RepeatDnExit(id) => write!(f, "RepeatDnExit {}", id),
+
+            Action::RepeatUpInit(id) => write!(f, "RepeatUpInit {}", id),
+            Action::RepeatUpBack(id)  => write!(f, "RepeatUpBack {}", id),
+            Action::RepeatUpExit(id, ref e) => write!(f, "RepeatUpExit {} {}", id, e),
+
+            Action::ForInit(id, count, _) => write!(f, "ForInit {} {}", id, count),
+            Action::ForEntry(id, count, _) => write!(f, "ForEntry {} {}", id, count),
+            Action::ForBack(id, count, _) => write!(f, "ForBack {} {}", id, count),
+            Action::ForExit(id, count, _) => write!(f, "ForExit {} {}", id, count),
+        }
+    }
 }
 
 pub fn from_step_tree(s: &Step) -> Nfa {
