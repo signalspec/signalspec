@@ -1,6 +1,7 @@
 use vec_map::VecMap;
 use data::{ Value, Type };
 use session::{ValueID};
+use std::fmt;
 
 /// Element of Expr::Concat
 #[derive(PartialEq, Debug, Clone)]
@@ -206,6 +207,48 @@ impl Expr {
                         }
                     }
                     _ => panic!("Arithmetic on non-number type")
+                }
+            }
+        }
+    }
+}
+
+impl fmt::Display for Expr {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            Expr::Ignored => write!(f, "_"),
+            Expr::Range(a, b) => write!(f, "{}..{}", a, b),
+            Expr::RangeInt(a, b) => write!(f, "#{}..#{}", a, b),
+            Expr::Variable(id, _) => write!(f, "${}", id),
+            Expr::Const(ref p) => write!(f, "{}", p),
+            Expr::Flip(box Expr::Ignored, box ref u) => write!(f, ":> {}", u),
+            Expr::Flip(box ref d, box Expr::Ignored) => write!(f, "<: {}", d),
+            Expr::Flip(box ref d, box ref u) => write!(f, "{}!{}", d, u),
+            Expr::Union(ref t) => {
+                for (k, i) in t.iter().enumerate() {
+                    if k > 0 { try!(write!(f, "|")) }
+                    try!(write!(f, "{}", i));
+                }
+                Ok(())
+            }
+            Expr::Choose(box ref e, ref choices) => {
+                try!(write!(f, "{}[", e));
+                for (i, &(ref a, ref b)) in choices.iter().enumerate()  {
+                    if i != 0 { try!(write!(f, ", ")); }
+                    try!(write!(f, "{}={}", a, b));
+                }
+                write!(f, "]")
+            },
+            Expr::Concat(_) => unimplemented!(),
+
+            Expr::BinaryConst(ref e, op, c) => {
+                match op {
+                    BinOp::Add => write!(f, "{} + {}", e, c),
+                    BinOp::Sub => write!(f, "{} - {}", e, c),
+                    BinOp::SubSwap => write!(f, "{} - {}", c, e),
+                    BinOp::Mul => write!(f, "{} * {}", c, e),
+                    BinOp::Div => write!(f, "{} / {}", e, c),
+                    BinOp::DivSwap => write!(f, "{} / {}", c, e),
                 }
             }
         }
