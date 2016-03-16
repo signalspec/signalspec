@@ -28,6 +28,7 @@ mod dumpfile;
 mod vcd;
 mod connection_io;
 mod nfa;
+mod dfa;
 mod test_runner;
 
 peg_file! grammar("signalspec.rustpeg");

@@ -13,9 +13,9 @@ pub type CounterId = usize;
 
 #[derive(Clone, Debug)]
 pub struct Nfa {
-    states: Vec<State>,
-    initial: HashSet<StateId>,
-    accepting: HashSet<StateId>,
+    pub states: Vec<State>,
+    pub initial: HashSet<StateId>,
+    pub accepting: HashSet<StateId>,
 }
 
 impl Nfa {
@@ -122,7 +122,7 @@ impl Nfa {
 
 #[derive(Clone, Debug)]
 pub struct State {
-    transitions: Vec<Transition>,
+    pub transitions: Vec<Transition>,
 }
 
 impl State {
@@ -133,8 +133,8 @@ impl State {
 
 #[derive(Clone, Debug)]
 pub struct Transition {
-    target: StateId,
-    action: Action,
+    pub target: StateId,
+    pub action: Action,
 }
 
 impl Transition {
