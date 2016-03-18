@@ -98,15 +98,16 @@ impl <'s> Module<'s> {
                 nfa.to_graphviz(&mut f).unwrap_or_else(|e| error!("{}", e));
             }
 
-            if cfg!(feature="dfa") {
+            let dfa = if cfg!(feature="dfa") {
                 let dfa = dfa::make_dfa(&nfa, &shape_down, &shape_up);
 
                 if let Some(mut f) = self.loader.session.debug_file(|| format!("{}.dfa.dot", name)) {
                     dfa.to_graphviz(&mut f).unwrap_or_else(|e| error!("{}", e));
                 }
-            }
+                Some(dfa)
+            } else { None };
 
-            Ok(Program{ step: step, shape_down: shape_down, shape_up: shape_up})
+            Ok(Program{ step: step, dfa: dfa, shape_down: shape_down, shape_up: shape_up})
         } else {
             Err(())
         }
