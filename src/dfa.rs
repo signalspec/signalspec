@@ -1,4 +1,5 @@
 use std::collections::{ HashMap, hash_map, HashSet, VecDeque, BTreeMap };
+use vec_map::VecMap;
 use std::fmt;
 use std::mem;
 use std::hash::Hash;
@@ -240,6 +241,7 @@ impl InsnBlock {
 #[derive(Debug)]
 pub struct Dfa {
     states: Vec<State>,
+    message_blocks: VecMap<InsnBlock>,
 }
 
 type DfaStateId = usize;
@@ -248,7 +250,14 @@ type DfaStateId = usize;
 pub struct State {
     accepting: bool,
     insns: InsnBlock,
+    recv_side: Side,
     transitions: Vec<Transition>,
+}
+
+#[derive(Clone, Debug)]
+enum MessageSend {
+    Lower{ tag: usize, data: Vec<InsnRef> },
+    Upper{ tag: usize, data: Vec<InsnRef> }
 }
 
 #[derive(Clone, Debug)]
@@ -257,6 +266,7 @@ pub struct Transition {
     token: usize,
     conditions: Conditions,
     registers: Vec<InsnRef>,
+    send: Vec<MessageSend>,
 }
 
 // Requires iteration in sorted order
@@ -270,6 +280,7 @@ struct Thread {
     for_vars: BTreeMap<usize, Vec<(Option<InsnRef>, Option<InsnRef>)>>,
     counters: VarMap,
     conditions: Conditions,
+    send: Vec<MessageSend>,
 }
 
 impl Thread {
@@ -284,7 +295,7 @@ impl Thread {
         count_reg
     }
 
-    fn erase_values(&mut self) -> (Vec<InsnRef>, Conditions) {
+    fn erase_values(&mut self) -> (Vec<InsnRef>, Conditions, Vec<MessageSend>) {
         let mut vars = vec![];
 
         for (_, var) in self.counters.iter_mut() {
@@ -317,8 +328,9 @@ impl Thread {
         }
 
         let conditions = mem::replace(&mut self.conditions, Conditions::new());
+        let send = mem::replace(&mut self.send, Vec::new());
 
-        (vars, conditions)
+        (vars, conditions, send)
     }
 }
 
@@ -359,7 +371,11 @@ fn closure<'nfa>(nfa: &'nfa Nfa, shape_down: &Shape, shape_up: &Shape, initial_t
                     let mode = variant.data_mode();
 
                     if mode.down {
-                        // TODO: Output
+                        let regs = msg.components.iter().zip(variant.values())
+                            .filter(|&(_, (_, dir))| dir.down)
+                            .map(|(ref e, _)| insns.eval_down(e, &thread.down_vars))
+                            .collect();
+                        thread.send.push(MessageSend::Lower { tag: msg.tag, data: regs });
                     }
 
                     if mode.up {
@@ -389,11 +405,23 @@ fn closure<'nfa>(nfa: &'nfa Nfa, shape_down: &Shape, shape_up: &Shape, initial_t
                 }
                 UpperEnd(ref msg) => {
                     let variant = &shape_up.variants[msg.tag];
-                    let mode = variant.data_mode();
 
-                    if mode.up {
-                        // TODO: output
+                    let mut send = vec![];
+                    for (ref e, (_, dir)) in msg.components.iter().zip(variant.values()) {
+                        if dir.up {
+                            send.push(insns.eval_down(e, &thread.up_vars));
+                        }
+
+                        e.each_var(&mut |v| {
+                            thread.down_vars.remove(&v);
+                            thread.up_vars.remove(&v);
+                        });
                     }
+
+                    if send.len() > 0 {
+                        thread.send.push(MessageSend::Upper{ tag: msg.tag, data: send });
+                    }
+
                     queue.push_back(thread);
                 }
 
@@ -519,13 +547,14 @@ struct PendingTransition {
     token: usize,
     conditions: Conditions,
     registers: Vec<InsnRef>,
+    send: Vec<MessageSend>,
 }
 
 pub fn make_dfa(nfa: &Nfa, shape_down: &Shape, shape_up: &Shape) -> Dfa {
     let mut states = Vec::new();
     let mut state_by_nfa_state_set: HashMap<Vec<usize>, usize> = HashMap::new();
     let mut queue: VecDeque<(Option<PendingTransition>, Vec<Thread>)> = VecDeque::new();
-    let mut message_block = InsnBlock::new(InsnRef::MessageMatch);
+    let mut message_blocks = VecMap::new();
 
     queue.push_back((None, nfa.initial.iter().map(|&state| {
         Thread {
@@ -535,6 +564,7 @@ pub fn make_dfa(nfa: &Nfa, shape_down: &Shape, shape_up: &Shape) -> Dfa {
             down_vars: VarMap::new(),
             for_vars: BTreeMap::new(),
             conditions: Conditions::new(),
+            send: Vec::new(),
         }
     }).collect()));
 
@@ -558,12 +588,14 @@ pub fn make_dfa(nfa: &Nfa, shape_down: &Shape, shape_up: &Shape) -> Dfa {
                 states.push( State {
                     accepting: !nfa.accepting.is_disjoint(&closure),
                     insns: block,
+                    recv_side: side,
                     transitions: vec![],
                 });
 
                 for &mut (ref m, ref mut t) in &mut transitions {
                     // TODO: other direction
-                    message_match(shape_down, side, m, &mut t.up_vars, &mut message_block, &mut t.conditions);
+                    let message_block = message_blocks.entry(m.tag).or_insert_with(|| InsnBlock::new(InsnRef::MessageMatch));
+                    message_match(shape_down, side, m, &mut t.up_vars, message_block, &mut t.conditions);
                     debug!("{}\n{:#?}", m, t);
                 }
 
@@ -581,12 +613,13 @@ pub fn make_dfa(nfa: &Nfa, shape_down: &Shape, shape_up: &Shape) -> Dfa {
                 }
 
                 queue.extend(transitions.into_iter().map(|(m, mut t)| {
-                    let (regs, conditions) = t.erase_values();
+                    let (regs, conditions, send) = t.erase_values();
                     (Some(PendingTransition {
                         from_state: state,
                         token: m.tag,
                         conditions: conditions,
                         registers: regs,
+                        send: send,
                     }), vec![t])
                 }));
 
@@ -600,14 +633,15 @@ pub fn make_dfa(nfa: &Nfa, shape_down: &Shape, shape_up: &Shape) -> Dfa {
                 token: pt.token,
                 conditions: pt.conditions,
                 registers: pt.registers,
+                send: pt.send,
             });
         }
     }
 
-    debug!("{:#?}", message_block);
+    debug!("{:#?}", message_blocks);
     debug!("{:?}", state_by_nfa_state_set);
 
-    Dfa { states: states }
+    Dfa { states: states, message_blocks: message_blocks }
 }
 
 impl Dfa {
