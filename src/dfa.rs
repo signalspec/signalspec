@@ -659,3 +659,212 @@ impl Dfa {
         Ok(())
     }
 }
+
+use exec::Connection;
+pub fn run(dfa: &Dfa, lower: &mut Connection, upper: &mut Connection) -> bool {
+    let mut state_num = 0;
+
+    let mut regs = Regs {
+        arguments: vec![],
+        transition: vec![],
+        message: vec![],
+        message_match: vec![],
+    };
+
+    loop {
+        let state = &dfa.states[state_num];
+        let rx = match state.recv_side {
+            Side::Upper => upper.recv(),
+            Side::Lower => lower.recv(),
+        };
+
+        debug!("In state {}, rx {:?}", state_num, rx);
+
+        if let Ok((tag, data)) = rx {
+            regs.message = data;
+            regs.message_match.clear();
+            regs.transition.clear();
+
+            for i in &state.insns.insns {
+                let val = regs.eval(i);
+                debug!("\t%t{} <= {} = {:?}", regs.transition.len(), val, i);
+                regs.transition.push(val);
+            }
+
+            for i in &dfa.message_blocks[tag].insns {
+                let val = regs.eval(i);
+                debug!("\t%m{} <= {} = {:?}", regs.message_match.len(), val, i);
+                regs.message_match.push(val);
+            }
+
+            let transition = state.transitions.iter().filter(|t| t.token == tag).find(|t| {
+                debug!("  Testing transition to {}", t.dest_state);
+                t.conditions.0.iter().all(|c| {
+                    let m = regs.condition(c);
+                    debug!("    {:?} => {}", c, m);
+                    m
+                })
+            });
+
+            if let Some(transition) = transition {
+                state_num = transition.dest_state;
+
+                for send in &transition.send {
+                    match *send {
+                        MessageSend::Lower{tag, ref data} => {
+                            lower.send((tag, data.iter().map(|&reg| regs.get(reg)).collect())).ok();
+                        }
+                        MessageSend::Upper{tag, ref data} => {
+                            upper.send((tag, data.iter().map(|&reg| regs.get(reg)).collect())).ok();
+                        }
+                    }
+                }
+
+                let next_arguments: Vec<_> = transition.registers.iter().map(|&i| regs.get(i)).collect();
+                for (i, (v, r)) in next_arguments.iter().zip(transition.registers.iter()).enumerate() {
+                    debug!("  %a{} <= {} = {:?}", i, v, r);
+                }
+                regs.arguments = next_arguments;
+            } else {
+                debug!("No matching conditions");
+                return state.accepting;
+            }
+
+        } else {
+            return state.accepting;
+        }
+    }
+}
+
+struct Regs {
+    arguments: Vec<Value>,
+    transition: Vec<Value>,
+    message: Vec<Value>,
+    message_match: Vec<Value>,
+}
+
+impl Regs {
+    fn get(&self, i: InsnRef) -> Value {
+        match i {
+            InsnRef::ConstantInt(i) => Value::Integer(i),
+            InsnRef::UndefVec => Value::Vector(Vec::new()),
+            InsnRef::Argument(i) => self.arguments[i].clone(),
+            InsnRef::Transition(i) => self.transition[i].clone(),
+            InsnRef::Message(i) => self.message[i].clone(),
+            InsnRef::MessageMatch(i) => self.message_match[i].clone(),
+        }
+    }
+
+
+    fn eval(&self, i: &Insn) -> Value {
+        use self::Insn::*;
+        match *i {
+            Const(ref v) => v.clone(),
+
+            Choose(i, ref choices) => {
+                let v = self.get(i);
+                choices.iter()
+                    .find(|& &(ref a, _)|{ *a == v })
+                    .map(|&(_, ref b)| b.clone())
+                    .unwrap()
+            }
+
+            Concat(ref _elems) => {
+                unimplemented!();
+            }
+
+            BinaryConst(reg, op, c) => {
+                if let Value::Number(v) = self.get(reg) {
+                    Value::Number(op.eval(v, c))
+                } else {
+                    panic!("IntegerInc on non-integer");
+                }
+            }
+
+            VecElem(reg, i) => {
+                if let Value::Vector(ref v) = self.get(reg) {
+                    v[i].clone()
+                } else {
+                    panic!("VecElem on non-vector");
+                }
+            }
+
+            VecSlice(reg, lo, hi) => {
+                if let Value::Vector(ref v) = self.get(reg) {
+                    Value::Vector(v[lo..hi].to_owned())
+                } else {
+                    panic!("VecSlice on non-vector");
+                }
+            }
+
+            VecShift(reg, Some(from_reg)) => {
+                if let Value::Vector(ref v) = self.get(reg) {
+                    let mut v = v.clone();
+                    v.push(self.get(from_reg));
+                    Value::Vector(v)
+                } else {
+                    panic!("VecSlice on non-vector");
+                }
+            }
+
+            VecShift(reg, None) => {
+                if let Value::Vector(ref v) = self.get(reg) {
+                    let mut v = v.clone();
+                    v.remove(0);
+                    Value::Vector(v)
+                } else {
+                    panic!("VecSlice on non-vector");
+                }
+            }
+
+            IntegerInc(reg) => {
+                if let Value::Integer(i) = self.get(reg) {
+                    Value::Integer(i+1)
+                } else {
+                    panic!("IntegerInc on non-integer");
+                }
+            }
+        }
+    }
+
+    fn condition(&self, c: &Condition) -> bool {
+        use self::Condition::*;
+        match *c {
+            IntegerLt(a, b) => {
+                if let (Value::Integer(a), Value::Integer(b)) = (self.get(a), self.get(b)) {
+                    a < b
+                } else {
+                    panic!("IntegerLt on non-integer");
+                }
+            }
+
+            IntegerEq(a, b) => {
+                if let (Value::Integer(a), Value::Integer(b)) = (self.get(a), self.get(b)) {
+                    a == b
+                } else {
+                    panic!("IntegerLt on non-integer");
+                }
+            }
+
+            CheckConst(a, ref b) => {
+                self.get(a) == *b
+            }
+
+            CheckRange(a, lo, hi) => {
+                if let Value::Number(a) = self.get(a) {
+                    a >= lo && a <= hi
+                } else {
+                    panic!("Non-number in CheckRange");
+                }
+            }
+
+            CheckRangeInt(a, lo, hi) => {
+                if let Value::Integer(a) = self.get(a) {
+                    a >= lo && a <= hi
+                } else {
+                    panic!("Non-integer in CheckRangeInt");
+                }
+            }
+        }
+    }
+}

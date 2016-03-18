@@ -104,7 +104,7 @@ impl <'s> Module<'s> {
                 dfa.to_graphviz(&mut f).unwrap_or_else(|e| error!("{}", e));
             }
 
-            Ok(Program{ step: step, shape_down: shape_down, shape_up: shape_up})
+            Ok(Program{ step: step, dfa: Some(dfa), shape_down: shape_down, shape_up: shape_up})
         } else {
             Err(())
         }

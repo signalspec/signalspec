@@ -6,6 +6,7 @@ use resolve;
 use data::{DataMode, Shape};
 use resolve::module_loader::Module;
 use exec::{self, Step};
+use dfa::{self, Dfa};
 
 pub trait Process: Send {
     fn run(&self, state: &mut eval::State, downwards: &mut exec::Connection, upwards: &mut exec::Connection) -> bool;
@@ -13,6 +14,7 @@ pub trait Process: Send {
 }
 
 pub struct Program {
+    pub dfa: Option<Dfa>,
     pub step: Step,
     pub shape_down: Shape,
     pub shape_up: Shape,
@@ -20,7 +22,12 @@ pub struct Program {
 
 impl Process for Program {
     fn run(&self, state: &mut eval::State, downwards: &mut exec::Connection, upwards: &mut exec::Connection) -> bool {
-        exec::exec(state, &self.step, downwards, upwards)
+        if let Some(ref dfa) = self.dfa {
+            print!("Using dfa");
+            dfa::run(dfa, downwards, upwards)
+        } else {
+            exec::exec(state, &self.step, downwards, upwards)
+        }
     }
 
     fn shape_up(&self) -> &Shape {
@@ -61,7 +68,7 @@ pub fn resolve_process(sess: &Session, modscope: &Module, shape: &Shape, p: &ast
             let mut shape_up = Shape::null();
             let (step, _) = resolve::seq(sess, &*modscope.scope.borrow(), shape, &mut shape_up, block);
 
-            box Program { step: step, shape_down: shape.clone(), shape_up: shape_up }
+            box Program { step: step, shape_down: shape.clone(), shape_up: shape_up, dfa: None }
         }
         ast::Process::Literal(dir, ref shape_up_expr, ref block) => {
             let shape_item = resolve::rexpr(sess, &*modscope.scope.borrow(), shape_up_expr);
