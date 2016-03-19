@@ -253,7 +253,7 @@ pub struct State {
     accepting: bool,
     insns: InsnBlock,
     recv_side: Side,
-    transitions: Vec<Transition>,
+    transitions: Vec<(Transition, DfaStateId)>,
 }
 
 #[derive(Clone, Debug)]
@@ -264,7 +264,6 @@ enum MessageSend {
 
 #[derive(Clone, Debug)]
 pub struct Transition {
-    dest_state: DfaStateId,
     token: usize,
     conditions: Conditions,
     registers: Vec<InsnRef>,
@@ -560,18 +559,10 @@ fn set_to_sorted_vec<T: Clone + Hash + Ord>(s: &HashSet<T>) -> Vec<T> {
     v
 }
 
-struct PendingTransition {
-    from_state: usize,
-    token: usize,
-    conditions: Conditions,
-    registers: Vec<InsnRef>,
-    send: Vec<MessageSend>,
-}
-
 pub fn make_dfa(nfa: &Nfa, shape_down: &Shape, shape_up: &Shape) -> Dfa {
     let mut states = Vec::new();
     let mut state_by_nfa_state_set: HashMap<Vec<usize>, usize> = HashMap::new();
-    let mut queue: VecDeque<(Option<PendingTransition>, Vec<Thread>)> = VecDeque::new();
+    let mut queue: VecDeque<(Option<(DfaStateId, Transition)>, Vec<Thread>)> = VecDeque::new();
     let mut message_blocks = VecMap::new();
 
     queue.push_back((None, nfa.initial.iter().map(|&state| {
@@ -632,27 +623,20 @@ pub fn make_dfa(nfa: &Nfa, shape_down: &Shape, shape_up: &Shape) -> Dfa {
 
                 queue.extend(transitions.into_iter().map(|(m, mut t)| {
                     let (regs, conditions, send) = t.erase_values();
-                    (Some(PendingTransition {
-                        from_state: state,
+                    (Some((state, Transition {
                         token: m.tag,
                         conditions: conditions,
                         registers: regs,
                         send: send,
-                    }), vec![t])
+                    })), vec![t])
                 }));
 
                 state
             }
         };
 
-        if let Some(pt) = pt {
-            states[pt.from_state].transitions.push(Transition {
-                dest_state: dest_state,
-                token: pt.token,
-                conditions: pt.conditions,
-                registers: pt.registers,
-                send: pt.send,
-            });
+        if let Some((from_state, t)) = pt {
+            states[from_state].transitions.push((t, dest_state));
         }
     }
 
@@ -666,8 +650,8 @@ impl Dfa {
     pub fn to_graphviz(&self, f: &mut Write) -> IoResult<()> {
         try!(writeln!(f, "digraph G {{"));
         for (id, state) in self.states.iter().enumerate() {
-            for transition in &state.transitions {
-                try!(writeln!(f, "{} -> {} [ label=\"{:?}\"];", id, transition.dest_state, transition.conditions));
+            for &(ref transition, dest_state) in &state.transitions {
+                try!(writeln!(f, "{} -> {} [ label=\"{:?}\"];", id, dest_state, transition.conditions));
             }
         }
 
@@ -715,17 +699,17 @@ pub fn run(dfa: &Dfa, lower: &mut Connection, upper: &mut Connection) -> bool {
                 regs.message_match.push(val);
             }
 
-            let transition = state.transitions.iter().filter(|t| t.token == tag).find(|t| {
-                debug!("  Testing transition to {}", t.dest_state);
-                t.conditions.0.iter().all(|c| {
+            let transition = state.transitions.iter().find(|&&(ref t, dest_state)| {
+                debug!("  Testing transition to {}", dest_state);
+                t.token == tag && t.conditions.0.iter().all(|c| {
                     let m = regs.condition(c);
                     debug!("    {:?} => {}", c, m);
                     m
                 })
             });
 
-            if let Some(transition) = transition {
-                state_num = transition.dest_state;
+            if let Some(&(ref transition, dest_state)) = transition {
+                state_num = dest_state;
 
                 for send in &transition.send {
                     match *send {
