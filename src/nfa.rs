@@ -154,7 +154,8 @@ pub enum Action {
     UpperEnd(Message),
 
     RepeatDnInit(CounterId, Expr), // Down-evaluate count, initialize counter to zero
-    RepeatDnBack(CounterId), // Increment counter, guard on counter < count
+    RepeatDnEntry(CounterId), // Guard on counter < count
+    RepeatDnBack(CounterId), // Increment counter
     RepeatDnExit(CounterId), // Guard on counter == count
 
     RepeatUpInit(CounterId), // initialize counter to zero
@@ -180,6 +181,7 @@ impl fmt::Display for Action {
             Action::UpperEnd(ref m) => write!(f, "UpperEnd {}", m),
 
             Action::RepeatDnInit(id, ref e) => write!(f, "RepeatDnInit {} {}", id, e),
+            Action::RepeatDnEntry(id) => write!(f, "RepeatDnEntry {}", id),
             Action::RepeatDnBack(id) => write!(f, "RepeatDnBack {}", id),
             Action::RepeatDnExit(id) => write!(f, "RepeatDnExit {}", id),
 
@@ -231,11 +233,11 @@ pub fn from_step_tree(s: &Step) -> Nfa {
                 }
             }
             Step::Repeat(ref count, box ref inner, up) => {
-                let start = nfa.add_state();
-                let end = nfa.add_state();
-                let counter = start;
-
                 if up {
+                    let start = nfa.add_state();
+                    let end = nfa.add_state();
+                    let counter = start;
+
                     if count.ignored() {
                         nfa.add_transition(from, start, Action::Epsilon);
                         nfa.add_transition(start, end, Action::Epsilon);
@@ -245,12 +247,20 @@ pub fn from_step_tree(s: &Step) -> Nfa {
                         nfa.add_transition(start, end, Action::RepeatUpBack(counter));
                         nfa.add_transition(start, to, Action::RepeatUpExit(counter, count.clone()));
                     }
+                    from_step_tree_inner(inner, nfa, end, start);
                 } else {
-                    nfa.add_transition(from, start, Action::RepeatDnInit(counter, count.clone()));
-                    nfa.add_transition(start, end, Action::RepeatDnBack(counter));
-                    nfa.add_transition(start, to, Action::RepeatDnExit(counter));
+                    let start = nfa.add_state();
+                    let end = nfa.add_state();
+                    let entry = nfa.add_state();
+                    let counter = entry;
+
+                    nfa.add_transition(from, entry, Action::RepeatDnInit(counter, count.clone()));
+                    nfa.add_transition(entry, start, Action::RepeatDnEntry(counter));
+                    nfa.add_transition(end, entry, Action::RepeatDnBack(counter));
+                    nfa.add_transition(entry, to, Action::RepeatDnExit(counter));
+                    from_step_tree_inner(inner, nfa, start, end);
                 }
-                from_step_tree_inner(inner, nfa, end, start);
+
             }
             Step::Foreach(width, ref vars, box ref inner) => {
                 let entry = nfa.add_state();

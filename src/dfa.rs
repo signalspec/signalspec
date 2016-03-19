@@ -243,7 +243,8 @@ impl InsnBlock {
 #[derive(Debug)]
 pub struct Dfa {
     states: Vec<State>,
-    message_blocks: VecMap<InsnBlock>,
+    message_blocks_lower: VecMap<InsnBlock>,
+    message_blocks_upper: VecMap<InsnBlock>,
 }
 
 type DfaStateId = usize;
@@ -252,7 +253,6 @@ type DfaStateId = usize;
 pub struct State {
     accepting: bool,
     insns: InsnBlock,
-    recv_side: Side,
     transitions: Vec<(Transition, DfaStateId)>,
 }
 
@@ -264,10 +264,11 @@ enum MessageSend {
 
 #[derive(Clone, Debug)]
 pub struct Transition {
-    token: usize,
-    conditions: Conditions,
-    registers: Vec<InsnRef>,
+    pre_conditions: Conditions,
     send: Vec<MessageSend>,
+    registers: Vec<InsnRef>,
+
+    recv: Option<(Side, usize, Conditions)>,
 }
 
 // Requires iteration in sorted order
@@ -276,6 +277,7 @@ type VarMap = BTreeMap<ValueID, InsnRef>;
 #[derive(Debug, Clone)]
 struct Thread {
     state: nfa::StateId,
+    prev_states: HashSet<nfa::StateId>,
     down_vars: VarMap,
     up_vars: VarMap,
     for_vars: BTreeMap<usize, Vec<(Option<InsnRef>, Option<InsnRef>)>>,
@@ -297,6 +299,7 @@ impl Thread {
     }
 
     fn erase_values(&mut self) -> (Vec<InsnRef>, Conditions, Vec<MessageSend>) {
+        self.prev_states.clear();
         let mut vars = vec![];
 
         for (_, var) in self.counters.iter_mut() {
@@ -338,7 +341,7 @@ impl Thread {
 type NfaStateSet = HashSet<nfa::StateId>;
 
 fn closure<'nfa>(nfa: &'nfa Nfa, shape_down: &Shape, shape_up: &Shape, initial_threads: Vec<Thread>)
-    -> (NfaStateSet, InsnBlock, Side, Vec<(&'nfa Message, Thread)>){
+    -> (NfaStateSet, InsnBlock, Vec<(Option<(Side, &'nfa Message)>, Thread)>){
 
     let mut insns = InsnBlock::new(InsnRef::Transition);
 
@@ -348,7 +351,6 @@ fn closure<'nfa>(nfa: &'nfa Nfa, shape_down: &Shape, shape_up: &Shape, initial_t
     // Threads of NFA execution waiting to be explored
     let mut queue: VecDeque<Thread> = initial_threads.into_iter().collect();
 
-    let mut side = None;
     let mut transitions = Vec::new();
 
     while let Some(thread) = queue.pop_front() {
@@ -380,11 +382,8 @@ fn closure<'nfa>(nfa: &'nfa Nfa, shape_down: &Shape, shape_up: &Shape, initial_t
                     }
 
                     if mode.up {
-                        if side == Some(Side::Upper) {
-                            panic!("Depending on up and down data in the same state");
-                        }
-                        side = Some(Side::Lower);
-                        transitions.push((msg, thread));
+                        transitions.push((Some((Side::Lower, msg)), thread));
+                        continue;
                     } else {
                         queue.push_back(thread);
                     }
@@ -394,11 +393,8 @@ fn closure<'nfa>(nfa: &'nfa Nfa, shape_down: &Shape, shape_up: &Shape, initial_t
                     let mode = shape_up.data_mode();
 
                     if mode.down {
-                        if side == Some(Side::Lower) {
-                            panic!("Depending on up and down data in the same state");
-                        }
-                        side = Some(Side::Upper);
-                        transitions.push((msg, thread));
+                        transitions.push((Some((Side::Upper, msg)), thread));
+                        continue;
                     } else {
                         queue.push_back(thread);
                     }
@@ -428,13 +424,25 @@ fn closure<'nfa>(nfa: &'nfa Nfa, shape_down: &Shape, shape_up: &Shape, initial_t
 
                 RepeatDnInit(counter_id, ref expr) => {
                     let reg = insns.eval_down(expr, &thread.down_vars);
+                    debug!("rdi: {:?}", reg);
                     thread.counters.insert(counter_id, reg);
                     queue.push_back(thread);
                 }
 
-                RepeatDnBack(counter_id) => {
-                    let reg = thread.update_counter(&mut insns, counter_id, -1);
+                RepeatDnEntry(counter_id) => {
+                    let reg = *thread.counters.get(&counter_id).expect("Repeat count should be defined");
                     if thread.conditions.add(Condition::CheckRangeInt(reg, 1, ::std::i64::MAX)) {
+                        thread.prev_states.insert(counter_id);
+                        queue.push_back(thread);
+                    }
+                }
+
+                RepeatDnBack(counter_id) => {
+                    thread.update_counter(&mut insns, counter_id, -1);
+
+                    if thread.prev_states.remove(&counter_id) {
+                        transitions.push((None, thread));
+                    } else {
                         queue.push_back(thread);
                     }
                 }
@@ -475,8 +483,6 @@ fn closure<'nfa>(nfa: &'nfa Nfa, shape_down: &Shape, shape_up: &Shape, initial_t
                     )}).collect();
 
                     thread.for_vars.insert(counter_id, for_data);
-
-
                     queue.push_back(thread)
                 }
 
@@ -496,6 +502,7 @@ fn closure<'nfa>(nfa: &'nfa Nfa, shape_down: &Shape, shape_up: &Shape, initial_t
                                 }
                             }
                         }
+                        thread.prev_states.insert(counter_id);
                         queue.push_back(thread);
                     }
                 }
@@ -517,7 +524,11 @@ fn closure<'nfa>(nfa: &'nfa Nfa, shape_down: &Shape, shape_up: &Shape, initial_t
                         }
                     }
 
-                    queue.push_back(thread);
+                    if thread.prev_states.remove(&counter_id) {
+                        transitions.push((None, thread));
+                    } else {
+                        queue.push_back(thread);
+                    }
                 }
 
                 ForExit(counter_id, count, ref vars) => {
@@ -539,7 +550,7 @@ fn closure<'nfa>(nfa: &'nfa Nfa, shape_down: &Shape, shape_up: &Shape, initial_t
         }
     }
 
-    (closure, insns, side.unwrap_or(Side::Lower), transitions)
+    (closure, insns, transitions)
 }
 
 fn message_match(shape: &Shape, side: Side, msg: &Message, vars: &mut VarMap, block: &mut InsnBlock, conditions: &mut Conditions) {
@@ -563,11 +574,13 @@ pub fn make_dfa(nfa: &Nfa, shape_down: &Shape, shape_up: &Shape) -> Dfa {
     let mut states = Vec::new();
     let mut state_by_nfa_state_set: HashMap<Vec<usize>, usize> = HashMap::new();
     let mut queue: VecDeque<(Option<(DfaStateId, Transition)>, Vec<Thread>)> = VecDeque::new();
-    let mut message_blocks = VecMap::new();
+    let mut message_blocks_lower = VecMap::new();
+    let mut message_blocks_upper = VecMap::new();
 
     queue.push_back((None, nfa.initial.iter().map(|&state| {
         Thread {
             state: state,
+            prev_states: HashSet::new(),
             counters: VarMap::new(),
             up_vars: VarMap::new(),
             down_vars: VarMap::new(),
@@ -578,7 +591,7 @@ pub fn make_dfa(nfa: &Nfa, shape_down: &Shape, shape_up: &Shape) -> Dfa {
     }).collect()));
 
     while let Some((pt, threads)) = queue.pop_front() {
-        let (closure, block, side, mut transitions) = closure(nfa, shape_down, shape_up, threads);
+        let (closure, block, exits) = closure(nfa, shape_down, shape_up, threads);
         debug!("{:?}", closure);
 
         let dest_state = match state_by_nfa_state_set.entry(set_to_sorted_vec(&closure)) {
@@ -597,38 +610,61 @@ pub fn make_dfa(nfa: &Nfa, shape_down: &Shape, shape_up: &Shape) -> Dfa {
                 states.push( State {
                     accepting: !nfa.accepting.is_disjoint(&closure),
                     insns: block,
-                    recv_side: side,
                     transitions: vec![],
                 });
 
-                for &mut (ref m, ref mut t) in &mut transitions {
-                    // TODO: other direction
-                    let message_block = message_blocks.entry(m.tag).or_insert_with(|| InsnBlock::new(InsnRef::MessageMatch));
-                    message_match(shape_down, side, m, &mut t.up_vars, message_block, &mut t.conditions);
-                    debug!("{}\n{:#?}", m, t);
-                }
+                let mut transitions: Vec<(Thread, Transition)> = Vec::new();
 
-                {
-                    // Check that message conditions don't overlap
-                    // TODO: split transitions into sets where conditions overlap (right now, one transition per set)
-                    let mut iter = transitions.iter();
-                    while let Some(&(ref m1, ref t1)) = iter.next() {
-                        for &(ref m2, ref t2) in iter.clone() {
-                            if m1.tag == m2.tag {
-                                assert!(t1.conditions.mutually_excludes(&t2.conditions));
+                for (m, mut thread) in exits.into_iter() {
+                    debug!("{:?} -> {}", m, thread.state);
+                    debug!("    {:?}", thread.conditions);
+
+                    let recv = match m {
+                        Some((Side::Lower, msg)) => {
+                            let mut msg_conditions = Conditions::new();
+                            let message_block = message_blocks_lower.entry(msg.tag)
+                                .or_insert_with(|| InsnBlock::new(InsnRef::MessageMatch));
+                            message_match(shape_down, Side::Lower, msg, &mut thread.up_vars, message_block, &mut msg_conditions);
+
+                            Some((Side::Lower, msg.tag, msg_conditions))
+                        }
+                        Some((Side::Upper, msg)) => {
+                            let mut msg_conditions = Conditions::new();
+                            let message_block = message_blocks_upper.entry(msg.tag)
+                                .or_insert_with(|| InsnBlock::new(InsnRef::MessageMatch));
+                            message_match(shape_up, Side::Upper, msg, &mut thread.down_vars, message_block, &mut msg_conditions);
+
+                            Some((Side::Upper, msg.tag, msg_conditions))
+                        }
+                        None => None,
+                    };
+
+                    let (regs, pre_conditions, send) = thread.erase_values();
+
+                    for &(_, ref t2) in &transitions {
+                        if !t2.pre_conditions.mutually_excludes(&pre_conditions) {
+                            match (&recv, &t2.recv) {
+                                (&Some((ref s1, tag1, ref c1)), &Some((ref s2, tag2, ref c2))) if s1 == s2 => {
+                                    if tag1 == tag2 && !c1.mutually_excludes(c2){
+                                        panic!("Transitions with the same message tag must have mutually-exclusive conditions");
+                                    }
+                                },
+                                _ => panic!("Transitions with different receive directions must have mutually-exclusive conditions")
                             }
                         }
+
                     }
+
+                    transitions.push((thread, Transition {
+                        pre_conditions: pre_conditions,
+                        send: send,
+                        registers: regs,
+                        recv: recv,
+                    }));
                 }
 
-                queue.extend(transitions.into_iter().map(|(m, mut t)| {
-                    let (regs, conditions, send) = t.erase_values();
-                    (Some((state, Transition {
-                        token: m.tag,
-                        conditions: conditions,
-                        registers: regs,
-                        send: send,
-                    })), vec![t])
+                queue.extend(transitions.into_iter().map(|(thread, transition)| {
+                    (Some((state, transition)), vec![thread])
                 }));
 
                 state
@@ -640,10 +676,11 @@ pub fn make_dfa(nfa: &Nfa, shape_down: &Shape, shape_up: &Shape) -> Dfa {
         }
     }
 
-    debug!("{:#?}", message_blocks);
-    debug!("{:?}", state_by_nfa_state_set);
+    debug!("lower: {:#?}", message_blocks_lower);
+    debug!("upper: {:#?}", message_blocks_upper);
+    debug!("states: {:?}", state_by_nfa_state_set);
 
-    Dfa { states: states, message_blocks: message_blocks }
+    Dfa { states: states, message_blocks_lower: message_blocks_lower, message_blocks_upper: message_blocks_upper }
 }
 
 impl Dfa {
@@ -651,7 +688,8 @@ impl Dfa {
         try!(writeln!(f, "digraph G {{"));
         for (id, state) in self.states.iter().enumerate() {
             for &(ref transition, dest_state) in &state.transitions {
-                try!(writeln!(f, "{} -> {} [ label=\"{:?}\"];", id, dest_state, transition.conditions));
+                try!(writeln!(f, "{} -> {} [ label=\"{:?}, {:?}\"];",
+                    id, dest_state, transition.pre_conditions, transition.recv));
             }
         }
 
@@ -673,68 +711,88 @@ pub fn run(dfa: &Dfa, lower: &mut Connection, upper: &mut Connection) -> bool {
         message_match: vec![],
     };
 
-    loop {
+    'state_loop: loop {
+        debug!("In state {}", state_num);
         let state = &dfa.states[state_num];
-        let rx = match state.recv_side {
-            Side::Upper => upper.recv(),
-            Side::Lower => lower.recv(),
-        };
+        regs.message_match.clear();
+        regs.transition.clear();
 
-        debug!("In state {}, rx {:?}", state_num, rx);
+        for i in &state.insns.insns {
+            let val = regs.eval(i);
+            debug!("\t%t{} <= {} = {:?}", regs.transition.len(), val, i);
+            regs.transition.push(val);
+        }
 
-        if let Ok((tag, data)) = rx {
-            regs.message = data;
-            regs.message_match.clear();
-            regs.transition.clear();
+        let mut received = None;
 
-            for i in &state.insns.insns {
-                let val = regs.eval(i);
-                debug!("\t%t{} <= {} = {:?}", regs.transition.len(), val, i);
-                regs.transition.push(val);
-            }
+        for &(ref t, dest_state) in &state.transitions {
+            debug!("  Testing transition to {}", dest_state);
 
-            for i in &dfa.message_blocks[tag].insns {
-                let val = regs.eval(i);
-                debug!("\t%m{} <= {} = {:?}", regs.message_match.len(), val, i);
-                regs.message_match.push(val);
-            }
+            if !t.pre_conditions.0.iter().all(|c| {
+                let m = regs.condition(c);
+                debug!("    {:?} => {}", c, m);
+                m
+            }) { continue }
 
-            let transition = state.transitions.iter().find(|&&(ref t, dest_state)| {
-                debug!("  Testing transition to {}", dest_state);
-                t.token == tag && t.conditions.0.iter().all(|c| {
-                    let m = regs.condition(c);
-                    debug!("    {:?} => {}", c, m);
-                    m
-                })
-            });
+            if let Some((side, tag, ref conditions)) = t.recv {
+                if received.is_none() {
+                    let (rx, blocks) = match side {
+                        Side::Lower => (lower.recv(), &dfa.message_blocks_lower),
+                        Side::Upper => (upper.recv(), &dfa.message_blocks_upper),
+                    };
 
-            if let Some(&(ref transition, dest_state)) = transition {
-                state_num = dest_state;
+                    debug!("\trx {:?}", rx);
 
-                for send in &transition.send {
-                    match *send {
-                        MessageSend::Lower{tag, ref data} => {
-                            lower.send((tag, data.iter().map(|&reg| regs.get(reg)).collect())).ok();
+                    if let Ok((rx_tag, data)) = rx {
+                        regs.message = data;
+
+                        for i in &blocks[rx_tag].insns {
+                            let val = regs.eval(i);
+                            debug!("\t%m{} <= {} = {:?}", regs.message_match.len(), val, i);
+                            regs.message_match.push(val);
                         }
-                        MessageSend::Upper{tag, ref data} => {
-                            upper.send((tag, data.iter().map(|&reg| regs.get(reg)).collect())).ok();
-                        }
+
+                        received = Some((side, rx_tag));
+                    } else {
+                        return state.accepting;
                     }
                 }
 
-                let next_arguments: Vec<_> = transition.registers.iter().map(|&i| regs.get(i)).collect();
-                for (i, (v, r)) in next_arguments.iter().zip(transition.registers.iter()).enumerate() {
-                    debug!("  %a{} <= {} = {:?}", i, v, r);
-                }
-                regs.arguments = next_arguments;
-            } else {
-                debug!("No matching conditions");
-                return state.accepting;
+                let (rx_side, rx_tag) = received.unwrap();
+                assert_eq!(side, rx_side);
+
+                if tag != rx_tag { continue }
+
+                if !conditions.0.iter().all(|c| {
+                    let m = regs.condition(c);
+                    debug!("    {:?} => {}", c, m);
+                    m
+                }) { continue }
             }
 
-        } else {
-            return state.accepting;
+            // A transition matched
+            state_num = dest_state;
+
+            for send in &t.send {
+                match *send {
+                    MessageSend::Lower{tag, ref data} => {
+                        lower.send((tag, data.iter().map(|&reg| regs.get(reg)).collect())).ok();
+                    }
+                    MessageSend::Upper{tag, ref data} => {
+                        upper.send((tag, data.iter().map(|&reg| regs.get(reg)).collect())).ok();
+                    }
+                }
+            }
+
+            let next_arguments: Vec<_> = t.registers.iter().map(|&i| regs.get(i)).collect();
+            for (i, (v, r)) in next_arguments.iter().zip(t.registers.iter()).enumerate() {
+                debug!("  %a{} <= {} = {:?}", i, v, r);
+            }
+            regs.arguments = next_arguments;
+            continue 'state_loop;
         }
+
+        debug!("No matching conditions");
     }
 }
 
