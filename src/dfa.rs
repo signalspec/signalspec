@@ -58,7 +58,7 @@ pub enum Insn {
     VecSlice(InsnRef, usize, usize),
     VecShift(InsnRef, Option<InsnRef>),
 
-    IntegerInc(InsnRef),
+    IntegerAdd(InsnRef, i64),
 }
 
 #[derive(Clone, PartialEq, Debug)]
@@ -146,7 +146,7 @@ impl InsnBlock {
         use self::InsnRef::ConstantInt;
 
         match insn {
-            Insn::IntegerInc(ConstantInt(x)) => return ConstantInt(x + 1),
+            Insn::IntegerAdd(ConstantInt(x), c) => return ConstantInt(x + c),
             _ => (),
         }
 
@@ -290,10 +290,10 @@ impl Thread {
         self.counters.insert(id, InsnRef::ConstantInt(0));
     }
 
-    fn increment_counter(&mut self, insns: &mut InsnBlock, id: ValueID) -> InsnRef {
+    fn update_counter(&mut self, insns: &mut InsnBlock, id: usize, offset: i64) -> InsnRef {
         let count_reg_loc = self.counters.get_mut(&id).expect("Undefined counter");
         let count_reg = *count_reg_loc;
-        *count_reg_loc = insns.add(Insn::IntegerInc(count_reg));
+        *count_reg_loc = insns.add(Insn::IntegerAdd(count_reg, offset));
         count_reg
     }
 
@@ -427,8 +427,24 @@ fn closure<'nfa>(nfa: &'nfa Nfa, shape_down: &Shape, shape_up: &Shape, initial_t
                     queue.push_back(thread);
                 }
 
-                RepeatDnInit(..) | RepeatDnBack(..) | RepeatDnExit(..) => {
-                    unimplemented!();
+                RepeatDnInit(counter_id, ref expr) => {
+                    let reg = insns.eval_down(expr, &thread.down_vars);
+                    thread.counters.insert(counter_id, reg);
+                    queue.push_back(thread);
+                }
+
+                RepeatDnBack(counter_id) => {
+                    let reg = thread.update_counter(&mut insns, counter_id, -1);
+                    if thread.conditions.add(Condition::CheckRangeInt(reg, 1, ::std::i64::MAX)) {
+                        queue.push_back(thread);
+                    }
+                }
+
+                RepeatDnExit(counter_id) => {
+                    let reg = thread.counters.remove(&counter_id).expect("Repeat count should be defined");
+                    if thread.conditions.add(Condition::CheckRangeInt(reg, 0, 0)) {
+                        queue.push_back(thread);
+                    }
                 }
 
                 RepeatUpInit(counter_id) => {
@@ -436,7 +452,7 @@ fn closure<'nfa>(nfa: &'nfa Nfa, shape_down: &Shape, shape_up: &Shape, initial_t
                     queue.push_back(thread)
                 }
                 RepeatUpBack(counter_id) => {
-                    thread.increment_counter(&mut insns, counter_id);
+                    thread.update_counter(&mut insns, counter_id, 1);
                     queue.push_back(thread);
                 }
                 RepeatUpExit(counter_id, ref expr) => {
@@ -486,7 +502,7 @@ fn closure<'nfa>(nfa: &'nfa Nfa, shape_down: &Shape, shape_up: &Shape, initial_t
                 }
 
                 ForBack(counter_id, _, ref vars) => {
-                    thread.increment_counter(&mut insns, counter_id);
+                    thread.update_counter(&mut insns, counter_id, 1);
 
                     {
                         let for_data = thread.for_vars.get_mut(&counter_id).expect("For-loop variables not initialized at back");
@@ -779,7 +795,7 @@ impl Regs {
                 if let Value::Number(v) = self.get(reg) {
                     Value::Number(op.eval(v, c))
                 } else {
-                    panic!("IntegerInc on non-integer");
+                    panic!("BinaryConst on non-integer");
                 }
             }
 
@@ -819,11 +835,11 @@ impl Regs {
                 }
             }
 
-            IntegerInc(reg) => {
+            IntegerAdd(reg, c) => {
                 if let Value::Integer(i) = self.get(reg) {
-                    Value::Integer(i+1)
+                    Value::Integer(i+c)
                 } else {
-                    panic!("IntegerInc on non-integer");
+                    panic!("IntegerAdd on non-integer");
                 }
             }
         }
