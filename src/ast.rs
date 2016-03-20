@@ -59,6 +59,7 @@ pub enum Expr {
     Tup(Vec<Expr>),
     Ignore,
 
+    Union(Vec<Expr>),
     Flip(Box<Expr>, Box<Expr>),
     Range(Box<Expr>, Box<Expr>),
     Choose(Box<Expr>, Vec<(Expr, Expr)>),

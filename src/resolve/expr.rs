@@ -29,6 +29,10 @@ fn resolve(session: &Session, var_handler: &mut FnMut(&str) -> Expr, e: &ast::Ex
             }
         }
 
+        ast::Expr::Union(ref u) => {
+            Expr::Union(u.iter().map(|i| resolve(session, var_handler, i)).collect())
+        }
+
         ast::Expr::Choose(box ref e, ref c) => {
             let pairs: Vec<(Value, Value)> = c.iter().map(|&(ref le, ref re)| {
                 let l = resolve(session, var_handler, le);

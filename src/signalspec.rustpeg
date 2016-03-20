@@ -62,10 +62,14 @@ valexpr -> ast::Expr
   = valexpr_flip
 
     valexpr_flip -> ast::Expr
-        = l:valexpr_range _ "!" _ r:valexpr_range { ast::Expr::Flip(box l, box r) }
-        / "<:" _ x:valexpr_range { ast::Expr::Flip(box x, box ast::Expr::Ignore) }
-        / ":>" _ x:valexpr_range { ast::Expr::Flip(box ast::Expr::Ignore, box x) }
-        / valexpr_range
+        = l:valexpr_union _ "!" _ r:valexpr_union { ast::Expr::Flip(box l, box r) }
+        / "<:" _ x:valexpr_union { ast::Expr::Flip(box x, box ast::Expr::Ignore) }
+        / ":>" _ x:valexpr_union { ast::Expr::Flip(box ast::Expr::Ignore, box x) }
+        / valexpr_union
+
+    valexpr_union -> ast::Expr
+        = u:valexpr_range ++ (_ "|" _)
+        { if u.len() == 1 { u.into_iter().next().unwrap() } else { ast::Expr::Union(u) }}
 
     valexpr_range -> ast::Expr
         = rangeexpr

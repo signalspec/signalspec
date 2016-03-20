@@ -45,6 +45,7 @@ pub enum Expr {
     Range(f64, f64),
     RangeInt(i64, i64),
 
+    Union(Vec<Expr>),
     Flip(Box<Expr>, Box<Expr>),
     Choose(Box<Expr>, Vec<(Value, Value)>),
     Concat(Vec<ConcatElem>),
@@ -63,6 +64,7 @@ impl Expr {
                 a.each_var(f);
                 b.each_var(f);
             }
+            Expr::Union(ref u) => for i in u { i.each_var(f) },
             Expr::Concat(ref l) => {
                 for src in l.iter() {
                     match *src {
@@ -77,7 +79,7 @@ impl Expr {
     /// and produces a value.
     pub fn eval_down(&self, state: &State) -> Value {
         match *self {
-            Expr::Ignored | Expr::Range(..) | Expr::RangeInt(..) => {
+            Expr::Ignored | Expr::Range(..) | Expr::RangeInt(..) | Expr::Union(..) => {
                 panic!("{:?} can't be down-evaluated", self)
             }
             Expr::Variable(id, _) => state.get(id).clone(),
@@ -106,6 +108,7 @@ impl Expr {
             Expr::Variable(..) => false,
             Expr::Const(..) => true,
             Expr::Flip(_, ref u) => u.refutable(),
+            Expr::Union(ref u) => u.iter().all(Expr::refutable),
             Expr::Choose(ref e, _) => e.refutable(),
             Expr::Concat(_) => unimplemented!(),
             Expr::BinaryConst(ref e, _, _) => e.refutable(),
@@ -125,6 +128,9 @@ impl Expr {
                 Value::Integer(n) => n>=a && n<=b,
                 _ => false,
             },
+            Expr::Union(ref u) => {
+                u.iter().any(|i| i.eval_up(state, v.clone()))
+            }
             Expr::Variable(id, _) => state.set(id, v),
             Expr::Const(ref p) => &v == p,
 
@@ -159,6 +165,7 @@ impl Expr {
             Expr::Ignored => Type::Bottom,
             Expr::Range(lo, hi) => Type::Number(lo, hi),
             Expr::RangeInt(lo, hi) => Type::Integer(lo, hi),
+            Expr::Union(ref u) => Type::union_iter(u.iter().map(Expr::get_type)),
             Expr::Variable(_, ref ty) => ty.clone(),
             Expr::Const(ref v) => v.get_type(),
             Expr::Flip(ref d, ref u) => Type::union(d.get_type(), u.get_type()),
