@@ -1,7 +1,9 @@
+let t = #a|#b|#c|#d
+
 def main() {
     (#a, #b)
     (#c, #d)
 }
 
-test @both((#a, #b)) {(#a, #b); (#c, #d)} main();
-test fail @both((#a, #b)) {(#a, #d); (#c, #b)} main();
+test @both((t, t)) {(#a, #b); (#c, #d)} main();
+test fail @both((t, t)) {(#a, #d); (#c, #b)} main();

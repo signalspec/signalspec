@@ -2,7 +2,7 @@ use std::io;
 use std::io::prelude::*;
 
 use grammar::literal;
-use data::{ Value, DataMode, Shape, ShapeVariant };
+use data::{ Value, DataMode, Shape, ShapeVariant, ShapeData };
 use exec;
 use eval;
 use process::Process;
@@ -13,7 +13,7 @@ struct ValueDumpDown(Shape);
 impl Process for ValueDumpDown {
     fn run(&self, _: &mut eval::State, downwards: &mut exec::Connection, upwards: &mut exec::Connection) -> bool {
         let mut c = ConnectionWrite(downwards);
-        write_values(&mut c, upwards);
+        write_messages(&mut c, upwards, &self.0);
         true
     }
 
@@ -39,7 +39,7 @@ pub struct ValueDumpPrint(pub Shape);
 impl Process for ValueDumpPrint {
     fn run(&self, _: &mut eval::State, downwards: &mut exec::Connection, _upwards: &mut exec::Connection) -> bool {
         let mut stdout = ::std::io::stdout();
-        write_values(&mut stdout, downwards);
+        write_messages(&mut stdout, downwards, &self.0);
         true
     }
 
@@ -82,15 +82,36 @@ pub fn read_values(reader: &mut BufRead, port: &mut exec::Connection) {
     }
 }
 
-pub fn write_values(w: &mut Write, port: &mut exec::Connection) {
+pub fn write_message(w: &mut Write, values: &mut Iterator<Item=&Value>, shape: &ShapeData) -> io::Result<()> {
+    match *shape {
+        ShapeData::Tup(ref t) => {
+            try!(write!(w, "("));
+            for (i, v) in t.iter().enumerate() {
+                if i > 0 { try!(write!(w, ", ")); }
+                try!(write_message(w, values, v));
+            }
+            try!(write!(w, ")"));
+        }
+        ShapeData::Val(_, ref mode) => {
+            if mode.up {
+                try!(write!(w, "{}", values.next().unwrap()))
+            } else {
+                try!(write!(w, "_"));
+            }
+        }
+        ShapeData::Const(ref c) => {
+            try!(write!(w, "{}", c));
+        }
+    }
+    Ok(())
+}
+
+pub fn write_messages(w: &mut Write, port: &mut exec::Connection, shape: &Shape) {
     if port.send((0, Vec::new())).is_err() { return; }
     loop {
         match port.recv() {
-            Ok((_, v)) => {
-                for (i, v) in v.iter().enumerate() {
-                    if i != 0 { w.write_all(b", ").unwrap(); }
-                    (write!(w, "{}", v)).unwrap();
-                }
+            Ok((tag, v)) => {
+                write_message(w, &mut v.iter(), &shape.variants[tag].data).unwrap();
                 w.write_all(b"\n").unwrap();
             }
             Err(..) => break,

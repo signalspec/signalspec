@@ -7,5 +7,5 @@ def main(a) {
     z
 }
 
-test @both(#x) { #x; #y; #z } main(#y);
-test fail @up(#x) { #x; #y; #z } main(#z);
+test @both(#x|#y|#z) { #x; #y; #z } main(#y);
+test fail @up(#x|#y|#z) { #x; #y; #z } main(#z);

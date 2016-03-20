@@ -127,6 +127,7 @@ pub struct ShapeVariant {
 pub enum ShapeData {
     Tup(Vec<ShapeData>),
     Val(Type, DataMode),
+    Const(Value),
 }
 
 impl Shape {
@@ -203,6 +204,7 @@ impl<'shape> Iterator for ShapeValIterator<'shape> {
             match next {
                 Some(&ShapeData::Tup(ref items)) => { self.stack.push(items.iter()); }
                 Some(&ShapeData::Val(ref ty, ref dir)) => { return Some((ty, dir)); }
+                Some(&ShapeData::Const(..)) => (),
                 None => { self.stack.pop(); }
             }
         }
@@ -227,6 +229,7 @@ impl<'shape> Iterator for ShapeValIteratorMut<'shape> {
             match next {
                 Some(&mut ShapeData::Tup(ref mut items)) => { self.stack.push(items.iter_mut()); }
                 Some(&mut ShapeData::Val(ref mut ty, ref mut dir)) => { return Some((ty, dir)); }
+                Some(&mut ShapeData::Const(..)) => (),
                 None => { self.stack.pop(); }
             }
         }

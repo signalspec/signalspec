@@ -72,6 +72,7 @@ impl<'s> Item<'s> {
     /// Get a `ShapeData` corresponding to a tree of `Tuple` and `Value` `Item`s
     pub fn into_data_shape(self, dir: DataMode) -> ShapeData {
         match self {
+            Item::Value(Expr::Const(c)) => ShapeData::Const(c),
             Item::Value(ref e) => ShapeData::Val(e.get_type(), dir),
             Item::Tuple(items) => ShapeData::Tup(items.into_iter().map(|x| x.into_data_shape(dir)).collect()),
             other => panic!("{:?} isn't a valid shape", other),

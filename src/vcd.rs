@@ -39,6 +39,7 @@ fn shape_to_scope(s: &Shape) -> (vcd::Scope, Vec<vcd::IdCode>) {
                     reference: name
                 })
             }
+            ShapeData::Const(..) => unimplemented!(),
             ShapeData::Tup(ref l) => vcd::ScopeItem::Scope(scope(ids, &l[..], name))
         }
     }
@@ -46,6 +47,7 @@ fn shape_to_scope(s: &Shape) -> (vcd::Scope, Vec<vcd::IdCode>) {
     let top = scope(&mut ids, match s.variants[0].data {
         ref d @ ShapeData::Val(..) => ref_slice(d),
         ShapeData::Tup(ref l) => &l[..],
+        ShapeData::Const(..) => unimplemented!(),
     }, "top".to_string());
 
     (top, ids)
@@ -121,6 +123,7 @@ fn shape_from_scope(s: &Shape, v: &vcd::Scope) -> Vec<vcd::IdCode> {
 
     match s.variants[0].data {
         ShapeData::Tup(ref t) => inner_tuple(&mut ids, &t[..], v),
+        ShapeData::Const(..) => unimplemented!(),
         ref d @ ShapeData::Val(..) => {
             if let Some(first_child) = v.children.first() {
                 inner(&mut ids, d, first_child);

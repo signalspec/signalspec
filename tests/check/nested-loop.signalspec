@@ -1,3 +1,5 @@
+let t = #a|#b|#c|#d|#e
+
 def main() {
     #a
     repeat {
@@ -12,7 +14,7 @@ def main() {
     #e
 }
 
-test @up(#a) { #a ; #e } main();
-test @up(#a) { #a ; #b ; #c ; #d ; #e } main();
-test @up(#a) { #a ; #b ; #b ; #c ; #c ; #c ; #d ; #b ; #d ; #e } main();
-test fail @up(#a){ #a ; #b ; #c } main();
+test @up(t) { #a ; #e } main();
+test @up(t) { #a ; #b ; #c ; #d ; #e } main();
+test @up(t) { #a ; #b ; #b ; #c ; #c ; #c ; #d ; #b ; #d ; #e } main();
+test fail @up(t){ #a ; #b ; #c } main();

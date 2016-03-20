@@ -4,6 +4,6 @@ def main () {
     #c
 }
 
-test @both(#a) { #a; #b; #c } main();
-test fail @up(#a) { #a; #b; #a } main();
-test fail @up(#a) { #c; #c; #c } main();
+test @both(#a|#b|#c) { #a; #b; #c } main();
+test fail @up(#a|#b|#c) { #a; #b; #a } main();
+test fail @up(#a|#b|#c) { #c; #c; #c } main();

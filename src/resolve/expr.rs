@@ -107,6 +107,7 @@ pub fn on_expr_message<'shape>(sess: &Session, scope: &mut Scope,
 
     fn try_variant(shape: &ShapeData, e: &ast::Expr) -> bool {
         match (shape, e) {
+            (&ShapeData::Const(ref c), &ast::Expr::Value(ref val)) => c == val,
             (&ShapeData::Val(ref ty, _), &ast::Expr::Value(ref val)) => {
                 ty.includes(val)
             }
@@ -124,6 +125,7 @@ pub fn on_expr_message<'shape>(sess: &Session, scope: &mut Scope,
     fn inner(sess: &Session, scope: &mut Scope, msg: &mut Message,
                 shape: &ShapeData, e: &ast::Expr) {
         match (shape, e) {
+            (&ShapeData::Const(..), _) => (),
             (&ShapeData::Val(ref ty, _), expr) => {
                 msg.components.push(resolve(sess, &mut |name| {
                     let id = scope.new_variable(sess, name, ty.clone());

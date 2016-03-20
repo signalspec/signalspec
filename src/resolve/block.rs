@@ -193,6 +193,7 @@ fn resolve_token<'shape>(item: Item, shape: &'shape Shape) -> (&'shape ShapeVari
     fn try_variant(shape: &ShapeData, item: &Item) -> bool {
         match (shape, item) {
             (&ShapeData::Val(ref t, _), &Item::Value(ref e)) => t.includes_type(&e.get_type()),
+            (&ShapeData::Const(ref c), &Item::Value(Expr::Const(ref v))) => c == v,
             (&ShapeData::Tup(ref m), &Item::Tuple(ref t)) => {
                 m.len() == t.len() && m.iter().zip(t.iter()).all(|(i, s)| { try_variant(i, s) })
             }
@@ -210,6 +211,7 @@ fn resolve_token<'shape>(item: Item, shape: &'shape Shape) -> (&'shape ShapeVari
                     panic!("Expected value but found {:?}", i);
                 }
             }
+            &ShapeData::Const(..) => (),
             &ShapeData::Tup(ref m) => {
                 if let Item::Tuple(t) = i {
                     if t.len() == m.len() {
@@ -235,5 +237,5 @@ fn resolve_token<'shape>(item: Item, shape: &'shape Shape) -> (&'shape ShapeVari
         }
     }
 
-    panic!("Item {:?} doesn't match shape", item);
+    panic!("Item {:?} doesn't match shape {:?}", item, shape);
 }

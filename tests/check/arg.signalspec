@@ -3,5 +3,5 @@ def main(a, b) {
     b
 }
 
-test @both(#a){ #a; #b } main(#a, #b);
-test fail @up(#a){ #a; #a } main(#a, #b);
+test @both(#a|#b){ #a; #b } main(#a, #b);
+test fail @up(#a|#b){ #a; #a } main(#a, #b);
