@@ -84,6 +84,7 @@ impl Process for VcdDown {
                 w.change_scalar(*i, v).unwrap();
             }
         }
+        w.timestamp(time).unwrap();
 
         true
     }
