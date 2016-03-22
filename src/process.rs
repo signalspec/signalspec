@@ -5,7 +5,8 @@ use session::Session;
 use resolve;
 use data::{DataMode, Shape};
 use resolve::module_loader::Module;
-use exec::{self, Step};
+use exec;
+use nfa;
 use dfa::{self, Dfa};
 
 pub trait Process: Send {
@@ -14,20 +15,14 @@ pub trait Process: Send {
 }
 
 pub struct Program {
-    pub dfa: Option<Dfa>,
-    pub step: Step,
+    pub dfa: Dfa,
     pub shape_down: Shape,
     pub shape_up: Shape,
 }
 
 impl Process for Program {
-    fn run(&self, state: &mut eval::State, downwards: &mut exec::Connection, upwards: &mut exec::Connection) -> bool {
-        if let Some(ref dfa) = self.dfa {
-            print!("Using dfa");
-            dfa::run(dfa, downwards, upwards)
-        } else {
-            exec::exec(state, &self.step, downwards, upwards)
-        }
+    fn run(&self, _: &mut eval::State, downwards: &mut exec::Connection, upwards: &mut exec::Connection) -> bool {
+        dfa::run(&self.dfa, downwards, upwards)
     }
 
     fn shape_up(&self) -> &Shape {
@@ -36,14 +31,14 @@ impl Process for Program {
 }
 
 pub struct ProgramFlip {
-    pub step: Step,
+    pub dfa: Dfa,
     pub shape_down: Shape,
     pub shape_up: Shape,
 }
 
 impl Process for ProgramFlip {
-    fn run(&self, state: &mut eval::State, downwards: &mut exec::Connection, upwards: &mut exec::Connection) -> bool {
-        exec::exec(state, &self.step, upwards, downwards)
+    fn run(&self, _: &mut eval::State, downwards: &mut exec::Connection, upwards: &mut exec::Connection) -> bool {
+        dfa::run(&self.dfa, upwards, downwards)
     }
 
     fn shape_up(&self) -> &Shape {
@@ -67,8 +62,10 @@ pub fn resolve_process(sess: &Session, modscope: &Module, shape: &Shape, p: &ast
         ast::Process::Block(ref block) => {
             let mut shape_up = Shape::null();
             let (step, _) = resolve::seq(sess, &*modscope.scope.borrow(), shape, &mut shape_up, block);
-
-            box Program { step: step, shape_down: shape.clone(), shape_up: shape_up, dfa: None }
+            let mut nfa = nfa::from_step_tree(&step);
+            nfa.remove_useless_epsilons();
+            let dfa = dfa::make_dfa(&nfa, &shape, &shape_up);
+            box Program { dfa: dfa, shape_down: shape.clone(), shape_up: shape_up }
         }
         ast::Process::Literal(dir, ref shape_up_expr, ref block) => {
             let shape_item = resolve::rexpr(sess, &*modscope.scope.borrow(), shape_up_expr);
@@ -83,7 +80,11 @@ pub fn resolve_process(sess: &Session, modscope: &Module, shape: &Shape, p: &ast
             let mut shape_dn = Shape::null();
             let (step, _) = resolve::seq(sess, &*modscope.scope.borrow(), &shape_flip, &mut shape_dn, block);
 
-            box ProgramFlip { step: step, shape_down: shape_dn, shape_up: shape_up }
+            let mut nfa = nfa::from_step_tree(&step);
+            nfa.remove_useless_epsilons();
+            let dfa = dfa::make_dfa(&nfa, &shape_flip, &shape_dn);
+
+            box ProgramFlip { dfa: dfa, shape_down: shape_dn, shape_up: shape_up }
         }
     }
 }

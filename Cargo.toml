@@ -20,9 +20,6 @@ lazy_static = "0.1.*"
 ref_slice = "0.1.*"
 argparse = "0.2.1"
 
-[features]
-dfa=[]
-
 [[bin]]
 name = "signalspec"
 
