@@ -851,7 +851,7 @@ impl Regs {
 
             VecElem(reg, i) => {
                 if let Value::Vector(ref v) = self.get(reg) {
-                    v[i].clone()
+                    v.get(i).unwrap_or(&Value::Integer(0)).clone()
                 } else {
                     panic!("VecElem on non-vector");
                 }
@@ -878,7 +878,9 @@ impl Regs {
             VecShift(reg, None) => {
                 if let Value::Vector(ref v) = self.get(reg) {
                     let mut v = v.clone();
-                    v.remove(0);
+                    if v.len() > 0 {
+                        v.remove(0);
+                    }
                     Value::Vector(v)
                 } else {
                     panic!("VecSlice on non-vector");
