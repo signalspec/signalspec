@@ -4,14 +4,13 @@ use std::io::prelude::*;
 use grammar::literal;
 use data::{ Value, DataMode, Shape, ShapeVariant, ShapeData };
 use exec;
-use eval;
 use process::Process;
 use resolve::Item;
 use connection_io::{ConnectionRead, ConnectionWrite};
 
 struct ValueDumpDown(Shape);
 impl Process for ValueDumpDown {
-    fn run(&self, _: &mut eval::State, downwards: &mut exec::Connection, upwards: &mut exec::Connection) -> bool {
+    fn run(&self, downwards: &mut exec::Connection, upwards: &mut exec::Connection) -> bool {
         let mut c = ConnectionWrite(downwards);
         write_messages(&mut c, upwards, &self.0);
         true
@@ -24,7 +23,7 @@ impl Process for ValueDumpDown {
 
 struct ValueDumpUp(Shape);
 impl Process for ValueDumpUp {
-    fn run(&self, _: &mut eval::State, downwards: &mut exec::Connection, upwards: &mut exec::Connection) -> bool {
+    fn run(&self, downwards: &mut exec::Connection, upwards: &mut exec::Connection) -> bool {
         let mut c = io::BufReader::new(ConnectionRead(downwards));
         read_values(&mut c, upwards);
         true
@@ -37,7 +36,7 @@ impl Process for ValueDumpUp {
 
 pub struct ValueDumpPrint(pub Shape);
 impl Process for ValueDumpPrint {
-    fn run(&self, _: &mut eval::State, downwards: &mut exec::Connection, _upwards: &mut exec::Connection) -> bool {
+    fn run(&self, downwards: &mut exec::Connection, _upwards: &mut exec::Connection) -> bool {
         let mut stdout = ::std::io::stdout();
         write_messages(&mut stdout, downwards, &self.0);
         true

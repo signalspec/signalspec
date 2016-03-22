@@ -1,7 +1,6 @@
 use std::io;
 use ref_slice::ref_slice;
 use exec;
-use eval;
 use process::Process;
 use data::{Value, DataMode, Shape, ShapeVariant, ShapeData};
 use resolve::Item;
@@ -55,7 +54,7 @@ fn shape_to_scope(s: &Shape) -> (vcd::Scope, Vec<vcd::IdCode>) {
 
 struct VcdDown(Shape);
 impl Process for VcdDown {
-    fn run(&self, _: &mut eval::State, downwards: &mut exec::Connection, upwards: &mut exec::Connection) -> bool {
+    fn run(&self, downwards: &mut exec::Connection, upwards: &mut exec::Connection) -> bool {
         let mut c = ConnectionWrite(downwards);
         let mut w = vcd::Writer::new(&mut c);
 
@@ -139,7 +138,7 @@ fn shape_from_scope(s: &Shape, v: &vcd::Scope) -> Vec<vcd::IdCode> {
 
 struct VcdUp(Shape);
 impl Process for VcdUp {
-    fn run(&self, _: &mut eval::State, downwards: &mut exec::Connection, upwards: &mut exec::Connection) -> bool {
+    fn run(&self, downwards: &mut exec::Connection, upwards: &mut exec::Connection) -> bool {
         let mut c = io::BufReader::new(ConnectionRead(downwards));
         let mut r = vcd::Parser::new(&mut c);
         let h = r.parse_header().unwrap();

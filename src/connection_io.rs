@@ -5,7 +5,7 @@ use std::fs::File;
 
 use data::{ Value, DataMode, Shape };
 use exec;
-use eval::{self, Expr};
+use eval::Expr;
 use process::Process;
 use resolve::Item;
 
@@ -61,7 +61,7 @@ impl<'a> Write for ConnectionWrite<'a> {
 
 struct ReaderProcess(pub PathBuf);
 impl Process for ReaderProcess {
-    fn run(&self, _: &mut eval::State, _: &mut exec::Connection, upwards: &mut exec::Connection) -> bool {
+    fn run(&self, _: &mut exec::Connection, upwards: &mut exec::Connection) -> bool {
         debug!("reader started");
 
         let mut c = ConnectionWrite(upwards);
@@ -79,7 +79,7 @@ impl Process for ReaderProcess {
 
 struct WriterProcess(pub PathBuf);
 impl Process for WriterProcess {
-    fn run(&self,  _: &mut eval::State, _: &mut exec::Connection, upwards: &mut exec::Connection) -> bool {
+    fn run(&self, _: &mut exec::Connection, upwards: &mut exec::Connection) -> bool {
         debug!("writer started {} {}", upwards.can_tx(), upwards.can_rx());
 
         let mut c = ConnectionRead(upwards);

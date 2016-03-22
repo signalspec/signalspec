@@ -1,4 +1,3 @@
-use vec_map::VecMap;
 use data::{ Value, Type };
 use session::{ValueID};
 use std::fmt;
@@ -76,14 +75,13 @@ impl Expr {
         }
     }
 
-    /// Down-evaluate the expression in the given state map. This takes values from the state map,
-    /// and produces a value.
-    pub fn eval_down(&self, state: &State) -> Value {
+    /// Down-evaluate the expression with variables from the given value function.
+    pub fn eval_down(&self, state: &Fn(ValueID)->Value) -> Value {
         match *self {
             Expr::Ignored | Expr::Range(..) | Expr::RangeInt(..) | Expr::Union(..) => {
                 panic!("{:?} can't be down-evaluated", self)
             }
-            Expr::Variable(id, _) => state.get(id).clone(),
+            Expr::Variable(id, _) => state(id),
             Expr::Const(ref v) => v.clone(),
 
             Expr::Flip(ref d, _) => d.eval_down(state),
@@ -131,9 +129,9 @@ impl Expr {
         }
     }
 
-    /// Up-evaluate a value with the given state map. This accepts a value and may write variables
-    /// to the state map. It returns whether the expression matched the value.
-    pub fn eval_up(&self, state: &mut State, v: Value) -> bool {
+    /// Up-evaluate a value. This accepts a value and may write variables
+    /// via the passed function. It returns whether the expression matched the value.
+    pub fn eval_up(&self, state: &mut FnMut(ValueID, Value) -> bool, v: Value) -> bool {
         match *self {
             Expr::Ignored => true,
             Expr::Range(a, b) => match v {
@@ -147,7 +145,7 @@ impl Expr {
             Expr::Union(ref u) => {
                 u.iter().any(|i| i.eval_up(state, v.clone()))
             }
-            Expr::Variable(id, _) => state.set(id, v),
+            Expr::Variable(id, _) => state(id, v),
             Expr::Const(ref p) => &v == p,
 
             Expr::Flip(_, ref u) => u.eval_up(state, v),
@@ -310,49 +308,6 @@ impl BinOp {
     }
 }
 
-/// Map of register IDs to values
-pub struct State {
-    registers: VecMap<Value>,
-}
-
-impl State {
-    pub fn new() -> State {
-        let mut s = State {
-            registers: VecMap::new()
-        };
-        // TODO: shouldn't be necessary (we currently read from 0 on ignores)
-        s.registers.insert(0, ::ast::Value::Symbol("invalid".to_string()));
-        s
-    }
-
-    pub fn get(&self, reg: ValueID) -> &Value {
-        debug!("get {}: {:?}", reg, self.registers.get(&reg));
-        &self.registers[reg]
-    }
-
-    pub fn set(&mut self, reg: ValueID, v: Value) -> bool {
-        debug!("set {}: {:?}", reg, v);
-        // TODO: should assert the register is not already set, once exec doesn't run things twice
-        self.registers.insert(reg, v);
-        true
-    }
-
-    fn get_num(&self, reg: ValueID) -> f64 {
-        match *self.get(reg) {
-            Value::Number(v) => v,
-            Value::Integer(v) => v as f64, // TODO: explicit conversion?
-            _ => panic!(),
-        }
-    }
-
-    fn get_vec<'s>(&'s self, reg: ValueID) -> &'s [Value] {
-        match *self.get(reg) {
-            Value::Vector(ref v) => v,
-            _ => panic!(),
-        }
-    }
-
-}
 
 fn eval_choose(v: &Value, choices: &[(Value, Value)]) -> Option<Value> {
     choices.iter()
@@ -367,7 +322,7 @@ fn exprs() {
     use resolve;
     let sess = Session::new(None);
     let scope = resolve::Scope::new();
-    let state = State::new();
+    let state = |_| unimplemented!();
 
     fn expr(sess: &Session, scope: &resolve::Scope, e: &str) -> Expr {
         resolve::value(sess, scope, &grammar::valexpr(e).unwrap())

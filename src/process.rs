@@ -1,5 +1,4 @@
 use std::thread;
-use eval;
 use ast;
 use session::Session;
 use resolve;
@@ -10,7 +9,7 @@ use nfa;
 use dfa::{self, Dfa};
 
 pub trait Process: Send {
-    fn run(&self, state: &mut eval::State, downwards: &mut exec::Connection, upwards: &mut exec::Connection) -> bool;
+    fn run(&self, downwards: &mut exec::Connection, upwards: &mut exec::Connection) -> bool;
     fn shape_up(&self) -> &Shape;
 }
 
@@ -21,7 +20,7 @@ pub struct Program {
 }
 
 impl Process for Program {
-    fn run(&self, _: &mut eval::State, downwards: &mut exec::Connection, upwards: &mut exec::Connection) -> bool {
+    fn run(&self, downwards: &mut exec::Connection, upwards: &mut exec::Connection) -> bool {
         dfa::run(&self.dfa, downwards, upwards)
     }
 
@@ -37,7 +36,7 @@ pub struct ProgramFlip {
 }
 
 impl Process for ProgramFlip {
-    fn run(&self, _: &mut eval::State, downwards: &mut exec::Connection, upwards: &mut exec::Connection) -> bool {
+    fn run(&self, downwards: &mut exec::Connection, upwards: &mut exec::Connection) -> bool {
         dfa::run(&self.dfa, upwards, downwards)
     }
 
@@ -97,8 +96,7 @@ pub fn run_process_chain(processes: Vec<Box<Process>>) -> bool {
         thread::spawn(move || {
             let mut downward = c2;
             let mut upward = c1;
-            let mut state = eval::State::new();
-            p.run(&mut state, &mut downward, &mut upward)
+            p.run(&mut downward, &mut upward)
         })
     }).collect::<Vec<_>>();
 
