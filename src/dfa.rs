@@ -625,6 +625,8 @@ pub fn make_dfa(nfa: &Nfa, shape_down: &Shape, shape_up: &Shape) -> Dfa {
                 for (m, mut thread) in exits.into_iter() {
                     debug!("{:?} -> {}", m, thread.state);
                     debug!("    {:?}", thread.conditions);
+                    debug!("    {:#?}", thread.send);
+
 
                     let recv = match m {
                         Some((Side::Lower, msg)) => {
@@ -783,10 +785,14 @@ pub fn run(dfa: &Dfa, lower: &mut Connection, upper: &mut Connection) -> bool {
             for send in &t.send {
                 match *send {
                     MessageSend::Lower{tag, ref data} => {
-                        lower.send((tag, data.iter().map(|&reg| regs.get(reg)).collect())).ok();
+                        let msg = data.iter().map(|&reg| regs.get(reg)).collect();
+                        debug!("send lower {} {:?}", tag, msg);
+                        lower.send((tag, msg)).ok();
                     }
                     MessageSend::Upper{tag, ref data} => {
-                        upper.send((tag, data.iter().map(|&reg| regs.get(reg)).collect())).ok();
+                        let msg = data.iter().map(|&reg| regs.get(reg)).collect();
+                        debug!("send upper {} {:?}", tag, msg);
+                        upper.send((tag, msg)).ok();
                     }
                 }
             }
