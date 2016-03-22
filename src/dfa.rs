@@ -357,6 +357,13 @@ fn closure<'nfa>(nfa: &'nfa Nfa, shape_down: &Shape, shape_up: &Shape, initial_t
         debug!("In state {}", thread.state);
         closure.insert(thread.state);
 
+        if nfa.states[thread.state].transitions.len() == 0 && thread.send.len() > 0 {
+            // No outbound transitions, but data to send, so generate a dummy transition to
+            // attach the send.
+            transitions.push((None, thread));
+            continue;
+        }
+
         for transition in &nfa.states[thread.state].transitions {
             let mut thread = thread.clone();
             thread.state = transition.target;
@@ -792,7 +799,8 @@ pub fn run(dfa: &Dfa, lower: &mut Connection, upper: &mut Connection) -> bool {
             continue 'state_loop;
         }
 
-        debug!("No matching conditions");
+        debug!("No matching conditions{}", if state.accepting {" in accepting state"} else {""});
+        return state.accepting; //TODO: check that other signals have ended?
     }
 }
 
