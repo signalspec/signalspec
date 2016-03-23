@@ -65,7 +65,6 @@ pub fn run_file(fname: &Path) -> bool {
                 count += 1;
                 print!("\tTest #{}:", count);
                 let r = run_test(&sess, &modscope, t);
-                println!(" {}", if r {"ok"} else {"FAIL"} );
                 success &= r;
             }
             _ => {}
@@ -95,12 +94,18 @@ fn run_test(sess: &Session, module: &Module, test: &ast::Test) -> bool {
         up_version.extend(rest.iter().cloned());
         let success_up = run_ast(sess, module, &up_version) ^ test.should_fail;
 
+        print!(" up:{}", if success_up { "pass" } else { "FAIL" });
+
         let mut down_version = vec![ast::Process::Literal(ast::ProcessLiteralDirection::Down, ty.clone(), blk.clone())];
         down_version.extend(rest.iter().cloned());
         let success_down = run_ast(sess, module, &down_version) ^ test.should_fail;
 
+        println!(" down:{}", if success_down { "pass" } else { "FAIL" });
+
         success_up && success_down
     } else {
-        run_ast(sess, module, &test.processes) ^ test.should_fail
+        let success = run_ast(sess, module, &test.processes) ^ test.should_fail;
+        println!(" {}", if success { "pass" } else { "FAIL" });
+        success
     }
 }
