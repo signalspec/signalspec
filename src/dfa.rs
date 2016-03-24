@@ -580,6 +580,7 @@ fn set_to_sorted_vec<T: Clone + Hash + Ord>(s: &HashSet<T>) -> Vec<T> {
 pub fn make_dfa(nfa: &Nfa, shape_down: &Shape, shape_up: &Shape) -> Dfa {
     let mut states = Vec::new();
     let mut state_by_nfa_state_set: HashMap<Vec<usize>, usize> = HashMap::new();
+    let mut state_by_nfa_entry_states: HashMap<Vec<usize>, usize> = HashMap::new();
     let mut queue: VecDeque<(Option<(DfaStateId, Transition)>, Vec<Thread>)> = VecDeque::new();
     let mut message_blocks_lower = VecMap::new();
     let mut message_blocks_upper = VecMap::new();
@@ -598,10 +599,10 @@ pub fn make_dfa(nfa: &Nfa, shape_down: &Shape, shape_up: &Shape) -> Dfa {
     }).collect()));
 
     while let Some((pt, threads)) = queue.pop_front() {
-        let (closure, block, exits) = closure(nfa, shape_down, shape_up, threads);
-        debug!("{:?}", closure);
+        let mut state_key: Vec<usize> = threads.iter().map(|t| t.state).collect();
+        state_key.sort();
 
-        let dest_state = match state_by_nfa_state_set.entry(set_to_sorted_vec(&closure)) {
+        let dest_state = match state_by_nfa_entry_states.entry(state_key) {
             hash_map::Entry::Occupied(entry) => {
                 let state = *entry.get();
                 debug!("Transition to existing state {}", state);
@@ -611,9 +612,13 @@ pub fn make_dfa(nfa: &Nfa, shape_down: &Shape, shape_up: &Shape) -> Dfa {
                 let state = states.len();
 
                 debug!("Creating state {}", state);
+                let (closure, block, exits) = closure(nfa, shape_down, shape_up, threads);
+                debug!("{:?}", closure);
+
                 debug!("{:#?}", block);
 
                 entry.insert(state);
+                state_by_nfa_state_set.insert(set_to_sorted_vec(&closure), state);
                 states.push( State {
                     accepting: !nfa.accepting.is_disjoint(&closure),
                     insns: block,
