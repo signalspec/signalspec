@@ -107,6 +107,10 @@ impl Conditions {
         }
     }
 
+    fn is_equivalent(&self, other: &Conditions) -> bool {
+        self.0.len() == other.0.len() && self.0.iter().all(|i| other.0.iter().find(|&j| i==j).is_some())
+    }
+
     fn mutually_excludes(&self, other: &Conditions) -> bool {
         for i in &self.0 {
             for j in &other.0 {
@@ -256,7 +260,7 @@ pub struct State {
     transitions: Vec<(Transition, DfaStateId)>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 enum MessageSend {
     Lower{ tag: usize, data: Vec<InsnRef> },
     Upper{ tag: usize, data: Vec<InsnRef> }
@@ -298,9 +302,8 @@ impl Thread {
         count_reg
     }
 
-    fn erase_values(&mut self) -> (Vec<InsnRef>, Conditions, Vec<MessageSend>) {
+    fn erase_values(&mut self, vars: &mut Vec<InsnRef>) -> (Conditions, Vec<MessageSend>) {
         self.prev_states.clear();
-        let mut vars = vec![];
 
         for (_, var) in self.counters.iter_mut() {
             let value = mem::replace(var, InsnRef::Argument(vars.len()));
@@ -334,7 +337,7 @@ impl Thread {
         let conditions = mem::replace(&mut self.conditions, Conditions::new());
         let send = mem::replace(&mut self.send, Vec::new());
 
-        (vars, conditions, send)
+        (conditions, send)
     }
 }
 
@@ -579,7 +582,6 @@ fn set_to_sorted_vec<T: Clone + Hash + Ord>(s: &HashSet<T>) -> Vec<T> {
 
 pub fn make_dfa(nfa: &Nfa, shape_down: &Shape, shape_up: &Shape) -> Dfa {
     let mut states = Vec::new();
-    let mut state_by_nfa_state_set: HashMap<Vec<usize>, usize> = HashMap::new();
     let mut state_by_nfa_entry_states: HashMap<Vec<usize>, usize> = HashMap::new();
     let mut queue: VecDeque<(Option<(DfaStateId, Transition)>, Vec<Thread>)> = VecDeque::new();
     let mut message_blocks_lower = VecMap::new();
@@ -618,20 +620,18 @@ pub fn make_dfa(nfa: &Nfa, shape_down: &Shape, shape_up: &Shape) -> Dfa {
                 debug!("{:#?}", block);
 
                 entry.insert(state);
-                state_by_nfa_state_set.insert(set_to_sorted_vec(&closure), state);
                 states.push( State {
                     accepting: !nfa.accepting.is_disjoint(&closure),
                     insns: block,
                     transitions: vec![],
                 });
 
-                let mut transitions: Vec<(Thread, Transition)> = Vec::new();
+                let mut thread_groups: Vec<(Option<(Side, usize, Conditions)>, Vec<Thread>)> = Vec::new();
 
-                for (m, mut thread) in exits.into_iter() {
+                'exits: for (m, mut thread) in exits {
                     debug!("{:?} -> {}", m, thread.state);
                     debug!("    {:?}", thread.conditions);
                     debug!("    {:#?}", thread.send);
-
 
                     let recv = match m {
                         Some((Side::Lower, msg)) => {
@@ -653,33 +653,62 @@ pub fn make_dfa(nfa: &Nfa, shape_down: &Shape, shape_up: &Shape) -> Dfa {
                         None => None,
                     };
 
-                    let (regs, pre_conditions, send) = thread.erase_values();
-
-                    for &(_, ref t2) in &transitions {
-                        if !t2.pre_conditions.mutually_excludes(&pre_conditions) {
-                            match (&recv, &t2.recv) {
-                                (&Some((ref s1, tag1, ref c1)), &Some((ref s2, tag2, ref c2))) if s1 == s2 => {
-                                    if tag1 == tag2 && !c1.mutually_excludes(c2){
-                                        panic!("Transitions with the same message tag must have mutually-exclusive conditions");
-                                    }
-                                },
-                                _ => panic!("Transitions with different receive directions must have mutually-exclusive conditions")
-                            }
+                    for &mut (ref r2, ref mut t2) in &mut thread_groups {
+                        if t2[0].conditions.mutually_excludes(&thread.conditions) {
+                            continue;
                         }
 
+                        match (&recv, r2) {
+                            (&Some((ref s1, tag1, ref c1)), &Some((ref s2, tag2, ref c2))) if s1 == s2 => {
+                                if tag1 == tag2 {
+                                    if t2[0].conditions.is_equivalent(&thread.conditions)
+                                    && c1.is_equivalent(c2)
+                                    && thread.send == t2[0].send {
+                                        t2.push(thread);
+                                        continue 'exits;
+                                    } else if !c1.mutually_excludes(c2) {
+                                        panic!("Transitions with the same message tag must have mutually-exclusive conditions");
+                                    }
+                                }
+                            },
+                            _ => panic!("Transitions with different receive directions must have mutually-exclusive conditions")
+                        }
                     }
 
-                    transitions.push((thread, Transition {
-                        pre_conditions: pre_conditions,
-                        send: send,
-                        registers: regs,
-                        recv: recv,
-                    }));
+                    thread_groups.push((recv, vec![thread]));
                 }
 
-                queue.extend(transitions.into_iter().map(|(thread, transition)| {
-                    (Some((state, transition)), vec![thread])
-                }));
+                for (recv, mut threads) in thread_groups {
+                    threads.sort_by_key(|t| t.state);
+
+                    let mut regs = Vec::new();
+                    let mut pre_conditions = None;
+                    let mut send = None;
+
+                    for thread in &mut threads {
+                        let (p, s) = thread.erase_values(&mut regs);
+
+                        if pre_conditions.is_none() {
+                            pre_conditions = Some(p);
+                        } else {
+                            assert!(pre_conditions.as_ref().unwrap().is_equivalent(&p));
+                        }
+
+                        if send.is_none() {
+                            send = Some(s);
+                        } else {
+                            assert_eq!(Some(s), send);
+                        }
+                    }
+
+                    let transition = Transition {
+                        pre_conditions: pre_conditions.unwrap(),
+                        send: send.unwrap(),
+                        registers: regs,
+                        recv: recv,
+                    };
+                    queue.push_back((Some((state, transition)), threads))
+                }
 
                 state
             }
@@ -692,7 +721,7 @@ pub fn make_dfa(nfa: &Nfa, shape_down: &Shape, shape_up: &Shape) -> Dfa {
 
     debug!("lower: {:#?}", message_blocks_lower);
     debug!("upper: {:#?}", message_blocks_upper);
-    debug!("states: {:?}", state_by_nfa_state_set);
+    debug!("states: {:?}", state_by_nfa_entry_states);
 
     Dfa { states: states, message_blocks_lower: message_blocks_lower, message_blocks_upper: message_blocks_upper }
 }

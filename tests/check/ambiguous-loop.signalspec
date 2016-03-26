@@ -1,0 +1,6 @@
+def main() {
+    repeat _ { #x }
+    #x
+}
+
+test @up(#x|#y) { #x; #x; #x; #x } main();
