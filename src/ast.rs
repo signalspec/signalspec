@@ -82,6 +82,7 @@ pub enum ProcessLiteralDirection {
     Up,
     Down,
     Both,
+    RoundTrip,
 }
 
 #[derive(Debug)]

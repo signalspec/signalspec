@@ -169,6 +169,7 @@ process -> ast::Process
       = "@up"   { ast::ProcessLiteralDirection::Up }
       / "@dn"   { ast::ProcessLiteralDirection::Down }
       / "@both" { ast::ProcessLiteralDirection::Both }
+      / "@roundtrip" { ast::ProcessLiteralDirection::RoundTrip }
 
 test_block -> ast::Test
   = TEST _ fails:"fail"? _ processes:(process**_) ";"

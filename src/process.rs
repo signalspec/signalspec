@@ -72,6 +72,7 @@ pub fn resolve_process(sess: &Session, modscope: &Module, shape: &Shape, p: &ast
                 ast::ProcessLiteralDirection::Up => true,
                 ast::ProcessLiteralDirection::Down => false,
                 ast::ProcessLiteralDirection::Both => panic!("@both is only usable in tests"),
+                ast::ProcessLiteralDirection::RoundTrip => panic!("@roundtrip is only usable in tests"),
             };
             let shape_up = shape_item.clone().into_shape(sess, DataMode { down: !is_up, up: is_up });
             let shape_flip = shape_item.into_shape(sess, DataMode { down: is_up, up: !is_up });
