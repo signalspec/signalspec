@@ -10,9 +10,9 @@ use resolve::module_loader::{Module, ModuleLoader};
 use exec;
 use session::Session;
 
-pub fn run(fname: &str) {
+pub fn run(fname: &str) -> bool {
     let fname = Path::new(fname);
-    let success = match fs::metadata(fname) {
+    match fs::metadata(fname) {
         Ok(ref meta) if meta.is_file() => run_file(fname),
         Ok(ref meta) if meta.is_dir() => {
             let mut success = true;
@@ -28,8 +28,7 @@ pub fn run(fname: &str) {
             println!("Could not open {}", fname.to_string_lossy());
             false
         }
-    };
-    ::std::process::exit( if success { 0 } else { 1 } );
+    }
 }
 
 pub fn run_file(fname: &Path) -> bool {

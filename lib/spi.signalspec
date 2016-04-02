@@ -1,0 +1,31 @@
+let bit = #0|#1
+let byte = [bit, bit, bit, bit, bit, bit, bit, bit]
+
+interface SPI {
+  byte
+  #start
+  #end
+}
+
+def spi(): SPI {
+  repeat <: #10 { (#h, <: #l, <: #l) }
+  repeat {
+    on #start {}
+    repeat #1..#100 {
+      on byte {
+        for bit=byte {
+          let b = bit[#0=#l, #1=#h]
+          (#l, #l, <: b)
+          repeat <: #4 { (#l, #l, <: b) }
+          (#l, #h, b)
+          repeat <: #4 { (#l, #h, <: b) }
+        }
+      }
+    }
+    on #end {}
+    (#h, <: #l, <: #l)
+    repeat <: #9 { (#h, <: #l, <: #l) }
+  }
+}
+
+test @roundtrip((#l|#h, #l|#h, #l|#h)) {} spi() { #start; '01011101; '11110000; #end; #start; '00001000; #end };

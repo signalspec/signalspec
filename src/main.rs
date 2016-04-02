@@ -28,7 +28,8 @@ fn main() {
     }
 
     if let Some(path) = test {
-        return signalspec::run_test(&*path);
+        let success = signalspec::run_test(&*path);
+        process::exit( if success { 0 } else { 1 } );
     }
 
     let success = signalspec::run(&imports[0], &cmds, debug.map(PathBuf::from));
