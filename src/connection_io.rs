@@ -6,7 +6,7 @@ use std::fs::File;
 use data::{ Value, DataMode, Shape };
 use exec;
 use eval::Expr;
-use process::Process;
+use process::{Process, PrimitiveDef};
 use resolve::Item;
 
 pub struct ConnectionRead<'a>(pub &'a mut exec::Connection);
@@ -95,25 +95,29 @@ impl Process for WriterProcess {
     }
 }
 
-pub fn file_process(arg: Item) -> Box<Process + 'static> {
-    let args = match arg {
-        Item::Tuple(v) => v,
-        x => panic!("Unknown args type: {:?}", x)
-    };
+pub struct FileDef;
+impl PrimitiveDef for FileDef {
+    fn invoke_def(&self, _: &Shape, arg: Item) -> Box<Process + 'static> {
+        let args = match arg {
+            Item::Tuple(v) => v,
+            x => panic!("Unknown args type: {:?}", x)
+        };
 
-    let path = match &args[0] {
-        &Item::String(ref v) => PathBuf::from(&v),
-        x => panic!("Expected string, found {:?}", x)
-    };
+        let path = match &args[0] {
+            &Item::String(ref v) => PathBuf::from(&v),
+            x => panic!("Expected string, found {:?}", x)
+        };
 
-    match &args[1] {
-        &Item::Value(Expr::Const(Value::Symbol(ref v))) => {
-            match &v[..] {
-                "r" => box ReaderProcess(path),
-                "w" => box WriterProcess(path),
-                _ => panic!("Unknown file mode {:?}", args[1])
+        match &args[1] {
+            &Item::Value(Expr::Const(Value::Symbol(ref v))) => {
+                match &v[..] {
+                    "r" => box ReaderProcess(path),
+                    "w" => box WriterProcess(path),
+                    _ => panic!("Unknown file mode {:?}", args[1])
+                }
             }
+            _ => panic!("Expected symbol, found {:?}", args[1])
         }
-        _ => panic!("Expected symbol, found {:?}", args[1])
     }
 }
+pub static FILE_DEF: FileDef = FileDef;

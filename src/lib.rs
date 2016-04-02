@@ -35,7 +35,10 @@ peg_file! grammar("signalspec.rustpeg");
 
 pub fn run(source_fname: &String, code: &[String], debug_dir: Option<PathBuf>) -> bool {
     let sess = session::Session::new(debug_dir);
-    let loader = resolve::module_loader::ModuleLoader::new(&sess);
+    let mut loader = resolve::module_loader::ModuleLoader::new(&sess);
+    loader.add_primitive_def("file", &connection_io::FILE_DEF);
+    loader.add_primitive_def("vcd", &vcd::VCD_DEF);
+    loader.add_primitive_def("dumpfile", &dumpfile::DUMPFILE_DEF);
 
     let mut source = String::new();
     fs::File::open(source_fname).unwrap().read_to_string(&mut source).unwrap();

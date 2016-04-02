@@ -7,6 +7,7 @@ use ast;
 use resolve;
 use data::{ DataMode, Shape, ShapeVariant, ShapeData, Type };
 use session::{ Session, ValueID };
+use process::PrimitiveDef;
 use eval::Expr;
 
 /// A collection of named Items.
@@ -57,6 +58,9 @@ pub enum Item<'s> {
 
     /// Signal definition - `def` block AST and enclosing scope
     Def(&'s ast::Def, &'s RefCell<Scope<'s>>),
+
+    /// Reference to a primitive
+    PrimitiveDef(&'s PrimitiveDef),
 
     /// Interface definition - `interface` block AST and enclosing scope
     Interface(&'s ast::Interface, &'s RefCell<Scope<'s>>),
@@ -110,6 +114,7 @@ impl<'s> fmt::Debug for Item<'s> {
         match *self {
             Item::Value(ref v) => write!(f, "{:?}", v),
             Item::Def(..) => write!(f, "<def>"),
+            Item::PrimitiveDef(..) => write!(f, "<primitive def>"),
             Item::Interface(..) => write!(f, "<interface>"),
             Item::Tuple(ref v) => {
                 try!(write!(f, "("));

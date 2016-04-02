@@ -4,9 +4,14 @@ use session::Session;
 use resolve;
 use data::{DataMode, Shape};
 use resolve::module_loader::Module;
+use resolve::Item;
 use exec;
 use nfa;
 use dfa::{self, Dfa};
+
+pub trait PrimitiveDef: Send {
+    fn invoke_def(&self, &Shape, Item) -> Box<Process + 'static>;
+}
 
 pub trait Process: Send {
     fn run(&self, downwards: &mut exec::Connection, upwards: &mut exec::Connection) -> bool;
@@ -46,16 +51,40 @@ impl Process for ProgramFlip {
 }
 
 pub fn resolve_process(sess: &Session, modscope: &Module, shape: &Shape, p: &ast::Process) -> Box<Process> {
-    use {connection_io, dumpfile, vcd};
     match *p {
         ast::Process::Call(ref name, ref arg) => {
             let arg = resolve::rexpr(sess, &*modscope.scope.borrow(), arg);
-            match &name[..] {
-                "file" => connection_io::file_process(arg),
-                "dump" => dumpfile::process(shape, arg),
-                "vcd" => vcd::process(shape, arg),
-                name => (box modscope.compile_call(name, shape.clone(), arg)
-                  .ok().expect("Failed to compile call"))
+            match modscope.scope.borrow().get(name) {
+                Some(item @ Item::Def(..)) => {
+                    let (shape_up, step, _) = resolve::call(&item, sess, &shape, arg);
+
+                    if let Some(mut f) = sess.debug_file(|| format!("{}.steps", name)) {
+                        exec::write_step_tree(&mut f, &step, 0).unwrap_or_else(|e| error!("{}", e));
+                    }
+
+                    let mut nfa = nfa::from_step_tree(&step);
+
+                    if let Some(mut f) = sess.debug_file(|| format!("{}.nfa.dot", name)) {
+                        nfa.to_graphviz(&mut f).unwrap_or_else(|e| error!("{}", e));
+                    }
+
+                    nfa.remove_useless_epsilons();
+
+                    if let Some(mut f) = sess.debug_file(|| format!("{}.cleaned.nfa.dot", name)) {
+                        nfa.to_graphviz(&mut f).unwrap_or_else(|e| error!("{}", e));
+                    }
+
+                    let dfa = dfa::make_dfa(&nfa, &shape, &shape_up);
+
+                    if let Some(mut f) = sess.debug_file(|| format!("{}.dfa.dot", name)) {
+                        dfa.to_graphviz(&mut f).unwrap_or_else(|e| error!("{}", e));
+                    }
+
+                    box Program{ dfa: dfa, shape_down: shape.clone(), shape_up: shape_up}
+                }
+                Some(Item::PrimitiveDef(p)) => p.invoke_def(shape, arg),
+                Some(_) => panic!("`{}` is not callable", name),
+                None => panic!("`{}` does not exist in scope", name)
             }
         }
         ast::Process::Block(ref block) => {

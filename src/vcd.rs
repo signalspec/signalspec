@@ -1,7 +1,7 @@
 use std::io;
 use ref_slice::ref_slice;
 use exec;
-use process::Process;
+use process::{Process, PrimitiveDef};
 use data::{Value, DataMode, Shape, ShapeVariant, ShapeData};
 use resolve::Item;
 use connection_io::{ConnectionRead, ConnectionWrite};
@@ -198,17 +198,21 @@ impl Process for VcdUp {
     }
 }
 
-pub fn process(downward_shape: &Shape, arg: Item) -> Box<Process + 'static> {
-    let dir = downward_shape.match_bytes()
-        .expect("Invalid shape below vcd::process");
+pub struct VcdDef;
+impl PrimitiveDef for VcdDef {
+    fn invoke_def(&self, downward_shape: &Shape, arg: Item) -> Box<Process + 'static> {
+        let dir = downward_shape.match_bytes()
+            .expect("Invalid shape below vcd::process");
 
-    let upward_shape = Shape { variants: vec![
-        ShapeVariant { data: arg.into_data_shape(dir) }
-    ]};
+        let upward_shape = Shape { variants: vec![
+            ShapeVariant { data: arg.into_data_shape(dir) }
+        ]};
 
-    match dir {
-        DataMode { down: false, up: true } => box VcdUp(upward_shape),
-        DataMode { down: true, up: false } => box VcdDown(upward_shape),
-        _ => panic!("Invalid direction {:?} below vcd::process", downward_shape)
+        match dir {
+            DataMode { down: false, up: true } => box VcdUp(upward_shape),
+            DataMode { down: true, up: false } => box VcdDown(upward_shape),
+            _ => panic!("Invalid direction {:?} below vcd::process", downward_shape)
+        }
     }
 }
+pub static VCD_DEF: VcdDef = VcdDef;

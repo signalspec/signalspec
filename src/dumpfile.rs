@@ -4,7 +4,7 @@ use std::io::prelude::*;
 use grammar::literal;
 use data::{ Value, DataMode, Shape, ShapeVariant, ShapeData };
 use exec;
-use process::Process;
+use process::{Process, PrimitiveDef};
 use resolve::Item;
 use connection_io::{ConnectionRead, ConnectionWrite};
 
@@ -50,20 +50,24 @@ impl Process for ValueDumpPrint {
     }
 }
 
-pub fn process(downward_shape: &Shape, arg: Item) -> Box<Process + 'static> {
-    let dir = downward_shape.match_bytes()
-        .expect("Invalid shape below dumpfile::process");
+pub struct DumpfileDef;
+impl PrimitiveDef for DumpfileDef {
+    fn invoke_def(&self, downward_shape: &Shape, arg: Item) -> Box<Process + 'static> {
+        let dir = downward_shape.match_bytes()
+            .expect("Invalid shape below dumpfile::process");
 
-    let upward_shape = Shape { variants: vec![
-        ShapeVariant { data: arg.into_data_shape(dir) }
-    ]};
+        let upward_shape = Shape { variants: vec![
+            ShapeVariant { data: arg.into_data_shape(dir) }
+        ]};
 
-    match dir {
-        DataMode { down: false, up: true } => box ValueDumpUp(upward_shape),
-        DataMode { down: true, up: false } => box ValueDumpDown(upward_shape),
-        _ => panic!("Invalid shape {:?} below dumpfile::process", downward_shape)
+        match dir {
+            DataMode { down: false, up: true } => box ValueDumpUp(upward_shape),
+            DataMode { down: true, up: false } => box ValueDumpDown(upward_shape),
+            _ => panic!("Invalid shape {:?} below dumpfile::process", downward_shape)
+        }
     }
 }
+pub static DUMPFILE_DEF: DumpfileDef = DumpfileDef;
 
 // TODO: how to support nesting, shape
 pub fn parse_line(line: &str) -> Vec<Value> {
