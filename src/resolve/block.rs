@@ -78,7 +78,6 @@ fn resolve_action(session: &Session,
                       shape_up: &mut Shape,
                       action: &ast::Action) -> (Step, ResolveInfo) {
     match *action {
-        ast::Action::Seq(ref block) => resolve_seq(session, scope, shape_down, shape_up, block),
         ast::Action::Call(ref expr, ref arg, ref body) => {
             let arg = expr::rexpr(session, scope, arg);
 

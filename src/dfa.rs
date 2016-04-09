@@ -2,7 +2,6 @@ use std::collections::{ HashMap, hash_map, HashSet, VecDeque, BTreeMap };
 use vec_map::VecMap;
 use std::fmt;
 use std::mem;
-use std::hash::Hash;
 use std::io::{ Write, Result as IoResult };
 
 use data::{ Value, Shape };
@@ -63,9 +62,6 @@ pub enum Insn {
 
 #[derive(Clone, PartialEq, Debug)]
 pub enum Condition {
-    IntegerLt(InsnRef, InsnRef),
-    IntegerEq(InsnRef, InsnRef),
-
     CheckConst(InsnRef, Value),
     CheckRange(InsnRef, f64, f64),
     CheckRangeInt(InsnRef, i64, i64),
@@ -77,8 +73,6 @@ impl Condition {
         match (self, other) {
             (&CheckConst(ref x, ref a), &CheckConst(ref y, ref b)) if x == y && a != b => true,
             (&CheckRangeInt(ref x, lo1, hi1), &CheckRangeInt(ref y, lo2, hi2)) if x == y && (lo1 > hi2 || lo2 > hi1) => true,
-            (&IntegerLt(ref x, ref a), &IntegerEq(ref y, ref b)) if x == y && a == b => true,
-            (&IntegerEq(ref x, ref a), &IntegerLt(ref y, ref b)) if x == y && a == b => true,
             _ => false
         }
     }
@@ -97,8 +91,6 @@ impl Conditions {
         use self::InsnRef::ConstantInt;
 
         match c {
-            IntegerLt(ConstantInt(x), ConstantInt(y)) => return x < y,
-            IntegerEq(ConstantInt(x), ConstantInt(y)) => return x == y,
             CheckRangeInt(ConstantInt(x), lo, hi) => return x >= lo && x <= hi,
             _ => {
                 self.0.push(c);
@@ -574,12 +566,6 @@ fn message_match(shape: &Shape, side: Side, msg: &Message, vars: &mut VarMap, bl
     }
 }
 
-fn set_to_sorted_vec<T: Clone + Hash + Ord>(s: &HashSet<T>) -> Vec<T> {
-    let mut v: Vec<T> = s.iter().cloned().collect();
-    v.sort();
-    v
-}
-
 pub fn make_dfa(nfa: &Nfa, shape_down: &Shape, shape_up: &Shape) -> Dfa {
     let mut states = Vec::new();
     let mut state_by_nfa_entry_states: HashMap<Vec<usize>, usize> = HashMap::new();
@@ -940,22 +926,6 @@ impl Regs {
     fn condition(&self, c: &Condition) -> bool {
         use self::Condition::*;
         match *c {
-            IntegerLt(a, b) => {
-                if let (Value::Integer(a), Value::Integer(b)) = (self.get(a), self.get(b)) {
-                    a < b
-                } else {
-                    panic!("IntegerLt on non-integer");
-                }
-            }
-
-            IntegerEq(a, b) => {
-                if let (Value::Integer(a), Value::Integer(b)) = (self.get(a), self.get(b)) {
-                    a == b
-                } else {
-                    panic!("IntegerLt on non-integer");
-                }
-            }
-
             CheckConst(a, ref b) => {
                 self.get(a) == *b
             }

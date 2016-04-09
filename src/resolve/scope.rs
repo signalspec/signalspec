@@ -92,17 +92,6 @@ impl<'s> Item<'s> {
     }
 }
 
-impl<'s> PartialEq for Item<'s> {
-    fn eq(&self, other: &Item<'s>) -> bool {
-        match (self, other) {
-            (&Item::Value(ref va), &Item::Value(ref vb)) => va == vb,
-            (&Item::Tuple(ref va), &Item::Tuple(ref vb)) => va == vb,
-            (&Item::String(ref a), &Item::String(ref b)) => a == b,
-            _ => false
-        }
-    }
-}
-
 impl <'s> Default for Item<'s> {
     fn default() -> Item<'s> {
         Item::Tuple(Vec::new())

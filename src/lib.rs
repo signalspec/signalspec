@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 #![feature(plugin)]
 #![feature(box_syntax)]
 #![feature(box_patterns)]

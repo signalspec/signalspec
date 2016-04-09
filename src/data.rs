@@ -22,10 +22,6 @@ impl Value {
                 box n.first().map_or(Type::Bottom, Value::get_type)),
         }
     }
-
-    pub fn matches(&self, other: &Value) -> bool {
-        *self == *other
-    }
 }
 
 impl fmt::Display for Value {

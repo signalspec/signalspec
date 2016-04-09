@@ -3,7 +3,7 @@ use std::iter::repeat;
 use std::io::{Write, Result as IoResult};
 use std::fmt;
 
-use data::{ Value, DataMode, Type, Shape };
+use data::{ Value, DataMode, Shape };
 use session::ValueID;
 use eval::Expr;
 
@@ -77,8 +77,6 @@ pub fn write_step_tree(f: &mut Write, s: &Step, indent: u32) -> IoResult<()> {
 pub type ConnectionMessage = (MessageTag, Vec<Value>);
 
 pub struct Connection {
-    types: Vec<Vec<(Type, /*tx*/ bool, /* rx */ bool)>>,
-
     rx: Option<Receiver<ConnectionMessage>>,
     tx: Option<Sender<ConnectionMessage>>,
 
@@ -103,13 +101,8 @@ impl Connection {
 
         let alive = direction.down || direction.up;
 
-        let (t1, t2) = shape.variants.iter().map(|variant| (
-            variant.values().map(|(t, d)| (t.clone(), d.down, d.up)).collect(),
-            variant.values().map(|(t, d)| (t.clone(), d.up, d.down)).collect()
-        )).unzip();
-
-        (Connection{ types: t1, tx: s1, rx: r2, alive: alive },
-         Connection{ types: t2, tx: s2, rx: r1, alive: alive })
+        (Connection{ tx: s1, rx: r2, alive: alive },
+         Connection{ tx: s2, rx: r1, alive: alive })
     }
 
     pub fn send(&mut self, v: ConnectionMessage) -> Result<(), ()> {

@@ -15,8 +15,6 @@ pub struct Block {
 
 #[derive(Debug, Clone)]
 pub enum Action {
-    Seq(Block),
-    //Par(Block),
     Repeat(Expr, Block),
     Call(Expr, Expr, Option<Block>),
     Token(Expr),

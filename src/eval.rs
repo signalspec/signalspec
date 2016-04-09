@@ -9,6 +9,7 @@ pub enum ConcatElem {
     Elem(Expr),
 
     /// An `Expr` for a `Vector` value whose elements are included in a concatenation (`[8:a]`)
+    #[allow(dead_code)]
     Slice(Expr, usize),
 }
 
@@ -75,30 +76,6 @@ impl Expr {
         }
     }
 
-    /// Down-evaluate the expression with variables from the given value function.
-    pub fn eval_down(&self, state: &Fn(ValueID)->Value) -> Value {
-        match *self {
-            Expr::Ignored | Expr::Range(..) | Expr::RangeInt(..) | Expr::Union(..) => {
-                panic!("{:?} can't be down-evaluated", self)
-            }
-            Expr::Variable(id, _) => state(id),
-            Expr::Const(ref v) => v.clone(),
-
-            Expr::Flip(ref d, _) => d.eval_down(state),
-            Expr::Choose(ref e, ref c) => eval_choose(&e.eval_down(state), c).unwrap(),
-
-            Expr::Concat(_) => unimplemented!(),
-
-            Expr::BinaryConst(ref e, op, c) => {
-                let v = match e.eval_down(state) {
-                    Value::Number(v) => v,
-                    _ => panic!("Math on non-number value"),
-                };
-                Value::Number(op.eval(v, c))
-            }
-        }
-    }
-
     /// Check whether the expression might fail to match a value on up-evaluation.
     pub fn refutable(&self) -> bool {
         match *self {
@@ -126,49 +103,6 @@ impl Expr {
             Expr::Choose(ref e, _) => e.ignored(),
             Expr::Concat(_) => unimplemented!(),
             Expr::BinaryConst(ref e, _, _) => e.ignored(),
-        }
-    }
-
-    /// Up-evaluate a value. This accepts a value and may write variables
-    /// via the passed function. It returns whether the expression matched the value.
-    pub fn eval_up(&self, state: &mut FnMut(ValueID, Value) -> bool, v: Value) -> bool {
-        match *self {
-            Expr::Ignored => true,
-            Expr::Range(a, b) => match v {
-                Value::Number(n) => n>a && n<b,
-                _ => false,
-            },
-            Expr::RangeInt(a, b) => match v {
-                Value::Integer(n) => n>=a && n<=b,
-                _ => false,
-            },
-            Expr::Union(ref u) => {
-                u.iter().any(|i| i.eval_up(state, v.clone()))
-            }
-            Expr::Variable(id, _) => state(id, v),
-            Expr::Const(ref p) => &v == p,
-
-            Expr::Flip(_, ref u) => u.eval_up(state, v),
-            Expr::Choose(ref e, ref choices) => {
-                let r = choices.iter()
-                    .find(|& &(_, ref b)|{ *b == v })
-                    .map(|&(ref a, _)| a.clone());
-
-                if let Some(v) = r {
-                    e.eval_up(state, v)
-                } else {
-                    false
-                }
-            },
-            Expr::Concat(_) => unimplemented!(),
-
-            Expr::BinaryConst(ref e, op, c) => {
-                let n = match v {
-                    Value::Number(n) => n,
-                    _ => return false,
-                };
-                e.eval_up(state, Value::Number(op.invert().eval(n, c)))
-            }
         }
     }
 
@@ -308,13 +242,6 @@ impl BinOp {
     }
 }
 
-
-fn eval_choose(v: &Value, choices: &[(Value, Value)]) -> Option<Value> {
-    choices.iter()
-        .find(|& &(ref a, _)|{ a == v })
-        .map(|&(_, ref b)| b.clone())
-}
-
 #[test]
 fn exprs() {
     use session::Session;
@@ -322,14 +249,12 @@ fn exprs() {
     use resolve;
     let sess = Session::new(None);
     let scope = resolve::Scope::new();
-    let state = |_| unimplemented!();
 
     fn expr(sess: &Session, scope: &resolve::Scope, e: &str) -> Expr {
         resolve::value(sess, scope, &grammar::valexpr(e).unwrap())
     }
 
     let two = expr(&sess, &scope, "2");
-    assert_eq!(two.eval_down(&state), Value::Number(2.0));
     assert_eq!(two.get_type(), Type::Number(2.0, 2.0));
 
     let ignore = expr(&sess, &scope, "_");
