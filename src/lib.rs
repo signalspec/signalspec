@@ -1,7 +1,6 @@
 #![feature(plugin)]
 #![feature(box_syntax)]
 #![feature(box_patterns)]
-#![feature(str_char)]
 #![feature(iter_arith)]
 #![plugin(peg_syntax_ext)]
 

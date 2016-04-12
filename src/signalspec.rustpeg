@@ -223,7 +223,7 @@ doubleQuotedCharacter -> char
   / unicodeEscapeSequence
 
 simpleDoubleQuotedCharacter -> char
-  = !('"' / "\\" / TERM) . { match_str.char_at(0) }
+  = !('"' / "\\" / TERM) . { match_str.chars().next().unwrap() }
 
 unicodeEscapeSequence -> char
   = "\\u{" value:([0-9a-fA-F]+ { u32::from_str_radix(match_str, 16)}) "}" {
