@@ -5,10 +5,11 @@ use std::mem;
 use std::io::{ Write, Result as IoResult };
 
 use data::{ Value, Shape };
-use eval::{ Expr, ConcatElem, BinOp };
 use session::ValueID;
-use nfa::{self, Nfa};
-use exec::Message;
+use super::step::Message;
+use super::eval::{ Expr, ConcatElem, BinOp };
+use super::nfa::{self, Nfa};
+use connection::Connection;
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 enum Side {
@@ -364,7 +365,7 @@ fn closure<'nfa>(nfa: &'nfa Nfa, shape_down: &Shape, shape_up: &Shape, initial_t
             thread.state = transition.target;
             debug!("Evaluating transition to {}", transition.target);
 
-            use nfa::Action::*;
+            use super::nfa::Action::*;
 
             match transition.action {
                 Epsilon => {
@@ -729,7 +730,6 @@ impl Dfa {
     }
 }
 
-use exec::Connection;
 pub fn run(dfa: &Dfa, lower: &mut Connection, upper: &mut Connection) -> bool {
     let mut state_num = 0;
 

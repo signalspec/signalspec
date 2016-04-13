@@ -107,6 +107,8 @@ pub struct DataMode {
     pub up: bool,
 }
 
+pub type MessageTag = usize;
+
 /// Representation of token alphabet between state machine layers of abstraction.
 /// Produced from an Interface by name resolution and direction inference.
 #[derive(Clone, Debug, PartialEq)]

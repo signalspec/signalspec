@@ -18,22 +18,16 @@ use std::path::PathBuf;
 mod session;
 mod process;
 mod data;
-mod resolve;
-mod eval;
-mod ast;
-mod exec;
+mod language;
+mod connection;
 mod dumpfile;
 mod vcd;
 mod connection_io;
-mod nfa;
-mod dfa;
 mod test_runner;
-
-peg_file! grammar("signalspec.rustpeg");
 
 pub fn run(source_fname: &String, code: &[String], debug_dir: Option<PathBuf>) -> bool {
     let sess = session::Session::new(debug_dir);
-    let mut loader = resolve::module_loader::ModuleLoader::new(&sess);
+    let mut loader = language::module_loader::ModuleLoader::new(&sess);
     loader.add_primitive_def("file", &connection_io::FILE_DEF);
     loader.add_primitive_def("vcd", &vcd::VCD_DEF);
     loader.add_primitive_def("dumpfile", &dumpfile::DUMPFILE_DEF);
@@ -46,9 +40,9 @@ pub fn run(source_fname: &String, code: &[String], debug_dir: Option<PathBuf>) -
     let mut shape = data::Shape::null();
 
     for arg in code {
-        let process_ast = grammar::process(&arg)
+        let process_ast = language::parse_process(&arg)
             .unwrap_or_else(|e| panic!("Error parsing argument: {}", e));
-        let process = process::resolve_process(&sess, &modscope, &shape, &process_ast);
+        let process = language::resolve_process(&sess, &modscope, &shape, &process_ast);
         shape = process.shape_up().clone();
         processes.push(process);
     }

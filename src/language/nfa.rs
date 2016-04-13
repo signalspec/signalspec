@@ -3,8 +3,8 @@ use std::collections::HashSet;
 use std::mem::replace;
 use std::fmt;
 
-use exec::{Step, Message};
-use eval::Expr;
+use super::step::{ Step, Message };
+use super::eval::Expr;
 use data::DataMode;
 use session::ValueID;
 

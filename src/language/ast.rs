@@ -1,4 +1,4 @@
-use eval::BinOp;
+use super::eval::BinOp;
 pub use data::Value;
 
 pub struct Module {

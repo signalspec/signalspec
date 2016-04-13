@@ -245,13 +245,13 @@ impl BinOp {
 #[test]
 fn exprs() {
     use session::Session;
-    use grammar;
-    use resolve;
+    use super::grammar;
+    use super::scope::Scope;
     let sess = Session::new(None);
-    let scope = resolve::Scope::new();
+    let scope = Scope::new();
 
-    fn expr(sess: &Session, scope: &resolve::Scope, e: &str) -> Expr {
-        resolve::value(sess, scope, &grammar::valexpr(e).unwrap())
+    fn expr(sess: &Session, scope: &Scope, e: &str) -> Expr {
+        super::expr::value(sess, scope, &grammar::valexpr(e).unwrap())
     }
 
     let two = expr(&sess, &scope, "2");

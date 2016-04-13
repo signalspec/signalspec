@@ -1,9 +1,9 @@
-use ast;
+use super::ast;
+use super::eval::{ Expr, ConcatElem };
+use super::scope::{ Scope, Item };
+use super::step::Message;
 use data::{ Value, Shape, ShapeVariant, ShapeData };
-use eval::{Expr, ConcatElem};
 use session::Session;
-use resolve::scope::{ Scope, Item };
-use exec::Message;
 
 fn resolve(session: &Session, var_handler: &mut FnMut(&str) -> Expr, e: &ast::Expr) -> Expr {
     match *e {

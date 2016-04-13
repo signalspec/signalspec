@@ -3,12 +3,11 @@ use std::collections::HashMap;
 use std::default::Default;
 use std::cell::RefCell;
 
-use ast;
-use resolve;
+use super::ast;
+use super::eval::Expr;
 use data::{ DataMode, Shape, ShapeVariant, ShapeData, Type };
 use session::{ Session, ValueID };
 use process::PrimitiveDef;
-use eval::Expr;
 
 /// A collection of named Items.
 #[derive(Clone)]
@@ -85,8 +84,22 @@ impl<'s> Item<'s> {
 
     /// Get a `Shape` corresponding to an `Interface` or data example
     pub fn into_shape(self, sess: &Session, dir: DataMode) -> Shape {
+        fn collect_variants(session: &Session, scope: &Scope, entries: &[ast::InterfaceEntry], dir: DataMode) -> Shape {
+            Shape {
+                variants: entries.iter().map(|entry| {
+                    match entry {
+                        &ast::InterfaceEntry::Shape(ref expr) => {
+                            ShapeVariant {
+                                data: super::expr::rexpr(session, scope, expr).into_data_shape(dir),
+                            }
+                        },
+                    }
+                }).collect()
+            }
+        }
+
         match self {
-            Item::Interface(ast, scope) =>  resolve::interface(sess, ast, &*scope.borrow(), dir),
+            Item::Interface(ast, scope) =>  collect_variants(sess, &*scope.borrow(), &ast.entries[..], dir),
             i => Shape { variants: vec![ ShapeVariant { data: i.into_data_shape(dir) } ] }
         }
     }

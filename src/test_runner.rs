@@ -2,13 +2,12 @@ use std::fs;
 use std::path::Path;
 use std::io::prelude::*;
 use std::sync::mpsc;
-use ast;
+use language::ast;
 use data::{Shape, DataMode};
 use process::{self, Process};
-use resolve;
-use resolve::module_loader::{Module, ModuleLoader};
-use exec;
+use language::{self, Module, ModuleLoader};
 use session::Session;
+use connection::{ Connection, ConnectionMessage };
 
 pub fn run(fname: &str) -> bool {
     let fname = Path::new(fname);
@@ -89,7 +88,7 @@ fn run_ast(sess: &Session, module: &Module, bottom_process: Option<Box<Process>>
     }
 
     for process_ast in ast {
-        let process = process::resolve_process(sess, module, &shape, process_ast);
+        let process = language::program::resolve_process(sess, module, &shape, process_ast);
         shape = process.shape_up().clone();
         processes.push(process);
     }
@@ -99,11 +98,11 @@ fn run_ast(sess: &Session, module: &Module, bottom_process: Option<Box<Process>>
 
 struct Collect {
     shape: Shape,
-    sender: mpsc::Sender<exec::ConnectionMessage>,
+    sender: mpsc::Sender<ConnectionMessage>,
 }
 
 impl Process for Collect {
-    fn run(&self, _: &mut exec::Connection, upwards: &mut exec::Connection) -> bool {
+    fn run(&self, _: &mut Connection, upwards: &mut Connection) -> bool {
         while let Ok(d) = upwards.recv() {
             if self.sender.send(d).is_err() { return false; }
         }
@@ -117,11 +116,11 @@ impl Process for Collect {
 
 struct Emit {
     shape: Shape,
-    receiver: mpsc::Receiver<exec::ConnectionMessage>,
+    receiver: mpsc::Receiver<ConnectionMessage>,
 }
 
 impl Process for Emit {
-    fn run(&self, _: &mut exec::Connection, upwards: &mut exec::Connection) -> bool {
+    fn run(&self, _: &mut Connection, upwards: &mut Connection) -> bool {
         while let Ok(d) = self.receiver.recv() {
             if upwards.send(d).is_err() { return false; }
         }
@@ -153,7 +152,7 @@ fn run_test(sess: &Session, module: &Module, test: &ast::Test) -> bool {
         }
 
         Some((&ast::Process::Literal(ast::ProcessLiteralDirection::RoundTrip, ref ty, _), rest)) => {
-            let shape_item = resolve::rexpr(sess, &*module.scope.borrow(), ty);
+            let shape_item = language::expr::rexpr(sess, &*module.scope.borrow(), ty);
             let shape_dn = shape_item.clone().into_shape(sess, DataMode { down: true, up: false });
             let shape_up = shape_item.clone().into_shape(sess, DataMode { down: false, up: true });
 

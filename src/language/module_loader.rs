@@ -1,9 +1,8 @@
 use typed_arena::Arena;
 use std::cell::RefCell;
 
-use ast;
-use resolve::{Scope, Item};
-use grammar;
+use super::{ ast, grammar, Item};
+use super::scope::Scope;
 use session::Session;
 
 pub struct ModuleLoader<'a> {
@@ -45,7 +44,7 @@ impl<'a> ModuleLoader<'a> {
                 panic!("Imports unimplemented");
             }
 
-            super::block::resolve_letdef(self.session, &mut scope, &ast.lets);
+            super::step::resolve_letdef(self.session, &mut scope, &ast.lets);
 
             for def in &ast.defs {
                 match *def {

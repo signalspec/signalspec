@@ -4,12 +4,11 @@ use std::path::PathBuf;
 use std::fs::File;
 
 use data::{ Value, DataMode, Shape };
-use exec;
-use eval::Expr;
+use connection::Connection;
+use language::{ Item, Expr };
 use process::{Process, PrimitiveDef};
-use resolve::Item;
 
-pub struct ConnectionRead<'a>(pub &'a mut exec::Connection);
+pub struct ConnectionRead<'a>(pub &'a mut Connection);
 impl<'a> Read for ConnectionRead<'a> {
     fn read(&mut self, mut buf: &mut [u8]) -> io::Result<usize> {
         debug!("Read started: {} {}", self.0.alive, buf.len());
@@ -37,7 +36,7 @@ impl<'a> Read for ConnectionRead<'a> {
     }
 }
 
-pub struct ConnectionWrite<'a>(pub &'a mut exec::Connection);
+pub struct ConnectionWrite<'a>(pub &'a mut Connection);
 impl<'a> Write for ConnectionWrite<'a> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
 
@@ -61,7 +60,7 @@ impl<'a> Write for ConnectionWrite<'a> {
 
 struct ReaderProcess(pub PathBuf);
 impl Process for ReaderProcess {
-    fn run(&self, _: &mut exec::Connection, upwards: &mut exec::Connection) -> bool {
+    fn run(&self, _: &mut Connection, upwards: &mut Connection) -> bool {
         debug!("reader started");
 
         let mut c = ConnectionWrite(upwards);
@@ -79,7 +78,7 @@ impl Process for ReaderProcess {
 
 struct WriterProcess(pub PathBuf);
 impl Process for WriterProcess {
-    fn run(&self, _: &mut exec::Connection, upwards: &mut exec::Connection) -> bool {
+    fn run(&self, _: &mut Connection, upwards: &mut Connection) -> bool {
         debug!("writer started {} {}", upwards.can_tx(), upwards.can_rx());
 
         let mut c = ConnectionRead(upwards);

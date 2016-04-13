@@ -1,12 +1,73 @@
 use bit_set::BitSet;
+use std::fmt;
+use std::io::{Write, Result as IoResult};
+use std::iter::repeat;
 
-use ast;
 use session::{Session, ValueID};
-use resolve::expr;
-pub use exec::{ Step, Message };
-pub use resolve::scope::{ Scope, Item };
-use data::{Shape, DataMode, ShapeVariant, ShapeData, Type};
-use eval::Expr;
+use super::{ ast, expr };
+use super::scope::{ Scope, Item };
+use super::eval::Expr;
+use data::{ Shape, DataMode, ShapeVariant, ShapeData, Type, MessageTag };
+
+#[derive(Debug, Clone)]
+pub struct Message {
+    pub tag: MessageTag,
+    pub components: Vec<Expr>
+}
+
+impl fmt::Display for Message {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        try!(write!(f, "{}(", self.tag));
+        for (i, c) in self.components.iter().enumerate() {
+            if i != 0 { try!(write!(f, ", ")); }
+            try!(write!(f, "{}", c));
+        }
+        write!(f, ")")
+    }
+}
+
+#[derive(Debug)]
+pub enum Step {
+    Nop,
+    Token(Message),
+    TokenTop(Message, Box<Step>),
+    Seq(Vec<Step>),
+    Repeat(Expr, Box<Step>, bool),
+    Foreach(u32, Vec<(ValueID, Expr, DataMode)>, Box<Step>)
+}
+
+impl Step {
+    pub fn write_tree(&self, f: &mut Write, indent: u32) -> IoResult<()> {
+        let i: String = repeat(" ").take(indent as usize).collect();
+        match *self {
+            Step::Nop => {},
+            Step::Token(ref message) => {
+                try!(writeln!(f, "{}Token: {:?}", i, message));
+            }
+            Step::TokenTop(ref message, box ref body) => {
+                try!(writeln!(f, "{}Up: {:?}", i, message));
+                try!(body.write_tree(f, indent+1));
+            }
+            Step::Seq(ref steps) => {
+                try!(writeln!(f, "{}Seq", i));
+                for c in steps.iter() {
+                    try!(c.write_tree(f, indent+1));
+                }
+            }
+            Step::Repeat(ref count, box ref inner, up) => {
+                try!(writeln!(f, "{}Repeat: {:?} {}", i, count, up));
+                try!(inner.write_tree(f, indent + 1));
+            }
+            Step::Foreach(width, ref vars, box ref inner) => {
+                try!(write!(f, "{}For: {} ", i, width));
+                for &(id, ref expr, dir) in vars { try!(write!(f, "{}={:?} {:?}, ", id, expr, dir)); }
+                try!(writeln!(f, ""));
+                try!(inner.write_tree(f, indent + 1));
+            }
+        }
+        Ok(())
+    }
+}
 
 /// Summary of the usage of values within an block and its children
 pub struct ResolveInfo {

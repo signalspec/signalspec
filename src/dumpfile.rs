@@ -1,16 +1,15 @@
 use std::io;
 use std::io::prelude::*;
 
-use grammar::literal;
 use data::{ Value, DataMode, Shape, ShapeVariant, ShapeData };
-use exec;
+use connection::Connection;
 use process::{Process, PrimitiveDef};
-use resolve::Item;
+use language::Item;
 use connection_io::{ConnectionRead, ConnectionWrite};
 
 struct ValueDumpDown(Shape);
 impl Process for ValueDumpDown {
-    fn run(&self, downwards: &mut exec::Connection, upwards: &mut exec::Connection) -> bool {
+    fn run(&self, downwards: &mut Connection, upwards: &mut Connection) -> bool {
         let mut c = ConnectionWrite(downwards);
         write_messages(&mut c, upwards, &self.0);
         true
@@ -23,7 +22,7 @@ impl Process for ValueDumpDown {
 
 struct ValueDumpUp(Shape);
 impl Process for ValueDumpUp {
-    fn run(&self, downwards: &mut exec::Connection, upwards: &mut exec::Connection) -> bool {
+    fn run(&self, downwards: &mut Connection, upwards: &mut Connection) -> bool {
         let mut c = io::BufReader::new(ConnectionRead(downwards));
         read_values(&mut c, upwards);
         true
@@ -36,7 +35,7 @@ impl Process for ValueDumpUp {
 
 pub struct ValueDumpPrint(pub Shape);
 impl Process for ValueDumpPrint {
-    fn run(&self, downwards: &mut exec::Connection, _upwards: &mut exec::Connection) -> bool {
+    fn run(&self, downwards: &mut Connection, _upwards: &mut Connection) -> bool {
         let mut stdout = ::std::io::stdout();
         write_messages(&mut stdout, downwards, &self.0);
         true
@@ -74,10 +73,10 @@ pub fn parse_line(line: &str) -> Vec<Value> {
     if line.trim().len() == 0 {
         return Vec::new()
     }
-    line.split(',').map(|x| literal(x.trim()).unwrap()).collect()
+    line.split(',').map(|x| ::language::parse_literal(x.trim()).unwrap()).collect()
 }
 
-pub fn read_values(reader: &mut BufRead, port: &mut exec::Connection) {
+pub fn read_values(reader: &mut BufRead, port: &mut Connection) {
     for line in reader.lines() {
         let lit = parse_line(&line.unwrap());
         if port.recv().is_err() { break; }
@@ -109,7 +108,7 @@ pub fn write_message(w: &mut Write, values: &mut Iterator<Item=&Value>, shape: &
     Ok(())
 }
 
-pub fn write_messages(w: &mut Write, port: &mut exec::Connection, shape: &Shape) {
+pub fn write_messages(w: &mut Write, port: &mut Connection, shape: &Shape) {
     if port.send((0, Vec::new())).is_err() { return; }
     loop {
         match port.recv() {

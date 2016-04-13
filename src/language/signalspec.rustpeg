@@ -1,5 +1,5 @@
-use ast;
-use eval;
+use super::ast;
+use super::eval;
 use std::char;
 
 #[export]
