@@ -5,7 +5,7 @@ use std::cell::RefCell;
 
 use super::ast;
 use super::eval::Expr;
-use data::{ DataMode, Shape, ShapeVariant, ShapeData, Type };
+use data::{ Value, DataMode, Shape, ShapeVariant, ShapeData, Type };
 use session::{ Session, ValueID };
 use process::PrimitiveDef;
 
@@ -72,6 +72,13 @@ pub enum Item<'s> {
 }
 
 impl<'s> Item<'s> {
+    pub fn as_constant(&self) -> Option<&Value> {
+        match *self {
+            Item::Value(Expr::Const(ref c)) => Some(c),
+            _ => None
+        }
+    }
+
     /// Get a `ShapeData` corresponding to a tree of `Tuple` and `Value` `Item`s
     pub fn into_data_shape(self, dir: DataMode) -> ShapeData {
         match self {

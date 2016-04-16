@@ -10,7 +10,6 @@ pub mod module_loader;
 
 peg_file! grammar("signalspec.rustpeg");
 
-pub use self::eval::Expr;
 pub use self::module_loader::{ ModuleLoader, Module };
 pub use self::scope::Item;
 pub use self::expr::rexpr;

@@ -5,7 +5,7 @@ use std::fs::File;
 
 use data::{ Value, DataMode, Shape };
 use connection::Connection;
-use language::{ Item, Expr };
+use language::Item;
 use process::{Process, PrimitiveDef};
 
 pub struct ConnectionRead<'a>(pub &'a mut Connection);
@@ -107,8 +107,8 @@ impl PrimitiveDef for FileDef {
             x => panic!("Expected string, found {:?}", x)
         };
 
-        match &args[1] {
-            &Item::Value(Expr::Const(Value::Symbol(ref v))) => {
+        match args[1].as_constant() {
+            Some(&Value::Symbol(ref v)) => {
                 match &v[..] {
                     "r" => box ReaderProcess(path),
                     "w" => box WriterProcess(path),
