@@ -1,7 +1,8 @@
 extern crate signalspec;
 extern crate env_logger;
 extern crate argparse;
-use std::process;
+use std::io::prelude::*;
+use std::{ process, fs };
 use std::path::PathBuf;
 
 use argparse::{ArgumentParser, Collect, StoreOption};
@@ -30,9 +31,29 @@ fn main() {
     if let Some(path) = test {
         let success = signalspec::run_test(&*path);
         process::exit( if success { 0 } else { 1 } );
+    } else {
+        let sess = signalspec::Session::new(debug.map(PathBuf::from));
+        let loader = signalspec::ModuleLoader::new(&sess);
+        signalspec::add_primitives(&loader);
+
+        for source_fname in imports {
+            let mut source = String::new();
+            fs::File::open(source_fname).unwrap().read_to_string(&mut source).unwrap();
+            loader.parse_module(&source).unwrap();
+        }
+
+        let mut stack = signalspec::ProcessStack::new(&loader);
+
+        for arg in cmds {
+            stack.parse_add(&arg).unwrap_or_else(|e| panic!("Error parsing argument: {}", e));
+        }
+
+        let topmost_mode = stack.top_shape().data_mode();
+        if topmost_mode.up {
+            stack.add_print_process();
+        }
+
+        let success = stack.run();
+        process::exit(if success { 0 } else { 1 });
     }
-
-    let success = signalspec::run(&imports[0], &cmds, debug.map(PathBuf::from));
-
-    process::exit(if success { 0 } else { 1 });
 }

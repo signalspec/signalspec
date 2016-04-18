@@ -11,10 +11,6 @@ extern crate ref_slice;
 #[macro_use] extern crate lazy_static;
 #[macro_use] extern crate log;
 
-use std::fs;
-use std::io::prelude::*;
-use std::path::PathBuf;
-
 mod session;
 mod process;
 mod data;
@@ -25,35 +21,13 @@ mod vcd;
 mod connection_io;
 mod test_runner;
 
-pub fn run(source_fname: &String, code: &[String], debug_dir: Option<PathBuf>) -> bool {
-    let sess = session::Session::new(debug_dir);
-    let mut loader = language::module_loader::ModuleLoader::new(&sess);
+pub use session::Session;
+pub use language::{ ModuleLoader, Module, Test };
+pub use process::{ Process, ProcessStack };
+pub use test_runner::run as run_test;
+
+pub fn add_primitives(loader: &ModuleLoader) {
     loader.add_primitive_def("file", &connection_io::FILE_DEF);
     loader.add_primitive_def("vcd", &vcd::VCD_DEF);
     loader.add_primitive_def("dumpfile", &dumpfile::DUMPFILE_DEF);
-
-    let mut source = String::new();
-    fs::File::open(source_fname).unwrap().read_to_string(&mut source).unwrap();
-    let modscope = loader.parse_module(&source).unwrap();
-
-    let mut processes = vec![];
-    let mut shape = data::Shape::null();
-
-    for arg in code {
-        let process_ast = language::parse_process(&arg)
-            .unwrap_or_else(|e| panic!("Error parsing argument: {}", e));
-        let process = language::resolve_process(&sess, &modscope, &shape, &process_ast);
-        shape = process.shape_up().clone();
-        processes.push(process);
-    }
-
-    let topmost_mode = shape.data_mode();
-
-    if topmost_mode.up {
-        processes.push(box dumpfile::ValueDumpPrint(shape));
-    }
-
-    process::run_process_chain(processes)
 }
-
-pub use test_runner::run as run_test;
