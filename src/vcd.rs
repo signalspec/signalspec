@@ -4,8 +4,6 @@ use connection::Connection;
 use process::{Process, PrimitiveDef};
 use data::{Value, DataMode, Shape, ShapeVariant, ShapeData};
 use language::Item;
-use connection_io::{ConnectionRead, ConnectionWrite};
-
 extern crate vcd;
 
 /// Represent a shape as a VCD scope declaration, creating mapping from message index to VCD idcode
@@ -55,7 +53,7 @@ fn shape_to_scope(s: &Shape) -> (vcd::Scope, Vec<vcd::IdCode>) {
 struct VcdDown(Shape);
 impl Process for VcdDown {
     fn run(&self, downwards: &mut Connection, upwards: &mut Connection) -> bool {
-        let mut c = ConnectionWrite(downwards);
+        let mut c = downwards.write_bytes();
         let mut w = vcd::Writer::new(&mut c);
 
         let (scope, ids) = shape_to_scope(&self.0);
@@ -139,7 +137,7 @@ fn shape_from_scope(s: &Shape, v: &vcd::Scope) -> Vec<vcd::IdCode> {
 struct VcdUp(Shape);
 impl Process for VcdUp {
     fn run(&self, downwards: &mut Connection, upwards: &mut Connection) -> bool {
-        let mut c = io::BufReader::new(ConnectionRead(downwards));
+        let mut c = io::BufReader::new(downwards.read_bytes());
         let mut r = vcd::Parser::new(&mut c);
         let h = r.parse_header().unwrap();
         let ids = shape_from_scope(&self.0, &h.scope);

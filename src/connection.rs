@@ -1,4 +1,6 @@
 use std::sync::mpsc::{Receiver, Sender, channel};
+use std::io;
+use std::io::prelude::*;
 
 use data::{ Value, Shape };
 use data::MessageTag;
@@ -61,4 +63,62 @@ impl Connection {
 
     pub fn can_tx(&self) -> bool { self.tx.is_some() }
     pub fn can_rx(&self) -> bool { self.rx.is_some() }
+
+    pub fn read_bytes(&mut self) -> ConnectionRead {
+        ConnectionRead(self)
+    }
+
+    pub fn write_bytes(&mut self) -> ConnectionWrite {
+        ConnectionWrite(self)
+    }
+}
+
+pub struct ConnectionRead<'a>(&'a mut Connection);
+impl<'a> Read for ConnectionRead<'a> {
+    fn read(&mut self, mut buf: &mut [u8]) -> io::Result<usize> {
+        debug!("Read started: {} {}", self.0.alive, buf.len());
+
+        let mut num_read = 0;
+        for p in buf.iter_mut() {
+            match self.0.recv() {
+                Ok((0, v)) => {
+                    debug!("rx {:?}", v);
+                    assert_eq!(v.len(), 1);
+                    match v[0] {
+                        Value::Integer(b) => { *p = b as u8; }
+                        ref x => panic!("Byte connection received {:?}", x)
+                    }
+                }
+                Ok(..) => panic!("Received a message prohibited by shape"),
+                Err(..) => break,
+            }
+            num_read += 1;
+        }
+
+        debug!("Read completed: {} {}", self.0.alive, num_read);
+
+        Ok(num_read)
+    }
+}
+
+pub struct ConnectionWrite<'a>(&'a mut Connection);
+impl<'a> Write for ConnectionWrite<'a> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+
+        debug!("write started: {}", buf.len());
+
+        for b in buf.iter() {
+            if self.0.send((0, vec![Value::Integer(*b as i64)])).is_err() {
+                return Err(io::Error::new(io::ErrorKind::BrokenPipe, "Stream ended"))
+            }
+        }
+
+        debug!("write completed: {}", buf.len());
+
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
 }

@@ -8,62 +8,12 @@ use connection::Connection;
 use language::Item;
 use process::{Process, PrimitiveDef};
 
-pub struct ConnectionRead<'a>(pub &'a mut Connection);
-impl<'a> Read for ConnectionRead<'a> {
-    fn read(&mut self, mut buf: &mut [u8]) -> io::Result<usize> {
-        debug!("Read started: {} {}", self.0.alive, buf.len());
-
-        let mut num_read = 0;
-        for p in buf.iter_mut() {
-            match self.0.recv() {
-                Ok((0, v)) => {
-                    debug!("rx {:?}", v);
-                    assert_eq!(v.len(), 1);
-                    match v[0] {
-                        Value::Integer(b) => { *p = b as u8; }
-                        ref x => panic!("Byte connection received {:?}", x)
-                    }
-                }
-                Ok(..) => panic!("Received a message prohibited by shape"),
-                Err(..) => break,
-            }
-            num_read += 1;
-        }
-
-        debug!("Read completed: {} {}", self.0.alive, num_read);
-
-        Ok(num_read)
-    }
-}
-
-pub struct ConnectionWrite<'a>(pub &'a mut Connection);
-impl<'a> Write for ConnectionWrite<'a> {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-
-        debug!("write started: {}", buf.len());
-
-        for b in buf.iter() {
-            if self.0.send((0, vec![Value::Integer(*b as i64)])).is_err() {
-                return Err(io::Error::new(io::ErrorKind::BrokenPipe, "Stream ended"))
-            }
-        }
-
-        debug!("write completed: {}", buf.len());
-
-        Ok(buf.len())
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        Ok(())
-    }
-}
-
 struct ReaderProcess(pub PathBuf);
 impl Process for ReaderProcess {
     fn run(&self, _: &mut Connection, upwards: &mut Connection) -> bool {
         debug!("reader started");
 
-        let mut c = ConnectionWrite(upwards);
+        let mut c = upwards.write_bytes();
         let mut file = File::open(&self.0).unwrap();
         io::copy(&mut file, &mut c).is_ok()
     }
@@ -81,7 +31,7 @@ impl Process for WriterProcess {
     fn run(&self, _: &mut Connection, upwards: &mut Connection) -> bool {
         debug!("writer started {} {}", upwards.can_tx(), upwards.can_rx());
 
-        let mut c = ConnectionRead(upwards);
+        let mut c = upwards.read_bytes();
         let mut file = File::create(&self.0).unwrap();
         io::copy(&mut c, &mut file).is_ok()
     }

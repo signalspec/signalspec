@@ -5,12 +5,11 @@ use data::{ Value, DataMode, Shape, ShapeVariant, ShapeData };
 use connection::Connection;
 use process::{Process, PrimitiveDef};
 use language::Item;
-use connection_io::{ConnectionRead, ConnectionWrite};
 
 struct ValueDumpDown(Shape);
 impl Process for ValueDumpDown {
     fn run(&self, downwards: &mut Connection, upwards: &mut Connection) -> bool {
-        let mut c = ConnectionWrite(downwards);
+        let mut c = downwards.write_bytes();
         write_messages(&mut c, upwards, &self.0);
         true
     }
@@ -23,7 +22,7 @@ impl Process for ValueDumpDown {
 struct ValueDumpUp(Shape);
 impl Process for ValueDumpUp {
     fn run(&self, downwards: &mut Connection, upwards: &mut Connection) -> bool {
-        let mut c = io::BufReader::new(ConnectionRead(downwards));
+        let mut c = io::BufReader::new(downwards.read_bytes());
         read_values(&mut c, upwards);
         true
     }

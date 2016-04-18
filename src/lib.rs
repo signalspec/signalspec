@@ -16,9 +16,6 @@ mod process;
 mod data;
 mod language;
 mod connection;
-mod dumpfile;
-mod vcd;
-mod connection_io;
 mod test_runner;
 
 pub use session::Session;
@@ -26,8 +23,12 @@ pub use language::{ ModuleLoader, Module, Test };
 pub use process::{ Process, ProcessStack };
 pub use test_runner::run as run_test;
 
+mod file_io;
+mod dumpfile;
+mod vcd;
+
 pub fn add_primitives(loader: &ModuleLoader) {
-    loader.add_primitive_def("file", &connection_io::FILE_DEF);
-    loader.add_primitive_def("vcd", &vcd::VCD_DEF);
+    loader.add_primitive_def("file", &file_io::FILE_DEF);
     loader.add_primitive_def("dumpfile", &dumpfile::DUMPFILE_DEF);
+    loader.add_primitive_def("vcd", &vcd::VCD_DEF);
 }
