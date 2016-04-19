@@ -1,10 +1,10 @@
+extern crate signalspec;
+extern crate vcd;
+extern crate ref_slice;
+
 use std::io;
 use ref_slice::ref_slice;
-use connection::Connection;
-use process::{Process, PrimitiveDef};
-use data::{Value, DataMode, Shape, ShapeVariant, ShapeData};
-use language::Item;
-extern crate vcd;
+use signalspec::{ ModuleLoader, Connection, Process, PrimitiveDef, Value, DataMode, Shape, ShapeVariant, ShapeData, Item };
 
 /// Represent a shape as a VCD scope declaration, creating mapping from message index to VCD idcode
 fn shape_to_scope(s: &Shape) -> (vcd::Scope, Vec<vcd::IdCode>) {
@@ -180,7 +180,6 @@ impl Process for VcdUp {
             }
 
             while time < next_time {
-                debug!("{} {}", time, next_time);
                 if upwards.send((0, values.clone())).is_err() {
                     break;
                 }
@@ -196,7 +195,7 @@ impl Process for VcdUp {
     }
 }
 
-pub struct VcdDef;
+struct VcdDef;
 impl PrimitiveDef for VcdDef {
     fn invoke_def(&self, downward_shape: &Shape, arg: Item) -> Box<Process + 'static> {
         let dir = downward_shape.match_bytes()
@@ -207,10 +206,14 @@ impl PrimitiveDef for VcdDef {
         ]};
 
         match dir {
-            DataMode { down: false, up: true } => box VcdUp(upward_shape),
-            DataMode { down: true, up: false } => box VcdDown(upward_shape),
+            DataMode { down: false, up: true } => Box::new(VcdUp(upward_shape)),
+            DataMode { down: true, up: false } => Box::new(VcdDown(upward_shape)),
             _ => panic!("Invalid direction {:?} below vcd::process", downward_shape)
         }
     }
 }
-pub static VCD_DEF: VcdDef = VcdDef;
+static VCD_DEF: VcdDef = VcdDef;
+
+pub fn load_plugin(loader: &ModuleLoader) {
+    loader.add_primitive_def("vcd", &VCD_DEF);
+}

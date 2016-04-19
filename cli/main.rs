@@ -1,6 +1,9 @@
 extern crate signalspec;
 extern crate env_logger;
 extern crate argparse;
+
+extern crate signalspec_vcd;
+
 use std::io::prelude::*;
 use std::{ process, fs };
 use std::path::PathBuf;
@@ -34,7 +37,9 @@ fn main() {
     } else {
         let sess = signalspec::Session::new(debug.map(PathBuf::from));
         let loader = signalspec::ModuleLoader::new(&sess);
+
         signalspec::add_primitives(&loader);
+        signalspec_vcd::load_plugin(&loader);
 
         for source_fname in imports {
             let mut source = String::new();

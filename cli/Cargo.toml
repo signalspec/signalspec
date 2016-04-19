@@ -1,0 +1,15 @@
+[package]
+name = "signalspec_cli"
+version = "0.1.0"
+authors = [ "km@kevinmehall.net" ]
+
+[dependencies]
+signalspec = { path = "../" }
+signalspec_vcd = { path = "../plugins/vcd/" }
+log = "0.3.2"
+env_logger = "0.3"
+argparse = "0.2.1"
+
+[[bin]]
+name = "signalspec"
+path = "main.rs"

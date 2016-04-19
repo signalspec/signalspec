@@ -1,5 +1,4 @@
 [package]
-
 name = "signalspec"
 version = "0.1.0"
 authors = [ "km@kevinmehall.net" ]
@@ -7,21 +6,13 @@ authors = [ "km@kevinmehall.net" ]
 [dependencies.peg]
 git = "https://github.com/kevinmehall/rust-peg.git"
 
-[dependencies.vcd]
-git = "https://github.com/kevinmehall/rust-vcd.git"
-
 [dependencies]
 log = "0.3.2"
-env_logger = "0.3"
 typed-arena = "1.0.1"
 bit-set = "0.2.0"
 vec_map = "0.3.0"
 lazy_static = "0.1.*"
 ref_slice = "0.1.*"
-argparse = "0.2.1"
-
-[[bin]]
-name = "signalspec"
 
 [[test]]
 name = "check"

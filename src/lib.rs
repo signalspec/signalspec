@@ -19,16 +19,16 @@ mod connection;
 mod test_runner;
 
 pub use session::Session;
-pub use language::{ ModuleLoader, Module, Test };
-pub use process::{ Process, ProcessStack };
+pub use language::{ ModuleLoader, Module, Test, Item };
+pub use process::{ Process, ProcessStack, PrimitiveDef };
+pub use connection::Connection;
+pub use data::{ Value, Type, DataMode, Shape, ShapeVariant, ShapeData };
 pub use test_runner::run as run_test;
 
 mod file_io;
 mod dumpfile;
-mod vcd;
 
 pub fn add_primitives(loader: &ModuleLoader) {
     loader.add_primitive_def("file", &file_io::FILE_DEF);
     loader.add_primitive_def("dumpfile", &dumpfile::DUMPFILE_DEF);
-    loader.add_primitive_def("vcd", &vcd::VCD_DEF);
 }

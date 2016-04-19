@@ -1,0 +1,12 @@
+[package]
+name = "signalspec_vcd"
+version = "0.1.0"
+authors = [ "km@kevinmehall.net" ]
+
+[dependencies]
+signalspec = { path = "../../" }
+vcd = "0.1"
+ref_slice = "0.1"
+
+[lib]
+path = "vcd.rs"
