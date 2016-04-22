@@ -253,16 +253,13 @@ pub struct State {
     transitions: Vec<(Transition, DfaStateId)>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
-enum MessageSend {
-    Lower{ tag: usize, data: Vec<InsnRef> },
-    Upper{ tag: usize, data: Vec<InsnRef> }
-}
+pub type MessageSend = (usize, Vec<InsnRef>);
 
 #[derive(Clone, Debug)]
 pub struct Transition {
     pre_conditions: Conditions,
-    send: Vec<MessageSend>,
+    send_lower: Vec<MessageSend>,
+    send_upper: Vec<MessageSend>,
     registers: Vec<InsnRef>,
 
     recv: Option<(Side, usize, Conditions)>,
@@ -280,7 +277,8 @@ struct Thread {
     for_vars: BTreeMap<usize, Vec<(Option<InsnRef>, Option<InsnRef>)>>,
     counters: VarMap,
     conditions: Conditions,
-    send: Vec<MessageSend>,
+    send_lower: Vec<MessageSend>,
+    send_upper: Vec<MessageSend>,
 }
 
 impl Thread {
@@ -295,7 +293,7 @@ impl Thread {
         count_reg
     }
 
-    fn erase_values(&mut self, vars: &mut Vec<InsnRef>) -> (Conditions, Vec<MessageSend>) {
+    fn erase_values(&mut self, vars: &mut Vec<InsnRef>) -> (Conditions, Vec<MessageSend>, Vec<MessageSend>) {
         self.prev_states.clear();
 
         for (_, var) in self.counters.iter_mut() {
@@ -328,9 +326,10 @@ impl Thread {
         }
 
         let conditions = mem::replace(&mut self.conditions, Conditions::new());
-        let send = mem::replace(&mut self.send, Vec::new());
+        let send_lower = mem::replace(&mut self.send_lower, Vec::new());
+        let send_upper = mem::replace(&mut self.send_upper, Vec::new());
 
-        (conditions, send)
+        (conditions, send_lower, send_upper)
     }
 }
 
@@ -353,7 +352,7 @@ fn closure<'nfa>(nfa: &'nfa Nfa, shape_down: &Shape, shape_up: &Shape, initial_t
         debug!("In state {}", thread.state);
         closure.insert(thread.state);
 
-        if nfa.states[thread.state].transitions.len() == 0 && thread.send.len() > 0 {
+        if nfa.states[thread.state].transitions.len() == 0 && thread.send_lower.len() + thread.send_upper.len() > 0 {
             // No outbound transitions, but data to send, so generate a dummy transition to
             // attach the send.
             transitions.push((None, thread));
@@ -381,7 +380,7 @@ fn closure<'nfa>(nfa: &'nfa Nfa, shape_down: &Shape, shape_up: &Shape, initial_t
                             .filter(|&(_, (_, dir))| dir.down)
                             .map(|(ref e, _)| insns.eval_down(e, &thread.down_vars))
                             .collect();
-                        thread.send.push(MessageSend::Lower { tag: msg.tag, data: regs });
+                        thread.send_lower.push((msg.tag, regs));
                     }
 
                     if mode.up {
@@ -419,7 +418,7 @@ fn closure<'nfa>(nfa: &'nfa Nfa, shape_down: &Shape, shape_up: &Shape, initial_t
                             });
                         }
 
-                        thread.send.push(MessageSend::Upper{ tag: msg.tag, data: send });
+                        thread.send_upper.push((msg.tag, send));
                     }
 
                     queue.push_back(thread);
@@ -583,7 +582,8 @@ pub fn make_dfa(nfa: &Nfa, shape_down: &Shape, shape_up: &Shape) -> Dfa {
             down_vars: VarMap::new(),
             for_vars: BTreeMap::new(),
             conditions: Conditions::new(),
-            send: Vec::new(),
+            send_lower: Vec::new(),
+            send_upper: Vec::new(),
         }
     }).collect()));
 
@@ -618,7 +618,8 @@ pub fn make_dfa(nfa: &Nfa, shape_down: &Shape, shape_up: &Shape) -> Dfa {
                 'exits: for (m, mut thread) in exits {
                     debug!("{:?} -> {}", m, thread.state);
                     debug!("    {:?}", thread.conditions);
-                    debug!("    {:#?}", thread.send);
+                    debug!("    {:#?}", thread.send_lower);
+                    debug!("    {:#?}", thread.send_upper);
 
                     let recv = match m {
                         Some((Side::Lower, msg)) => {
@@ -650,7 +651,8 @@ pub fn make_dfa(nfa: &Nfa, shape_down: &Shape, shape_up: &Shape) -> Dfa {
                                 if tag1 == tag2 {
                                     if t2[0].conditions.is_equivalent(&thread.conditions)
                                     && c1.is_equivalent(c2)
-                                    && thread.send == t2[0].send {
+                                    && thread.send_lower == t2[0].send_lower
+                                    && thread.send_upper == t2[0].send_upper {
                                         t2.push(thread);
                                         continue 'exits;
                                     } else if !c1.mutually_excludes(c2) {
@@ -673,7 +675,7 @@ pub fn make_dfa(nfa: &Nfa, shape_down: &Shape, shape_up: &Shape) -> Dfa {
                     let mut send = None;
 
                     for thread in &mut threads {
-                        let (p, s) = thread.erase_values(&mut regs);
+                        let (p, sl, su) = thread.erase_values(&mut regs);
 
                         if pre_conditions.is_none() {
                             pre_conditions = Some(p);
@@ -682,15 +684,17 @@ pub fn make_dfa(nfa: &Nfa, shape_down: &Shape, shape_up: &Shape) -> Dfa {
                         }
 
                         if send.is_none() {
-                            send = Some(s);
+                            send = Some((sl, su));
                         } else {
-                            assert_eq!(Some(s), send);
+                            assert_eq!(Some((sl, su)), send);
                         }
                     }
 
+                    let (sl, su) = send.unwrap();
                     let transition = Transition {
                         pre_conditions: pre_conditions.unwrap(),
-                        send: send.unwrap(),
+                        send_lower: sl,
+                        send_upper: su,
                         registers: regs,
                         recv: recv,
                     };
@@ -802,19 +806,16 @@ pub fn run(dfa: &Dfa, lower: &mut Connection, upper: &mut Connection) -> bool {
             // A transition matched
             state_num = dest_state;
 
-            for send in &t.send {
-                match *send {
-                    MessageSend::Lower{tag, ref data} => {
-                        let msg = data.iter().map(|&reg| regs.get(reg)).collect();
-                        debug!("send lower {} {:?}", tag, msg);
-                        lower.send((tag, msg)).ok();
-                    }
-                    MessageSend::Upper{tag, ref data} => {
-                        let msg = data.iter().map(|&reg| regs.get(reg)).collect();
-                        debug!("send upper {} {:?}", tag, msg);
-                        upper.send((tag, msg)).ok();
-                    }
-                }
+            for &(tag, ref data) in &t.send_lower {
+                let msg = data.iter().map(|&reg| regs.get(reg)).collect();
+                debug!("send lower {} {:?}", tag, msg);
+                lower.send((tag, msg)).ok();
+            }
+
+            for &(tag, ref data) in &t.send_upper {
+                let msg = data.iter().map(|&reg| regs.get(reg)).collect();
+                debug!("send upper {} {:?}", tag, msg);
+                upper.send((tag, msg)).ok();
             }
 
             let next_arguments: Vec<_> = t.registers.iter().map(|&i| regs.get(i)).collect();
