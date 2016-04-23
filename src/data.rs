@@ -88,7 +88,7 @@ impl Type {
 
     pub fn includes_type(&self, other: &Type) -> bool {
         match (self, other) {
-            (&Type::Bottom, &Type::Bottom) => true,
+            (_, &Type::Bottom) => true,
             (&Type::Symbol(ref _v1), &Type::Symbol(ref _v2)) => true, //TODO: v1.is_superset(v2),
             (&Type::Vector(len1, ref t1), &Type::Vector(len2, ref t2)) => {
                 (len1 == len2) && t1.includes_type(t2)
