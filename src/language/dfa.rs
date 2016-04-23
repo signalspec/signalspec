@@ -744,6 +744,14 @@ pub fn run(dfa: &Dfa, lower: &mut Connection, upper: &mut Connection) -> bool {
         message_match: vec![],
     };
 
+    fn send(regs: &Regs, conn: &mut Connection, msgs: &[MessageSend], dbg_str: &str) {
+        for &(tag, ref data) in msgs {
+            let msg = data.iter().map(|&reg| regs.get(reg)).collect();
+            debug!("send {} {} {:?}", dbg_str, tag, msg);
+            conn.send((tag, msg)).ok();
+        }
+    }
+
     'state_loop: loop {
         debug!("In state {}", state_num);
         let state = &dfa.states[state_num];
@@ -757,10 +765,13 @@ pub fn run(dfa: &Dfa, lower: &mut Connection, upper: &mut Connection) -> bool {
         }
 
         let mut received = None;
+        let mut sent_lower = false;
+        let mut sent_upper = false;
 
         for &(ref t, dest_state) in &state.transitions {
             debug!("  Testing transition to {}", dest_state);
 
+            // Check pre-conditions first
             if !t.pre_conditions.0.iter().all(|c| {
                 let m = regs.condition(c);
                 debug!("    {:?} => {}", c, m);
@@ -769,9 +780,24 @@ pub fn run(dfa: &Dfa, lower: &mut Connection, upper: &mut Connection) -> bool {
 
             if let Some((side, tag, ref conditions)) = t.recv {
                 if received.is_none() {
-                    let (rx, blocks) = match side {
-                        Side::Lower => (lower.recv(), &dfa.message_blocks_lower),
-                        Side::Upper => (upper.recv(), &dfa.message_blocks_upper),
+                    // This is the first transition that has passed pre-conditions. Pre-conditions
+                    // with differing receive sides are required to be mutually exclusive, so
+                    // the receive side is now known.
+                    let rx;
+                    let blocks;
+                    match side {
+                        Side::Lower => {
+                            send(&regs, lower, &t.send_lower, "lower");
+                            sent_lower = true;
+                            rx = lower.recv();
+                            blocks = &dfa.message_blocks_lower;
+                        }
+                        Side::Upper => {
+                            send(&regs, upper, &t.send_upper, "upper");
+                            sent_upper = true;
+                            rx = upper.recv();
+                            blocks = &dfa.message_blocks_upper;
+                        }
                     };
 
                     debug!("\trx {:?}", rx);
@@ -779,6 +805,7 @@ pub fn run(dfa: &Dfa, lower: &mut Connection, upper: &mut Connection) -> bool {
                     if let Ok((rx_tag, data)) = rx {
                         regs.message = data;
 
+                        // Evaluate the message-match block
                         for i in &blocks[rx_tag].insns {
                             let val = regs.eval(i);
                             debug!("\t%m{} <= {} = {:?}", regs.message_match.len(), val, i);
@@ -806,17 +833,8 @@ pub fn run(dfa: &Dfa, lower: &mut Connection, upper: &mut Connection) -> bool {
             // A transition matched
             state_num = dest_state;
 
-            for &(tag, ref data) in &t.send_lower {
-                let msg = data.iter().map(|&reg| regs.get(reg)).collect();
-                debug!("send lower {} {:?}", tag, msg);
-                lower.send((tag, msg)).ok();
-            }
-
-            for &(tag, ref data) in &t.send_upper {
-                let msg = data.iter().map(|&reg| regs.get(reg)).collect();
-                debug!("send upper {} {:?}", tag, msg);
-                upper.send((tag, msg)).ok();
-            }
+            if !sent_lower { send(&regs, lower, &t.send_lower, "lower"); }
+            if !sent_upper { send(&regs, upper, &t.send_upper, "upper"); }
 
             let next_arguments: Vec<_> = t.registers.iter().map(|&i| regs.get(i)).collect();
             for (i, (v, r)) in next_arguments.iter().zip(t.registers.iter()).enumerate() {
