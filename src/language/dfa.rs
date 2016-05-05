@@ -610,11 +610,10 @@ fn closure<'nfa>(nfa: &'nfa Nfa, shape_down: &Shape, shape_up: &Shape, initial_t
 fn message_match(shape: &Shape, side: Side, msg: &Message, vars: &mut VarMap, block: &mut InsnBlock, conditions: &mut Conditions) {
     let variant = &shape.variants[msg.tag];
 
-    for (idx, (e, (_, dir))) in msg.components.iter().zip(variant.values()).enumerate() {
-        if (side == Side::Upper && dir.down) || (side == Side::Lower && dir.up) {
+    for (idx, (e, _)) in msg.components.iter().zip(variant.values())
+        .filter(|&(_, (_, dir))| (side == Side::Upper && dir.down) || (side == Side::Lower && dir.up)).enumerate() {
             let rx = InsnRef::Message(idx);
             block.eval_up(e, rx, vars, conditions);
-        }
     }
 }
 
