@@ -1,0 +1,9 @@
+let bit = #0 | #1
+
+def test_signed(): #-4..#3 {
+        on x { (signed(#3, x)) }
+        on x { (signed(#3, x)) }
+        on x { (signed(#3, x)) }
+}
+
+test @both([bit, bit, bit]) { [#1, #0, #1]; [#0, #0, #1]; [#0, #0, #0] } test_signed() { #-3; #1; #0 };

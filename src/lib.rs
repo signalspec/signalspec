@@ -31,4 +31,7 @@ mod dumpfile;
 pub fn add_primitives(loader: &ModuleLoader) {
     loader.add_primitive_def("file", &file_io::FILE_DEF);
     loader.add_primitive_def("dumpfile", &dumpfile::DUMPFILE_DEF);
+    loader.add_primitive_fn("int", &language::FNINT);
+    loader.add_primitive_fn("signed", &language::FNSIGNED);
+    loader.add_primitive_fn("chunks", &language::FNCHUNKS);
 }

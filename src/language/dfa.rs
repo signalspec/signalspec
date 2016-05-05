@@ -4,10 +4,10 @@ use std::fmt;
 use std::mem;
 use std::io::{ Write, Result as IoResult };
 
-use data::{ Value, Shape };
+use data::{ Value, Shape, Type };
 use session::ValueID;
 use super::step::Message;
-use super::eval::{ Expr, ConcatElem, BinOp };
+use super::eval::{ Expr, ConcatElem, BinOp, SignMode };
 use super::nfa::{self, Nfa};
 use connection::Connection;
 
@@ -59,6 +59,11 @@ pub enum Insn {
     VecShift(InsnRef, Option<InsnRef>),
 
     IntegerAdd(InsnRef, i64),
+
+    FloatToInt(InsnRef),
+    IntToFloat(InsnRef),
+    IntToBits { width: usize, arg: InsnRef },
+    BitsToInt { width: usize, arg: InsnRef, signed: bool },
 }
 
 #[derive(Clone, PartialEq, Debug)]
@@ -184,6 +189,30 @@ impl InsnBlock {
                 let inner = self.eval_down(a, vars);
                 self.add(Insn::BinaryConst(inner, op, b))
             }
+
+            Expr::FloatToInt(ref expr) => {
+                let inner = self.eval_down(expr, vars);
+                self.add(Insn::FloatToInt(inner))
+            }
+
+            Expr::IntToBits { ref expr, width, ..} => {
+                let inner = self.eval_down(expr, vars);
+                self.add(Insn::IntToBits{ arg: inner, width: width })
+            }
+
+            Expr::Chunks { ref expr, width } => {
+                let inner_width = if let Type::Vector(count, _) = expr.get_type() { count }
+                                  else { panic!("Chunks on non-vector ") };
+
+                let inner = self.eval_down(expr, vars);
+
+                let insn = Insn::Concat((0..(inner_width / width)).map(|i| {
+                    InsnConcatElem::Elem(self.add(Insn::VecSlice(inner, i*width, (i+1)*width)))
+                }).collect());
+
+                self.add(insn)
+            }
+
         }
     }
 
@@ -232,6 +261,29 @@ impl InsnBlock {
             Expr::BinaryConst(ref a, op, b) => {
                 let inner = self.add(Insn::BinaryConst(val, op.invert(), b));
                 self.eval_up(a, inner, vars, conditions)
+            }
+
+            Expr::FloatToInt(ref expr) => {
+                let inner = self.add(Insn::IntToFloat(val));
+                self.eval_up(expr, inner, vars, conditions)
+            }
+
+            Expr::IntToBits { ref expr, width, signed } => {
+                let tc = signed == SignMode::TwosComplement;
+                let inner = self.add(Insn::BitsToInt{arg: val, width: width, signed: tc});
+                self.eval_up(expr, inner, vars, conditions)
+            }
+
+            Expr::Chunks { ref expr, width } => {
+                let inner_width = if let Type::Vector(count, _) = expr.get_type() { count }
+                                  else { panic!("Chunks on non-vector") };
+
+                let insn = Insn::Concat((0..(inner_width / width)).map(|i| {
+                    InsnConcatElem::Slice(self.add(Insn::VecElem(val, i)), width)
+                }).collect());
+                let insn = self.add(insn);
+
+                self.eval_up(expr, insn, vars, conditions)
             }
         }
     }
@@ -890,7 +942,7 @@ impl Regs {
                 if let Value::Number(v) = self.get(reg) {
                     Value::Number(op.eval(v, c))
                 } else {
-                    panic!("BinaryConst on non-integer");
+                    panic!("BinaryConst on non-number");
                 }
             }
 
@@ -939,7 +991,54 @@ impl Regs {
                     panic!("IntegerAdd on non-integer");
                 }
             }
+
+            FloatToInt(arg) => {
+                if let Value::Number(v) = self.get(arg) {
+                    Value::Integer(v as i64)
+                } else {
+                    panic!("IntToBits on non-integer");
+                }
+            }
+
+            IntToFloat(arg) => {
+                if let Value::Integer(v) = self.get(arg) {
+                    Value::Number(v as f64)
+                } else {
+                    panic!("IntToBits on non-integer");
+                }
+            }
+
+            IntToBits { width, arg } => {
+                if let Value::Integer(v) = self.get(arg) {
+                    let v = v as u64;
+                    Value::Vector((0..width).rev().map(|bit| Value::Integer(((v >> bit) & 1) as i64) ).collect())
+                } else {
+                    panic!("IntToBits on non-integer");
+                }
+            }
+            BitsToInt { width, arg, signed } => {
+                if let Value::Vector(bits) = self.get(arg) {
+                    assert_eq!(bits.len(), width);
+                    let v = bits.iter().fold(0, |acc, x| {
+                        match *x {
+                            Value::Integer(bit) => (acc << 1) | (bit as u64),
+                            _ => panic!("Expected bit")
+                        }
+                    });
+
+                    let v = if signed {
+                        ((v << (64-width)) as i64) >> (64-width) // sign-extend
+                    } else {
+                        v as i64
+                    };
+
+                    Value::Integer(v)
+                } else {
+                    return Value::Integer(0) //panic!("BitsToInt on non-vector")
+                }
+            }
         }
+
     }
 
     fn condition(&self, c: &Condition) -> bool {

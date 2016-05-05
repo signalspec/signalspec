@@ -98,6 +98,7 @@ valexpr -> ast::Expr
         = literal_expr
         / ignoreliteral
         / concatexpr
+        / callexpr
         / varexpr
         / ("(" _ v:valexpr _ ")" _ {v})
 
@@ -107,6 +108,10 @@ valexpr -> ast::Expr
     concatexpr -> ast::Expr
         = "[" _ vs:(valexpr ++ COMMA) COMMA? "]"
         { ast::Expr::Concat(vs) }
+
+    callexpr -> ast::Expr
+        = func:identifier _ "("_ arg:expr_tup _")"
+        { ast::Expr::Call(func, Box::new(arg)) }
 
     varexpr -> ast::Expr
         = i:identifier

@@ -65,6 +65,7 @@ pub enum Expr {
 
     Bin(Box<Expr>, BinOp, Box<Expr>),
 
+    Call(String, Box<Expr>),
     Var(String),
 }
 

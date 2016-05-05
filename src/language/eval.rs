@@ -1,3 +1,4 @@
+use super::Item;
 use data::{ Value, Type };
 use session::{ValueID};
 use std::fmt;
@@ -36,6 +37,12 @@ impl ConcatElem {
     }
 }
 
+#[derive(PartialEq, Eq, Debug, Clone, Copy)]
+pub enum SignMode {
+    None,
+    TwosComplement,
+}
+
 /// An expression representing a runtime computation
 #[derive(PartialEq, Debug, Clone)]
 pub enum Expr {
@@ -51,58 +58,82 @@ pub enum Expr {
     Choose(Box<Expr>, Vec<(Value, Value)>),
     Concat(Vec<ConcatElem>),
     BinaryConst(Box<Expr>, BinOp, f64),
+
+    FloatToInt(Box<Expr>),
+    IntToBits { width: usize, expr: Box<Expr>, signed: SignMode },
+    Chunks { width: usize, expr: Box<Expr> },
 }
 
 impl Expr {
     /// Call `f` with the ID of each runtime variable referenced in the expression
     pub fn each_var(&self, f: &mut FnMut(ValueID)) {
+        use self::Expr::*;
         match *self {
-            Expr::Variable(id, _) => f(id),
-            Expr::Ignored | Expr::Const(..) | Expr::Range(..) | Expr::RangeInt(..) => (),
-            Expr::Choose(ref i, _)
-            | Expr::BinaryConst(ref i, _, _) => i.each_var(f),
-            Expr::Flip(ref a, ref b) => {
+            Variable(id, _) => f(id),
+            Ignored | Const(..) | Range(..) | RangeInt(..) => (),
+            Flip(ref a, ref b) => {
                 a.each_var(f);
                 b.each_var(f);
             }
-            Expr::Union(ref u) => for i in u { i.each_var(f) },
-            Expr::Concat(ref l) => {
+            Union(ref u) => for i in u { i.each_var(f) },
+            Concat(ref l) => {
                 for src in l.iter() {
                     match *src {
                         ConcatElem::Elem(ref i) | ConcatElem::Slice(ref i, _) => i.each_var(f),
                     }
                 }
             }
+            Choose(ref expr, _)
+            | BinaryConst(ref expr, _, _)
+            | FloatToInt(ref expr)
+            | IntToBits { ref expr, .. }
+            | Chunks { ref expr, .. } => expr.each_var(f),
         }
     }
 
     /// Check whether the expression might fail to match a value on up-evaluation.
     pub fn refutable(&self) -> bool {
+        use self::Expr::*;
         match *self {
-            Expr::Ignored => false,
-            Expr::Range(..) | Expr::RangeInt(..) => true,
-            Expr::Variable(..) => false,
-            Expr::Const(..) => true,
-            Expr::Flip(_, ref u) => u.refutable(),
-            Expr::Union(ref u) => u.iter().all(Expr::refutable),
-            Expr::Choose(ref e, _) => e.refutable(),
-            Expr::Concat(_) => unimplemented!(),
-            Expr::BinaryConst(ref e, _, _) => e.refutable(),
+            Ignored => false,
+            Range(..) | RangeInt(..) => true,
+            Variable(..) => false,
+            Const(..) => true,
+            Flip(_, ref u) => u.refutable(),
+            Union(ref u) => u.iter().all(Expr::refutable),
+            Concat(ref e) => e.iter().any(|x| {
+                match *x {
+                    ConcatElem::Elem(ref e) | ConcatElem::Slice(ref e, _) => e.refutable(),
+                }
+            }),
+            Choose(ref expr, _)
+            | BinaryConst(ref expr, _, _)
+            | FloatToInt( ref expr)
+            | IntToBits { ref expr, .. }
+            | Chunks { ref expr, .. } => expr.refutable(),
         }
     }
 
     /// Check whether the expression is ignored in all cases
     pub fn ignored(&self) -> bool {
+        use self::Expr::*;
         match *self {
-            Expr::Ignored => true,
-            Expr::Range(..) | Expr::RangeInt(..) => false,
-            Expr::Union(ref u) => u.iter().all(Expr::ignored),
-            Expr::Variable(..) => false,
-            Expr::Const(..) => false,
-            Expr::Flip(_, ref u) => u.ignored(),
-            Expr::Choose(ref e, _) => e.ignored(),
-            Expr::Concat(_) => unimplemented!(),
-            Expr::BinaryConst(ref e, _, _) => e.ignored(),
+            Ignored => true,
+            Range(..) | RangeInt(..) => false,
+            Union(ref u) => u.iter().all(Expr::ignored),
+            Variable(..) => false,
+            Const(..) => false,
+            Flip(_, ref u) => u.ignored(),
+            Concat(ref e) => e.iter().all(|x| {
+                match *x {
+                    ConcatElem::Elem(ref e) | ConcatElem::Slice(ref e, _) => e.ignored(),
+                }
+            }),
+            Choose(ref expr, _)
+            | BinaryConst(ref expr, _, _)
+            | FloatToInt(ref expr)
+            | IntToBits { ref expr, .. }
+            | Chunks { ref expr, .. } => expr.ignored(),
         }
     }
 
@@ -139,6 +170,24 @@ impl Expr {
                         }
                     }
                     _ => panic!("Arithmetic on non-number type")
+                }
+            }
+
+            Expr::FloatToInt(ref expr) => {
+                match expr.get_type() {
+                    Type::Number(min, max) => Type::Integer(min as i64, max as i64),
+                    _ => panic!("int() requires float argument")
+                }
+            }
+            Expr::IntToBits { width, .. } => {
+                Type::Vector(width, Box::new(Type::Integer(0, 1)))
+            }
+
+            Expr::Chunks { ref expr, width } => {
+                if let Type::Vector(c, t) = expr.get_type() {
+                    Type::Vector(c/width, Box::new(Type::Vector(width, t)))
+                } else {
+                    panic!("Chunks argument must be a vector");
                 }
             }
         }
@@ -183,6 +232,15 @@ impl fmt::Display for Expr {
                     BinOp::DivSwap => write!(f, "{} / {}", c, e),
                 }
             }
+
+            Expr::FloatToInt(ref e) =>
+                write!(f, "int({})", e),
+
+            Expr::IntToBits { ref expr, width, signed } =>
+                write!(f, "convert({:?}, {}, {})", signed, width, expr),
+
+            Expr::Chunks { ref expr, width } =>
+                write!(f, "chunks({}, {})", width, expr),
         }
     }
 }
@@ -241,6 +299,68 @@ impl BinOp {
         }
     }
 }
+
+pub trait PrimitiveFn {
+    fn call(&self, super::Item) -> Result<Expr, &'static str>;
+}
+
+pub struct FnInt;
+impl PrimitiveFn for FnInt {
+    fn call(&self, arg: Item) -> Result<Expr, &'static str> {
+        match arg {
+            Item::Value(v) => {
+                Ok(Expr::FloatToInt(Box::new(v)))
+            }
+            _ => return Err("Invalid arguments to chunks()")
+        }
+    }
+}
+pub static FNINT: FnInt = FnInt;
+
+
+pub struct FnSigned;
+impl PrimitiveFn for FnSigned {
+    fn call(&self, arg: Item) -> Result<Expr, &'static str> {
+        match arg {
+            Item::Tuple(mut t) => {
+                match (t.pop(), t.pop()) { //TODO: cleaner way to move out of vec without reversing order?
+                    (Some(Item::Value(v)), Some(Item::Value(Expr::Const(Value::Integer(width))))) => {
+                        Ok(Expr::IntToBits {
+                            width: width as usize,
+                            signed: SignMode::TwosComplement,
+                            expr: Box::new(v)
+                        })
+                    }
+                    _ => return Err("Invalid arguments to signed()")
+                }
+            }
+            _ => return Err("Invalid arguments to signed()")
+        }
+    }
+}
+pub static FNSIGNED: FnSigned = FnSigned;
+
+pub struct FnChunks;
+impl PrimitiveFn for FnChunks {
+    fn call(&self, arg: Item) -> Result<Expr, &'static str> {
+        match arg {
+            Item::Tuple(mut t) => {
+                match (t.pop(), t.pop()) { //TODO: cleaner way to move out of vec without reversing order?
+                    (Some(Item::Value(v)), Some(Item::Value(Expr::Const(Value::Integer(width))))) => {
+                        Ok(Expr::Chunks {
+                            width: width as usize,
+                            expr: Box::new(v)
+                        })
+                    }
+                    _ => return Err("Invalid arguments to chunks()")
+                }
+            }
+            _ => return Err("Invalid arguments to chunks()")
+        }
+    }
+}
+pub static FNCHUNKS: FnChunks = FnChunks;
+
 
 #[test]
 fn exprs() {

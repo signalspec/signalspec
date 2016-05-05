@@ -8,6 +8,7 @@ use super::eval::Expr;
 use data::{ Value, DataMode, Shape, ShapeVariant, ShapeData, Type };
 use session::{ Session, ValueID };
 use process::PrimitiveDef;
+use super::eval::PrimitiveFn;
 
 /// A collection of named Items.
 #[derive(Clone)]
@@ -60,6 +61,9 @@ pub enum Item<'s> {
 
     /// Reference to a primitive
     PrimitiveDef(&'s PrimitiveDef),
+
+    /// Reference to a primitive function
+    PrimitiveFn(&'s PrimitiveFn),
 
     /// Interface definition - `interface` block AST and enclosing scope
     Interface(&'s ast::Interface, &'s RefCell<Scope<'s>>),
@@ -124,6 +128,7 @@ impl<'s> fmt::Debug for Item<'s> {
             Item::Value(ref v) => write!(f, "{:?}", v),
             Item::Def(..) => write!(f, "<def>"),
             Item::PrimitiveDef(..) => write!(f, "<primitive def>"),
+            Item::PrimitiveFn(..) => write!(f, "<primitive fn>"),
             Item::Interface(..) => write!(f, "<interface>"),
             Item::Tuple(ref v) => {
                 try!(write!(f, "("));

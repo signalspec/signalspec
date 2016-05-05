@@ -36,6 +36,10 @@ impl<'a> ModuleLoader<'a> {
         self.prelude.borrow_mut().bind(name, Item::PrimitiveDef(prim));
     }
 
+    pub fn add_primitive_fn(&self, name: &str, prim: &'a ::language::PrimitiveFn) {
+        self.prelude.borrow_mut().bind(name, Item::PrimitiveFn(prim));
+    }
+
     pub fn parse_process(&'a self, source: &str, shape_below: &Shape) -> Result<Box<Process>, grammar::ParseError> {
         let ast = try!(grammar::process(source));
         Ok(super::program::resolve_process(&self.session, &*self.prelude.borrow(), shape_below, &ast))

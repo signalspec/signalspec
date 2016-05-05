@@ -30,6 +30,7 @@ pub fn run_file(fname: &Path) -> bool {
 
     let sess = Session::new(None);
     let loader = ModuleLoader::new(&sess);
+    ::add_primitives(&loader);
 
     let source = match fs::File::open(fname) {
         Ok(mut file) => {

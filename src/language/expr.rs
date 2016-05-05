@@ -5,7 +5,7 @@ use super::step::Message;
 use data::{ Value, Shape, ShapeVariant, ShapeData };
 use session::Session;
 
-fn resolve(session: &Session, var_handler: &mut FnMut(&str) -> Expr, e: &ast::Expr) -> Expr {
+fn resolve(session: &Session, scope: Option<&Scope>, var_handler: &mut FnMut(&str) -> Expr, e: &ast::Expr) -> Expr {
     match *e {
         ast::Expr::Ignore => Expr::Ignored,
         ast::Expr::Value(ref val) => Expr::Const(val.clone()),
@@ -13,14 +13,14 @@ fn resolve(session: &Session, var_handler: &mut FnMut(&str) -> Expr, e: &ast::Ex
         ast::Expr::Flip(box ref down, box ref up) => {
             debug!("Flip: {:?} {:?}", down, up);
             Expr::Flip(
-                box resolve(session, var_handler, down),
-                box resolve(session, var_handler, up),
+                box resolve(session, scope, var_handler, down),
+                box resolve(session, scope, var_handler, up),
             )
         }
 
         ast::Expr::Range(box ref min_expr, box ref max_expr) => {
-            let min = resolve(session, var_handler, min_expr);
-            let max = resolve(session, var_handler, max_expr);
+            let min = resolve(session, scope, var_handler, min_expr);
+            let max = resolve(session, scope, var_handler, max_expr);
 
             match (min, max) {
                 (Expr::Const(Value::Number(l)), Expr::Const(Value::Number(h))) => Expr::Range(l, h),
@@ -30,13 +30,13 @@ fn resolve(session: &Session, var_handler: &mut FnMut(&str) -> Expr, e: &ast::Ex
         }
 
         ast::Expr::Union(ref u) => {
-            Expr::Union(u.iter().map(|i| resolve(session, var_handler, i)).collect())
+            Expr::Union(u.iter().map(|i| resolve(session, scope, var_handler, i)).collect())
         }
 
         ast::Expr::Choose(box ref e, ref c) => {
             let pairs: Vec<(Value, Value)> = c.iter().map(|&(ref le, ref re)| {
-                let l = resolve(session, var_handler, le);
-                let r = resolve(session, var_handler, re);
+                let l = resolve(session, scope, var_handler, le);
+                let r = resolve(session, scope, var_handler, re);
 
                 match (l, r) {
                     (Expr::Const(lv), Expr::Const(rv)) => (lv, rv),
@@ -44,20 +44,20 @@ fn resolve(session: &Session, var_handler: &mut FnMut(&str) -> Expr, e: &ast::Ex
                 }
             }).collect();
 
-            let head = resolve(session, var_handler, e);
+            let head = resolve(session, scope, var_handler, e);
             Expr::Choose(box head, pairs)
         }
 
         ast::Expr::Concat(ref v) =>  {
             let elems = v.iter().map(|e| {
-                ConcatElem::Elem(resolve(session, var_handler, e))
+                ConcatElem::Elem(resolve(session, scope, var_handler, e))
             }).collect();
 
             Expr::Concat(elems)
         }
 
         ast::Expr::Bin(box ref a, op, box ref b) => {
-            match (resolve(session, var_handler, a), resolve(session, var_handler, b)) {
+            match (resolve(session, scope, var_handler, a), resolve(session, scope, var_handler, b)) {
                 (Expr::Const(Value::Number(a)), Expr::Const(Value::Number(b))) => {
                     Expr::Const(Value::Number(op.eval(a, b)))
                 }
@@ -68,6 +68,16 @@ fn resolve(session: &Session, var_handler: &mut FnMut(&str) -> Expr, e: &ast::Ex
         }
 
         ast::Expr::Var(ref name) => var_handler(name),
+        ast::Expr::Call(ref name, ref arg) => {
+            let scope = scope.expect("Function call not allowed here");
+            match scope.get(name) {
+                Some(Item::PrimitiveFn(f)) => {
+                    f.call(rexpr(session, scope, arg)).unwrap()
+                },
+                Some(i) => panic!("`{}` is {:?}, not a function", name, i),
+                None => panic!("Undefined function `{}` in {:?}", name, scope.names),
+            }
+        }
 
         ast::Expr::Tup(..) => panic!("Tuple not allowed here"),
         ast::Expr::String(..) => panic!("String not allowed here"),
@@ -75,7 +85,7 @@ fn resolve(session: &Session, var_handler: &mut FnMut(&str) -> Expr, e: &ast::Ex
 }
 
 pub fn value(session: &Session, scope: &Scope, e: &ast::Expr) -> Expr {
-    resolve(session, &mut |name| {
+    resolve(session, Some(scope), &mut |name| {
         match scope.get(name) {
             Some(Item::Value(v)) => v,
             Some(..) => panic!("Variable {} is not a value expression", name),
@@ -88,7 +98,7 @@ pub fn value(session: &Session, scope: &Scope, e: &ast::Expr) -> Expr {
 pub fn rexpr<'s>(session: &Session, scope: &Scope<'s>, e: &ast::Expr) -> Item<'s> {
     match *e {
         ast::Expr::Var(ref name) => {
-            scope.get(name).expect("Undefined variable")
+            if let Some(s) = scope.get(name) { s } else { panic!("Undefined variable `{}`", name); }
         }
 
         ast::Expr::Tup(ref items) => {
@@ -127,7 +137,7 @@ pub fn on_expr_message<'shape>(sess: &Session, scope: &mut Scope,
         match (shape, e) {
             (&ShapeData::Const(..), _) => (),
             (&ShapeData::Val(ref ty, _), expr) => {
-                msg.components.push(resolve(sess, &mut |name| {
+                msg.components.push(resolve(sess, None, &mut |name| {
                     let id = scope.new_variable(sess, name, ty.clone());
                     Expr::Variable(id, ty.clone())
                 }, expr));
