@@ -934,8 +934,21 @@ impl Regs {
                     .unwrap()
             }
 
-            Concat(ref _elems) => {
-                unimplemented!();
+            Concat(ref elems) => {
+                let mut out = Vec::new();
+                for i in elems {
+                    match *i {
+                        InsnConcatElem::Elem(e) => out.push(self.get(e)),
+                        InsnConcatElem::Slice(s, w) => match self.get(s) {
+                            Value::Vector(mut v) => {
+                                assert_eq!(v.len(), w);
+                                out.append(&mut v);
+                            }
+                            _ => return Value::Integer(0) //panic!("Concat slice passed non-vector {}", x)
+                        }
+                    }
+                }
+                Value::Vector(out)
             }
 
             BinaryConst(reg, op, c) => {
