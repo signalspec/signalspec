@@ -58,6 +58,7 @@ expr_tup -> ast::Expr
     { if es.len() == 1 { es.into_iter().next().unwrap() } else { ast::Expr::Tup(es) } }
 
 #[pub]
+#[cache]
 valexpr -> ast::Expr
   = valexpr_flip
 
@@ -79,15 +80,25 @@ valexpr -> ast::Expr
             = l:valexpr_sum _ ".." _ r:valexpr_sum
             { ast::Expr::Range(box l, box r) }
 
+    #[cache]
     valexpr_sum -> ast::Expr
-        = l:valexpr_product _ op:[+] _ r:valexpr_sum
+        = l:valexpr_product _ op:sum_op _ r:valexpr_sum
             { ast::Expr::Bin(box l, eval::BinOp::Add, box r) }
         / valexpr_product
 
+        sum_op -> eval::BinOp
+          = "+" { eval::BinOp::Add }
+          / "-" { eval::BinOp::Sub }
+
+    #[cache]
     valexpr_product -> ast::Expr
-        = l:valexpr_choose _ op:[*] _ r:valexpr_product
+        = l:valexpr_choose _ op:product_op _ r:valexpr_product
             { ast::Expr::Bin(box l, eval::BinOp::Mul, box r) }
         / valexpr_choose
+
+        product_op -> eval::BinOp
+          = "*" { eval::BinOp::Mul }
+          / "/" { eval::BinOp::Div }
 
     valexpr_choose -> ast::Expr
         = e:valexpr_atom _ "[" _ vs:(k:valexpr "=" _ v:valexpr { (k,v) })**COMMA COMMA? "]"
