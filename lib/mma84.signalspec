@@ -1,0 +1,34 @@
+let ADDR_WR = 'h3a
+let ADDR_RD = 'h3b
+
+let OUT_X_MSB = 'h01
+let XYZ_DATA_CFG = 'h0E
+let WHO_AM_I = 'h0D
+let CTRL_REG1 = 'h2A
+let CTRL_REG4 = 'h2D
+
+def read_reg(reg, val) {
+    (#start, ADDR_WR); (#w, reg); (#start, ADDR_RD); (#r, val); #stop
+}
+
+def write_reg(reg, val) {
+    (#start, ADDR_WR); (#w, reg); (#w, val); #stop
+}
+
+def mma84(): (-4..4, -4..4, -4..4) {
+    read_reg(WHO_AM_I, 'h2a);
+    write_reg(CTRL_REG1, 'h31);
+    write_reg(XYZ_DATA_CFG, 'h00);
+    write_reg(CTRL_REG4, 'h01);
+    repeat {
+        on (x, y, z) {
+            (#start, ADDR_WR); (#w, OUT_X_MSB); (#start, ADDR_RD);
+
+            for w = [x, y, z] {
+                for b = chunks(#8, signed(#16, int(w / 16384))) { (#r, b) }
+            }
+
+            #stop
+        }
+    }
+}
