@@ -175,6 +175,8 @@ fn resolve_action(session: &Session,
                     let DataMode { up, down } = ri.mode_of(id);
                     dir.up &= up;
                     dir.down |= down;
+                } else if !e.down_evaluable() {
+                    dir.up = false;
                 }
             }
 

@@ -137,6 +137,29 @@ impl Expr {
         }
     }
 
+    /// Check whether the expression can be down-evaluated
+    pub fn down_evaluable(&self) -> bool {
+        use self::Expr::*;
+        match *self {
+            Ignored => false,
+            Range(..) | RangeInt(..) => false,
+            Union(ref u) => u.iter().all(Expr::down_evaluable),
+            Variable(..) => true,
+            Const(..) => true,
+            Flip(ref d, _) => d.down_evaluable(),
+            Concat(ref e) => e.iter().all(|x| {
+                match *x {
+                    ConcatElem::Elem(ref e) | ConcatElem::Slice(ref e, _) => e.down_evaluable(),
+                }
+            }),
+            Choose(ref expr, _)
+            | BinaryConst(ref expr, _, _)
+            | FloatToInt(ref expr)
+            | IntToBits { ref expr, .. }
+            | Chunks { ref expr, .. } => expr.down_evaluable(),
+        }
+    }
+
     /// Return the `Type` for the set of possible values this expression may down-evaluate to or
     /// match on up-evaluation.
     pub fn get_type(&self) -> Type {
