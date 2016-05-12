@@ -136,11 +136,14 @@ pub fn on_expr_message<'shape>(sess: &Session, scope: &mut Scope,
                 shape: &ShapeData, e: &ast::Expr) {
         match (shape, e) {
             (&ShapeData::Const(..), _) => (),
-            (&ShapeData::Val(ref ty, _), expr) => {
-                msg.components.push(resolve(sess, None, &mut |name| {
-                    let id = scope.new_variable(sess, name, ty.clone());
-                    Expr::Variable(id, ty.clone())
-                }, expr));
+
+            (&ShapeData::Val(ref ty, _), &ast::Expr::Var(ref name)) => { // A variable binding
+                let id = scope.new_variable(sess, &name[..], ty.clone());
+                msg.components.push(Expr::Variable(id, ty.clone()))
+            }
+            (&ShapeData::Val(_, _), expr) => { // A match against a refutable pattern
+                msg.components.push(
+                    resolve(sess, None, &mut |_| { panic!("Variable binding not allowed here") }, expr));
             }
             (&ShapeData::Tup(ref ss), &ast::Expr::Tup(ref se)) => {
                 for (s, i) in ss.iter().zip(se.iter()) {
