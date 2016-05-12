@@ -44,9 +44,9 @@ In sampled signals, this is used to measure and set the time duration of signal 
 `v1`, `v2`, ... `vn` must be vectors with the same length `x`. The body is executed `x` times (`i` from `0` to `x`), with `e1`, `e2` ... `en` bidirectionally bound to the `i`th element of the corresponding vector.
 
 
-### `switch` / `when`
+### `alt`
 
-<code><b>switch</b> <var>expr</var> <b> { when</b> <var>expr1</var> <b> { </b><var>body1</var><b> } when</b> <var>expr2</var> <b> { </b><var>body2</var><b> }</b> <var>...</var> <b>}</b>
+<code><b>alt</b> <var>expr</var> <b> { </b> <var>expr1</var> <b>=> { </b><var>body1</var><b> } </b> <var>expr2</var> <b>=> { </b><var>body2</var><b> }</b> <var>...</var> <b>}</b>
 
 Just like `repeat`, as a heuristic for determining the data direction of the expression: if the body of all cases contain no tokens where data is used in the up direction, the count is down-evaluated and the appropriate branch is chosen. Otherwise, the expression is up-evaluated with the value corresponding to the branch that matches.
 

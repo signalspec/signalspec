@@ -195,3 +195,30 @@ pub fn assign<'s>(session: &Session, scope: &mut Scope<'s>, l: &ast::Expr, r: It
         _ => println!("Cannot destructure into expression {:?}", l),
     }
 }
+
+pub fn pattern_match<'s>(session: &Session, scope: &mut Scope<'s>, pat: &ast::Expr, r: &Item<'s>, checks: &mut Vec<(Expr, Expr)>) {
+        match (pat, r) {
+            (&ast::Expr::Ignore, _) => (),
+
+            (&ast::Expr::Var(ref name), r) => {
+                debug!("defined {} = {:?}", name, r);
+                scope.bind(name, r.clone());
+            }
+
+            (&ast::Expr::Tup(ref exprs), &Item::Tuple(ref v)) => {
+                if exprs.len() != v.len() {
+                    panic!("can't match a tuple with a different length");
+                }
+                for (expr, item) in exprs.iter().zip(v.iter()) {
+                    pattern_match(session, scope, expr, item, checks);
+                }
+            }
+
+            (ref other, &Item::Value(ref re)) => {
+                let le = resolve(session, None, &mut |_| { panic!("Variable binding not allowed here")}, other);
+                checks.push((le, re.clone()));
+            }
+
+            (pat, r) => panic!("can't match {:?} with {:?}", pat, r)
+        }
+}

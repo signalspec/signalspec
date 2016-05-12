@@ -33,7 +33,8 @@ pub enum Step {
     TokenTop(Message, Box<Step>),
     Seq(Vec<Step>),
     Repeat(Expr, Box<Step>, bool),
-    Foreach(u32, Vec<(ValueID, Expr, DataMode)>, Box<Step>)
+    Foreach(u32, Vec<(ValueID, Expr, DataMode)>, Box<Step>),
+    Alt(Vec<(Vec<(Expr, Expr)>, Step)>, bool),
 }
 
 impl Step {
@@ -63,6 +64,13 @@ impl Step {
                 for &(id, ref expr, dir) in vars { try!(write!(f, "{}={:?} {:?}, ", id, expr, dir)); }
                 try!(writeln!(f, ""));
                 try!(inner.write_tree(f, indent + 1));
+            }
+            Step::Alt(ref arms, up) => {
+                try!(writeln!(f, "{}Alt: {}", i, up));
+                for &(ref cond, ref inner) in arms {
+                    try!(writeln!(f, "{} {:?} =>", i, cond));
+                    try!(inner.write_tree(f, indent + 2));
+                }
             }
         }
         Ok(())
@@ -221,6 +229,30 @@ fn resolve_action(session: &Session,
             }
 
             (Step::Foreach(count.unwrap_or(0) as u32, inner_vars, box step), ri)
+        }
+        ast::Action::Alt(ref expr, ref arms) => {
+            let r = expr::rexpr(session, scope, expr);
+            let mut outer_ri = ResolveInfo::new();
+
+            let v = arms.iter().map(|arm| {
+                let mut body_scope = scope.child();
+                let mut checks = Vec::new();
+                expr::pattern_match(session, &mut body_scope, &arm.discriminant, &r, &mut checks);
+                let (step, ri) = resolve_seq(session, &body_scope, shape_down, shape_up, &arm.block);
+                outer_ri.merge_seq(&ri); // TODO: alt != seq ?
+                (checks, step)
+            }).collect();
+
+            let up = outer_ri.repeat_up_heuristic;
+
+            for &(ref checks, _) in &v {
+                for &(_, ref r) in checks {
+                    outer_ri.use_expr(r, DataMode { down: !up, up: up })
+                    // LHS is patterns that don't contain dynamic vars, so no need to mark them
+                }
+            }
+
+            (Step::Alt(v, up), outer_ri)
         }
     }
 }

@@ -600,6 +600,22 @@ fn closure<'nfa>(nfa: &'nfa Nfa, shape_down: &Shape, shape_up: &Shape, initial_t
                         queue.push_back(thread);
                     }
                 }
+
+                AltDnEnter(ref c) => {
+                    for &(ref pat, ref r) in c {
+                        let v = insns.eval_down(r, &thread.down_vars);
+                        insns.eval_up(pat, v, &mut thread.down_vars, &mut thread.conditions);
+                    }
+                    queue.push_back(thread);
+                }
+
+                AltUpExit(ref c) => {
+                    for &(ref pat, ref r) in c {
+                        let v = insns.eval_down(pat, &thread.up_vars);
+                        insns.eval_up(r, v, &mut thread.up_vars, &mut thread.conditions);
+                    }
+                    queue.push_back(thread);
+                }
             }
         }
     }

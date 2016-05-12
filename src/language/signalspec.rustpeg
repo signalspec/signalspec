@@ -34,10 +34,16 @@ block -> ast::Block
             { ast::Action::On(expr, body) }
         / FOR _ items:(l:identifier _ "=" _ r:expr { (l,r) })* _  body:block
             { ast::Action::For(items, body) }
+        / ALT _ expr:expr _ "{" _  arms:alt_arm ** BREAK _ "}"
+            { ast::Action::Alt(expr, arms) }
         / expr:varexpr _ "(" _ param:expr_tup _ ")" _ body:block?
             { ast::Action::Call(expr, param, body) }
         / expr:expr
             { ast::Action::Token(expr) }
+
+        alt_arm -> ast::AltArm
+          = expr:expr _ "=>" _ block:block
+          { ast::AltArm{ discriminant:expr, block:block } }
 
 intf_block -> Vec<ast::InterfaceEntry>
   = _ "{" _ entries:(entry:intf_entry ** (BREAK / (_ ";" _)) {entry}) _ "}"
@@ -220,6 +226,7 @@ INTERFACE = "interface"    !IDCHAR
 REPEAT = "repeat" !IDCHAR
 ON     = "on"     !IDCHAR
 FOR    = "for"    !IDCHAR
+ALT   = "alt"   !IDCHAR
 TEST   = "test"   !IDCHAR
 
 identifier -> String = [a-zA-Z_][0-9a-zA-Z_]*

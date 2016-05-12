@@ -1,0 +1,31 @@
+def bare() {
+    alt _ {
+        _ => {
+            #a
+        }
+        _ => {
+            #b
+        }
+    }
+}
+
+test @up(#a|#b) { #a } bare();
+
+def simple(): #a | #b {
+    on x {
+        alt x {
+            #a => {
+                #a
+                #b
+            }
+            #b => {
+                #b
+                #a
+            }
+        }
+    }
+}
+
+test @both(#a|#b) { #b; #a } simple() { #b };
+test @both(#a|#b) { #a; #b } simple() { #a };
+

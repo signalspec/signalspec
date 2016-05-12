@@ -170,10 +170,22 @@ pub enum Action {
     ForBack(CounterId, u32, Vec<(ValueID, Expr, DataMode)>),
     // guard on counter == size, Up-evaluate outer variables
     ForExit(CounterId, u32, Vec<(ValueID, Expr, DataMode)>),
+
+    AltDnEnter(Vec<(Expr, Expr)>), // Down-evaluate r, up-evaluate l
+    AltUpExit(Vec<(Expr, Expr)>), // Down-evaluate l, up-evaluate r
 }
 
 impl fmt::Display for Action {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+
+        fn alt_pairs(f: &mut fmt::Formatter, text: &str, c: &Vec<(Expr, Expr)>) -> fmt::Result {
+            try!(write!(f, "{} (", text));
+            for &(ref l, ref r) in c {
+                try!(write!(f, "{} = {},", l, r));
+            }
+            write!(f, ")")
+        }
+
         match *self {
             Action::Epsilon => write!(f, "ε"),
             Action::Lower(ref m) => write!(f, "Lower {}", m),
@@ -193,6 +205,9 @@ impl fmt::Display for Action {
             Action::ForEntry(id, count, _) => write!(f, "ForEntry {} {}", id, count),
             Action::ForBack(id, count, _) => write!(f, "ForBack {} {}", id, count),
             Action::ForExit(id, count, _) => write!(f, "ForExit {} {}", id, count),
+
+            Action::AltDnEnter(ref c) => alt_pairs(f, "AltDnEnter", c),
+            Action::AltUpExit(ref c) => alt_pairs(f, "AltUpExit", c),
         }
     }
 }
@@ -274,6 +289,28 @@ pub fn from_step_tree(s: &Step) -> Nfa {
                 nfa.add_transition(entry, to,    Action::ForExit(counter, width, vars.clone()));
 
                 from_step_tree_inner(inner, nfa, start, end);
+            }
+
+            Step::Alt(ref arms, up) => {
+                for &(ref checks, ref inner) in arms {
+                    let start;
+                    let end;
+                    if up {
+                        start = from;
+                        if checks.len() > 0 {
+                            end = nfa.add_state();
+                            nfa.add_transition(end, to, Action::AltUpExit(checks.clone()))
+                        } else {
+                            end = to;
+                        }
+                    } else {
+                        start = nfa.add_state();
+                        end = to;
+                        nfa.add_transition(from, start, Action::AltDnEnter(checks.clone()))
+                    }
+
+                    from_step_tree_inner(inner, nfa, start, end);
+                }
             }
         }
     }

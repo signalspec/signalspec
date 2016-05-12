@@ -20,6 +20,13 @@ pub enum Action {
     Token(Expr),
     On(Expr, Option<Block>),
     For(Vec<(String, Expr)>, Block),
+    Alt(Expr, Vec<AltArm>),
+}
+
+#[derive(Debug, Clone)]
+pub struct AltArm {
+    pub discriminant: Expr,
+    pub block: Block,
 }
 
 pub enum ModuleEntry {
