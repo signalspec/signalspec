@@ -29,3 +29,19 @@ def simple(): #a | #b {
 test @both(#a|#b) { #b; #a } simple() { #b };
 test @both(#a|#b) { #a; #b } simple() { #a };
 
+def tuple(): (#a|#b, #a|#b|#x|#y) {
+    on z {
+        alt z {
+            (#a, w) => {
+                #a
+                w
+            }
+            (#b, w) => {
+                #b
+                w
+            }
+        }
+    }
+}
+
+test @both(#a|#b|#x|#y) { #b; #x } tuple() { (#b, #x) };

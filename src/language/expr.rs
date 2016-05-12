@@ -141,6 +141,27 @@ pub fn on_expr_message<'shape>(sess: &Session, scope: &mut Scope,
                 let id = scope.new_variable(sess, &name[..], ty.clone());
                 msg.components.push(Expr::Variable(id, ty.clone()))
             }
+
+            (&ShapeData::Tup(ref ss), &ast::Expr::Var(ref name)) => { // A variable binding for a tuple
+                // Capture a tuple by recursively building a tuple Item containing each of the
+                // captured variables
+                fn build_tuple<'s>(sess: &Session, msg: &mut Message, ss: &[ShapeData]) -> Item<'s> {
+                    Item::Tuple(ss.iter().map(|i| {
+                        match *i {
+                            ShapeData::Const(ref c) => Item::Value(Expr::Const(c.clone())),
+                            ShapeData::Tup(ref t) => build_tuple(sess, msg, &t[..]),
+                            ShapeData::Val(ref ty, _) => {
+                                let id = sess.make_id();
+                                msg.components.push(Expr::Variable(id, ty.clone()));
+                                Item::Value(Expr::Variable(id, ty.clone()))
+                            }
+                        }
+                    }).collect())
+                }
+
+                scope.bind(name, build_tuple(sess, msg, &ss[..]))
+            }
+
             (&ShapeData::Val(_, _), expr) => { // A match against a refutable pattern
                 msg.components.push(
                     resolve(sess, None, &mut |_| { panic!("Variable binding not allowed here") }, expr));
@@ -150,7 +171,7 @@ pub fn on_expr_message<'shape>(sess: &Session, scope: &mut Scope,
                     inner(sess, scope, msg, s, i);
                 }
             }
-            // TODO: Tup, Var => create tuple item of variables
+
             (shape, expr) => panic!("Expression {:?} doesn't match shape {:?}", expr, shape)
         }
     }
