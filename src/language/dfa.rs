@@ -634,6 +634,7 @@ fn message_match(shape: &Shape, side: Side, msg: &Message, vars: &mut VarMap, bl
 }
 
 pub fn make_dfa(nfa: &Nfa, shape_down: &Shape, shape_up: &Shape) -> Dfa {
+    debug!("\nshape_down: {:#?}\n\nshape_up: {:#?}", shape_down, shape_up);
     let mut states = Vec::new();
     let mut state_by_nfa_entry_states: HashMap<Vec<usize>, usize> = HashMap::new();
     let mut queue: VecDeque<(Option<(DfaStateId, Transition)>, Vec<Thread>)> = VecDeque::new();

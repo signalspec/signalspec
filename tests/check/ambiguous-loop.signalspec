@@ -4,3 +4,21 @@ def main() {
 }
 
 test @up(#x|#y) { #x; #x; #x; #x } main();
+test fail @up(#x|#y) { #y; #x; #x; #x } main();
+
+def main2() {
+    #x
+    repeat _ { #x }
+}
+
+test @up(#x|#y) { #x; #x; #x; #x } main2();
+test fail @up(#x|#y) { #y; #x; #x; #x } main2();
+
+def main3() {
+    #x
+    repeat #3 { #x }
+    #y
+}
+
+test @up(#x|#y) { #x; #x; #x; #x; #y } main3();
+test fail @up(#x|#y) { #x; #x; #x; #y } main3();

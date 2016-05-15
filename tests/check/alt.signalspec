@@ -45,3 +45,24 @@ def tuple(): (#a|#b, #a|#b|#x|#y) {
 }
 
 test @both(#a|#b|#x|#y) { #b; #x } tuple() { (#b, #x) };
+
+def ambiguous(): #a | #b {
+    on x {
+        alt x {
+            #b => {
+                #a
+                #b
+                #a
+            }
+            #a => {
+                #a
+                #a
+                #b
+            }
+        }
+    }
+}
+
+test @both(#a|#b) { #a; #b; #a } ambiguous() { #b };
+test @both(#a|#b) { #a; #a; #b } ambiguous() { #a };
+test fail @both(#a|#b) { #a; #a; #a } ambiguous() { #a };
