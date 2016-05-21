@@ -11,41 +11,8 @@ use super::eval::{ Expr, ConcatElem, BinOp, SignMode };
 use super::nfa::{self, Nfa};
 use connection::Connection;
 
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
-enum Side {
-    Upper,
-    Lower,
-}
-
-#[derive(Copy, Clone, PartialEq, Eq)]
-pub enum InsnRef {
-    ConstantInt(i64),
-    UndefVec,
-    Argument(usize),
-    Transition(usize),
-    Message(usize),
-    MessageMatch(usize),
-}
-
-impl fmt::Debug for InsnRef {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
-            InsnRef::ConstantInt(i) => write!(f, "#{}", i),
-            InsnRef::UndefVec => write!(f, "vec_init"),
-            InsnRef::Argument(i) => write!(f, "%a{}", i),
-            InsnRef::Transition(i) => write!(f, "%t{}", i),
-            InsnRef::Message(i) => write!(f, "%i{}", i),
-            InsnRef::MessageMatch(i) => write!(f, "%m{}", i),
-        }
-    }
-}
-
-#[derive(Clone, PartialEq, Debug)]
-pub enum InsnConcatElem {
-    Elem(InsnRef),
-    Slice(InsnRef, usize),
-}
-
+/// The instruction in the DFA Static Single Assignment form. An Insn represents a computation
+/// performed on one or more input variables.
 #[derive(Clone, PartialEq, Debug)]
 pub enum Insn {
     Const(Value),
@@ -67,9 +34,56 @@ pub enum Insn {
 }
 
 #[derive(Clone, PartialEq, Debug)]
+pub enum InsnConcatElem {
+    Elem(InsnRef),
+    Slice(InsnRef, usize),
+}
+
+/// A value referenced by an Insn.
+#[derive(Copy, Clone, PartialEq, Eq)]
+pub enum InsnRef {
+    /// A constant Value::Integer (used to initialize counters)
+    ConstantInt(i64),
+
+    /// A constant undefined vector (used to initialize for-loop shift registers)
+    UndefVec,
+
+    /// A value carried over from the previous DFA state
+    Argument(usize),
+
+    /// A value computed by the pre-message Insn basic block
+    Transition(usize),
+
+    /// A value received as a component of a message
+    Message(usize),
+
+    /// A value computed by the post-message Insn basic block
+    MessageMatch(usize),
+}
+
+impl fmt::Debug for InsnRef {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            InsnRef::ConstantInt(i) => write!(f, "#{}", i),
+            InsnRef::UndefVec => write!(f, "vec_init"),
+            InsnRef::Argument(i) => write!(f, "%a{}", i),
+            InsnRef::Transition(i) => write!(f, "%t{}", i),
+            InsnRef::Message(i) => write!(f, "%i{}", i),
+            InsnRef::MessageMatch(i) => write!(f, "%m{}", i),
+        }
+    }
+}
+
+/// A boolean condition used as a predicate to enable transitions
+#[derive(Clone, PartialEq, Debug)]
 pub enum Condition {
+    /// The SSA register is equal to the value
     CheckConst(InsnRef, Value),
+
+    /// The SSA register is in the inclusive floating point range
     CheckRange(InsnRef, f64, f64),
+
+    // The SSA register is in the inclusive integer range
     CheckRangeInt(InsnRef, i64, i64),
 }
 
@@ -289,6 +303,7 @@ impl InsnBlock {
     }
 }
 
+/// A compiled DFA
 #[derive(Debug)]
 pub struct Dfa {
     states: Vec<State>,
@@ -298,28 +313,58 @@ pub struct Dfa {
 
 type DfaStateId = usize;
 
+/// A DFA state
 #[derive(Clone, Debug)]
 pub struct State {
+    /// True if this is an accepting state (DFA accepts if input signal ends in this state)
     accepting: bool,
+
+    /// The instructions that are executed prior to receiving a message. These values are available
+    /// in the Transition pre_conditions to determine whether to accept a message on the upper or
+    /// lower sides (e.g. based on counter values).
     insns: InsnBlock,
+
+    /// The set of transitions leaving this state, and the corresponding destination state
     transitions: Vec<(Transition, DfaStateId)>,
 }
 
 pub type MessageSend = (usize, Vec<InsnRef>);
 
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+enum Side {
+    Upper,
+    Lower,
+}
+
+/// A transition out of a state
 #[derive(Clone, Debug)]
 pub struct Transition {
+    /// Conditions that pre-qualify this block before a message is received. Transitions with
+    /// differing receive sides must have mutually exclusive pre_conditions.
     pre_conditions: Conditions,
-    send_lower: Vec<MessageSend>,
-    send_upper: Vec<MessageSend>,
-    registers: Vec<InsnRef>,
 
+    /// The side on which to receive if pre_conditions succeed, the message variant, and the
+    /// conditions that can reference the message components. Conditions with the same side and
+    /// variant must be mutually-exclusive in either pre_conditions or recv conditions.
+    /// If None, this transition does not receive a message (it's a back-edge of an output loop)
     recv: Option<(Side, usize, Conditions)>,
+
+    /// Messages to send on the lower connection if this transition is taken.
+    send_lower: Vec<MessageSend>,
+
+    /// Messages to send on the upper connection if this transition is taken.
+    send_upper: Vec<MessageSend>,
+
+    /// State to persist acorss the transition. A list of live registers to pack into the
+    /// arguments array, which can be accessed by the next state without regard for which
+    /// incoming transition was taken.
+    registers: Vec<InsnRef>,
 }
 
 // Requires iteration in sorted order
 type VarMap = BTreeMap<ValueID, InsnRef>;
 
+/// A thread of NFA execution used to construct the DFA
 #[derive(Debug, Clone)]
 struct Thread {
     state: nfa::StateId,
@@ -345,7 +390,11 @@ impl Thread {
         count_reg
     }
 
-    fn erase_values(&mut self, vars: &mut Vec<InsnRef>) -> (Conditions, Vec<MessageSend>, Vec<MessageSend>) {
+    /// Extract the set of values that are persisted across DFA transitions. This appends the actual
+    /// register values to an arguments array, and replaces them with a reference to the arguments
+    /// array by index. The resulting thread will be identical for any transition into the same
+    /// DFA state, so code in that state can be generated without regard for the previous state.
+    fn erase_vars(&mut self, vars: &mut Vec<InsnRef>) {
         self.prev_states.clear();
 
         for (_, var) in self.counters.iter_mut() {
@@ -376,7 +425,11 @@ impl Thread {
                 }
             }
         }
+    }
 
+    /// Take the conditions and sent values from the thread, returning them and replacing them
+    /// with empty lists.
+    fn erase_values(&mut self) -> (Conditions, Vec<MessageSend>, Vec<MessageSend>) {
         let conditions = mem::replace(&mut self.conditions, Conditions::new());
         let send_lower = mem::replace(&mut self.send_lower, Vec::new());
         let send_upper = mem::replace(&mut self.send_upper, Vec::new());
@@ -392,12 +445,13 @@ fn closure<'nfa>(nfa: &'nfa Nfa, shape_down: &Shape, shape_up: &Shape, initial_t
 
     let mut insns = InsnBlock::new(InsnRef::Transition);
 
-    // Set of NFA states reachable without taking a transition accepting a symbol
+    // Set of NFA states reachable without taking a transition receiving a message
     let mut closure = HashSet::new();
 
     // Threads of NFA execution waiting to be explored
     let mut queue: VecDeque<Thread> = initial_threads.into_iter().collect();
 
+    // Discovered transitions that leave this DFA state
     let mut transitions = Vec::new();
 
     while let Some(thread) = queue.pop_front() {
@@ -478,7 +532,6 @@ fn closure<'nfa>(nfa: &'nfa Nfa, shape_down: &Shape, shape_up: &Shape, initial_t
 
                 RepeatDnInit(counter_id, ref expr) => {
                     let reg = insns.eval_down(expr, &thread.down_vars);
-                    debug!("rdi: {:?}", reg);
                     thread.counters.insert(counter_id, reg);
                     queue.push_back(thread);
                 }
@@ -509,7 +562,7 @@ fn closure<'nfa>(nfa: &'nfa Nfa, shape_down: &Shape, shape_up: &Shape, initial_t
                 }
 
                 RepeatUpInit(counter_id) => {
-                    thread.counters.insert(counter_id, insns.add_const(&Value::Integer(0)));
+                    thread.init_counter(counter_id);
                     queue.push_back(thread)
                 }
                 RepeatUpBack(counter_id) => {
@@ -633,6 +686,54 @@ fn message_match(shape: &Shape, side: Side, msg: &Message, vars: &mut VarMap, bl
     }
 }
 
+/// Add a NFA thread to a group forming a DFA transition.
+/// Maintains the invariant that all groups are mutually-exclusive
+fn add_transition_to_group(mut thread: Thread, recv: Option<(Side, usize, Conditions)>, thread_groups: &mut Vec<(Transition, Vec<Thread>)>) {
+    let (pre_cond, send_lower, send_upper) = thread.erase_values();
+
+    for &mut (ref transition, ref mut threads) in thread_groups.iter_mut() {
+        // If pre-condition mutually excludes, it doesn't go in this group
+        if transition.pre_conditions.mutually_excludes(&pre_cond) {
+            continue;
+        }
+
+        match (&recv, &transition.recv) {
+            // A transition with the same receive direction
+            (&Some((ref side1, tag1, ref c1)), &Some((ref side2, tag2, ref c2))) if side1 == side2 => {
+                if tag1 != tag2 {
+                    // Mutually exclusive by receive tag
+                    continue;
+                }
+
+                // Compare the post-recv conditions
+                if transition.pre_conditions.is_equivalent(&pre_cond)
+                && c1.is_equivalent(c2)
+                && send_lower == transition.send_lower
+                && send_upper == transition.send_upper {
+                    // These NFA transitions have equivalent conditions and same outputs.
+                    // They go to the same DFA state.
+                    threads.push(thread);
+                    return;
+                } else if !c1.mutually_excludes(c2) {
+                    panic!("Transitions with the same message tag must have mutually-exclusive conditions");
+                }
+            },
+            _ => panic!("Transitions with different receive directions must have mutually-exclusive conditions")
+        }
+    }
+
+    // Mutually-exclusive with all existing groups, so make a new group
+    let transition = Transition {
+        pre_conditions: pre_cond,
+        send_lower: send_lower,
+        send_upper: send_upper,
+        registers: Vec::new(),
+        recv: recv,
+    };
+
+    thread_groups.push((transition, vec![thread]));
+}
+
 pub fn make_dfa(nfa: &Nfa, shape_down: &Shape, shape_up: &Shape) -> Dfa {
     debug!("\nshape_down: {:#?}\n\nshape_up: {:#?}", shape_down, shape_up);
     let mut states = Vec::new();
@@ -656,6 +757,8 @@ pub fn make_dfa(nfa: &Nfa, shape_down: &Shape, shape_up: &Shape) -> Dfa {
     }).collect()));
 
     while let Some((pt, threads)) = queue.pop_front() {
+
+        // Check for an existing DFA state for this set of NFA states
         let mut state_key: Vec<usize> = threads.iter().map(|t| t.state).collect();
         state_key.sort();
 
@@ -666,14 +769,19 @@ pub fn make_dfa(nfa: &Nfa, shape_down: &Shape, shape_up: &Shape) -> Dfa {
                 state
             }
             hash_map::Entry::Vacant(entry) => {
+                // If the state doesn't exist, create it.
                 let state = states.len();
 
                 debug!("Creating state {}", state);
+
+                // Walk the NFA states reachable from this state, and collect the NFA threads at
+                // the point they they transition out of this DFA state.
                 let (closure, block, exits) = closure(nfa, shape_down, shape_up, threads);
                 debug!("{:?}", closure);
 
                 debug!("{:#?}", block);
 
+                // Add the new state to the DFA
                 entry.insert(state);
                 states.push( State {
                     accepting: !nfa.accepting.is_disjoint(&closure),
@@ -681,15 +789,18 @@ pub fn make_dfa(nfa: &Nfa, shape_down: &Shape, shape_up: &Shape) -> Dfa {
                     transitions: vec![],
                 });
 
-                let mut thread_groups: Vec<(Option<(Side, usize, Conditions)>, Vec<Thread>)> = Vec::new();
+                // Group the transition threads into mutually-exclusive groups. These will become
+                // DFA transitions.
+                let mut thread_groups: Vec<(Transition, Vec<Thread>)> = Vec::new();
 
-                'exits: for (m, mut thread) in exits {
-                    debug!("{:?} -> {}", m, thread.state);
+                for (recv_msg, mut thread) in exits {
+                    debug!("{:?} -> {}", recv_msg, thread.state);
                     debug!("    {:?}", thread.conditions);
                     debug!("    {:#?}", thread.send_lower);
                     debug!("    {:#?}", thread.send_upper);
 
-                    let recv = match m {
+                    // Build the post-recv conditions
+                    let recv = match recv_msg {
                         Some((Side::Lower, msg)) => {
                             let mut msg_conditions = Conditions::new();
                             let message_block = message_blocks_lower.entry(msg.tag)
@@ -709,63 +820,20 @@ pub fn make_dfa(nfa: &Nfa, shape_down: &Shape, shape_up: &Shape) -> Dfa {
                         None => None,
                     };
 
-                    for &mut (ref r2, ref mut t2) in &mut thread_groups {
-                        if t2[0].conditions.mutually_excludes(&thread.conditions) {
-                            continue;
-                        }
-
-                        match (&recv, r2) {
-                            (&Some((ref s1, tag1, ref c1)), &Some((ref s2, tag2, ref c2))) if s1 == s2 => {
-                                if tag1 == tag2 {
-                                    if t2[0].conditions.is_equivalent(&thread.conditions)
-                                    && c1.is_equivalent(c2)
-                                    && thread.send_lower == t2[0].send_lower
-                                    && thread.send_upper == t2[0].send_upper {
-                                        t2.push(thread);
-                                        continue 'exits;
-                                    } else if !c1.mutually_excludes(c2) {
-                                        panic!("Transitions with the same message tag must have mutually-exclusive conditions");
-                                    }
-                                }
-                            },
-                            _ => panic!("Transitions with different receive directions must have mutually-exclusive conditions")
-                        }
-                    }
-
-                    thread_groups.push((recv, vec![thread]));
+                    add_transition_to_group(thread, recv, &mut thread_groups);
                 }
 
-                for (recv, mut threads) in thread_groups {
+                for (mut transition, mut threads) in thread_groups {
+                    // Put threads in deterministic order to generate arguments list
                     threads.sort_by_key(|t| t.state);
 
-                    let mut regs = Vec::new();
-                    let mut pre_conditions = None;
-                    let mut send = None;
-
                     for thread in &mut threads {
-                        let (p, sl, su) = thread.erase_values(&mut regs);
-
-                        if pre_conditions.is_none() {
-                            pre_conditions = Some(p);
-                        } else {
-                            assert!(pre_conditions.as_ref().unwrap().is_equivalent(&p));
-                        }
-
-                        if send.is_none() {
-                            send = Some((sl, su));
-                        } else {
-                            assert_eq!(Some((sl, su)), send);
-                        }
+                        thread.erase_vars(&mut transition.registers);
                     }
 
-                    let (sl, su) = send.unwrap();
-                    let transition = Transition {
-                        pre_conditions: pre_conditions.unwrap(),
-                        send_lower: sl,
-                        send_upper: su,
-                        registers: regs,
-                        recv: recv,
-                    };
+                    // The destination state of this transition is determined by the set of
+                    // NFA states of the threads, but it may not have a DFA state assigned yet,
+                    // so put it in the queue for the outer loop to resolve later.
                     queue.push_back((Some((state, transition)), threads))
                 }
 
@@ -774,6 +842,8 @@ pub fn make_dfa(nfa: &Nfa, shape_down: &Shape, shape_up: &Shape) -> Dfa {
         };
 
         if let Some((from_state, t)) = pt {
+            // We found or created this state because there was a transition into it; add that
+            // transition to the source state now that its destination is known.
             states[from_state].transitions.push((t, dest_state));
         }
     }

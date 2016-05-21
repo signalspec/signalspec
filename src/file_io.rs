@@ -1,5 +1,4 @@
 use std::io;
-use std::io::prelude::*;
 use std::path::PathBuf;
 use std::fs::File;
 
