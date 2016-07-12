@@ -3,6 +3,9 @@ name = "signalspec"
 version = "0.1.0"
 authors = [ "km@kevinmehall.net" ]
 
+[workspace]
+members = ["cli", "plugins/starfish", "plugins/vcd"]
+
 [dependencies.peg]
 git = "https://github.com/kevinmehall/rust-peg.git"
 
