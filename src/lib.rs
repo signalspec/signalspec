@@ -1,7 +1,6 @@
 #![feature(plugin)]
 #![feature(box_syntax)]
 #![feature(box_patterns)]
-#![feature(iter_arith)]
 #![plugin(peg_syntax_ext)]
 
 extern crate typed_arena;
