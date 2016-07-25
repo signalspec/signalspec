@@ -1,4 +1,4 @@
-use std::collections::{ HashMap, hash_map, HashSet, VecDeque, BTreeMap };
+use std::collections::{ HashMap, HashSet, VecDeque, BTreeMap };
 use vec_map::VecMap;
 use std::fmt;
 use std::mem;
@@ -326,6 +326,17 @@ pub struct State {
 
     /// The set of transitions leaving this state, and the corresponding destination state
     transitions: Vec<(Transition, DfaStateId)>,
+}
+
+impl State {
+    fn new() -> State {
+        fn dummy_block_fn(_: usize) -> InsnRef { unreachable!() }
+        State {
+            accepting: false,
+            insns: InsnBlock::new(dummy_block_fn),
+            transitions: vec![],
+        }
+    }
 }
 
 pub type MessageSend = (usize, Vec<InsnRef>);
@@ -736,13 +747,14 @@ fn add_transition_to_group(mut thread: Thread, recv: Option<(Side, usize, Condit
 
 pub fn make_dfa(nfa: &Nfa, shape_down: &Shape, shape_up: &Shape) -> Dfa {
     debug!("\nshape_down: {:#?}\n\nshape_up: {:#?}", shape_down, shape_up);
-    let mut states = Vec::new();
+    let mut states: Vec<State> = Vec::new();
     let mut state_by_nfa_entry_states: HashMap<Vec<usize>, usize> = HashMap::new();
-    let mut queue: VecDeque<(Option<(DfaStateId, Transition)>, Vec<Thread>)> = VecDeque::new();
+    let mut queue: VecDeque<(DfaStateId, Vec<Thread>)> = VecDeque::new();
     let mut message_blocks_lower = VecMap::new();
     let mut message_blocks_upper = VecMap::new();
 
-    queue.push_back((None, nfa.initial.iter().map(|&state| {
+    states.push(State::new());
+    queue.push_back((0, nfa.initial.iter().map(|&state| {
         Thread {
             state: state,
             prev_states: HashSet::new(),
@@ -756,97 +768,75 @@ pub fn make_dfa(nfa: &Nfa, shape_down: &Shape, shape_up: &Shape) -> Dfa {
         }
     }).collect()));
 
-    while let Some((pt, threads)) = queue.pop_front() {
+    while let Some((state, threads)) = queue.pop_front() {
+        debug!("Creating state {}", state);
 
-        // Check for an existing DFA state for this set of NFA states
-        let mut state_key: Vec<usize> = threads.iter().map(|t| t.state).collect();
-        state_key.sort();
+        // Walk the NFA states reachable from this state, and collect the NFA threads at
+        // the point they they transition out of this DFA state.
+        let (closure, block, exits) = closure(nfa, shape_down, shape_up, threads);
+        debug!("{:?}", closure);
 
-        let dest_state = match state_by_nfa_entry_states.entry(state_key) {
-            hash_map::Entry::Occupied(entry) => {
-                let state = *entry.get();
-                debug!("Transition to existing state {}", state);
-                state
+        debug!("{:#?}", block);
+
+        states[state].insns = block;
+        states[state].accepting = !nfa.accepting.is_disjoint(&closure);
+
+        // Group the transition threads into mutually-exclusive groups. These will become
+        // DFA transitions.
+        let mut thread_groups: Vec<(Transition, Vec<Thread>)> = Vec::new();
+
+        for (recv_msg, mut thread) in exits {
+            debug!("{:?} -> {}", recv_msg, thread.state);
+            debug!("    {:?}", thread.conditions);
+            debug!("    {:#?}", thread.send_lower);
+            debug!("    {:#?}", thread.send_upper);
+
+            // Build the post-recv conditions
+            let recv = match recv_msg {
+                Some((Side::Lower, msg)) => {
+                    let mut msg_conditions = Conditions::new();
+                    let message_block = message_blocks_lower.entry(msg.tag)
+                        .or_insert_with(|| InsnBlock::new(InsnRef::MessageMatch));
+                    message_match(shape_down, Side::Lower, msg, &mut thread.up_vars, message_block, &mut msg_conditions);
+
+                    Some((Side::Lower, msg.tag, msg_conditions))
+                }
+                Some((Side::Upper, msg)) => {
+                    let mut msg_conditions = Conditions::new();
+                    let message_block = message_blocks_upper.entry(msg.tag)
+                        .or_insert_with(|| InsnBlock::new(InsnRef::MessageMatch));
+                    message_match(shape_up, Side::Upper, msg, &mut thread.down_vars, message_block, &mut msg_conditions);
+
+                    Some((Side::Upper, msg.tag, msg_conditions))
+                }
+                None => None,
+            };
+
+            add_transition_to_group(thread, recv, &mut thread_groups);
+        }
+
+        for (mut transition, mut threads) in thread_groups {
+            // Put threads in deterministic order to generate arguments list
+            threads.sort_by_key(|t| t.state);
+
+            for thread in &mut threads {
+                thread.erase_vars(&mut transition.registers);
             }
-            hash_map::Entry::Vacant(entry) => {
-                // If the state doesn't exist, create it.
+
+            let state_key = threads.iter().map(|x| x.state).collect();
+
+            // Find the destination state if it exists, or make a new one
+            let dest_state = *state_by_nfa_entry_states.entry(state_key).or_insert_with(|| {
                 let state = states.len();
-
-                debug!("Creating state {}", state);
-
-                // Walk the NFA states reachable from this state, and collect the NFA threads at
-                // the point they they transition out of this DFA state.
-                let (closure, block, exits) = closure(nfa, shape_down, shape_up, threads);
-                debug!("{:?}", closure);
-
-                debug!("{:#?}", block);
-
-                // Add the new state to the DFA
-                entry.insert(state);
-                states.push( State {
-                    accepting: !nfa.accepting.is_disjoint(&closure),
-                    insns: block,
-                    transitions: vec![],
-                });
-
-                // Group the transition threads into mutually-exclusive groups. These will become
-                // DFA transitions.
-                let mut thread_groups: Vec<(Transition, Vec<Thread>)> = Vec::new();
-
-                for (recv_msg, mut thread) in exits {
-                    debug!("{:?} -> {}", recv_msg, thread.state);
-                    debug!("    {:?}", thread.conditions);
-                    debug!("    {:#?}", thread.send_lower);
-                    debug!("    {:#?}", thread.send_upper);
-
-                    // Build the post-recv conditions
-                    let recv = match recv_msg {
-                        Some((Side::Lower, msg)) => {
-                            let mut msg_conditions = Conditions::new();
-                            let message_block = message_blocks_lower.entry(msg.tag)
-                                .or_insert_with(|| InsnBlock::new(InsnRef::MessageMatch));
-                            message_match(shape_down, Side::Lower, msg, &mut thread.up_vars, message_block, &mut msg_conditions);
-
-                            Some((Side::Lower, msg.tag, msg_conditions))
-                        }
-                        Some((Side::Upper, msg)) => {
-                            let mut msg_conditions = Conditions::new();
-                            let message_block = message_blocks_upper.entry(msg.tag)
-                                .or_insert_with(|| InsnBlock::new(InsnRef::MessageMatch));
-                            message_match(shape_up, Side::Upper, msg, &mut thread.down_vars, message_block, &mut msg_conditions);
-
-                            Some((Side::Upper, msg.tag, msg_conditions))
-                        }
-                        None => None,
-                    };
-
-                    add_transition_to_group(thread, recv, &mut thread_groups);
-                }
-
-                for (mut transition, mut threads) in thread_groups {
-                    // Put threads in deterministic order to generate arguments list
-                    threads.sort_by_key(|t| t.state);
-
-                    for thread in &mut threads {
-                        thread.erase_vars(&mut transition.registers);
-                    }
-
-                    // The destination state of this transition is determined by the set of
-                    // NFA states of the threads, but it may not have a DFA state assigned yet,
-                    // so put it in the queue for the outer loop to resolve later.
-                    queue.push_back((Some((state, transition)), threads))
-                }
-
+                states.push(State::new());
+                queue.push_back((state, threads));
                 state
-            }
-        };
+            });
 
-        if let Some((from_state, t)) = pt {
-            // We found or created this state because there was a transition into it; add that
-            // transition to the source state now that its destination is known.
-            states[from_state].transitions.push((t, dest_state));
+            states[state].transitions.push((transition, dest_state));
         }
     }
+
 
     debug!("lower: {:#?}", message_blocks_lower);
     debug!("upper: {:#?}", message_blocks_upper);
