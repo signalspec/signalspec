@@ -41,6 +41,19 @@ impl fmt::Debug for Value {
     }
 }
 
+impl ::std::hash::Hash for Value {
+    fn hash<H>(&self, state: &mut H) where H: ::std::hash::Hasher {
+        match *self {
+            Value::Number(_) => (),
+            Value::Integer(n) => n.hash(state),
+            Value::Symbol(ref s) => s.hash(state),
+            Value::Vector(ref n) => n.hash(state),
+        }
+    }
+}
+
+impl ::std::cmp::Eq for Value {}
+
 /// A type represents a set of possible values
 #[derive(Debug, PartialEq, Clone)]
 pub enum Type {
@@ -80,8 +93,8 @@ impl Type {
             (&Type::Vector(len, ref t), &Value::Vector(ref v)) => {
                 (v.len() == len) && v.iter().all(|i| t.includes(i))
             }
-            (&Type::Integer(_lo, _hi), &Value::Integer(_v)) => true, //TODO: (v >= lo && v <= hi),
-            (&Type::Number(_lo, _hi), &Value::Number(_v)) => true, //TODO: (v >= lo && v <= hi),
+            (&Type::Integer(_lo, _hi), &Value::Integer(_v)) => true, //TODO: (v >= lo && v < hi),
+            (&Type::Number(_lo, _hi), &Value::Number(_v)) => true, //TODO: (v >= lo && v < hi),
             _ => false,
         }
     }

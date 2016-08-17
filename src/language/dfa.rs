@@ -1,8 +1,12 @@
-use std::collections::{ HashMap, HashSet, VecDeque, BTreeMap };
+use std::collections::{ HashMap, HashSet, VecDeque, btree_map, BTreeMap };
+use std::iter::Peekable;
 use vec_map::VecMap;
 use std::fmt;
 use std::mem;
+use std::cmp;
 use std::io::{ Write, Result as IoResult };
+use std::fmt::Debug;
+use std::cell::Cell;
 
 use data::{ Value, Shape, Type };
 use session::ValueID;
@@ -40,7 +44,7 @@ pub enum InsnConcatElem {
 }
 
 /// A value referenced by an Insn.
-#[derive(Copy, Clone, PartialEq, Eq)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum InsnRef {
     /// A constant Value::Integer (used to initialize counters)
     ConstantInt(i64),
@@ -77,62 +81,435 @@ impl fmt::Debug for InsnRef {
 /// A boolean condition used as a predicate to enable transitions
 #[derive(Clone, PartialEq, Debug)]
 pub enum Condition {
-    /// The SSA register is equal to the value
-    CheckConst(InsnRef, Value),
+    /// Equal to the value
+    Eq(Value),
 
-    /// The SSA register is in the inclusive floating point range
-    CheckRange(InsnRef, f64, f64),
+    /// In the lower-inclusive floating point range
+    Range(f64, f64),
 
-    // The SSA register is in the inclusive integer range
-    CheckRangeInt(InsnRef, i64, i64),
+    // In the lower-inclusive integer range
+    RangeInt(i64, i64),
 }
 
 impl Condition {
-    fn mutually_excludes(&self, other: &Condition) -> bool {
+    fn and(&self, other: &Condition) -> Option<Condition> {
         use self::Condition::*;
         match (self, other) {
-            (&CheckConst(ref x, ref a), &CheckConst(ref y, ref b)) if x == y && a != b => true,
-            (&CheckRangeInt(ref x, lo1, hi1), &CheckRangeInt(ref y, lo2, hi2)) if x == y && (lo1 > hi2 || lo2 > hi1) => true,
-            _ => false
+            (&Eq(ref v1), &Eq(ref v2)) if v1 == v2 => Some(Eq(v1.clone())),
+            (&Range(lo1, hi1), &Range(lo2, hi2)) if !(lo1 >= hi2 || lo2 >= hi1) => Some(Range(f64::max(lo1, lo2), f64::min(hi1, hi2))),
+            (&RangeInt(lo1, hi1), &RangeInt(lo2, hi2)) if !(lo1 >= hi2 || lo2 >= hi1) => Some(RangeInt(cmp::max(lo1, lo2), cmp::min(hi1, hi2))),
+            _ => None
+        }
+    }
+
+    fn check(&self, v: &Value) -> bool {
+        use self::Condition::*;
+        match *self {
+            Eq(ref a) => a == v,
+            Range(lo, hi) => {
+                if let &Value::Number(v) = v {
+                    v >= lo && v < hi
+                } else {
+                    panic!("Non-number in CheckRange");
+                }
+            }
+            RangeInt(lo, hi) => {
+                if let &Value::Integer(v) = v {
+                    v >= lo && v < hi
+                } else {
+                    panic!("Non-integer in CheckRangeInt");
+                }
+            }
         }
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct Conditions(Vec<Condition>);
+#[derive(Debug, PartialEq, Clone)]
+pub struct Conditions(BTreeMap<InsnRef, Condition>);
 
 impl Conditions {
     fn new() -> Conditions {
-        Conditions(vec![])
+        Conditions(BTreeMap::new())
     }
 
-    fn add(&mut self, c: Condition) -> bool {
-        use self::Condition::*;
-        use self::InsnRef::ConstantInt;
+    fn add(&mut self, i: InsnRef, c: Condition) -> bool {
+        let c = match c {
+            Condition::Eq(Value::Integer(v)) => Condition::RangeInt(v, v + 1),
+            Condition::Eq(Value::Number(v)) => Condition::Range(v, v),
+            c => c,
+        };
 
-        match c {
-            CheckRangeInt(ConstantInt(x), lo, hi) => return x >= lo && x <= hi,
-            _ => {
-                self.0.push(c);
+        if let (InsnRef::ConstantInt(x), &Condition::RangeInt(lo, hi)) = (i, &c) {
+            return x >= lo && x < hi
+        }
+
+        use std::collections::btree_map::Entry::*;
+        match self.0.entry(i) {
+            Occupied(mut e) => {
+                let new = e.get().and(&c);
+                if let Some(new) = new {
+                    e.insert(new);
+                    true
+                } else { false }
+            }
+            Vacant(e) => {
+                e.insert(c);
                 true
             }
         }
     }
+}
 
-    fn is_equivalent(&self, other: &Conditions) -> bool {
-        self.0.len() == other.0.len() && self.0.iter().all(|i| other.0.iter().find(|&j| i==j).is_some())
+#[derive(Clone, Debug)]
+pub struct RangeMap<K, V> {
+    items: Vec<(K, K, V)>,
+}
+
+impl<K: PartialOrd + Copy + Debug, V: Clone> RangeMap<K, V> {
+    pub fn with_one_range(lo: K, hi: K, v: V) -> RangeMap<K, V> {
+        RangeMap { items: vec![(lo, hi, v)] }
     }
 
-    fn mutually_excludes(&self, other: &Conditions) -> bool {
-        for i in &self.0 {
-            for j in &other.0 {
-                if i.mutually_excludes(j) {
-                    return true;
-                }
+    fn binary_search(&self, k: K) -> Result<usize, usize> {
+        use std::cmp::Ordering;
+        self.items.binary_search_by(|&(ref min, ref max, _)| {
+            if *min > k {
+                Ordering::Greater
+            } else if *max <= k {
+                Ordering::Less
+            } else {
+                Ordering::Equal
+            }
+        })
+    }
+
+    pub fn find(&self, k: K) -> Option<&V> {
+        self.binary_search(k).ok().map(|idx| &self.items[idx].2)
+    }
+
+    pub fn span(&mut self, ins_lo: K, ins_hi: K, default: &V) -> &mut[(K, K, V)] {
+        let mut old = PreIter::new(mem::replace(&mut self.items, Vec::new()));
+
+        struct PreIter<I, T> {
+            iter: I,
+            first: Option<T>,
+        }
+
+        impl<I, T> Iterator for PreIter<I, T> where I: Iterator<Item=T> {
+            type Item = T;
+            fn next(&mut self) -> Option<T> {
+                self.first.take().or_else(|| self.iter.next())
             }
         }
-        false
+
+        impl<I, T> PreIter<I, T> where I: Iterator<Item=T>{
+            fn new<X: IntoIterator<Item=T, IntoIter=I>>(it: X) -> PreIter<I, T> {
+                PreIter { iter: it.into_iter(), first: None }
+            }
+
+            fn unshift(&mut self, t: T) {
+                assert!(self.first.is_none());
+                self.first = Some(t);
+            }
+        }
+
+        while let Some((lo, hi, v)) = old.next() {
+            if hi <= ins_lo {
+                // completely below new range
+                self.items.push((lo, hi, v));
+            } else if lo < ins_lo {
+                // straddles bottom of new range, split it
+                self.items.push((lo, ins_lo, v.clone()));
+                old.unshift((ins_lo, hi, v));
+                break;
+            } else {
+                old.unshift((lo, hi, v));
+                break;
+            }
+        }
+
+        let start = self.items.len();
+
+        let mut pos = ins_lo;
+        while let Some((lo, hi, v)) = old.next() {
+            if lo > pos && lo <= ins_hi {
+                // fill gap
+                self.items.push((pos, lo, default.clone()));
+            }
+
+            if hi <= ins_hi {
+                // completely inside range
+                self.items.push((lo, hi, v));
+                pos = hi;
+            } else if lo < ins_hi {
+                // straddles top of new range, split it
+                self.items.push((lo, ins_hi, v.clone()));
+                old.unshift((ins_hi, hi, v));
+                pos = ins_hi;
+                break;
+            } else {
+                old.unshift((lo, hi, v));
+                break;
+            }
+        }
+
+        if pos < ins_hi {
+            self.items.push((pos, ins_hi, default.clone()))
+        }
+
+        let end = self.items.len();
+        self.items.extend(old);
+
+        &mut self.items[start..end]
     }
+
+    pub fn map<F, U: Clone + Default>(self, mut f: F) -> RangeMap<K, U> where F: FnMut(V) -> U {
+        RangeMap {
+            items: self.items.into_iter().map(|(lo, hi, v)| { (lo, hi, f(v)) }).collect(),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub enum ConditionTree<T> {
+    Branch(InsnRef, ConditionBranch<T>),
+    Leaf(T),
+}
+
+#[derive(Clone, Debug)]
+pub enum ConditionBranch<T> {
+    Symbol(HashMap<Value, ConditionTree<T>>, Box<ConditionTree<T>>),
+    Range(RangeMap<f64, ConditionTree<T>>, Box<ConditionTree<T>>),
+    RangeInt(RangeMap<i64, ConditionTree<T>>, Box<ConditionTree<T>>),
+}
+
+impl<T: Default> Default for ConditionTree<T> {
+    fn default() -> ConditionTree<T> { ConditionTree::Leaf(T::default()) }
+}
+
+impl<T> ConditionBranch<T> {
+    pub fn each_child<F: FnMut(&mut ConditionTree<T>)>(&mut self, mut each_child: F) {
+        use self::ConditionBranch::*;
+
+        match *self {
+            Symbol(ref mut options, ref mut other) => {
+                for opt in options.values_mut() { each_child(opt) }
+                each_child(other);
+            }
+            Range(ref mut options, ref mut other) => {
+                for &mut (_, _, ref mut opt) in &mut options.items {
+                    each_child(opt);
+                }
+                each_child(other);
+            }
+            RangeInt(ref mut options, ref mut other) => {
+                for &mut (_, _, ref mut opt) in &mut options.items {
+                    each_child(opt);
+                }
+                each_child(other);
+            }
+        }
+    }
+}
+
+impl<T: Clone + Default + Debug> ConditionTree<T> {
+    pub fn new() -> ConditionTree<T> { ConditionTree::default() }
+
+    pub fn find<'s, F: FnMut(InsnRef) -> Value>(&'s self, var_fn: &mut F) -> &'s T {
+        match *self {
+            ConditionTree::Branch(i, ref cond) => {
+                let v = var_fn(i);
+                debug!("Checking {:?}={} against {:?}", i, v, cond);
+                match (v, cond) {
+                    (ref s, &ConditionBranch::Symbol(ref options, ref other)) => {
+                        options.get(s).unwrap_or(other).find(var_fn)
+                    }
+                    (Value::Number(i), &ConditionBranch::Range(ref options, ref other)) => {
+                        options.find(i).unwrap_or(other).find(var_fn)
+                    }
+                    (Value::Integer(i), &ConditionBranch::RangeInt(ref options, ref other)) => {
+                        options.find(i).unwrap_or(other).find(var_fn)
+                    }
+                    (a, b) => panic!("Can't match {} against {:?}", a, b)
+                }
+            }
+            ConditionTree::Leaf(ref v) => v,
+        }
+    }
+
+    fn map<F, U: Clone + Default + Debug>(self, f: &mut F) -> ConditionTree<U> where F: FnMut(T)->U {
+        use self::ConditionTree::*;
+        use self::ConditionBranch::*;
+
+        match self {
+            Branch(i, Symbol(options, other)) => {
+                let options = options.into_iter().map(|(k, v)| (k, v.map(f))).collect();
+                let other = Box::new(other.map(f));
+                Branch(i, Symbol(options, other))
+            }
+            Branch(i, Range(options, other)) => {
+                let other = Box::new(other.map(f));
+                Branch(i, Range(options.map(|x| x.map(f)), other))
+            }
+            Branch(i, RangeInt(options, other)) => {
+                let other = Box::new(other.map(f));
+                Branch(i, RangeInt(options.map(|x| x.map(f)), other))
+            }
+            Leaf(v) => Leaf(f(v)),
+        }
+    }
+
+    pub fn conditions<F: FnMut(&mut T)>(&mut self, conditions: &Conditions, mut each_loc: F) {
+        self.conditions_inner(conditions.0.iter().peekable(), &mut each_loc);
+    }
+
+    fn conditions_inner<F: FnMut(&mut T)>(&mut self, mut conditions: Peekable<btree_map::Iter<InsnRef, Condition>>, each_loc: &mut F) {
+        use self::ConditionTree::*;
+
+        match (self, conditions.peek()) {
+            (&mut Leaf(ref mut v), None) => {
+                // At a leaf and no more conditions. We're done!
+                each_loc(v);
+            }
+            (&mut Branch(_, ref mut branch), None) => {
+                // We have no more conditions, therefore we don't have one for this variable.
+                // Recurse into all branches.
+                branch.each_child(|c| c.conditions_inner(conditions.clone(), each_loc));
+            }
+            (&mut Branch(reg, ref mut branch), Some(&(&next_reg, _))) if reg < next_reg => {
+                // We have no condition for this variable, because if we did, it would be next
+                // Recurse into all branches.
+                branch.each_child(|c| c.conditions_inner(conditions.clone(), each_loc));
+            }
+            (&mut Branch(reg, ref mut branch), Some(&(&next_reg, next_val))) if reg == next_reg => {
+                // At an existing level of the tree for this variable. Follow or insert
+                // a branch for this condition
+                conditions.next();
+                match (branch, next_val) {
+                    (&mut ConditionBranch::Symbol(ref mut options, ref other), &Condition::Eq(ref v)) => {
+                        options.entry(v.clone()).or_insert_with(|| (**other).clone())
+                            .conditions_inner(conditions, each_loc);
+                    }
+                    (&mut ConditionBranch::Range(ref mut options, ref other), &Condition::Range(lo, hi)) => {
+                        for &mut (_, _, ref mut opt) in options.span(lo, hi, other) {
+                            opt.conditions_inner(conditions.clone(), each_loc);
+                        }
+                    }
+                    (&mut ConditionBranch::RangeInt(ref mut options, ref other), &Condition::RangeInt(lo, hi)) => {
+                        for &mut (_, _, ref mut opt) in options.span(lo, hi, other) {
+                            opt.conditions_inner(conditions.clone(), each_loc);
+                        }
+                    }
+                    _ => { panic!("Variable type mismatch") }
+                }
+            }
+            (loc, Some(&(&next_reg, next_val))) => {
+                // No existing level of the tree for this variable. Insert one.
+
+                conditions.next();
+                let here = mem::replace(loc, ConditionTree::default());
+                let mut new = here.clone();
+                new.conditions_inner(conditions, each_loc);
+
+                let new_branch = match *next_val {
+                    Condition::Eq(ref v) => {
+                        let mut options = HashMap::new();
+                        options.insert(v.clone(), new);
+                        ConditionBranch::Symbol(options, Box::new(here))
+                    }
+                    Condition::Range(lo, hi) => {
+                        ConditionBranch::Range(RangeMap::with_one_range(lo, hi, new), Box::new(here))
+                    }
+                    Condition::RangeInt(lo, hi) => {
+                        ConditionBranch::RangeInt(RangeMap::with_one_range(lo, hi, new), Box::new(here))
+                    }
+                };
+
+                *loc = Branch(next_reg, new_branch);
+            }
+        }
+    }
+
+    fn to_graphviz<F: FnMut(&mut Write, &str, &T) -> IoResult<bool>>(&self, dest: &mut Write, counter: &Cell<u32>, parent_id: &str, leaf_fn: &mut F) -> IoResult<bool> {
+        use self::ConditionTree::*;
+        use self::ConditionBranch::*;
+        use std::ops::Deref;
+
+        match *self {
+            Branch(i, ref cond) => {
+                let header = format!("{:?}", i);
+                let options: Vec<(String, &ConditionTree<T>)> = match *cond {
+                    Symbol(ref options, ref other) => {
+                        options.iter().map(|(k, v)| (format!("{}", k), v))
+                            .chain(Some(("_".to_owned(), other.deref())))
+                            .collect()
+                    }
+                    Range(ref options, ref other) => {
+                        options.items.iter().map(|&(min, max, ref v)| (format!("{}..{}", min, max), v))
+                            .chain(Some(("_".to_owned(), other.deref())))
+                            .collect()
+                    }
+                    RangeInt(ref options, ref other) => {
+                        options.items.iter().map(|&(min, max, ref v)| (format!("{}..{}", min, max), v))
+                            .chain(Some(("_".to_owned(), other.deref())))
+                            .collect()
+                    }
+                };
+
+                let mut children = Vec::new();
+                let node_id = format!("c{}", counter.get());
+                counter.set(counter.get() + 1);
+
+                for (i, (s, child)) in options.into_iter().enumerate() {
+                    let port_id = format!("{}:{}", node_id, i);
+                    if try!(child.to_graphviz(dest, counter, &port_id, leaf_fn)) {
+                        children.push((i, s));
+                    }
+                }
+
+                if children.len() != 0 {
+                    try!(writeln!(dest, r#"    {} -> {}:top;"#, parent_id, node_id));
+                    try!(writeln!(dest, r#"    {} [shape="none" label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0">
+<TR><TD COLSPAN="{}" PORT="top"><B>{}</B></TD></TR><TR>"#, node_id, children.len(), header));
+                    for &(i, ref s) in &children {
+                        try!(writeln!(dest, r#"<TD PORT="{}">{}</TD>"#, i, s));
+                    }
+                    try!(writeln!(dest, r#"</TR></TABLE>>];"#));
+                    Ok(true)
+                } else {
+                    Ok(false)
+                }
+            }
+            Leaf(ref v) => {
+                leaf_fn(dest, parent_id, v)
+            }
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+enum RecvTree<T> {
+    Fail,
+    Recv {
+        side: Side,
+        send: Vec<MessageSend>,
+        options: VecMap<RecvArm<T>>,
+    },
+    Loop {
+        send_lower: Vec<MessageSend>,
+        send_upper: Vec<MessageSend>,
+        transition: T
+    },
+}
+
+impl<T> Default for RecvTree<T> {
+    fn default() -> RecvTree<T> { RecvTree::Fail }
+}
+
+#[derive(Clone, Debug)]
+struct RecvArm<T> {
+    block: InsnBlock,
+    tree: ConditionTree<Option<(Vec<MessageSend>, T)>>,
 }
 
 #[derive(Clone)]
@@ -180,7 +557,7 @@ impl InsnBlock {
         match *e {
             Expr::Ignored => panic!("Ignored value not ignored on down!"), // TODO: should this be defined?
             Expr::Const(ref v) => self.add_const(v),
-            Expr::Variable(id, _) => *vars.get(&id).unwrap(),
+            Expr::Variable(id, _) => *vars.get(&id).unwrap_or_else(|| panic!("invalid variable reference {}", id)),
 
             Expr::Range(..) | Expr::RangeInt(..) => panic!("Range value not ignored on down"),
             Expr::Union(..) => panic!("Union value not ignored on down"),
@@ -234,7 +611,7 @@ impl InsnBlock {
         match *e {
             Expr::Ignored => true,
             Expr::Const(ref v) => {
-                conditions.add(Condition::CheckConst(val, v.clone()))
+                conditions.add(val, Condition::Eq(v.clone()))
             }
             Expr::Variable(id, _) => {
                 vars.insert(id, val);
@@ -242,10 +619,10 @@ impl InsnBlock {
             }
 
             Expr::Range(lo, hi) => {
-                conditions.add(Condition::CheckRange(val, lo, hi))
+                conditions.add(val, Condition::Range(lo, hi))
             }
             Expr::RangeInt(lo, hi) => {
-                conditions.add(Condition::CheckRangeInt(val, lo, hi))
+                conditions.add(val, Condition::RangeInt(lo, hi))
             }
             Expr::Union(..) => unimplemented!(),
 
@@ -307,8 +684,6 @@ impl InsnBlock {
 #[derive(Debug)]
 pub struct Dfa {
     states: Vec<State>,
-    message_blocks_lower: VecMap<InsnBlock>,
-    message_blocks_upper: VecMap<InsnBlock>,
 }
 
 type DfaStateId = usize;
@@ -325,7 +700,7 @@ pub struct State {
     insns: InsnBlock,
 
     /// The set of transitions leaving this state, and the corresponding destination state
-    transitions: Vec<(Transition, DfaStateId)>,
+    transitions: ConditionTree<RecvTree<Transition>>,
 }
 
 impl State {
@@ -334,7 +709,7 @@ impl State {
         State {
             accepting: false,
             insns: InsnBlock::new(dummy_block_fn),
-            transitions: vec![],
+            transitions: ConditionTree::new(),
         }
     }
 }
@@ -350,23 +725,9 @@ enum Side {
 /// A transition out of a state
 #[derive(Clone, Debug)]
 pub struct Transition {
-    /// Conditions that pre-qualify this block before a message is received. Transitions with
-    /// differing receive sides must have mutually exclusive pre_conditions.
-    pre_conditions: Conditions,
+    dest_state: usize,
 
-    /// The side on which to receive if pre_conditions succeed, the message variant, and the
-    /// conditions that can reference the message components. Conditions with the same side and
-    /// variant must be mutually-exclusive in either pre_conditions or recv conditions.
-    /// If None, this transition does not receive a message (it's a back-edge of an output loop)
-    recv: Option<(Side, usize, Conditions)>,
-
-    /// Messages to send on the lower connection if this transition is taken.
-    send_lower: Vec<MessageSend>,
-
-    /// Messages to send on the upper connection if this transition is taken.
-    send_upper: Vec<MessageSend>,
-
-    /// State to persist acorss the transition. A list of live registers to pack into the
+    /// State to persist across the transition. A list of live registers to pack into the
     /// arguments array, which can be accessed by the next state without regard for which
     /// incoming transition was taken.
     registers: Vec<InsnRef>,
@@ -413,12 +774,14 @@ impl Thread {
             vars.push(value);
         }
 
-        for (_, var) in self.up_vars.iter_mut() {
+        for (id, var) in self.up_vars.iter_mut() {
+            debug!("up-var {} lives across transition", id);
             let value = mem::replace(var, InsnRef::Argument(vars.len()));
             vars.push(value);
         }
 
-        for (_, var) in self.down_vars.iter_mut() {
+        for (id, var) in self.down_vars.iter_mut() {
+            debug!("down-var {} lives across transition", id);
             let value = mem::replace(var, InsnRef::Argument(vars.len()));
             vars.push(value);
         }
@@ -549,7 +912,7 @@ fn closure<'nfa>(nfa: &'nfa Nfa, shape_down: &Shape, shape_up: &Shape, initial_t
 
                 RepeatDnEntry(counter_id) => {
                     let reg = *thread.counters.get(&counter_id).expect("Repeat count should be defined");
-                    if thread.conditions.add(Condition::CheckRangeInt(reg, 1, ::std::i64::MAX)) {
+                    if thread.conditions.add(reg, Condition::RangeInt(1, ::std::i64::MAX)) {
                         thread.prev_states.insert(counter_id);
                         queue.push_back(thread);
                     }
@@ -567,7 +930,7 @@ fn closure<'nfa>(nfa: &'nfa Nfa, shape_down: &Shape, shape_up: &Shape, initial_t
 
                 RepeatDnExit(counter_id) => {
                     let reg = thread.counters.remove(&counter_id).expect("Repeat count should be defined");
-                    if thread.conditions.add(Condition::CheckRangeInt(reg, 0, 0)) {
+                    if thread.conditions.add(reg, Condition::RangeInt(0, 1)) {
                         queue.push_back(thread);
                     }
                 }
@@ -606,7 +969,7 @@ fn closure<'nfa>(nfa: &'nfa Nfa, shape_down: &Shape, shape_up: &Shape, initial_t
 
                 ForEntry(counter_id, count, ref vars) => {
                     let count_reg = thread.counters.get(&counter_id).expect("Repeat count should be defined").clone();
-                    if thread.conditions.add(Condition::CheckRangeInt(count_reg, 0, count as i64 - 1)) {
+                    if thread.conditions.add(count_reg, Condition::RangeInt(0, count as i64)) {
                         {
                             let for_data = thread.for_vars.get_mut(&counter_id).expect("For-loop variables not initialized at entry");
 
@@ -651,7 +1014,7 @@ fn closure<'nfa>(nfa: &'nfa Nfa, shape_down: &Shape, shape_up: &Shape, initial_t
 
                 ForExit(counter_id, count, ref vars) => {
                     let count_reg = thread.counters.remove(&counter_id).expect("Repeat count should be defined").clone();
-                    if thread.conditions.add(Condition::CheckRangeInt(count_reg, count as i64, count as i64)) {
+                    if thread.conditions.add(count_reg, Condition::RangeInt(count as i64, count as i64 + 1)) {
                         let for_data = thread.for_vars.remove(&counter_id).expect("For-loop variables not initialized at exit");
 
                         // Up-evaluate outer variables
@@ -687,62 +1050,16 @@ fn closure<'nfa>(nfa: &'nfa Nfa, shape_down: &Shape, shape_up: &Shape, initial_t
     (closure, insns, transitions)
 }
 
-fn message_match(shape: &Shape, side: Side, msg: &Message, vars: &mut VarMap, block: &mut InsnBlock, conditions: &mut Conditions) {
+fn message_match(shape: &Shape, side: Side, msg: &Message, vars: &mut VarMap, block: &mut InsnBlock) -> Conditions {
+    let mut conditions = Conditions::new();
     let variant = &shape.variants[msg.tag];
 
     for (idx, (e, _)) in msg.components.iter().zip(variant.values())
         .filter(|&(_, (_, dir))| (side == Side::Upper && dir.down) || (side == Side::Lower && dir.up)).enumerate() {
             let rx = InsnRef::Message(idx);
-            block.eval_up(e, rx, vars, conditions);
+            block.eval_up(e, rx, vars, &mut conditions);
     }
-}
-
-/// Add a NFA thread to a group forming a DFA transition.
-/// Maintains the invariant that all groups are mutually-exclusive
-fn add_transition_to_group(mut thread: Thread, recv: Option<(Side, usize, Conditions)>, thread_groups: &mut Vec<(Transition, Vec<Thread>)>) {
-    let (pre_cond, send_lower, send_upper) = thread.erase_values();
-
-    for &mut (ref transition, ref mut threads) in thread_groups.iter_mut() {
-        // If pre-condition mutually excludes, it doesn't go in this group
-        if transition.pre_conditions.mutually_excludes(&pre_cond) {
-            continue;
-        }
-
-        match (&recv, &transition.recv) {
-            // A transition with the same receive direction
-            (&Some((ref side1, tag1, ref c1)), &Some((ref side2, tag2, ref c2))) if side1 == side2 => {
-                if tag1 != tag2 {
-                    // Mutually exclusive by receive tag
-                    continue;
-                }
-
-                // Compare the post-recv conditions
-                if transition.pre_conditions.is_equivalent(&pre_cond)
-                && c1.is_equivalent(c2)
-                && send_lower == transition.send_lower
-                && send_upper == transition.send_upper {
-                    // These NFA transitions have equivalent conditions and same outputs.
-                    // They go to the same DFA state.
-                    threads.push(thread);
-                    return;
-                } else if !c1.mutually_excludes(c2) {
-                    panic!("Transitions with the same message tag must have mutually-exclusive conditions");
-                }
-            },
-            _ => panic!("Transitions with different receive directions must have mutually-exclusive conditions")
-        }
-    }
-
-    // Mutually-exclusive with all existing groups, so make a new group
-    let transition = Transition {
-        pre_conditions: pre_cond,
-        send_lower: send_lower,
-        send_upper: send_upper,
-        registers: Vec::new(),
-        recv: recv,
-    };
-
-    thread_groups.push((transition, vec![thread]));
+    conditions
 }
 
 pub fn make_dfa(nfa: &Nfa, shape_down: &Shape, shape_up: &Shape) -> Dfa {
@@ -750,8 +1067,6 @@ pub fn make_dfa(nfa: &Nfa, shape_down: &Shape, shape_up: &Shape) -> Dfa {
     let mut states: Vec<State> = Vec::new();
     let mut state_by_nfa_entry_states: HashMap<Vec<usize>, usize> = HashMap::new();
     let mut queue: VecDeque<(DfaStateId, Vec<Thread>)> = VecDeque::new();
-    let mut message_blocks_lower = VecMap::new();
-    let mut message_blocks_upper = VecMap::new();
 
     states.push(State::new());
     queue.push_back((0, nfa.initial.iter().map(|&state| {
@@ -769,13 +1084,11 @@ pub fn make_dfa(nfa: &Nfa, shape_down: &Shape, shape_up: &Shape) -> Dfa {
     }).collect()));
 
     while let Some((state, threads)) = queue.pop_front() {
-        debug!("Creating state {}", state);
-
         // Walk the NFA states reachable from this state, and collect the NFA threads at
         // the point they they transition out of this DFA state.
         let (closure, block, exits) = closure(nfa, shape_down, shape_up, threads);
-        debug!("{:?}", closure);
 
+        debug!("Creating DFA state {} = NFA states {:?}", state, closure);
         debug!("{:#?}", block);
 
         states[state].insns = block;
@@ -783,7 +1096,7 @@ pub fn make_dfa(nfa: &Nfa, shape_down: &Shape, shape_up: &Shape) -> Dfa {
 
         // Group the transition threads into mutually-exclusive groups. These will become
         // DFA transitions.
-        let mut thread_groups: Vec<(Transition, Vec<Thread>)> = Vec::new();
+        let mut tt = ConditionTree::<RecvTree<Vec<Thread>>>::new();
 
         for (recv_msg, mut thread) in exits {
             debug!("{:?} -> {}", recv_msg, thread.state);
@@ -791,39 +1104,96 @@ pub fn make_dfa(nfa: &Nfa, shape_down: &Shape, shape_up: &Shape) -> Dfa {
             debug!("    {:#?}", thread.send_lower);
             debug!("    {:#?}", thread.send_upper);
 
-            // Build the post-recv conditions
-            let recv = match recv_msg {
-                Some((Side::Lower, msg)) => {
-                    let mut msg_conditions = Conditions::new();
-                    let message_block = message_blocks_lower.entry(msg.tag)
-                        .or_insert_with(|| InsnBlock::new(InsnRef::MessageMatch));
-                    message_match(shape_down, Side::Lower, msg, &mut thread.up_vars, message_block, &mut msg_conditions);
+            let (pre_cond, send_lower, send_upper) = thread.erase_values();
 
-                    Some((Side::Lower, msg.tag, msg_conditions))
+            tt.conditions(&pre_cond, |loc| {
+                match recv_msg {
+                    Some((side, msg)) => {
+                        let mut thread = thread.clone();
+                        let (send_side, send_other, shape);
+                        match side {
+                            Side::Lower => {
+                                send_side = &send_lower;
+                                send_other = &send_upper;
+                                shape = shape_down;
+                            }
+                            Side::Upper => {
+                                send_side = &send_upper;
+                                send_other = &send_lower;
+                                shape = shape_up;
+                            }
+                        }
+
+                        match *loc {
+                            RecvTree::Fail => {
+                                *loc = RecvTree::Recv { side: side, send: send_side.clone(), options: VecMap::new() };
+                            }
+                            RecvTree::Recv { side: existing_side, send: ref existing_send, .. } if side == existing_side => {
+                                if send_side != existing_send { panic!("Overlapping transitions must output the same data"); }
+                            }
+                            _ => panic!("Transitions with different receive directions must have mutually-exclusive conditions")
+                        }
+
+                        let arms = if let RecvTree::Recv { ref mut options, .. } = *loc { options } else { unreachable!() };
+
+                        let arm = arms.entry(msg.tag).or_insert_with(|| RecvArm {
+                            block: InsnBlock::new(InsnRef::MessageMatch),
+                            tree: ConditionTree::new()
+                        });
+
+                        let conditions = {
+                            let vars = match side {
+                                Side::Lower => &mut thread.up_vars,
+                                Side::Upper => &mut thread.down_vars,
+                            };
+                            message_match(shape, side, msg, vars, &mut arm.block)
+                        };
+
+                        arm.tree.conditions(&conditions, |loc| {
+                            match *loc {
+                                None => {
+                                    *loc = Some((send_other.clone(), vec![thread.clone()]));
+                                }
+                                Some((ref send, ref mut threads)) => {
+                                    if send != send_other {
+                                         panic!("Overlapping transitions must output the same data");
+                                    }
+                                    threads.push(thread.clone());
+                                }
+                            }
+                        })
+                    }
+                    None => {
+                        match *loc {
+                            RecvTree::Fail => {
+                                *loc = RecvTree::Loop { send_lower: send_lower.clone(), send_upper: send_upper.clone(), transition: vec![thread.clone()] };
+                            }
+                            RecvTree::Loop { send_lower: ref lower, send_upper: ref upper, ref mut transition } => {
+                                if &send_lower == lower && &send_upper == upper {
+                                    transition.push(thread.clone());
+                                } else {
+                                    panic!("Overlapping transitions must output the same data");
+                                }
+                            }
+                            _ => panic!("Transitions with different receive directions must have mutually-exclusive conditions")
+                        }
+                    }
                 }
-                Some((Side::Upper, msg)) => {
-                    let mut msg_conditions = Conditions::new();
-                    let message_block = message_blocks_upper.entry(msg.tag)
-                        .or_insert_with(|| InsnBlock::new(InsnRef::MessageMatch));
-                    message_match(shape_up, Side::Upper, msg, &mut thread.down_vars, message_block, &mut msg_conditions);
-
-                    Some((Side::Upper, msg.tag, msg_conditions))
-                }
-                None => None,
-            };
-
-            add_transition_to_group(thread, recv, &mut thread_groups);
+            });
         }
 
-        for (mut transition, mut threads) in thread_groups {
-            // Put threads in deterministic order to generate arguments list
-            threads.sort_by_key(|t| t.state);
+        let transitions = {
+        let mut thread_map = |mut threads: Vec<Thread>| -> Transition {
+            let mut regs = Vec::new();
 
             for thread in &mut threads {
-                thread.erase_vars(&mut transition.registers);
+                thread.erase_vars(&mut regs);
             }
 
-            let state_key = threads.iter().map(|x| x.state).collect();
+            let mut state_key = threads.iter().map(|x| x.state).collect::<Vec<_>>();
+            state_key.sort();
+
+            debug!("Generating transition to NFA states {:?}", state_key);
 
             // Find the destination state if it exists, or make a new one
             let dest_state = *state_by_nfa_entry_states.entry(state_key).or_insert_with(|| {
@@ -833,26 +1203,90 @@ pub fn make_dfa(nfa: &Nfa, shape_down: &Shape, shape_up: &Shape) -> Dfa {
                 state
             });
 
-            states[state].transitions.push((transition, dest_state));
-        }
+            debug!("  = DFA state {}", dest_state);
+
+            Transition {
+                registers: regs,
+                dest_state: dest_state,
+            }
+        };
+
+        tt.map(&mut |loc| {
+            match loc {
+                RecvTree::Fail => RecvTree::Fail,
+                RecvTree::Recv { side, send, options } => {
+                    let options = options.into_iter().map(|(tag, arm)| {
+                        let tree = arm.tree.map(&mut |loc| {
+                            loc.map(|(send, threads)| (send, thread_map(threads)))
+                        });
+                        (tag, RecvArm{ block: arm.block, tree: tree })
+                    }).collect();
+                    RecvTree::Recv { side: side, send: send, options: options }
+                }
+                RecvTree::Loop { send_lower, send_upper, transition } => {
+                    RecvTree::Loop { send_lower: send_lower, send_upper: send_upper, transition: thread_map(transition) }
+                }
+            }
+
+        })};
+
+        states[state].transitions =  transitions;
     }
 
-
-    debug!("lower: {:#?}", message_blocks_lower);
-    debug!("upper: {:#?}", message_blocks_upper);
     debug!("states: {:?}", state_by_nfa_entry_states);
 
-    Dfa { states: states, message_blocks_lower: message_blocks_lower, message_blocks_upper: message_blocks_upper }
+    Dfa { states: states }
 }
 
 impl Dfa {
     pub fn to_graphviz(&self, f: &mut Write) -> IoResult<()> {
+        let condition_count = Cell::new(0);
         try!(writeln!(f, "digraph G {{"));
+
         for (id, state) in self.states.iter().enumerate() {
-            for &(ref transition, dest_state) in &state.transitions {
-                try!(writeln!(f, "{} -> {} [ label=\"{:?}, {:?}\"];",
-                    id, dest_state, transition.pre_conditions, transition.recv));
+            try!(writeln!(f, "  subgraph    state{} {{", id));
+            if state.accepting {
+                try!(writeln!(f, "    {} [peripheries=2];", id));
+            } else {
+                try!(writeln!(f, "    {};", id));
             }
+            try!(state.transitions.to_graphviz(f, &condition_count, &format!("{}", id), &mut |f, parent_port, loc| {
+                match *loc {
+                    RecvTree::Fail => {Ok(false)},
+                    RecvTree::Recv { side, ref send, ref options } => {
+                        let node = format!("r{}", condition_count.get());
+                        condition_count.set(condition_count.get() + 1);
+
+                        try!(writeln!(f, r#"    {} -> {}:top [label="{:?}"]"#, parent_port, node, send));
+                        let color = match side { Side::Lower => "blue", Side::Upper => "green" };
+                        try!(writeln!(f, r#"    {} [shape="none" fontcolor="{}" label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0">
+    <TR><TD COLSPAN="{}" PORT="top"><B>{:?}</B></TD></TR><TR>";"#, node, color, options.len(), side));
+                        for (tag, _) in options {
+                            try!(writeln!(f, r#"<TD PORT="{}">{}</TD>"#, tag, tag));
+                        }
+                        try!(writeln!(f, r#"</TR></TABLE>>];"#));
+
+                        for (tag, arm) in options {
+                            let port = format!("{}:{}", node, tag);
+
+                            try!(arm.tree.to_graphviz(f, &condition_count, &port, &mut |f, parent_port, out| {
+                                if let &Some((ref send, ref transition)) = out {
+                                    try!(writeln!(f, r#"    {} -> {} [label="{:?}"]"#, parent_port, transition.dest_state, send));
+                                    Ok(true)
+                                } else {
+                                    Ok(false)
+                                }
+                            }));
+                        }
+                        Ok(true)
+                    }
+                    RecvTree::Loop { ref send_lower, ref send_upper, ref transition } => {
+                        try!(writeln!(f, r#"    {} -> {} [label="{:?} / {:?}"]"#, parent_port, transition.dest_state, send_lower, send_upper));
+                        Ok(true)
+                    }
+                }
+            }));
+            try!(writeln!(f, "  }}\n"));
         }
 
         try!(writeln!(f, "start -> 0;"));
@@ -880,7 +1314,7 @@ pub fn run(dfa: &Dfa, lower: &mut Connection, upper: &mut Connection) -> bool {
         }
     }
 
-    'state_loop: loop {
+    loop {
         debug!("In state {}", state_num);
         let state = &dfa.states[state_num];
         regs.message_match.clear();
@@ -892,88 +1326,68 @@ pub fn run(dfa: &Dfa, lower: &mut Connection, upper: &mut Connection) -> bool {
             regs.transition.push(val);
         }
 
-        let mut received = None;
-        let mut sent_lower = false;
-        let mut sent_upper = false;
-
-        for &(ref t, dest_state) in &state.transitions {
-            debug!("  Testing transition to {}", dest_state);
-
-            // Check pre-conditions first
-            if !t.pre_conditions.0.iter().all(|c| {
-                let m = regs.condition(c);
-                debug!("    {:?} => {}", c, m);
-                m
-            }) { continue }
-
-            if let Some((side, tag, ref conditions)) = t.recv {
-                if received.is_none() {
-                    // This is the first transition that has passed pre-conditions. Pre-conditions
-                    // with differing receive sides are required to be mutually exclusive, so
-                    // the receive side is now known.
-                    let rx;
-                    let blocks;
-                    match side {
-                        Side::Lower => {
-                            send(&regs, lower, &t.send_lower, "lower");
-                            sent_lower = true;
-                            rx = lower.recv();
-                            blocks = &dfa.message_blocks_lower;
-                        }
-                        Side::Upper => {
-                            send(&regs, upper, &t.send_upper, "upper");
-                            sent_upper = true;
-                            rx = upper.recv();
-                            blocks = &dfa.message_blocks_upper;
-                        }
-                    };
-
-                    debug!("\trx {:?}", rx);
-
-                    if let Ok((rx_tag, data)) = rx {
-                        regs.message = data;
-
-                        // Evaluate the message-match block
-                        for i in &blocks[rx_tag].insns {
-                            let val = regs.eval(i);
-                            debug!("\t%m{} <= {} = {:?}", regs.message_match.len(), val, i);
-                            regs.message_match.push(val);
-                        }
-
-                        received = Some((side, rx_tag));
-                    } else {
-                        return state.accepting;
+        let transition = match state.transitions.find(&mut |r| regs.get(r)) {
+            &RecvTree::Fail => {
+                debug!("No matching pre-conditions{}", if state.accepting {" in accepting state"} else {""});
+                return state.accepting; //TODO: check that other signals have ended?
+            }
+            &RecvTree::Recv { side, send: ref send_side, ref options } => {
+                let rx = match side {
+                    Side::Lower => {
+                        send(&regs, lower, send_side, "lower");
+                        lower.recv()
                     }
+                    Side::Upper => {
+                        send(&regs, upper, send_side, "upper");
+                        upper.recv()
+                    }
+                };
+
+                debug!("\trx {:?}", rx);
+
+                let (rx_tag, data) = if let Ok(r) = rx { r } else {
+                    debug!("input completed");
+                    return state.accepting;
+                };
+
+                let opt = if let Some(x) = options.get(&rx_tag) { x } else {
+                    debug!("no transition matching tag {}", rx_tag);
+                    return state.accepting;
+                };
+
+                // Evaluate the message-match block
+                regs.message = data;
+                for i in &opt.block.insns {
+                    let val = regs.eval(i);
+                    debug!("\t%m{} <= {} = {:?}", regs.message_match.len(), val, i);
+                    regs.message_match.push(val);
                 }
 
-                let (rx_side, rx_tag) = received.unwrap();
-                assert_eq!(side, rx_side);
+                if let &Some((ref send_other, ref transition)) = opt.tree.find(&mut |r| regs.get(r)) {
+                    match side {
+                        Side::Lower => send(&regs, upper, send_other, "upper"),
+                        Side::Upper => send(&regs, lower, send_other, "lower"),
+                    }
 
-                if tag != rx_tag { continue }
-
-                if !conditions.0.iter().all(|c| {
-                    let m = regs.condition(c);
-                    debug!("    {:?} => {}", c, m);
-                    m
-                }) { continue }
+                    transition
+                } else {
+                    debug!("No matching conditions{}", if state.accepting {" in accepting state"} else {""});
+                    return state.accepting; //TODO: check that other signals have ended?
+                }
             }
-
-            // A transition matched
-            state_num = dest_state;
-
-            if !sent_lower { send(&regs, lower, &t.send_lower, "lower"); }
-            if !sent_upper { send(&regs, upper, &t.send_upper, "upper"); }
-
-            let next_arguments: Vec<_> = t.registers.iter().map(|&i| regs.get(i)).collect();
-            for (i, (v, r)) in next_arguments.iter().zip(t.registers.iter()).enumerate() {
-                debug!("  %a{} <= {} = {:?}", i, v, r);
+            &RecvTree::Loop { ref send_lower, ref send_upper, ref transition } => {
+                send(&regs, lower, send_lower, "lower");
+                send(&regs, upper, send_upper, "upper");
+                transition
             }
-            regs.arguments = next_arguments;
-            continue 'state_loop;
+        };
+
+        state_num = transition.dest_state;
+        let next_arguments: Vec<_> = transition.registers.iter().map(|&i| regs.get(i)).collect();
+        for (i, (v, r)) in next_arguments.iter().zip(transition.registers.iter()).enumerate() {
+            debug!("  %a{} <= {} = {:?}", i, v, r);
         }
-
-        debug!("No matching conditions{}", if state.accepting {" in accepting state"} else {""});
-        return state.accepting; //TODO: check that other signals have ended?
+        regs.arguments = next_arguments;
     }
 }
 
@@ -1128,30 +1542,5 @@ impl Regs {
             }
         }
 
-    }
-
-    fn condition(&self, c: &Condition) -> bool {
-        use self::Condition::*;
-        match *c {
-            CheckConst(a, ref b) => {
-                self.get(a) == *b
-            }
-
-            CheckRange(a, lo, hi) => {
-                if let Value::Number(a) = self.get(a) {
-                    a >= lo && a <= hi
-                } else {
-                    panic!("Non-number in CheckRange");
-                }
-            }
-
-            CheckRangeInt(a, lo, hi) => {
-                if let Value::Integer(a) = self.get(a) {
-                    a >= lo && a <= hi
-                } else {
-                    panic!("Non-integer in CheckRangeInt");
-                }
-            }
-        }
     }
 }
