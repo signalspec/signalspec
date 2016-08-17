@@ -17,6 +17,9 @@ vec_map = "0.3.0"
 lazy_static = "0.1.*"
 ref_slice = "0.1.*"
 
+[dev-dependencies]
+env_logger = "0.3"
+
 [[test]]
 name = "check"
 harness = false
