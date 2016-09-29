@@ -2,12 +2,14 @@ use std::collections::HashSet;
 use std::cmp::{min, max};
 use std::slice;
 use ref_slice::{ref_slice, mut_ref_slice};
+use num_complex::Complex;
 use std::fmt;
 
 #[derive(PartialEq, Clone)]
 pub enum Value {
     Number(f64),
     Integer(i64),
+    Complex(Complex<f64>),
     Symbol(String),
     Vector(Vec<Value>),
 }
@@ -16,6 +18,7 @@ impl Value {
     pub fn get_type(&self) -> Type {
         match *self {
             Value::Number(v) => Type::Number(v, v),
+            Value::Complex(_) => Type::Complex,
             Value::Integer(v) => Type::Integer(v, v),
             Value::Symbol(ref v) => Type::Symbol(Some(v.clone()).into_iter().collect()),
             Value::Vector(ref n) => Type::Vector(n.len(),
@@ -28,6 +31,7 @@ impl fmt::Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             Value::Number(n) => write!(f, "{}", n),
+            Value::Complex(c) => write!(f, "{}+{}i", c.re, c.im),
             Value::Integer(n) => write!(f, "#{}", n),
             Value::Symbol(ref s) => write!(f, "#{}", *s),
             Value::Vector(ref n) => write!(f, "{:?}", n),
@@ -44,7 +48,7 @@ impl fmt::Debug for Value {
 impl ::std::hash::Hash for Value {
     fn hash<H>(&self, state: &mut H) where H: ::std::hash::Hasher {
         match *self {
-            Value::Number(_) => (),
+            Value::Number(_) | Value::Complex(_) => (),
             Value::Integer(n) => n.hash(state),
             Value::Symbol(ref s) => s.hash(state),
             Value::Vector(ref n) => n.hash(state),
@@ -61,6 +65,7 @@ pub enum Type {
     Integer(i64, i64),
     Vector(usize, Box<Type>),
     Number(f64, f64),
+    Complex, // TODO: bounds?
     /// Type containing no values. No-op union with any type
     Bottom,
 }
@@ -77,6 +82,7 @@ impl Type {
             }
             (Integer(l1, h1), Integer(l2, h2)) => Integer(min(l1, l2), max(h1, h2)),
             (Number (l1, h1), Number (l2, h2)) => Number (f64::min(l1, l2), f64::max(h1, h2)),
+            (Complex, Complex) => Complex,
             (a, b) => panic!("Incompatible types: {:?} and {:?}", a, b)
         }
     }
@@ -95,6 +101,7 @@ impl Type {
             }
             (&Type::Integer(_lo, _hi), &Value::Integer(_v)) => true, //TODO: (v >= lo && v < hi),
             (&Type::Number(_lo, _hi), &Value::Number(_v)) => true, //TODO: (v >= lo && v < hi),
+            (&Type::Complex, &Value::Complex(_)) => true,
             _ => false,
         }
     }
@@ -108,6 +115,7 @@ impl Type {
             }
             (&Type::Integer(_lo1, _hi1), &Type::Integer(_lo2, _hi2)) => true, //TODO: (lo2 >= lo1 && hi2 <= hi1),
             (&Type::Number(_lo1, _hi1), &Type::Number(_lo2, _hi2)) => true, //TODO: (lo2 >= lo1 && hi2 <= hi1),
+            (&Type::Complex, &Type::Complex) => true,
             _ => false,
         }
     }

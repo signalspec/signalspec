@@ -2,6 +2,8 @@ use super::Item;
 use data::{ Value, Type };
 use session::{ValueID};
 use std::fmt;
+use std::ops::{Add, Sub, Mul, Div};
+use num_complex::Complex;
 
 /// Element of Expr::Concat
 #[derive(PartialEq, Debug, Clone)]
@@ -57,7 +59,7 @@ pub enum Expr {
     Flip(Box<Expr>, Box<Expr>),
     Choose(Box<Expr>, Vec<(Value, Value)>),
     Concat(Vec<ConcatElem>),
-    BinaryConst(Box<Expr>, BinOp, f64),
+    BinaryConst(Box<Expr>, BinOp, Value),
 
     FloatToInt(Box<Expr>),
     IntToBits { width: usize, expr: Box<Expr>, signed: SignMode },
@@ -179,9 +181,9 @@ impl Expr {
                 let c = elems.iter().map(ConcatElem::elem_count).sum();
                 Type::Vector(c, t)
             },
-            Expr::BinaryConst(ref e, op, c) => {
-                match e.get_type() {
-                    Type::Number(min, max) => {
+            Expr::BinaryConst(ref e, op, ref c) => {
+                match (e.get_type(), c) {
+                    (Type::Number(min, max), &Value::Number(c)) => {
                         assert!(min <= max);
                         let (a, b) = (op.eval(min, c), op.eval(max, c));
                         if op == BinOp::SubSwap || op == BinOp::DivSwap {
@@ -192,7 +194,20 @@ impl Expr {
                             Type::Number(a, b)
                         }
                     }
-                    _ => panic!("Arithmetic on non-number type")
+                    (Type::Integer(min, max), &Value::Integer(c)) => {
+                        assert!(min <= max);
+                        let (a, b) = (op.eval(min, c), op.eval(max, c));
+                        if op == BinOp::SubSwap || op == BinOp::DivSwap {
+                            assert!(b <= a);
+                            Type::Integer(b, a)
+                        } else {
+                            assert!(a <= b);
+                            Type::Integer(a, b)
+                        }
+                    }
+                    (Type::Complex, &Value::Number(..)) => Type::Complex,
+                    (Type::Number(..), &Value::Complex(..)) => Type::Complex,
+                    _ => panic!("Arithmetic type error {} {:?} {}", e, op, c)
                 }
             }
 
@@ -245,7 +260,7 @@ impl fmt::Display for Expr {
             },
             Expr::Concat(_) => unimplemented!(),
 
-            Expr::BinaryConst(ref e, op, c) => {
+            Expr::BinaryConst(ref e, op, ref c) => {
                 match op {
                     BinOp::Add => write!(f, "{} + {}", e, c),
                     BinOp::Sub => write!(f, "{} - {}", e, c),
@@ -287,7 +302,13 @@ pub enum BinOp {
 
 impl BinOp {
     /// a `op` b
-    pub fn eval(&self, a: f64, b: f64) -> f64 {
+    pub fn eval<A, B, C>(&self, a: A, b: B) -> C where
+        A: Add<B, Output=C>,
+        A: Sub<B, Output=C>,
+        B: Sub<A, Output=C>,
+        A: Mul<B, Output=C>,
+        A: Div<B, Output=C>,
+        B: Div<A, Output=C> {
         match *self {
             BinOp::Add     => a + b,
             BinOp::Sub     => a - b,
@@ -384,6 +405,24 @@ impl PrimitiveFn for FnChunks {
 }
 pub static FNCHUNKS: FnChunks = FnChunks;
 
+pub struct FnComplex;
+impl PrimitiveFn for FnComplex {
+        fn call(&self, arg: Item) -> Result<Expr, &'static str> {
+            match arg {
+                Item::Tuple(t) => {
+                    assert_eq!(t.len(), 2, "complex(re, im) requires two arguments");
+                    match (&t[0], &t[1]) {
+                        (&Item::Value(Expr::Const(Value::Number(re))), &Item::Value(Expr::Const(Value::Number(im)))) => {
+                            Ok(Expr::Const(Value::Complex(Complex::new(re, im))))
+                        }
+                        _ => return Err("Invalid arguments to chunks()")
+                    }
+                }
+                _ => return Err("Invalid arguments to complex()")
+            }
+        }
+}
+pub static FNCOMPLEX: FnComplex = FnComplex;
 
 #[test]
 fn exprs() {
@@ -391,7 +430,8 @@ fn exprs() {
     use super::grammar;
     use super::scope::Scope;
     let sess = Session::new(None);
-    let scope = Scope::new();
+    let mut scope = Scope::new();
+    scope.bind("complex", Item::PrimitiveFn(&FNCOMPLEX));
 
     fn expr(sess: &Session, scope: &Scope, e: &str) -> Expr {
         super::expr::value(sess, scope, &grammar::valexpr(e).unwrap())
@@ -399,6 +439,18 @@ fn exprs() {
 
     let two = expr(&sess, &scope, "2");
     assert_eq!(two.get_type(), Type::Number(2.0, 2.0));
+
+    let four = expr(&sess, &scope, "2 + 2");
+    assert_eq!(four.get_type(), Type::Number(4.0, 4.0));
+
+    let fiveint = expr(&sess, &scope, "#2 + #3");
+    assert_eq!(fiveint.get_type(), Type::Integer(5, 5));
+
+    let one_one_i = expr(&sess, &scope, "complex(1, 0) + complex(0, 1)");
+    assert_eq!(one_one_i.get_type(), Type::Complex);
+
+    let two_two_i = expr(&sess, &scope, "complex(1, 1) * 2");
+    assert_eq!(two_two_i.get_type(), Type::Complex);
 
     let ignore = expr(&sess, &scope, "_");
     assert_eq!(ignore.get_type(), Type::Bottom);

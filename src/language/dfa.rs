@@ -23,13 +23,11 @@ pub enum Insn {
 
     Choose(InsnRef, Vec<(Value, Value)>),
     Concat(Vec<InsnConcatElem>),
-    BinaryConst(InsnRef, BinOp, f64),
+    BinaryConst(InsnRef, BinOp, Value),
 
     VecElem(InsnRef, usize),
     VecSlice(InsnRef, usize, usize),
     VecShift(InsnRef, Option<InsnRef>),
-
-    IntegerAdd(InsnRef, i64),
 
     FloatToInt(InsnRef),
     IntToFloat(InsnRef),
@@ -518,7 +516,7 @@ impl InsnBlock {
         use self::InsnRef::ConstantInt;
 
         match insn {
-            Insn::IntegerAdd(ConstantInt(x), c) => return ConstantInt(x + c),
+            Insn::BinaryConst(ConstantInt(x), op, Value::Integer(v)) => return ConstantInt(op.eval(x, v)),
             _ => (),
         }
 
@@ -555,9 +553,9 @@ impl InsnBlock {
                 }).collect();
                 self.add(Insn::Concat(inner_items))
             }
-            Expr::BinaryConst(ref a, op, b) => {
+            Expr::BinaryConst(ref a, op, ref b) => {
                 let inner = self.eval_down(a, vars);
-                self.add(Insn::BinaryConst(inner, op, b))
+                self.add(Insn::BinaryConst(inner, op, b.clone()))
             }
 
             Expr::FloatToInt(ref expr) => {
@@ -628,8 +626,8 @@ impl InsnBlock {
                     }
                 })
             }
-            Expr::BinaryConst(ref a, op, b) => {
-                let inner = self.add(Insn::BinaryConst(val, op.invert(), b));
+            Expr::BinaryConst(ref a, op, ref b) => {
+                let inner = self.add(Insn::BinaryConst(val, op.invert(), b.clone()));
                 self.eval_up(a, inner, vars, conditions)
             }
 
@@ -737,7 +735,7 @@ impl Thread {
     fn update_counter(&mut self, insns: &mut InsnBlock, id: usize, offset: i64) -> InsnRef {
         let count_reg_loc = self.counters.get_mut(&id).expect("Undefined counter");
         let count_reg = *count_reg_loc;
-        *count_reg_loc = insns.add(Insn::IntegerAdd(count_reg, offset));
+        *count_reg_loc = insns.add(Insn::BinaryConst(count_reg, BinOp::Add, Value::Integer(offset)));
         count_reg
     }
 
@@ -1420,11 +1418,14 @@ impl Regs {
                 Value::Vector(out)
             }
 
-            BinaryConst(reg, op, c) => {
-                if let Value::Number(v) = self.get(reg) {
-                    Value::Number(op.eval(v, c))
-                } else {
-                    panic!("BinaryConst on non-number");
+            BinaryConst(reg, op, ref c) => {
+                match (self.get(reg), c) {
+                    (Value::Number(a),  &Value::Number(b))  => Value::Number(op.eval(a, b)),
+                    (Value::Integer(a), &Value::Integer(b)) => Value::Integer(op.eval(a, b)),
+                    (Value::Complex(a), &Value::Complex(b)) => Value::Complex(op.eval(a, b)),
+                    (Value::Complex(a), &Value::Number(b)) => Value::Complex(op.eval(a, b)),
+                    (Value::Number(a),  &Value::Complex(b)) => Value::Complex(op.eval(a, b)),
+                    (a, b) => panic!("BinaryConst on mismatched types {} {:?} {}", a, op, b)
                 }
             }
 
@@ -1463,14 +1464,6 @@ impl Regs {
                     Value::Vector(v)
                 } else {
                     panic!("VecSlice on non-vector");
-                }
-            }
-
-            IntegerAdd(reg, c) => {
-                if let Value::Integer(i) = self.get(reg) {
-                    Value::Integer(i+c)
-                } else {
-                    panic!("IntegerAdd on non-integer");
                 }
             }
 

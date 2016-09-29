@@ -7,6 +7,7 @@ extern crate typed_arena;
 extern crate bit_set;
 extern crate vec_map;
 extern crate ref_slice;
+extern crate num_complex;
 #[macro_use] extern crate lazy_static;
 #[macro_use] extern crate log;
 
@@ -33,4 +34,5 @@ pub fn add_primitives(loader: &ModuleLoader) {
     loader.add_primitive_fn("int", &language::FNINT);
     loader.add_primitive_fn("signed", &language::FNSIGNED);
     loader.add_primitive_fn("chunks", &language::FNCHUNKS);
+    loader.add_primitive_fn("complex", &language::FNCOMPLEX);
 }

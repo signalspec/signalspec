@@ -57,12 +57,17 @@ fn resolve(session: &Session, scope: Option<&Scope>, var_handler: &mut FnMut(&st
         }
 
         ast::Expr::Bin(box ref a, op, box ref b) => {
-            match (resolve(session, scope, var_handler, a), resolve(session, scope, var_handler, b)) {
-                (Expr::Const(Value::Number(a)), Expr::Const(Value::Number(b))) => {
-                    Expr::Const(Value::Number(op.eval(a, b)))
-                }
-                (l, Expr::Const(Value::Number(b))) => Expr::BinaryConst(box l, op, b),
-                (Expr::Const(Value::Number(a)), r) => Expr::BinaryConst(box r, op.swap(), a),
+            use super::eval::Expr::Const;
+            let lhs = resolve(session, scope, var_handler, a);
+            let rhs = resolve(session, scope, var_handler, b);
+            match (lhs, rhs) {
+                (Const(Value::Number(a)),  Const(Value::Number(b))) => Const(Value::Number(op.eval(a, b))),
+                (Const(Value::Integer(a)), Const(Value::Integer(b))) => Const(Value::Integer(op.eval(a, b))),
+                (Const(Value::Complex(a)), Const(Value::Complex(b))) => Const(Value::Complex(op.eval(a, b))),
+                (Const(Value::Complex(a)), Const(Value::Number(b))) => Const(Value::Complex(op.eval(a, b))),
+                (Const(Value::Number(a)),  Const(Value::Complex(b))) => Const(Value::Complex(op.eval(a, b))),
+                (l, Const(b)) => Expr::BinaryConst(box l, op, b),
+                (Const(a), r) => Expr::BinaryConst(box r, op.swap(), a),
                 _ => panic!("One side of a binary operation must be constant")
             }
         }

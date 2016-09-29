@@ -16,6 +16,7 @@ bit-set = "0.2.0"
 vec_map = "0.3.0"
 lazy_static = "0.1.*"
 ref_slice = "0.1.*"
+num-complex = "0.1.35"
 
 [dev-dependencies]
 env_logger = "0.3"
