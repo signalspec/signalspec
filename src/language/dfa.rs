@@ -101,27 +101,6 @@ impl Condition {
             _ => None
         }
     }
-
-    fn check(&self, v: &Value) -> bool {
-        use self::Condition::*;
-        match *self {
-            Eq(ref a) => a == v,
-            Range(lo, hi) => {
-                if let &Value::Number(v) = v {
-                    v >= lo && v < hi
-                } else {
-                    panic!("Non-number in CheckRange");
-                }
-            }
-            RangeInt(lo, hi) => {
-                if let &Value::Integer(v) = v {
-                    v >= lo && v < hi
-                } else {
-                    panic!("Non-integer in CheckRangeInt");
-                }
-            }
-        }
-    }
 }
 
 #[derive(Debug, PartialEq, Clone)]
