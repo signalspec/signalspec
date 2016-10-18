@@ -164,6 +164,24 @@ impl Shape {
         ]}
     }
 
+    /// Produces a shape for a stream of bytes in the specified direction and range
+    pub fn number(dir: DataMode, min: f64, max: f64) -> Shape {
+        Shape { variants: vec![
+            ShapeVariant {
+                data: ShapeData::Val(Type::Number(min, max), dir),
+            }
+        ]}
+    }
+
+    /// Produces a shape for a stream of complex number in the specified direction
+    pub fn complex(dir: DataMode) -> Shape {
+        Shape { variants: vec![
+            ShapeVariant {
+                data: ShapeData::Val(Type::Complex, dir),
+            }
+        ]}
+    }
+
     /// If the shape represents a stream of bytes, returns Some(data direction)
     pub fn match_bytes(&self) -> Option<DataMode> {
         if self.variants.len() != 1 {
@@ -172,6 +190,18 @@ impl Shape {
 
         match self.variants[0] {
             ShapeVariant { data: ShapeData::Val(Type::Integer(0, 255), dir), .. } => Some(dir),
+            _ => None,
+        }
+    }
+
+    /// If the shape represents a stream of complex number, returns Some(data direction)
+    pub fn match_complex(&self) -> Option<DataMode> {
+        if self.variants.len() != 1 {
+            return None;
+        }
+
+        match self.variants[0] {
+            ShapeVariant { data: ShapeData::Val(Type::Complex, dir), .. } => Some(dir),
             _ => None,
         }
     }

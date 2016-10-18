@@ -1,6 +1,7 @@
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::io;
 use std::io::prelude::*;
+use num_complex::Complex;
 
 use data::{ Value, Shape };
 use data::MessageTag;
@@ -71,6 +72,14 @@ impl Connection {
     pub fn write_bytes(&mut self) -> ConnectionWrite {
         ConnectionWrite(self)
     }
+
+    pub fn iter_number(&mut self) -> ConnectionIterNumber {
+        ConnectionIterNumber(self)
+    }
+
+    pub fn iter_complex(&mut self) -> ConnectionIterComplex {
+        ConnectionIterComplex(self)
+    }
 }
 
 pub struct ConnectionRead<'a>(&'a mut Connection);
@@ -120,5 +129,44 @@ impl<'a> Write for ConnectionWrite<'a> {
 
     fn flush(&mut self) -> io::Result<()> {
         Ok(())
+    }
+}
+
+pub struct ConnectionIterNumber<'a>(&'a mut Connection);
+impl<'a> Iterator for ConnectionIterNumber<'a> {
+    type Item = f64;
+
+    fn next(&mut self) -> Option<f64> {
+        match self.0.recv() {
+            Ok((0, v)) => {
+                assert_eq!(v.len(), 1);
+                match v[0] {
+                    Value::Number(c) => Some(c),
+                    ref x => panic!("Number connection received {:?}", x)
+                }
+            }
+            Ok(..) => panic!("Received a message prohibited by shape"),
+            Err(..) => None,
+        }
+    }
+}
+
+pub struct ConnectionIterComplex<'a>(&'a mut Connection);
+impl<'a> Iterator for ConnectionIterComplex<'a> {
+    type Item = Complex<f64>;
+
+    fn next(&mut self) -> Option<Complex<f64>> {
+        match self.0.recv() {
+            Ok((0, v)) => {
+                debug!("rx {:?}", v);
+                assert_eq!(v.len(), 1);
+                match v[0] {
+                    Value::Complex(c) => Some(c),
+                    ref x => panic!("Complex connection received {:?}", x)
+                }
+            }
+            Ok(..) => panic!("Received a message prohibited by shape"),
+            Err(..) => None,
+        }
     }
 }
