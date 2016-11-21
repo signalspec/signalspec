@@ -22,7 +22,6 @@ def -> ast::ModuleEntry
       { ast::ModuleEntry::Interface(ast::Interface { name:name, entries: entries  }) }
     / t:test_block BREAK { ast::ModuleEntry::Test(t) }
 
-#[pub]
 block -> ast::Block
     = "{" _ lets:letstmt* actions:action ** (BREAK / (_ ";" _)) _ "}"
     { ast::Block{ lets:lets, actions:actions } }
@@ -54,7 +53,6 @@ intf_block -> Vec<ast::InterfaceEntry>
      { ast::InterfaceEntry::Shape(e) }
 
 // Expressions
-#[pub]
 expr -> ast::Expr
     = "(" _ e:expr_tup _")" {e}
     / valexpr
@@ -89,7 +87,7 @@ valexpr -> ast::Expr
     #[cache]
     valexpr_sum -> ast::Expr
         = l:valexpr_product _ op:sum_op _ r:valexpr_sum
-            { ast::Expr::Bin(box l, eval::BinOp::Add, box r) }
+            { ast::Expr::Bin(box l, op, box r) }
         / valexpr_product
 
         sum_op -> eval::BinOp
@@ -99,7 +97,7 @@ valexpr -> ast::Expr
     #[cache]
     valexpr_product -> ast::Expr
         = l:valexpr_choose _ op:product_op _ r:valexpr_product
-            { ast::Expr::Bin(box l, eval::BinOp::Mul, box r) }
+            { ast::Expr::Bin(box l, op, box r) }
         / valexpr_choose
 
         product_op -> eval::BinOp
@@ -163,8 +161,8 @@ valexpr -> ast::Expr
                     { ast::Value::Vector(v.iter().map(|&b| ast::Value::Integer(b as i64)).collect()) }
 
                 hexchar -> u8
-                    = [0-9a-fA-F]
-                    { u8::from_str_radix(match_str, 16).unwrap() }
+                    = c:$([0-9a-fA-F])
+                    { u8::from_str_radix(c, 16).unwrap() }
 
                 binbit -> bool
                     = "0" {false} / "1" {true}
@@ -176,7 +174,7 @@ valexpr -> ast::Expr
             unitliteral = unit { () }
 
                 unit -> String
-                    = [a-zA-Z]+ { match_str.to_string() }
+                    = u:$([a-zA-Z]+) { u.to_string() }
                     / "" { "".to_string() }
 
 #[pub]
@@ -229,14 +227,14 @@ FOR    = "for"    !IDCHAR
 ALT   = "alt"   !IDCHAR
 TEST   = "test"   !IDCHAR
 
-identifier -> String = [a-zA-Z_][0-9a-zA-Z_]*
-    { match_str.to_string() }
+identifier -> String = i:$([a-zA-Z_][0-9a-zA-Z_]*)
+    { i.to_string() }
 
-integer -> i64 = "-"?[0-9]+
-    { match_str.parse().unwrap() }
+integer -> i64 = i:$("-"?[0-9]+)
+    { i.parse().unwrap() }
 
-floatnumber -> f64 = "-"?[0-9]+("."[0-9]+)?
-    { match_str.parse().unwrap() }
+floatnumber -> f64 = i:$("-"?[0-9]+("."[0-9]+)?)
+    { i.parse().unwrap() }
 
 doubleQuotedString -> String
   = '"' s:doubleQuotedCharacter* '"' { s.into_iter().collect() }
@@ -246,9 +244,9 @@ doubleQuotedCharacter -> char
   / unicodeEscapeSequence
 
 simpleDoubleQuotedCharacter -> char
-  = !('"' / "\\" / TERM) . { match_str.chars().next().unwrap() }
+  = !('"' / "\\" / TERM) c:$(.) { c.chars().next().unwrap() }
 
 unicodeEscapeSequence -> char
-  = "\\u{" value:([0-9a-fA-F]+ { u32::from_str_radix(match_str, 16)}) "}" {
-      char::from_u32(value.unwrap()).unwrap()
+  = "\\u{" value:$([0-9a-fA-F]+) "}" {
+      char::from_u32(u32::from_str_radix(value, 16).unwrap()).unwrap()
     }
