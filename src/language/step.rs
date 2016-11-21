@@ -101,7 +101,7 @@ impl ResolveInfo {
     }
 
     fn mode_of(&self, id: ValueID) -> DataMode {
-        DataMode { up: self.vars_up.contains(&id), down: self.vars_down.contains(&id)}
+        DataMode { up: self.vars_up.contains(id), down: self.vars_down.contains(id)}
     }
 
     fn use_expr(&mut self, e: &Expr, dir: DataMode) {

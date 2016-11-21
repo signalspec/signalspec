@@ -1327,7 +1327,7 @@ pub fn run(dfa: &Dfa, lower: &mut Connection, upper: &mut Connection) -> bool {
                     return state.accepting;
                 };
 
-                let opt = if let Some(x) = options.get(&rx_tag) { x } else {
+                let opt = if let Some(x) = options.get(rx_tag) { x } else {
                     debug!("no transition matching tag {}", rx_tag);
                     return state.accepting;
                 };
