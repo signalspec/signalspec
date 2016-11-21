@@ -49,18 +49,35 @@ fn main() {
             loader.parse_module(&source).unwrap();
         }
 
-        let mut stack = signalspec::ProcessStack::new(&loader);
+        let sides: Vec<_> = cmds.split(|x| x == "/").collect();
 
-        for arg in cmds {
+        let mut stack = signalspec::ProcessStack::new(&loader);
+        for arg in sides[0] {
             stack.parse_add(&arg).unwrap_or_else(|e| panic!("Error parsing argument: {}", e));
         }
 
-        let topmost_mode = stack.top_shape().data_mode();
-        if topmost_mode.up {
-            stack.add_print_process();
+        let success;
+        if sides.len() == 1 {
+            let topmost_mode = stack.top_shape().data_mode();
+            if topmost_mode.up {
+                stack.add_print_process();
+            }
+
+            success = stack.run();
+        } else if sides.len() == 2 {
+            let mut stack2 = signalspec::ProcessStack::new(&loader);
+            for arg in sides[1].iter().rev() {
+                stack2.parse_add(&arg).unwrap_or_else(|e| panic!("Error parsing argument: {}", e));
+            }
+
+            println!("side1 {:?}", stack.top_shape());
+            println!("side2 {:?}", stack2.top_shape());
+
+            success = stack.run_with_flipped(stack2);
+        } else {
+            panic!("Direction change argument `/` can only appear once");
         }
 
-        let success = stack.run();
         process::exit(if success { 0 } else { 1 });
     }
 }

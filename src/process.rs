@@ -1,4 +1,4 @@
-use std::thread;
+use std::{thread, mem};
 use data::Shape;
 use language::{Item, ModuleLoader};
 use connection::Connection;
@@ -50,21 +50,56 @@ impl<'a> ProcessStack<'a> {
         self.add(box ::dumpfile::ValueDumpPrint(shape));
     }
 
+    fn spawn(mut self, bottom: Connection, top: Connection) -> Vec<thread::JoinHandle<bool>> {
+        let mut threads = Vec::new();
+        let mut connection = bottom;
+
+        let last = self.processes.pop().expect("Spawn requires at least one process");
+
+        for process in self.processes {
+            let (c2, upward) = Connection::new(process.shape_up());
+            let downward = mem::replace(&mut connection, c2);
+            threads.push(thread::spawn(move || {
+                let mut downward = downward;
+                let mut upward = upward;
+                process.run(&mut downward, &mut upward)
+            }))
+        }
+
+        threads.push(thread::spawn(move || {
+            let mut connection = connection;
+            let mut top = top;
+            last.run(&mut connection, &mut top)
+        }));
+
+        threads
+    }
+
     pub fn run(self) -> bool {
         // TODO: should this take &self?
-        let (_, mut connection) = Connection::new(&Shape::null());
-        let threads = self.processes.into_iter().map(|p| {
-            let (mut c2, c1) = Connection::new(p.shape_up());
-            ::std::mem::swap(&mut c2, &mut connection);
-            thread::spawn(move || {
-                let mut downward = c2;
-                let mut upward = c1;
-                p.run(&mut downward, &mut upward)
-            })
-        }).collect::<Vec<_>>();
+        let (_, bottom) = Connection::new(&Shape::null());
+        let (top, _) = Connection::new(&Shape::null());
+
+        let threads = self.spawn(bottom, top);
 
         let mut success = true;
         for t in threads {
+            success &= t.join().unwrap();
+        }
+        success
+    }
+
+    pub fn run_with_flipped(self, other: ProcessStack<'a>) -> bool {
+        let (_, first) = Connection::new(&Shape::null());
+        let (_, last) = Connection::new(&Shape::null());
+        //TODO: assert that self.top_shape() is other.top_shape() with inverse direction
+        let (a, b) = Connection::new(self.top_shape());
+
+        let threads1 = self.spawn(first, b);
+        let threads2 = other.spawn(last, a);
+
+        let mut success = true;
+        for t in threads1.into_iter().chain(threads2.into_iter()) {
             success &= t.join().unwrap();
         }
         success
