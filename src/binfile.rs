@@ -82,8 +82,6 @@ impl Process for BinFileUp {
                 }
             }
         }
-
-        true
     }
 
     fn shape_up(&self) -> &Shape {
