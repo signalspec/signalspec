@@ -129,7 +129,7 @@ fn resolve_call<'s>(session: &Session, scope: &Scope<'s>, func: &'s ast::Expr, a
     let arg = rexpr(session, scope, arg);
     match func {
         Item::PrimitiveFn(f) => {
-            f.call(arg).unwrap()
+            (f)(arg).unwrap()
         },
         Item::Func(func) => {
             func.apply(session, arg)

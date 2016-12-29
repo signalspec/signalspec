@@ -34,8 +34,5 @@ pub fn add_primitives(loader: &ModuleLoader) {
     loader.add_primitive_def("file", &file_io::FILE_DEF);
     loader.add_primitive_def("dumpfile", &dumpfile::DUMPFILE_DEF);
     loader.add_primitive_def("binfile", &binfile::BINFILE_DEF);
-    loader.add_primitive_fn("int", &language::FNINT);
-    loader.add_primitive_fn("signed", &language::FNSIGNED);
-    loader.add_primitive_fn("chunks", &language::FNCHUNKS);
-    loader.add_primitive_fn("complex", &language::FNCOMPLEX);
+    language::add_primitive_fns(loader);
 }

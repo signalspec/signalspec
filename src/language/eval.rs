@@ -353,85 +353,71 @@ impl BinOp {
     }
 }
 
-pub trait PrimitiveFn {
-    fn call(&self, Item) -> Result<Item, &'static str>;
-}
-
-pub struct FnInt;
-impl PrimitiveFn for FnInt {
-    fn call(&self, arg: Item) -> Result<Item, &'static str> {
-        match arg {
-            Item::Value(v) => {
-                Ok(Item::Value(Expr::FloatToInt(Box::new(v))))
-            }
-            _ => return Err("Invalid arguments to chunks()")
+fn fn_int(arg: Item) -> Result<Item, &'static str> {
+    match arg {
+        Item::Value(v) => {
+            Ok(Item::Value(Expr::FloatToInt(Box::new(v))))
         }
+        _ => return Err("Invalid arguments to chunks()")
     }
 }
-pub static FNINT: FnInt = FnInt;
 
-
-pub struct FnSigned;
-impl PrimitiveFn for FnSigned {
-    fn call(&self, arg: Item) -> Result<Item, &'static str> {
-        match arg {
-            Item::Tuple(mut t) => {
-                match (t.pop(), t.pop()) { //TODO: cleaner way to move out of vec without reversing order?
-                    (Some(Item::Value(v)), Some(Item::Value(Expr::Const(Value::Integer(width))))) => {
-                        Ok(Item::Value(Expr::IntToBits {
-                            width: width as usize,
-                            signed: SignMode::TwosComplement,
-                            expr: Box::new(v)
-                        }))
-                    }
-                    _ => return Err("Invalid arguments to signed()")
+fn fn_signed(arg: Item) -> Result<Item, &'static str> {
+    match arg {
+        Item::Tuple(mut t) => {
+            match (t.pop(), t.pop()) { //TODO: cleaner way to move out of vec without reversing order?
+                (Some(Item::Value(v)), Some(Item::Value(Expr::Const(Value::Integer(width))))) => {
+                    Ok(Item::Value(Expr::IntToBits {
+                        width: width as usize,
+                        signed: SignMode::TwosComplement,
+                        expr: Box::new(v)
+                    }))
                 }
+                _ => return Err("Invalid arguments to signed()")
             }
-            _ => return Err("Invalid arguments to signed()")
         }
+        _ => return Err("Invalid arguments to signed()")
     }
 }
-pub static FNSIGNED: FnSigned = FnSigned;
 
-pub struct FnChunks;
-impl PrimitiveFn for FnChunks {
-    fn call(&self, arg: Item) -> Result<Item, &'static str> {
-        match arg {
-            Item::Tuple(mut t) => {
-                match (t.pop(), t.pop()) { //TODO: cleaner way to move out of vec without reversing order?
-                    (Some(Item::Value(v)), Some(Item::Value(Expr::Const(Value::Integer(width))))) => {
-                        Ok(Item::Value(Expr::Chunks {
-                            width: width as usize,
-                            expr: Box::new(v)
-                        }))
-                    }
-                    _ => return Err("Invalid arguments to chunks()")
+fn fn_chunks(arg: Item) -> Result<Item, &'static str> {
+    match arg {
+        Item::Tuple(mut t) => {
+            match (t.pop(), t.pop()) { //TODO: cleaner way to move out of vec without reversing order?
+                (Some(Item::Value(v)), Some(Item::Value(Expr::Const(Value::Integer(width))))) => {
+                    Ok(Item::Value(Expr::Chunks {
+                        width: width as usize,
+                        expr: Box::new(v)
+                    }))
                 }
+                _ => return Err("Invalid arguments to chunks()")
             }
-            _ => return Err("Invalid arguments to chunks()")
         }
+        _ => return Err("Invalid arguments to chunks()")
     }
 }
-pub static FNCHUNKS: FnChunks = FnChunks;
 
-pub struct FnComplex;
-impl PrimitiveFn for FnComplex {
-        fn call(&self, arg: Item) -> Result<Item, &'static str> {
-            match arg {
-                Item::Tuple(t) => {
-                    assert_eq!(t.len(), 2, "complex(re, im) requires two arguments");
-                    match (&t[0], &t[1]) {
-                        (&Item::Value(Expr::Const(Value::Number(re))), &Item::Value(Expr::Const(Value::Number(im)))) => {
-                            Ok(Item::Value(Expr::Const(Value::Complex(Complex::new(re, im)))))
-                        }
-                        _ => return Err("Invalid arguments to chunks()")
-                    }
+fn fn_complex(arg: Item) -> Result<Item, &'static str> {
+    match arg {
+        Item::Tuple(t) => {
+            assert_eq!(t.len(), 2, "complex(re, im) requires two arguments");
+            match (&t[0], &t[1]) {
+                (&Item::Value(Expr::Const(Value::Number(re))), &Item::Value(Expr::Const(Value::Number(im)))) => {
+                    Ok(Item::Value(Expr::Const(Value::Complex(Complex::new(re, im)))))
                 }
                 _ => return Err("Invalid arguments to complex()")
             }
         }
+        _ => return Err("Invalid arguments to complex()")
+    }
 }
-pub static FNCOMPLEX: FnComplex = FnComplex;
+
+pub fn add_primitive_fns(loader: &super::ModuleLoader) {
+    loader.add_primitive_fn("int", fn_int);
+    loader.add_primitive_fn("signed", fn_signed);
+    loader.add_primitive_fn("chunks", fn_chunks);
+    loader.add_primitive_fn("complex", fn_complex);
+}
 
 #[test]
 fn exprs() {
@@ -443,7 +429,7 @@ fn exprs() {
     let sess = Session::new(None);
     let ast_arena = Arena::new();
     let mut scope = Scope::new();
-    scope.bind("complex", Item::PrimitiveFn(&FNCOMPLEX));
+    scope.bind("complex", Item::PrimitiveFn(fn_complex));
 
     let expr = |e| {
         let ast = ast_arena.alloc(grammar::valexpr(e).unwrap());

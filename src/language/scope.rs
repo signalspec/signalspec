@@ -7,7 +7,7 @@ use super::ast;
 use data::{ Value, DataMode, Shape, ShapeVariant, ShapeData, Type };
 use session::{ Session, ValueID };
 use process::PrimitiveDef;
-use super::eval::{ Expr, PrimitiveFn };
+use super::eval::{ Expr };
 use super::expr;
 
 /// A collection of named Items.
@@ -66,7 +66,7 @@ pub enum Item<'s> {
     Func(Func<'s>),
 
     /// Reference to a primitive function
-    PrimitiveFn(&'s PrimitiveFn),
+    PrimitiveFn(super::module_loader::PrimitiveFn<'s>),
 
     /// Interface definition - `interface` block AST and enclosing scope
     Interface(&'s ast::Interface, &'s RefCell<Scope<'s>>),

@@ -7,6 +7,8 @@ use data::Shape;
 use process::Process;
 use session::Session;
 
+pub type PrimitiveFn<'a> = fn(Item<'a>)->Result<Item<'a>, &'static str>;
+
 pub struct ModuleLoader<'a> {
     session: &'a Session,
     ast_arena: Arena<ast::Module>,
@@ -38,7 +40,7 @@ impl<'a> ModuleLoader<'a> {
         self.prelude.borrow_mut().bind(name, Item::PrimitiveDef(prim));
     }
 
-    pub fn add_primitive_fn(&self, name: &str, prim: &'a ::language::PrimitiveFn) {
+    pub fn add_primitive_fn(&self, name: &str, prim: PrimitiveFn<'a>) {
         self.prelude.borrow_mut().bind(name, Item::PrimitiveFn(prim));
     }
 
