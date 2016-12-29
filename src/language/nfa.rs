@@ -5,7 +5,7 @@ use std::fmt;
 
 use super::step::{ Step, Message };
 use super::eval::Expr;
-use data::DataMode;
+use data::{ Value, DataMode };
 use session::ValueID;
 
 pub type StateId = usize;
@@ -249,6 +249,13 @@ pub fn from_step_tree(s: &Step) -> Nfa {
             }
             Step::Repeat(ref count, box ref inner, up) => {
                 if up {
+                    if let Some(Value::Integer(const_count)) = count.up_const() {
+                        match const_count {
+                            0 => { nfa.add_transition(from, to, Action::Epsilon); return }
+                            1 => { from_step_tree_inner(inner, nfa, from, to); return }
+                            _ => (),
+                        }
+                    }
                     let start = nfa.add_state();
                     let end = nfa.add_state();
                     let counter = start;

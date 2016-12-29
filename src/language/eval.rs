@@ -139,6 +139,15 @@ impl Expr {
         }
     }
 
+    pub fn up_const(&self) -> Option<Value> {
+        use self::Expr::*;
+        match *self {
+            Const(ref x) => Some(x.clone()),
+            Flip(_, ref u) => u.up_const(),
+            _ => None,
+        }
+    }
+
     /// Check whether the expression can be down-evaluated
     pub fn down_evaluable(&self) -> bool {
         use self::Expr::*;
