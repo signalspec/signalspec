@@ -107,13 +107,22 @@ valexpr -> ast::Expr
     valexpr_choose -> ast::Expr
         = e:valexpr_atom _ "[" _ vs:(k:valexpr "=" _ v:valexpr { (k,v) })**COMMA COMMA? "]"
             { ast::Expr::Choose(box e, vs) }
-        / valexpr_atom
+        / valexpr_call
+
+    valexpr_call -> ast::Expr
+        = e:valexpr_atom arg:("("_ arg:expr_tup _")" { arg })?
+        {
+          if let Some(arg) = arg {
+            ast::Expr::Call(Box::new(e), Box::new(arg))
+          } else {
+            e
+          }
+        }
 
     valexpr_atom -> ast::Expr
         = literal_expr
         / ignoreliteral
         / concatexpr
-        / callexpr
         / varexpr
         / ("(" _ v:valexpr _ ")" _ {v})
 
@@ -124,16 +133,13 @@ valexpr -> ast::Expr
         = "[" _ vs:(valexpr ++ COMMA) COMMA? "]"
         { ast::Expr::Concat(vs) }
 
-    callexpr -> ast::Expr
-        = func:identifier _ "("_ arg:expr_tup _")"
-        { ast::Expr::Call(func, Box::new(arg)) }
-
     varexpr -> ast::Expr
         = i:identifier
         { ast::Expr::Var(i) }
 
     literal_expr -> ast::Expr
         = v:literal { ast::Expr::Value(v) }
+        / "(" _ args:expr_tup _ ")"_ "=>" _ body:expr { ast::Expr::Func{ args: Box::new(args), body: Box::new(body) } }
         / s:doubleQuotedString { ast::Expr::String(s) } // Not technically a value
 
     #[export]

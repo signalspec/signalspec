@@ -39,7 +39,7 @@ impl Process for ProgramFlip {
     }
 }
 
-pub fn resolve_process(sess: &Session, scope: &Scope, shape: &Shape, p: &ast::Process) -> Box<Process> {
+pub fn resolve_process<'s>(sess: &Session, scope: &Scope<'s>, shape: &Shape, p: &'s ast::Process) -> Box<Process> {
     match *p {
         ast::Process::Call(ref name, ref arg) => {
             let arg = super::expr::rexpr(sess, scope, arg);
@@ -97,7 +97,7 @@ pub fn resolve_process(sess: &Session, scope: &Scope, shape: &Shape, p: &ast::Pr
     }
 }
 
-fn make_literal_process(sess: &Session, scope: &Scope, is_up: bool, shape_up_expr: &ast::Expr, block: &ast::Block) -> Box<Process> {
+fn make_literal_process<'s>(sess: &Session, scope: &Scope<'s>, is_up: bool, shape_up_expr: &'s ast::Expr, block: &'s ast::Block) -> Box<Process> {
     let shape_item = super::expr::rexpr(sess, scope, shape_up_expr);
     let shape_up = shape_item.clone().into_shape(sess, DataMode { down: !is_up, up: is_up });
     let shape_flip = shape_item.into_shape(sess, DataMode { down: is_up, up: !is_up });
@@ -117,10 +117,10 @@ pub struct CompiledTest<'a> {
     pub up: Option<ProcessStack<'a>>,
 }
 
-pub fn compile_test<'a>(sess: &Session, loader: &'a super::ModuleLoader<'a>, scope: &Scope<'a>, test: &ast::Test) -> CompiledTest<'a> {
+pub fn compile_test<'a>(sess: &Session, loader: &'a super::ModuleLoader<'a>, scope: &Scope<'a>, test: &'a ast::Test) -> CompiledTest<'a> {
 
     fn build_stack<'a>(sess: &Session, loader: &'a super::ModuleLoader<'a>,
-            scope: &Scope<'a>, bottom_process: Box<Process>, ast: &[ast::Process]) -> ProcessStack<'a> {
+            scope: &Scope<'a>, bottom_process: Box<Process>, ast: &'a [ast::Process]) -> ProcessStack<'a> {
         let mut stack = ProcessStack::new(loader);
         stack.add(bottom_process);
 

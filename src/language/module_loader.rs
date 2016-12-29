@@ -10,6 +10,7 @@ use session::Session;
 pub struct ModuleLoader<'a> {
     session: &'a Session,
     ast_arena: Arena<ast::Module>,
+    ast_process_arena: Arena<ast::Process>,
     prelude: RefCell<Scope<'a>>,
 }
 
@@ -28,6 +29,7 @@ impl<'a> ModuleLoader<'a> {
         ModuleLoader {
             session: session,
             ast_arena: Arena::new(),
+            ast_process_arena: Arena::new(),
             prelude: RefCell::new(Scope::new()),
         }
     }
@@ -41,7 +43,7 @@ impl<'a> ModuleLoader<'a> {
     }
 
     pub fn parse_process(&'a self, source: &str, shape_below: &Shape) -> Result<Box<Process>, grammar::ParseError> {
-        let ast = try!(grammar::process(source));
+        let ast = &*self.ast_process_arena.alloc(try!(grammar::process(source)));
         Ok(super::program::resolve_process(&self.session, &*self.prelude.borrow(), shape_below, &ast))
     }
 

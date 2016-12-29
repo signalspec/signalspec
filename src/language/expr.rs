@@ -1,11 +1,11 @@
 use super::ast;
 use super::eval::{ Expr, ConcatElem };
-use super::scope::{ Scope, Item };
+use super::scope::{ Scope, Item, Func };
 use super::step::Message;
 use data::{ Value, Shape, ShapeVariant, ShapeData };
 use session::Session;
 
-fn resolve(session: &Session, scope: Option<&Scope>, var_handler: &mut FnMut(&str) -> Expr, e: &ast::Expr) -> Expr {
+fn resolve<'s>(session: &Session, scope: Option<&Scope<'s>>, var_handler: &mut FnMut(&str) -> Expr, e: &'s ast::Expr) -> Expr {
     match *e {
         ast::Expr::Ignore => Expr::Ignored,
         ast::Expr::Value(ref val) => Expr::Const(val.clone()),
@@ -73,23 +73,21 @@ fn resolve(session: &Session, scope: Option<&Scope>, var_handler: &mut FnMut(&st
         }
 
         ast::Expr::Var(ref name) => var_handler(name),
-        ast::Expr::Call(ref name, ref arg) => {
+        ast::Expr::Call(ref func, ref arg) => {
             let scope = scope.expect("Function call not allowed here");
-            match scope.get(name) {
-                Some(Item::PrimitiveFn(f)) => {
-                    f.call(rexpr(session, scope, arg)).unwrap()
-                },
-                Some(i) => panic!("`{}` is {:?}, not a function", name, i),
-                None => panic!("Undefined function `{}` in {:?}", name, scope.names),
+            match resolve_call(session, scope, func, arg) {
+                Item::Value(v) => v,
+                other => panic!("Expcted value item, but function evaluated to {:?}", other),
             }
         }
 
         ast::Expr::Tup(..) => panic!("Tuple not allowed here"),
         ast::Expr::String(..) => panic!("String not allowed here"),
+        ast::Expr::Func{..} => panic!("Function not allowed here"),
     }
 }
 
-pub fn value(session: &Session, scope: &Scope, e: &ast::Expr) -> Expr {
+pub fn value<'s>(session: &Session, scope: &Scope<'s>, e: &'s ast::Expr) -> Expr {
     resolve(session, Some(scope), &mut |name| {
         match scope.get(name) {
             Some(Item::Value(v)) => v,
@@ -100,7 +98,7 @@ pub fn value(session: &Session, scope: &Scope, e: &ast::Expr) -> Expr {
 }
 
 /// Resolve an expression as used in an argument or right hand side of an assignment
-pub fn rexpr<'s>(session: &Session, scope: &Scope<'s>, e: &ast::Expr) -> Item<'s> {
+pub fn rexpr<'s>(session: &Session, scope: &Scope<'s>, e: &'s ast::Expr) -> Item<'s> {
     match *e {
         ast::Expr::Var(ref name) => {
             if let Some(s) = scope.get(name) { s } else { panic!("Undefined variable `{}`", name); }
@@ -112,7 +110,31 @@ pub fn rexpr<'s>(session: &Session, scope: &Scope<'s>, e: &ast::Expr) -> Item<'s
 
         ast::Expr::String(ref s) => Item::String(s.clone()),
 
+        ast::Expr::Func{ ref body, ref args } => Item::Func(Func{
+            args: args,
+            body: body,
+            scope: Box::new(scope.clone()),
+        }),
+
+        ast::Expr::Call(ref func, ref arg) => {
+            resolve_call(session, scope, func, arg)
+        }
+
         ref other => Item::Value(value(session, scope, other))
+    }
+}
+
+fn resolve_call<'s>(session: &Session, scope: &Scope<'s>, func: &'s ast::Expr, arg: &'s ast::Expr) -> Item<'s> {
+    let func = rexpr(session, scope, func);
+    let arg = rexpr(session, scope, arg);
+    match func {
+        Item::PrimitiveFn(f) => {
+            f.call(arg).unwrap()
+        },
+        Item::Func(func) => {
+            func.apply(session, arg)
+        }
+        i => panic!("{:?} is not a function", i),
     }
 }
 

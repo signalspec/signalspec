@@ -354,15 +354,15 @@ impl BinOp {
 }
 
 pub trait PrimitiveFn {
-    fn call(&self, super::Item) -> Result<Expr, &'static str>;
+    fn call(&self, Item) -> Result<Item, &'static str>;
 }
 
 pub struct FnInt;
 impl PrimitiveFn for FnInt {
-    fn call(&self, arg: Item) -> Result<Expr, &'static str> {
+    fn call(&self, arg: Item) -> Result<Item, &'static str> {
         match arg {
             Item::Value(v) => {
-                Ok(Expr::FloatToInt(Box::new(v)))
+                Ok(Item::Value(Expr::FloatToInt(Box::new(v))))
             }
             _ => return Err("Invalid arguments to chunks()")
         }
@@ -373,16 +373,16 @@ pub static FNINT: FnInt = FnInt;
 
 pub struct FnSigned;
 impl PrimitiveFn for FnSigned {
-    fn call(&self, arg: Item) -> Result<Expr, &'static str> {
+    fn call(&self, arg: Item) -> Result<Item, &'static str> {
         match arg {
             Item::Tuple(mut t) => {
                 match (t.pop(), t.pop()) { //TODO: cleaner way to move out of vec without reversing order?
                     (Some(Item::Value(v)), Some(Item::Value(Expr::Const(Value::Integer(width))))) => {
-                        Ok(Expr::IntToBits {
+                        Ok(Item::Value(Expr::IntToBits {
                             width: width as usize,
                             signed: SignMode::TwosComplement,
                             expr: Box::new(v)
-                        })
+                        }))
                     }
                     _ => return Err("Invalid arguments to signed()")
                 }
@@ -395,15 +395,15 @@ pub static FNSIGNED: FnSigned = FnSigned;
 
 pub struct FnChunks;
 impl PrimitiveFn for FnChunks {
-    fn call(&self, arg: Item) -> Result<Expr, &'static str> {
+    fn call(&self, arg: Item) -> Result<Item, &'static str> {
         match arg {
             Item::Tuple(mut t) => {
                 match (t.pop(), t.pop()) { //TODO: cleaner way to move out of vec without reversing order?
                     (Some(Item::Value(v)), Some(Item::Value(Expr::Const(Value::Integer(width))))) => {
-                        Ok(Expr::Chunks {
+                        Ok(Item::Value(Expr::Chunks {
                             width: width as usize,
                             expr: Box::new(v)
-                        })
+                        }))
                     }
                     _ => return Err("Invalid arguments to chunks()")
                 }
@@ -416,13 +416,13 @@ pub static FNCHUNKS: FnChunks = FnChunks;
 
 pub struct FnComplex;
 impl PrimitiveFn for FnComplex {
-        fn call(&self, arg: Item) -> Result<Expr, &'static str> {
+        fn call(&self, arg: Item) -> Result<Item, &'static str> {
             match arg {
                 Item::Tuple(t) => {
                     assert_eq!(t.len(), 2, "complex(re, im) requires two arguments");
                     match (&t[0], &t[1]) {
                         (&Item::Value(Expr::Const(Value::Number(re))), &Item::Value(Expr::Const(Value::Number(im)))) => {
-                            Ok(Expr::Const(Value::Complex(Complex::new(re, im))))
+                            Ok(Item::Value(Expr::Const(Value::Complex(Complex::new(re, im)))))
                         }
                         _ => return Err("Invalid arguments to chunks()")
                     }
@@ -438,36 +438,42 @@ fn exprs() {
     use session::Session;
     use super::grammar;
     use super::scope::Scope;
+    use typed_arena::Arena;
+
     let sess = Session::new(None);
+    let ast_arena = Arena::new();
     let mut scope = Scope::new();
     scope.bind("complex", Item::PrimitiveFn(&FNCOMPLEX));
 
-    fn expr(sess: &Session, scope: &Scope, e: &str) -> Expr {
-        super::expr::value(sess, scope, &grammar::valexpr(e).unwrap())
-    }
+    let expr = |e| {
+        let ast = ast_arena.alloc(grammar::valexpr(e).unwrap());
+        super::expr::value(&sess, &scope, ast)
+    };
 
-    let two = expr(&sess, &scope, "2");
+    let two = expr("2");
     assert_eq!(two.get_type(), Type::Number(2.0, 2.0));
 
-    let four = expr(&sess, &scope, "2 + 2");
+    let four = expr("2 + 2");
     assert_eq!(four.get_type(), Type::Number(4.0, 4.0));
 
-    let fiveint = expr(&sess, &scope, "#2 + #3");
+    let fiveint = expr("#2 + #3");
     assert_eq!(fiveint.get_type(), Type::Integer(5, 5));
 
-    let one_one_i = expr(&sess, &scope, "complex(1, 0) + complex(0, 1)");
+    let one_one_i = expr("complex(1, 0) + complex(0, 1)");
     assert_eq!(one_one_i.get_type(), Type::Complex);
 
-    let two_two_i = expr(&sess, &scope, "complex(1, 1) * 2");
+    let two_two_i = expr("complex(1, 1) * 2");
     assert_eq!(two_two_i.get_type(), Type::Complex);
 
-    let ignore = expr(&sess, &scope, "_");
+    let ignore = expr("_");
     assert_eq!(ignore.get_type(), Type::Bottom);
 
-    let down = expr(&sess, &scope, "<: #h");
+    let down = expr("<: #h");
     assert_eq!(down.get_type(), Type::Symbol(Some("h".to_string()).into_iter().collect()));
 
-    let range = expr(&sess, &scope, "0..5");
+    let range = expr("0..5");
     assert_eq!(range.get_type(), Type::Number(0.0, 5.0));
 
+    let fncall = expr("((a) => a+3)(2)");
+    assert_eq!(fncall.get_type(), Type::Number(5., 5.));
 }

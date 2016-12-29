@@ -141,11 +141,11 @@ pub fn call<'s>(item: &Item<'s>, session: &Session, shape_down: &Shape, param: I
     }
 }
 
-fn resolve_action(session: &Session,
-                      scope: &Scope,
+fn resolve_action<'s>(session: &Session,
+                      scope: &Scope<'s>,
                       shape_down: &Shape,
                       shape_up: &mut Shape,
-                      action: &ast::Action) -> (Step, ResolveInfo) {
+                      action: &'s ast::Action) -> (Step, ResolveInfo) {
     match *action {
         ast::Action::Call(ref expr, ref arg, ref body) => {
             let arg = expr::rexpr(session, scope, arg);
@@ -257,11 +257,11 @@ fn resolve_action(session: &Session,
     }
 }
 
-pub fn resolve_seq(session: &Session,
-                  pscope: &Scope,
+pub fn resolve_seq<'s>(session: &Session,
+                  pscope: &Scope<'s>,
                   shape_down: &Shape,
                   shape_up: &mut Shape,
-                  block: &ast::Block) -> (Step, ResolveInfo) {
+                  block: &'s ast::Block) -> (Step, ResolveInfo) {
     let mut scope = pscope.child();
     resolve_letdef(session, &mut scope, &block.lets);
 
@@ -276,7 +276,7 @@ pub fn resolve_seq(session: &Session,
     (Step::Seq(steps), ri)
 }
 
-pub fn resolve_letdef(session: &Session, scope: &mut Scope, lets: &[ast::LetDef]) {
+pub fn resolve_letdef<'s>(session: &Session, scope: &mut Scope<'s>, lets: &'s [ast::LetDef]) {
     for &ast::LetDef(ref name, ref expr) in lets.iter() {
         let item = expr::rexpr(session, scope, expr);
         scope.bind(&name, item);

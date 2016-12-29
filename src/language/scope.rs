@@ -4,11 +4,11 @@ use std::default::Default;
 use std::cell::RefCell;
 
 use super::ast;
-use super::eval::Expr;
 use data::{ Value, DataMode, Shape, ShapeVariant, ShapeData, Type };
 use session::{ Session, ValueID };
 use process::PrimitiveDef;
-use super::eval::PrimitiveFn;
+use super::eval::{ Expr, PrimitiveFn };
+use super::expr;
 
 /// A collection of named Items.
 #[derive(Clone)]
@@ -62,6 +62,9 @@ pub enum Item<'s> {
     /// Reference to a primitive
     PrimitiveDef(&'s PrimitiveDef),
 
+    /// Function literal
+    Func(Func<'s>),
+
     /// Reference to a primitive function
     PrimitiveFn(&'s PrimitiveFn),
 
@@ -73,6 +76,21 @@ pub enum Item<'s> {
 
     /// Sequence of Unicode code points. Not a Value because it is not of constant size.
     String(String),
+}
+
+#[derive(Clone)]
+pub struct Func<'s> {
+    pub args: &'s ast::Expr,
+    pub body: &'s ast::Expr,
+    pub scope: Box<Scope<'s>>,
+}
+
+impl<'s> Func<'s> {
+    pub fn apply(&self, session: &Session, arg: Item<'s>) -> Item<'s> {
+        let mut scope = self.scope.child();
+        expr::assign(session, &mut scope, self.args, arg);
+        expr::rexpr(session, &mut scope, self.body)
+    }
 }
 
 impl<'s> Item<'s> {
@@ -95,7 +113,7 @@ impl<'s> Item<'s> {
 
     /// Get a `Shape` corresponding to an `Interface` or data example
     pub fn into_shape(self, sess: &Session, dir: DataMode) -> Shape {
-        fn collect_variants(session: &Session, scope: &Scope, entries: &[ast::InterfaceEntry], dir: DataMode) -> Shape {
+        fn collect_variants<'s>(session: &Session, scope: &Scope<'s>, entries: &'s [ast::InterfaceEntry], dir: DataMode) -> Shape {
             Shape {
                 variants: entries.iter().map(|entry| {
                     match entry {
@@ -128,6 +146,7 @@ impl<'s> fmt::Debug for Item<'s> {
             Item::Value(ref v) => write!(f, "{:?}", v),
             Item::Def(..) => write!(f, "<def>"),
             Item::PrimitiveDef(..) => write!(f, "<primitive def>"),
+            Item::Func(ref func) => write!(f, "|{:?}| {:?}", func.args, func.body),
             Item::PrimitiveFn(..) => write!(f, "<primitive fn>"),
             Item::Interface(..) => write!(f, "<interface>"),
             Item::Tuple(ref v) => {

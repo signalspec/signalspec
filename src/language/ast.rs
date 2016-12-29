@@ -61,6 +61,7 @@ pub struct LetDef(pub String, pub Expr);
 pub enum Expr {
     Value(Value),
     String(String), // Produces an Item, not a Value, because it isn't fixed size
+    Func{ args: Box<Expr>, body: Box<Expr> }, // Produces an Item
     Tup(Vec<Expr>),
     Ignore,
 
@@ -72,7 +73,7 @@ pub enum Expr {
 
     Bin(Box<Expr>, BinOp, Box<Expr>),
 
-    Call(String, Box<Expr>),
+    Call(Box<Expr>, Box<Expr>),
     Var(String),
 }
 
