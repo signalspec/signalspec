@@ -918,6 +918,7 @@ fn closure<'nfa>(nfa: &'nfa Nfa, shape_down: &Shape, shape_up: &Shape, initial_t
                 }
                 RepeatUpBack(counter_id) => {
                     thread.update_counter(&mut insns, counter_id, 1);
+
                     queue.push_back(thread);
                 }
                 RepeatUpExit(counter_id, ref expr) => {
@@ -1061,11 +1062,13 @@ pub fn make_dfa(nfa: &Nfa, shape_down: &Shape, shape_up: &Shape) -> Dfa {
     }).collect()));
 
     while let Some((state, threads)) = queue.pop_front() {
+        let state_key = threads.iter().map(|x| x.state).collect::<Vec<_>>();
+
         // Walk the NFA states reachable from this state, and collect the NFA threads at
         // the point they they transition out of this DFA state.
         let (closure, block, exits) = closure(nfa, shape_down, shape_up, threads);
 
-        debug!("Creating DFA state {} = NFA states {:?}", state, closure);
+        debug!("Creating DFA state {} = NFA states {:?} ({:?})", state, state_key, closure);
         debug!("{:#?}", block);
 
         states[state].insns = block;
@@ -1077,9 +1080,10 @@ pub fn make_dfa(nfa: &Nfa, shape_down: &Shape, shape_up: &Shape) -> Dfa {
 
         for (recv_msg, mut thread) in exits {
             debug!("{:?} -> {}", recv_msg, thread.state);
-            debug!("    {:?}", thread.conditions);
-            debug!("    {:#?}", thread.send_lower);
-            debug!("    {:#?}", thread.send_upper);
+            debug!("    conditions: {:?}", thread.conditions);
+            debug!("    counters: {:?}", thread.counters);
+            debug!("    send_lower: {:#?}", thread.send_lower);
+            debug!("    send_upper: {:#?}", thread.send_upper);
 
             let (pre_cond, send_lower, send_upper) = thread.erase_values();
 
@@ -1163,14 +1167,21 @@ pub fn make_dfa(nfa: &Nfa, shape_down: &Shape, shape_up: &Shape) -> Dfa {
         let mut thread_map = |mut threads: Vec<Thread>| -> Transition {
             let mut regs = Vec::new();
 
+            threads.sort_by_key(|x| x.state);
+
+            let mut state_key = threads.iter().map(|x| x.state).collect::<Vec<_>>();
+            state_key.dedup();
+
+            if threads.len() != state_key.len() {
+                info!("Ambiguity with {:?}", threads);
+            }
+
             for thread in &mut threads {
                 thread.erase_vars(&mut regs);
             }
 
-            let mut state_key = threads.iter().map(|x| x.state).collect::<Vec<_>>();
-            state_key.sort();
-
             debug!("Generating transition to NFA states {:?}", state_key);
+            debug!("Regs: {:?}", regs);
 
             // Find the destination state if it exists, or make a new one
             let dest_state = *state_by_nfa_entry_states.entry(state_key).or_insert_with(|| {
