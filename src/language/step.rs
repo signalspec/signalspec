@@ -126,7 +126,7 @@ pub fn call<'s>(item: &Item<'s>, session: &Session, shape_down: &Shape, param: I
         Item::Def(ast, scope) => {
             let mut scope = scope.borrow().child(); // Base on lexical parent
 
-            let mut shape_up = if let Some(ref intf_expr) = ast.interface {
+            let mut shape_up = if let Some(ref intf_expr) = ast.protocol {
                 expr::rexpr(session, &scope, intf_expr).into_shape(session, DataMode { down: false, up: true })
             } else {
                 Shape::null()

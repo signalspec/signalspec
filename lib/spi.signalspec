@@ -1,7 +1,7 @@
 let bit = #0|#1
 let byte = [bit, bit, bit, bit, bit, bit, bit, bit]
 
-interface SPI {
+protocol SPI() {
   byte
   #start
   #end

@@ -69,7 +69,7 @@ pub enum Item<'s> {
     PrimitiveFn(super::module_loader::PrimitiveFn<'s>),
 
     /// Interface definition - `interface` block AST and enclosing scope
-    Interface(&'s ast::Interface, &'s RefCell<Scope<'s>>),
+    Protocol(&'s ast::Protocol, &'s RefCell<Scope<'s>>),
 
     /// Collection of `Item`s
     Tuple(Vec<Item<'s>>), // TODO: named components
@@ -113,11 +113,11 @@ impl<'s> Item<'s> {
 
     /// Get a `Shape` corresponding to an `Interface` or data example
     pub fn into_shape(self, sess: &Session, dir: DataMode) -> Shape {
-        fn collect_variants<'s>(session: &Session, scope: &Scope<'s>, entries: &'s [ast::InterfaceEntry], dir: DataMode) -> Shape {
+        fn collect_variants<'s>(session: &Session, scope: &Scope<'s>, entries: &'s [ast::ProtocolEntry], dir: DataMode) -> Shape {
             Shape {
                 variants: entries.iter().map(|entry| {
                     match entry {
-                        &ast::InterfaceEntry::Shape(ref expr) => {
+                        &ast::ProtocolEntry::Message(ref expr) => {
                             ShapeVariant {
                                 data: super::expr::rexpr(session, scope, expr).into_data_shape(dir),
                             }
@@ -128,7 +128,7 @@ impl<'s> Item<'s> {
         }
 
         match self {
-            Item::Interface(ast, scope) =>  collect_variants(sess, &*scope.borrow(), &ast.entries[..], dir),
+            Item::Protocol(ast, scope) =>  collect_variants(sess, &*scope.borrow(), &ast.entries[..], dir),
             i => Shape { variants: vec![ ShapeVariant { data: i.into_data_shape(dir) } ] }
         }
     }
@@ -148,7 +148,7 @@ impl<'s> fmt::Debug for Item<'s> {
             Item::PrimitiveDef(..) => write!(f, "<primitive def>"),
             Item::Func(ref func) => write!(f, "|{:?}| {:?}", func.args, func.body),
             Item::PrimitiveFn(..) => write!(f, "<primitive fn>"),
-            Item::Interface(..) => write!(f, "<interface>"),
+            Item::Protocol(..) => write!(f, "<protocol>"),
             Item::Tuple(ref v) => {
                 try!(write!(f, "("));
                 for i in v.iter() {

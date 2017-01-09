@@ -16,10 +16,10 @@ letstmt -> ast::LetDef
     { ast::LetDef(name, value) }
 
 def -> ast::ModuleEntry
-    = DEF _ name:identifier _ "(" _ param: expr_tup _ ")" _ interface:(":" _ e:expr {e})? _ block:block BREAK
-      { ast::ModuleEntry::Signal(ast::Def { name:name, param:param, interface:interface, block:block }) }
-    / INTERFACE _ name:identifier _ entries:intf_block BREAK
-      { ast::ModuleEntry::Interface(ast::Interface { name:name, entries: entries  }) }
+    = DEF _ name:identifier _ "(" _ param: expr_tup _ ")" _ protocol:(":" _ e:expr {e})? _ block:block BREAK
+      { ast::ModuleEntry::Signal(ast::Def { name:name, param:param, protocol:protocol, block:block }) }
+    / PROTOCOL _ name:identifier _ "(" _ param: expr_tup _ ")" _ entries:protocol_block BREAK
+      { ast::ModuleEntry::Protocol(ast::Protocol { name:name, param: param, entries: entries  }) }
     / t:test_block BREAK { ast::ModuleEntry::Test(t) }
 
 block -> ast::Block
@@ -44,13 +44,12 @@ block -> ast::Block
           = expr:expr _ "=>" _ block:block
           { ast::AltArm{ discriminant:expr, block:block } }
 
-intf_block -> Vec<ast::InterfaceEntry>
-  = _ "{" _ entries:(entry:intf_entry ** (BREAK / (_ ";" _)) {entry}) _ "}"
+protocol_block -> Vec<ast::ProtocolEntry>
+  = _ "{" _ entries:(entry:protocol_entry ** (BREAK / (_ ";" _)) {entry}) _ "}"
     { entries }
 
-  intf_entry -> ast::InterfaceEntry
-     = e:expr
-     { ast::InterfaceEntry::Shape(e) }
+  protocol_entry -> ast::ProtocolEntry
+     = e:expr { ast::ProtocolEntry::Message(e) }
 
 // Expressions
 expr -> ast::Expr
@@ -226,7 +225,7 @@ IDCHAR = [0-9a-zA-Z_]
 USE    = "use"    !IDCHAR
 LET    = "let"    !IDCHAR
 DEF    = "def"    !IDCHAR
-INTERFACE = "interface"    !IDCHAR
+PROTOCOL = "protocol"    !IDCHAR
 REPEAT = "repeat" !IDCHAR
 ON     = "on"     !IDCHAR
 FOR    = "for"    !IDCHAR

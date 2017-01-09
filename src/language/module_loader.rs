@@ -66,8 +66,8 @@ impl<'a> ModuleLoader<'a> {
                     let ed = Item::Def(d, &scope);
                     scope.borrow_mut().names.insert(d.name.clone(), ed);
                 }
-                ast::ModuleEntry::Interface(ref d) => {
-                    let ed = Item::Interface(d, &scope);
+                ast::ModuleEntry::Protocol(ref d) => {
+                    let ed = Item::Protocol(d, &scope);
                     scope.borrow_mut().names.insert(d.name.clone(), ed);
                 }
                 ast::ModuleEntry::Test(..) => {}

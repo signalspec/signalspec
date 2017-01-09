@@ -31,24 +31,25 @@ pub struct AltArm {
 
 pub enum ModuleEntry {
     Signal(Def),
-    Interface(Interface),
+    Protocol(Protocol),
     Test(Test),
 }
 
 pub struct Def {
     pub name: String,
     pub param: Expr,
-    pub interface: Option<Expr>,
+    pub protocol: Option<Expr>,
     pub block: Block,
 }
 
-pub struct Interface {
+pub struct Protocol {
     pub name: String,
-    pub entries: Vec<InterfaceEntry>,
+    pub param: Expr,
+    pub entries: Vec<ProtocolEntry>,
 }
 
-pub enum InterfaceEntry {
-    Shape(Expr),
+pub enum ProtocolEntry {
+    Message(Expr),
 }
 
 #[derive(Debug, Clone)]
