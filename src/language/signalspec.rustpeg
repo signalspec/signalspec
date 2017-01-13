@@ -4,19 +4,17 @@ use std::char;
 
 #[export]
 module -> ast::Module
-    = _ imports:include* lets:letstmt* defs:def*
-    { ast::Module{ imports: imports, lets: lets, defs: defs } }
-
-include -> ast::UseDef
-    = USE _ name:identifier BREAK
-    { ast::UseDef(name) }
+    = _ entries:module_entry*
+    { ast::Module { entries: entries } }
 
 letstmt -> ast::LetDef
     = LET _ name:identifier _ "=" _ value:expr BREAK
     { ast::LetDef(name, value) }
 
-def -> ast::ModuleEntry
-    = DEF _ name:identifier _ "(" _ param: expr_tup _ ")" _ protocol:(":" _ e:expr {e})? _ block:block BREAK
+module_entry -> ast::ModuleEntry
+    = l:letstmt { ast::ModuleEntry::Let(l) }
+    / USE _ name:identifier BREAK { ast::ModuleEntry::Use(name) }
+    / DEF _ name:identifier _ "(" _ param: expr_tup _ ")" _ protocol:(":" _ e:expr {e})? _ block:block BREAK
       { ast::ModuleEntry::Signal(ast::Def { name:name, param:param, protocol:protocol, block:block }) }
     / PROTOCOL _ name:identifier _ "(" _ param: expr_tup _ ")" _ entries:protocol_block BREAK
       { ast::ModuleEntry::Protocol(ast::Protocol { name:name, param: param, entries: entries  }) }

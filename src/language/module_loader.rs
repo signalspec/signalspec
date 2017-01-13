@@ -1,5 +1,6 @@
 use typed_arena::Arena;
 use std::cell::RefCell;
+use ref_slice::ref_slice;
 
 use super::{ ast, grammar, Item};
 use super::scope::Scope;
@@ -52,16 +53,16 @@ impl<'a> ModuleLoader<'a> {
     pub fn parse_module(&'a self, source: &str) -> Result<Module, grammar::ParseError> {
         let ast = &*self.ast_arena.alloc(try!(grammar::module(source)));
 
-        for _import in ast.imports.iter() {
-            panic!("Imports unimplemented");
-        }
-
         let scope = &self.prelude;
 
-        super::step::resolve_letdef(self.session, &mut *scope.borrow_mut(), &ast.lets);
-
-        for def in &ast.defs {
-            match *def {
+        for entry in &ast.entries {
+            match *entry {
+                ast::ModuleEntry::Let(ref letdef) => {
+                    super::step::resolve_letdef(self.session, &mut *scope.borrow_mut(), ref_slice(letdef));
+                }
+                ast::ModuleEntry::Use(_) => {
+                    panic!("`use` unimplemented");
+                }
                 ast::ModuleEntry::Signal(ref d) => {
                     let ed = Item::Def(d, &scope);
                     scope.borrow_mut().names.insert(d.name.clone(), ed);
@@ -84,7 +85,7 @@ impl<'a> ModuleLoader<'a> {
 
 impl<'a> Module<'a> {
     pub fn tests(&self) -> Vec<Test<'a>> {
-        self.ast.defs.iter().filter_map(|entry| {
+        self.ast.entries.iter().filter_map(|entry| {
             match *entry {
                 ast::ModuleEntry::Test(ref t) => Some(Test { ast: t, scope: self.scope }),
                 _ => None,

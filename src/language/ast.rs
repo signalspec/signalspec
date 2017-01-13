@@ -2,9 +2,7 @@ use super::eval::BinOp;
 pub use data::Value;
 
 pub struct Module {
-    pub imports: Vec<UseDef>,
-    pub lets: Vec<LetDef>,
-    pub defs: Vec<ModuleEntry>,
+    pub entries: Vec<ModuleEntry>,
 }
 
 #[derive(Debug, Clone)]
@@ -30,6 +28,8 @@ pub struct AltArm {
 }
 
 pub enum ModuleEntry {
+    Let(LetDef),
+    Use(String),
     Signal(Def),
     Protocol(Protocol),
     Test(Test),
@@ -51,9 +51,6 @@ pub struct Protocol {
 pub enum ProtocolEntry {
     Message(Expr),
 }
-
-#[derive(Debug, Clone)]
-pub struct UseDef(pub String);
 
 #[derive(Debug, Clone)]
 pub struct LetDef(pub String, pub Expr);
