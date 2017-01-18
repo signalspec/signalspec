@@ -14,11 +14,17 @@ letstmt -> ast::LetDef
 module_entry -> ast::ModuleEntry
     = l:letstmt { ast::ModuleEntry::Let(l) }
     / USE _ name:identifier BREAK { ast::ModuleEntry::Use(name) }
-    / DEF _ name:identifier _ "(" _ param: expr_tup _ ")" _ protocol:(":" _ e:expr {e})? _ block:block BREAK
-      { ast::ModuleEntry::Signal(ast::Def { name:name, param:param, protocol:protocol, block:block }) }
-    / PROTOCOL _ name:identifier _ "(" _ param: expr_tup _ ")" _ entries:protocol_block BREAK
-      { ast::ModuleEntry::Protocol(ast::Protocol { name:name, param: param, entries: entries  }) }
+    / with:(WITH _ w:with_protocol _ { w })?
+      DEF _ name:identifier _ "(" _ param: expr_tup _ ")" _ protocol:(":" _ e:expr {e})? _ block:block BREAK
+      { ast::ModuleEntry::WithDef(with, ast::Def { name:name, param:param, protocol:protocol, block:block }) }
+    / PROTOCOL _ name:identifier _ "(" _ params:(identifier ** COMMA) COMMA? _ ")" _ entries:protocol_block BREAK
+      { ast::ModuleEntry::Protocol(ast::Protocol { name:name, params: params, entries: entries  }) }
     / t:test_block BREAK { ast::ModuleEntry::Test(t) }
+
+with_protocol -> ast::With
+   = name:identifier _ "(" _ param: expr_tup _ ")" _ { ast::With::Protocol { name: name, param: param } }
+   / "(" _ t:(with_protocol** COMMA) COMMA? _ ")" _ { ast::With::Tup(t) }
+   / e:expr { ast::With::Type(e) }
 
 block -> ast::Block
     = "{" _ lets:letstmt* actions:action ** (BREAK / (_ ";" _)) _ "}"
@@ -224,6 +230,7 @@ USE    = "use"    !IDCHAR
 LET    = "let"    !IDCHAR
 DEF    = "def"    !IDCHAR
 PROTOCOL = "protocol"    !IDCHAR
+WITH   = "with"   !IDCHAR
 REPEAT = "repeat" !IDCHAR
 ON     = "on"     !IDCHAR
 FOR    = "for"    !IDCHAR

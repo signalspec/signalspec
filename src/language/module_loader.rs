@@ -7,6 +7,7 @@ use super::scope::Scope;
 use data::Shape;
 use process::Process;
 use session::Session;
+use language::protocol::{ resolve_protocol, ProtocolScope };
 
 pub type PrimitiveFn<'a> = fn(Item<'a>)->Result<Item<'a>, &'static str>;
 
@@ -15,6 +16,7 @@ pub struct ModuleLoader<'a> {
     ast_arena: Arena<ast::Module>,
     ast_process_arena: Arena<ast::Process>,
     prelude: RefCell<Scope<'a>>,
+    pub protocol_scope: RefCell<ProtocolScope<'a>>, // TODO: should be scoped
 }
 
 pub struct Module<'a> {
@@ -34,6 +36,7 @@ impl<'a> ModuleLoader<'a> {
             ast_arena: Arena::new(),
             ast_process_arena: Arena::new(),
             prelude: RefCell::new(Scope::new()),
+            protocol_scope: RefCell::new(ProtocolScope::new()),
         }
     }
 
@@ -47,13 +50,15 @@ impl<'a> ModuleLoader<'a> {
 
     pub fn parse_process(&'a self, source: &str, shape_below: &Shape) -> Result<Box<Process>, grammar::ParseError> {
         let ast = &*self.ast_process_arena.alloc(try!(grammar::process(source)));
-        Ok(super::program::resolve_process(&self.session, &*self.prelude.borrow(), shape_below, &ast))
+        Ok(super::program::resolve_process(&self.session, &*self.prelude.borrow(), &*self.protocol_scope.borrow(), shape_below, &ast))
     }
 
     pub fn parse_module(&'a self, source: &str) -> Result<Module, grammar::ParseError> {
         let ast = &*self.ast_arena.alloc(try!(grammar::module(source)));
 
         let scope = &self.prelude;
+        let mut with_blocks = vec![];
+        let mut protocols = vec![];
 
         for entry in &ast.entries {
             match *entry {
@@ -63,23 +68,37 @@ impl<'a> ModuleLoader<'a> {
                 ast::ModuleEntry::Use(_) => {
                     panic!("`use` unimplemented");
                 }
-                ast::ModuleEntry::Signal(ref d) => {
+                ast::ModuleEntry::WithDef(ref with, ref d) => {
                     let ed = Item::Def(d, &scope);
                     scope.borrow_mut().names.insert(d.name.clone(), ed);
+                    if let Some(w) = with.as_ref() {
+                        with_blocks.push((w, d));
+                    }
                 }
                 ast::ModuleEntry::Protocol(ref d) => {
-                    let ed = Item::Protocol(d, &scope);
-                    scope.borrow_mut().names.insert(d.name.clone(), ed);
+                    let protocol_id = self.session.protocols.create();
+                    scope.borrow_mut().names.insert(d.name.clone(), Item::Protocol(protocol_id, d, &scope));
+                    protocols.push((protocol_id, d));
                 }
                 ast::ModuleEntry::Test(..) => {}
             }
+        }
+
+        for (id, protocol_ast) in protocols {
+            self.session.protocols.define(id, resolve_protocol(self.session, &*scope.borrow(), protocol_ast));
+        }
+
+        let mut protocol_scope = self.protocol_scope.borrow_mut();
+        for (with, def) in with_blocks {
+            protocol_scope.add_def(self.session, scope, with, def);
         }
 
         Ok(Module { ast: ast, scope: scope })
     }
 
     pub fn compile_test(&'a self, test: &Test<'a>) -> super::program::CompiledTest<'a> {
-        super::program::compile_test(self.session, self, &*test.scope.borrow(), test.ast)
+
+        super::program::compile_test(self.session, self, &*test.scope.borrow(), &*self.protocol_scope.borrow(), test.ast)
     }
 }
 

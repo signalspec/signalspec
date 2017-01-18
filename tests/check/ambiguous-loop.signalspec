@@ -1,3 +1,4 @@
+with #x|#y
 def main() {
     repeat _ { #x }
     #x
@@ -6,6 +7,7 @@ def main() {
 test @up(#x|#y) { #x; #x; #x; #x } main();
 test fail @up(#x|#y) { #y; #x; #x; #x } main();
 
+with #x|#y
 def main2() {
     #x
     repeat _ { #x }
@@ -14,6 +16,7 @@ def main2() {
 test @up(#x|#y) { #x; #x; #x; #x } main2();
 test fail @up(#x|#y) { #y; #x; #x; #x } main2();
 
+with #x|#y
 def main3() {
     #x
     repeat #3 { #x }

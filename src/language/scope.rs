@@ -5,6 +5,7 @@ use std::cell::RefCell;
 
 use super::ast;
 use data::{ Value, DataMode, Shape, ShapeVariant, ShapeData, Type };
+use protocol::ProtocolId;
 use session::{ Session, ValueID };
 use process::PrimitiveDef;
 use super::eval::{ Expr };
@@ -69,7 +70,7 @@ pub enum Item<'s> {
     PrimitiveFn(super::module_loader::PrimitiveFn<'s>),
 
     /// Interface definition - `interface` block AST and enclosing scope
-    Protocol(&'s ast::Protocol, &'s RefCell<Scope<'s>>),
+    Protocol(ProtocolId, &'s ast::Protocol, &'s RefCell<Scope<'s>>),
 
     /// Collection of `Item`s
     Tuple(Vec<Item<'s>>), // TODO: named components
@@ -128,7 +129,7 @@ impl<'s> Item<'s> {
         }
 
         match self {
-            Item::Protocol(ast, scope) =>  collect_variants(sess, &*scope.borrow(), &ast.entries[..], dir),
+            Item::Protocol(_, ast, scope) =>  collect_variants(sess, &*scope.borrow(), &ast.entries[..], dir),
             i => Shape { variants: vec![ ShapeVariant { data: i.into_data_shape(dir) } ] }
         }
     }

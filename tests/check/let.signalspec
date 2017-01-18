@@ -1,4 +1,6 @@
 let x = #x
+
+with #x|#y|#z
 def main(a) {
     let y = a
     let z = #z

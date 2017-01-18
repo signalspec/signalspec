@@ -18,6 +18,7 @@ mod data;
 mod language;
 mod connection;
 mod test_runner;
+mod protocol;
 
 pub use session::Session;
 pub use language::{ ModuleLoader, Module, Test, Item };

@@ -1,3 +1,5 @@
+
+with #a|#b|#c
 def main () {
     #a
     #b

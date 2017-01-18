@@ -1,6 +1,7 @@
 use super::{ ast, nfa, Item };
 use super::dfa::{ self, Dfa };
 use super::scope::Scope;
+use super::protocol::ProtocolScope;
 use data::{DataMode, Shape};
 use process::{ Process, ProcessStack };
 use connection::{ Connection, ConnectionMessage };
@@ -39,11 +40,15 @@ impl Process for ProgramFlip {
     }
 }
 
-pub fn resolve_process<'s>(sess: &Session, scope: &Scope<'s>, shape: &Shape, p: &'s ast::Process) -> Box<Process> {
+pub fn resolve_process<'s>(sess: &Session,
+                           scope: &Scope<'s>,
+                           protocol_scope: &ProtocolScope<'s>,
+                           shape: &Shape,
+                           p: &'s ast::Process) -> Box<Process> {
     match *p {
         ast::Process::Call(ref name, ref arg) => {
             let arg = super::expr::rexpr(sess, scope, arg);
-            match scope.get(name) {
+            match protocol_scope.find(shape, name) {
                 Some(item @ Item::Def(..)) => {
                     let (shape_up, step, _) = super::step::call(&item, sess, &shape, arg);
 
@@ -117,15 +122,19 @@ pub struct CompiledTest<'a> {
     pub up: Option<ProcessStack<'a>>,
 }
 
-pub fn compile_test<'a>(sess: &Session, loader: &'a super::ModuleLoader<'a>, scope: &Scope<'a>, test: &'a ast::Test) -> CompiledTest<'a> {
+pub fn compile_test<'a>(sess: &Session,
+                        loader: &'a super::ModuleLoader<'a>,
+                        scope: &Scope<'a>,
+                        protocol_scope: &ProtocolScope<'a>,
+                        test: &'a ast::Test) -> CompiledTest<'a> {
 
     fn build_stack<'a>(sess: &Session, loader: &'a super::ModuleLoader<'a>,
-            scope: &Scope<'a>, bottom_process: Box<Process>, ast: &'a [ast::Process]) -> ProcessStack<'a> {
+            scope: &Scope<'a>, protocol_scope: &ProtocolScope<'a>, bottom_process: Box<Process>, ast: &'a [ast::Process]) -> ProcessStack<'a> {
         let mut stack = ProcessStack::new(loader);
         stack.add(bottom_process);
 
         for process_ast in ast {
-            let process = resolve_process(sess, scope, stack.top_shape(), process_ast);
+            let process = resolve_process(sess, scope, protocol_scope, stack.top_shape(), process_ast);
             stack.add(process);
         }
 
@@ -139,8 +148,8 @@ pub fn compile_test<'a>(sess: &Session, loader: &'a super::ModuleLoader<'a>, sco
             let up_base = make_literal_process(sess, scope, true, shape_expr, block);
 
             CompiledTest {
-                down: Some(build_stack(sess, loader, scope, dn_base, rest)),
-                up:   Some(build_stack(sess, loader, scope, up_base, rest)),
+                down: Some(build_stack(sess, loader, scope, protocol_scope, dn_base, rest)),
+                up:   Some(build_stack(sess, loader, scope, protocol_scope, up_base, rest)),
             }
         }
 
@@ -154,15 +163,15 @@ pub fn compile_test<'a>(sess: &Session, loader: &'a super::ModuleLoader<'a>, sco
             let process_up = box Emit { shape: shape_up, receiver: r};
 
             CompiledTest {
-                down: Some(build_stack(sess, loader, scope, process_dn, rest)),
-                up:   Some(build_stack(sess, loader, scope, process_up, rest)),
+                down: Some(build_stack(sess, loader, scope, protocol_scope, process_dn, rest)),
+                up:   Some(build_stack(sess, loader, scope, protocol_scope, process_up, rest)),
             }
         }
 
         Some((first, rest)) => {
-            let bottom = resolve_process(sess, scope, &Shape::null(), first);
+            let bottom = resolve_process(sess, scope, protocol_scope, &Shape::null(), first);
             let is_up = bottom.shape_up().data_mode().up;
-            let stack = build_stack(sess, loader, scope, bottom, rest);
+            let stack = build_stack(sess, loader, scope, protocol_scope, bottom, rest);
 
             let (up, down) = if is_up { (Some(stack), None) } else { (None, Some(stack)) };
             CompiledTest {

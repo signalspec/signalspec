@@ -7,6 +7,7 @@ protocol SPI() {
   #end
 }
 
+with (#h|#l, #h|#l)
 def spi(): SPI {
   repeat <: #10 { (#h, <: #l, <: #l) }
   repeat {

@@ -1,5 +1,6 @@
 let t = #a|#b|#c|#d|#e
 
+with t
 def main() {
     #a
     repeat {

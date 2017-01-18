@@ -30,7 +30,7 @@ pub struct AltArm {
 pub enum ModuleEntry {
     Let(LetDef),
     Use(String),
-    Signal(Def),
+    WithDef(Option<With>, Def),
     Protocol(Protocol),
     Test(Test),
 }
@@ -44,12 +44,18 @@ pub struct Def {
 
 pub struct Protocol {
     pub name: String,
-    pub param: Expr,
+    pub params: Vec<String>,
     pub entries: Vec<ProtocolEntry>,
 }
 
 pub enum ProtocolEntry {
     Message(Expr),
+}
+
+pub enum With {
+    Protocol { name: String, param: Expr },
+    Type(Expr),
+    Tup(Vec<With>)
 }
 
 #[derive(Debug, Clone)]

@@ -7,6 +7,7 @@ mod nfa;
 mod dfa;
 mod program;
 mod module_loader;
+mod protocol;
 
 peg_file! grammar("signalspec.rustpeg");
 
