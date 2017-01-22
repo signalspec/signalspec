@@ -14,7 +14,7 @@ letstmt -> ast::LetDef
 module_entry -> ast::ModuleEntry
     = l:letstmt { ast::ModuleEntry::Let(l) }
     / USE _ name:identifier BREAK { ast::ModuleEntry::Use(name) }
-    / with:(WITH _ w:with_protocol _ { w })?
+    / WITH _ with:with_protocol _
       DEF _ name:identifier _ "(" _ param: expr_tup _ ")" _ protocol:(":" _ e:expr {e})? _ block:block BREAK
       { ast::ModuleEntry::WithDef(with, ast::Def { name:name, param:param, protocol:protocol, block:block }) }
     / PROTOCOL _ name:identifier _ "(" _ params:(identifier ** COMMA) COMMA? _ ")" _ entries:protocol_block BREAK

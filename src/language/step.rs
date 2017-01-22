@@ -7,6 +7,8 @@ use session::{Session, ValueID};
 use super::{ ast, expr };
 use super::scope::{ Scope, Item };
 use super::eval::Expr;
+use super::program::ProcessDef;
+use super::protocol::ProtocolScope;
 use data::{ Shape, DataMode, ShapeVariant, ShapeData, Type, MessageTag };
 
 #[derive(Debug, Clone)]
@@ -119,11 +121,11 @@ impl ResolveInfo {
     }
 }
 
-pub fn call<'s>(item: &Item<'s>, session: &Session, shape_down: &Shape, param: Item<'s>) ->
+pub fn call<'s>(item: &ProcessDef<'s>, session: &Session, protocol_scope: &ProtocolScope<'s>, shape_down: &Shape, param: Item<'s>) ->
         (Shape, Step, ResolveInfo) {
 
     match *item {
-        Item::Def(ast, scope) => {
+        ProcessDef::Code(ast, scope) => {
             let mut scope = scope.borrow().child(); // Base on lexical parent
 
             let mut shape_up = if let Some(ref intf_expr) = ast.protocol {
@@ -133,16 +135,17 @@ pub fn call<'s>(item: &Item<'s>, session: &Session, shape_down: &Shape, param: I
             };
 
             expr::assign(session, &mut scope, &ast.param, param);
-            let (step, ri) = resolve_seq(session, &scope, shape_down, &mut shape_up, &ast.block);
+            let (step, ri) = resolve_seq(session, &scope, protocol_scope, shape_down, &mut shape_up, &ast.block);
 
             (shape_up, step, ri)
         }
-        _ => panic!("Not callable")
+        ProcessDef::Primitive(..) => panic!("unimplemented: calling primitive from within a block")
     }
 }
 
 fn resolve_action<'s>(session: &Session,
                       scope: &Scope<'s>,
+                      protocol_scope: &ProtocolScope<'s>,
                       shape_down: &Shape,
                       shape_up: &mut Shape,
                       action: &'s ast::Action) -> (Step, ResolveInfo) {
@@ -154,9 +157,12 @@ fn resolve_action<'s>(session: &Session,
                 unimplemented!();
             }
 
+            /*
             let item = expr::rexpr(session, scope, expr);
             let (_shape_child, step, ri) = call(&item, session, shape_down, arg);
             (step, ri)
+            */
+            unimplemented!();
         }
         ast::Action::Token(ref expr) => {
             debug!("Token: {:?}", expr);
@@ -173,7 +179,7 @@ fn resolve_action<'s>(session: &Session,
             let (variant, msg) = expr::on_expr_message(session, &mut body_scope, shape_up, expr);
 
             let (step, mut ri) = body.as_ref().map(|body| {
-                resolve_seq(session, &body_scope, shape_down, &mut Shape::null(), body)
+                resolve_seq(session, &body_scope, protocol_scope, shape_down, &mut Shape::null(), body)
             }).unwrap_or((Step::Nop, ResolveInfo::new()));
 
             // Update the upward shape's direction with results of analyzing the usage of
@@ -194,7 +200,7 @@ fn resolve_action<'s>(session: &Session,
         }
         ast::Action::Repeat(ref count_ast, ref block) => {
             let count = expr::value(session, scope, count_ast);
-            let (step, mut ri) = resolve_seq(session, scope, shape_down, shape_up, block);
+            let (step, mut ri) = resolve_seq(session, scope, protocol_scope, shape_down, shape_up, block);
             let any_up = ri.repeat_up_heuristic;
             ri.use_expr(&count, DataMode { down: !any_up, up: any_up });
             (Step::Repeat(count, box step, any_up), ri)
@@ -221,7 +227,7 @@ fn resolve_action<'s>(session: &Session,
 
             debug!("Foreach count: {:?}", count);
 
-            let (step, mut ri) = resolve_seq(session, &body_scope, shape_down, shape_up, block);
+            let (step, mut ri) = resolve_seq(session, &body_scope, protocol_scope, shape_down, shape_up, block);
 
             for &mut (id, ref e, ref mut dir) in &mut inner_vars {
                 *dir = ri.mode_of(id);
@@ -238,7 +244,7 @@ fn resolve_action<'s>(session: &Session,
                 let mut body_scope = scope.child();
                 let mut checks = Vec::new();
                 expr::pattern_match(session, &mut body_scope, &arm.discriminant, &r, &mut checks);
-                let (step, ri) = resolve_seq(session, &body_scope, shape_down, shape_up, &arm.block);
+                let (step, ri) = resolve_seq(session, &body_scope, protocol_scope, shape_down, shape_up, &arm.block);
                 outer_ri.merge_seq(&ri); // TODO: alt != seq ?
                 (checks, step)
             }).collect();
@@ -259,6 +265,7 @@ fn resolve_action<'s>(session: &Session,
 
 pub fn resolve_seq<'s>(session: &Session,
                   pscope: &Scope<'s>,
+                  protocol_scope: &ProtocolScope<'s>,
                   shape_down: &Shape,
                   shape_up: &mut Shape,
                   block: &'s ast::Block) -> (Step, ResolveInfo) {
@@ -268,7 +275,7 @@ pub fn resolve_seq<'s>(session: &Session,
     let mut ri = ResolveInfo::new();
 
     let steps = block.actions.iter().map(|action| {
-        let (step, i) = resolve_action(session, &scope, shape_down, shape_up, action);
+        let (step, i) = resolve_action(session, &scope, protocol_scope, shape_down, shape_up, action);
         ri.merge_seq(&i);
         step
     }).collect();

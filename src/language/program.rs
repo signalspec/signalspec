@@ -1,12 +1,22 @@
-use super::{ ast, nfa, Item };
+use super::{ ast, nfa };
 use super::dfa::{ self, Dfa };
 use super::scope::Scope;
 use super::protocol::ProtocolScope;
 use data::{DataMode, Shape};
-use process::{ Process, ProcessStack };
+use process::{ Process, ProcessStack, PrimitiveDef };
 use connection::{ Connection, ConnectionMessage };
 use session::Session;
 use std::sync::mpsc;
+use std::cell::RefCell;
+
+/// A definition that can be invoked with arguments to create a process
+pub enum ProcessDef<'s> {
+    /// User-defined - `def` block AST and enclosing scope
+    Code(&'s ast::Def, &'s RefCell<Scope<'s>>),
+
+    /// Reference to a primitive
+    Primitive(&'s PrimitiveDef),
+}
 
 pub struct Program {
     pub dfa: Dfa,
@@ -49,8 +59,8 @@ pub fn resolve_process<'s>(sess: &Session,
         ast::Process::Call(ref name, ref arg) => {
             let arg = super::expr::rexpr(sess, scope, arg);
             match protocol_scope.find(shape, name) {
-                Some(item @ Item::Def(..)) => {
-                    let (shape_up, step, _) = super::step::call(&item, sess, &shape, arg);
+                Some(item @ ProcessDef::Code(..)) => {
+                    let (shape_up, step, _) = super::step::call(&item, sess, protocol_scope, &shape, arg);
 
                     if let Some(mut f) = sess.debug_file(|| format!("{}.steps", name)) {
                         step.write_tree(&mut f, 0).unwrap_or_else(|e| error!("{}", e));
@@ -76,14 +86,13 @@ pub fn resolve_process<'s>(sess: &Session,
 
                     box Program{ dfa: dfa, shape_down: shape.clone(), shape_up: shape_up}
                 }
-                Some(Item::PrimitiveDef(p)) => p.invoke_def(shape, arg),
-                Some(_) => panic!("`{}` is not callable", name),
+                Some(ProcessDef::Primitive(p)) => p.invoke_def(shape, arg),
                 None => panic!("`{}` does not exist in scope", name)
             }
         }
         ast::Process::Block(ref block) => {
             let mut shape_up = Shape::null();
-            let (step, _) = super::step::resolve_seq(sess, scope, shape, &mut shape_up, block);
+            let (step, _) = super::step::resolve_seq(sess, scope, protocol_scope, shape, &mut shape_up, block);
             let mut nfa = nfa::from_step_tree(&step);
             nfa.remove_useless_epsilons();
             let dfa = dfa::make_dfa(&nfa, &shape, &shape_up);
@@ -97,18 +106,23 @@ pub fn resolve_process<'s>(sess: &Session,
                 ast::ProcessLiteralDirection::RoundTrip => panic!("@roundtrip is only usable in tests"),
             };
 
-            make_literal_process(sess, scope, is_up, shape_up_expr, block)
+            make_literal_process(sess, scope, protocol_scope, is_up, shape_up_expr, block)
         }
     }
 }
 
-fn make_literal_process<'s>(sess: &Session, scope: &Scope<'s>, is_up: bool, shape_up_expr: &'s ast::Expr, block: &'s ast::Block) -> Box<Process> {
+fn make_literal_process<'s>(sess: &Session,
+                            scope: &Scope<'s>,
+                            protocol_scope: &ProtocolScope<'s>,
+                            is_up: bool,
+                            shape_up_expr: &'s ast::Expr,
+                            block: &'s ast::Block) -> Box<Process> {
     let shape_item = super::expr::rexpr(sess, scope, shape_up_expr);
     let shape_up = shape_item.clone().into_shape(sess, DataMode { down: !is_up, up: is_up });
     let shape_flip = shape_item.into_shape(sess, DataMode { down: is_up, up: !is_up });
 
     let mut shape_dn = Shape::null();
-    let (step, _) = super::step::resolve_seq(sess, scope, &shape_flip, &mut shape_dn, block);
+    let (step, _) = super::step::resolve_seq(sess, scope, protocol_scope, &shape_flip, &mut shape_dn, block);
 
     let mut nfa = nfa::from_step_tree(&step);
     nfa.remove_useless_epsilons();
@@ -144,8 +158,8 @@ pub fn compile_test<'a>(sess: &Session,
     // If the test uses `@both`, generate `@up` and `@dn` versions and run them
     match test.processes.split_first() {
         Some((&ast::Process::Literal(ast::ProcessLiteralDirection::Both, ref shape_expr, ref block), rest)) => {
-            let dn_base = make_literal_process(sess, scope, true, shape_expr, block);
-            let up_base = make_literal_process(sess, scope, true, shape_expr, block);
+            let dn_base = make_literal_process(sess, scope, protocol_scope, true, shape_expr, block);
+            let up_base = make_literal_process(sess, scope, protocol_scope, true, shape_expr, block);
 
             CompiledTest {
                 down: Some(build_stack(sess, loader, scope, protocol_scope, dn_base, rest)),

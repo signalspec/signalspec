@@ -1,6 +1,8 @@
 use std::cell::RefCell;
 use protocol::{ProtocolDef, ProtocolMessageDef, ProtocolId};
 use data::{ Shape, Type };
+use super::program::ProcessDef;
+use process::PrimitiveDef;
 use super::scope::{Item, Scope};
 use super::ast;
 use super::eval::Expr;
@@ -42,7 +44,7 @@ enum ProtocolMatch<'a> {
 fn resolve_protocol_match<'a>(session: &Session, scope: &Scope<'a>, ast: &'a ast::With) -> ProtocolMatch<'a> {
     match *ast {
         ast::With::Protocol{ ref name, ref param } => {
-            if let Some(Item::Protocol(protocol_id, ..)) = scope.get(&name[..]) {
+            if let Some(Item::Protocol(protocol_id)) = scope.get(&name[..]) {
                 ProtocolMatch::Protocol{ id: protocol_id, param: param }
             } else {
                 panic!("Protocol `{}` not found", name);
@@ -63,9 +65,17 @@ fn resolve_protocol_match<'a>(session: &Session, scope: &Scope<'a>, ast: &'a ast
 }
 
 struct WithBlock<'a> {
-    pub protocol: ProtocolMatch<'a>,
-    pub def: &'a ast::Def,
-    pub scope: &'a RefCell<Scope<'a>>,
+    protocol: ProtocolMatch<'a>,
+    name: String,
+    process: ProcessEntry<'a>,
+}
+
+enum ProcessEntry<'a> {
+    Code {
+        def: &'a ast::Def,
+        scope: &'a RefCell<Scope<'a>>,
+    },
+    Primitive(&'a PrimitiveDef)
 }
 
 pub struct ProtocolScope<'a> {
@@ -80,18 +90,29 @@ impl<'a> ProtocolScope<'a> {
     pub fn add_def(&mut self, session: &Session, scope: &'a RefCell<Scope<'a>>, with: &'a ast::With, def: &'a ast::Def) {
         self.entries.push(WithBlock {
             protocol: resolve_protocol_match(session, &*scope.borrow(), with),
-            def: def,
-            scope: &scope
+            name: def.name.clone(),
+            process: ProcessEntry::Code{ def: def, scope: &scope },
         });
     }
 
-    pub fn find(&self, _shape: &Shape, name: &str) -> Option<Item<'a>> {
+    pub fn add_primitive(&mut self, session: &Session, name: &str, primitive: &'a PrimitiveDef) {
+        self.entries.push(WithBlock {
+            protocol: ProtocolMatch::Tup(vec![]), //TODO: allow this to be specified
+            name: name.to_owned(),
+            process: ProcessEntry::Primitive(primitive),
+        });
+    }
+
+    pub fn find(&self, _shape: &Shape, name: &str) -> Option<ProcessDef<'a>> {
         let mut found = None;
         for entry in &self.entries {
-            if entry.def.name != name { continue }
+            if entry.name != name { continue }
 
             if found.is_none() {
-                found = Some(Item::Def(entry.def, entry.scope));
+                found = Some(match entry.process {
+                    ProcessEntry::Code{ def, scope } => ProcessDef::Code(def, scope),
+                    ProcessEntry::Primitive(p) => ProcessDef::Primitive(p),
+                });
             } else {
                 panic!("Multiple definition of `{}``", name);
             }

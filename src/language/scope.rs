@@ -1,13 +1,11 @@
 use std::fmt;
 use std::collections::HashMap;
 use std::default::Default;
-use std::cell::RefCell;
 
 use super::ast;
 use data::{ Value, DataMode, Shape, ShapeVariant, ShapeData, Type };
 use protocol::ProtocolId;
 use session::{ Session, ValueID };
-use process::PrimitiveDef;
 use super::eval::{ Expr };
 use super::expr;
 
@@ -57,12 +55,6 @@ pub enum Item<'s> {
     /// Expression for a (possibly runtime-variable) value
     Value(Expr),
 
-    /// Signal definition - `def` block AST and enclosing scope
-    Def(&'s ast::Def, &'s RefCell<Scope<'s>>),
-
-    /// Reference to a primitive
-    PrimitiveDef(&'s PrimitiveDef),
-
     /// Function literal
     Func(Func<'s>),
 
@@ -70,7 +62,7 @@ pub enum Item<'s> {
     PrimitiveFn(super::module_loader::PrimitiveFn<'s>),
 
     /// Interface definition - `interface` block AST and enclosing scope
-    Protocol(ProtocolId, &'s ast::Protocol, &'s RefCell<Scope<'s>>),
+    Protocol(ProtocolId),
 
     /// Collection of `Item`s
     Tuple(Vec<Item<'s>>), // TODO: named components
@@ -114,22 +106,8 @@ impl<'s> Item<'s> {
 
     /// Get a `Shape` corresponding to an `Interface` or data example
     pub fn into_shape(self, sess: &Session, dir: DataMode) -> Shape {
-        fn collect_variants<'s>(session: &Session, scope: &Scope<'s>, entries: &'s [ast::ProtocolEntry], dir: DataMode) -> Shape {
-            Shape {
-                variants: entries.iter().map(|entry| {
-                    match entry {
-                        &ast::ProtocolEntry::Message(ref expr) => {
-                            ShapeVariant {
-                                data: super::expr::rexpr(session, scope, expr).into_data_shape(dir),
-                            }
-                        },
-                    }
-                }).collect()
-            }
-        }
-
         match self {
-            Item::Protocol(_, ast, scope) =>  collect_variants(sess, &*scope.borrow(), &ast.entries[..], dir),
+            Item::Protocol(_) => unimplemented!(),
             i => Shape { variants: vec![ ShapeVariant { data: i.into_data_shape(dir) } ] }
         }
     }
@@ -145,8 +123,6 @@ impl<'s> fmt::Debug for Item<'s> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             Item::Value(ref v) => write!(f, "{:?}", v),
-            Item::Def(..) => write!(f, "<def>"),
-            Item::PrimitiveDef(..) => write!(f, "<primitive def>"),
             Item::Func(ref func) => write!(f, "|{:?}| {:?}", func.args, func.body),
             Item::PrimitiveFn(..) => write!(f, "<primitive fn>"),
             Item::Protocol(..) => write!(f, "<protocol>"),
