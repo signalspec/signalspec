@@ -7,12 +7,11 @@ use process::{ Process, ProcessStack, PrimitiveDef };
 use connection::{ Connection, ConnectionMessage };
 use session::Session;
 use std::sync::mpsc;
-use std::cell::RefCell;
 
 /// A definition that can be invoked with arguments to create a process
-pub enum ProcessDef<'s> {
+pub enum ProcessDef<'s: 'm, 'm> {
     /// User-defined - `def` block AST and enclosing scope
-    Code(&'s ast::Def, &'s RefCell<Scope<'s>>),
+    Code(&'s ast::Def, &'m Scope<'s>),
 
     /// Reference to a primitive
     Primitive(&'s PrimitiveDef),

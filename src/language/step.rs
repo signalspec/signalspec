@@ -121,12 +121,12 @@ impl ResolveInfo {
     }
 }
 
-pub fn call<'s>(item: &ProcessDef<'s>, session: &Session, protocol_scope: &ProtocolScope<'s>, shape_down: &Shape, param: Item<'s>) ->
+pub fn call<'s, 'm>(item: &ProcessDef<'s, 'm>, session: &Session, protocol_scope: &ProtocolScope<'s>, shape_down: &Shape, param: Item<'s>) ->
         (Shape, Step, ResolveInfo) {
 
     match *item {
         ProcessDef::Code(ast, scope) => {
-            let mut scope = scope.borrow().child(); // Base on lexical parent
+            let mut scope = scope.child(); // Base on lexical parent
 
             let mut shape_up = if let Some(ref intf_expr) = ast.protocol {
                 expr::rexpr(session, &scope, intf_expr).into_shape(session, DataMode { down: false, up: true })

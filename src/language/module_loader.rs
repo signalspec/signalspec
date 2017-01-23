@@ -21,12 +21,12 @@ pub struct ModuleLoader<'a> {
 
 pub struct Module<'a> {
     ast: &'a ast::Module,
-    scope: &'a RefCell<Scope<'a>>,
+    scope: Scope<'a>,
 }
 
-pub struct Test<'a> {
+pub struct Test<'a: 'm, 'm> {
     ast: &'a ast::Test,
-    scope: &'a RefCell<Scope<'a>>,
+    module: &'m Module<'a>,
 }
 
 impl<'a> ModuleLoader<'a> {
@@ -56,14 +56,14 @@ impl<'a> ModuleLoader<'a> {
     pub fn parse_module(&'a self, source: &str) -> Result<Module, grammar::ParseError> {
         let ast = &*self.ast_arena.alloc(try!(grammar::module(source)));
 
-        let scope = &self.prelude;
+        let mut scope = self.prelude.borrow().child();
         let mut with_blocks = vec![];
         let mut protocols = vec![];
 
         for entry in &ast.entries {
             match *entry {
                 ast::ModuleEntry::Let(ref letdef) => {
-                    super::step::resolve_letdef(self.session, &mut *scope.borrow_mut(), ref_slice(letdef));
+                    super::step::resolve_letdef(self.session, &mut scope, ref_slice(letdef));
                 }
                 ast::ModuleEntry::Use(_) => {
                     panic!("`use` unimplemented");
@@ -73,42 +73,43 @@ impl<'a> ModuleLoader<'a> {
                 }
                 ast::ModuleEntry::Protocol(ref d) => {
                     let protocol_id = self.session.protocols.create();
-                    scope.borrow_mut().names.insert(d.name.clone(), Item::Protocol(protocol_id));
+                    scope.names.insert(d.name.clone(), Item::Protocol(protocol_id));
                     protocols.push((protocol_id, d));
                 }
                 ast::ModuleEntry::Test(..) => {}
             }
         }
 
+        let scope = scope; // No longer mutable
+
         for (id, protocol_ast) in protocols {
-            self.session.protocols.define(id, resolve_protocol(self.session, &*scope.borrow(), protocol_ast));
+            self.session.protocols.define(id, resolve_protocol(self.session, &scope, protocol_ast));
         }
 
         let mut protocol_scope = self.protocol_scope.borrow_mut();
         for (with, def) in with_blocks {
-            protocol_scope.add_def(self.session, scope, with, def);
+            protocol_scope.add_def(self.session, scope.clone(), with, def);
         }
 
         Ok(Module { ast: ast, scope: scope })
     }
 
-    pub fn compile_test(&'a self, test: &Test<'a>) -> super::program::CompiledTest<'a> {
-
-        super::program::compile_test(self.session, self, &*test.scope.borrow(), &*self.protocol_scope.borrow(), test.ast)
+    pub fn compile_test<'m>(&'a self, test: &Test<'a, 'm>) -> super::program::CompiledTest<'a> {
+        super::program::compile_test(self.session, self, &test.module.scope, &*self.protocol_scope.borrow(), test.ast)
     }
 }
 
 impl<'a> Module<'a> {
-    pub fn tests(&self) -> Vec<Test<'a>> {
+    pub fn tests<'m>(&'m self) -> Vec<Test<'a, 'm>> {
         self.ast.entries.iter().filter_map(|entry| {
             match *entry {
-                ast::ModuleEntry::Test(ref t) => Some(Test { ast: t, scope: self.scope }),
+                ast::ModuleEntry::Test(ref t) => Some(Test { ast: t, module: &self }),
                 _ => None,
             }
         }).collect()
     }
 }
 
-impl<'a> Test<'a> {
+impl<'a, 'm> Test<'a, 'm> {
     pub fn should_fail(&self) -> bool { self.ast.should_fail }
 }

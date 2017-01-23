@@ -1,4 +1,3 @@
-use std::cell::RefCell;
 use protocol::{ProtocolDef, ProtocolMessageDef, ProtocolId};
 use data::{ Shape, Type };
 use super::program::ProcessDef;
@@ -73,7 +72,7 @@ struct WithBlock<'a> {
 enum ProcessEntry<'a> {
     Code {
         def: &'a ast::Def,
-        scope: &'a RefCell<Scope<'a>>,
+        scope: Scope<'a>,
     },
     Primitive(&'a PrimitiveDef)
 }
@@ -87,11 +86,11 @@ impl<'a> ProtocolScope<'a> {
         ProtocolScope { entries: vec![] }
     }
 
-    pub fn add_def(&mut self, session: &Session, scope: &'a RefCell<Scope<'a>>, with: &'a ast::With, def: &'a ast::Def) {
+    pub fn add_def(&mut self, session: &Session, scope: Scope<'a>, with: &'a ast::With, def: &'a ast::Def) {
         self.entries.push(WithBlock {
-            protocol: resolve_protocol_match(session, &*scope.borrow(), with),
+            protocol: resolve_protocol_match(session, &scope, with),
             name: def.name.clone(),
-            process: ProcessEntry::Code{ def: def, scope: &scope },
+            process: ProcessEntry::Code{ def: def, scope: scope },
         });
     }
 
@@ -103,14 +102,14 @@ impl<'a> ProtocolScope<'a> {
         });
     }
 
-    pub fn find(&self, _shape: &Shape, name: &str) -> Option<ProcessDef<'a>> {
+    pub fn find<'m>(&'m self, _shape: &Shape, name: &str) -> Option<ProcessDef<'a, 'm>> {
         let mut found = None;
         for entry in &self.entries {
             if entry.name != name { continue }
 
             if found.is_none() {
                 found = Some(match entry.process {
-                    ProcessEntry::Code{ def, scope } => ProcessDef::Code(def, scope),
+                    ProcessEntry::Code{ def, ref scope } => ProcessDef::Code(def, scope),
                     ProcessEntry::Primitive(p) => ProcessDef::Primitive(p),
                 });
             } else {
