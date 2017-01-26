@@ -13,6 +13,7 @@ extern crate num_complex;
 extern crate byteorder;
 
 mod session;
+mod util;
 mod process;
 mod data;
 mod language;

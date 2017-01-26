@@ -13,19 +13,3 @@ impl From<usize> for ProtocolId {
 impl From<ProtocolId> for usize {
     fn from(i: ProtocolId) -> usize { i.0 }
 }
-
-#[derive(Default, Clone)]
-pub struct ProtocolDef {
-    pub name: Identifier,
-    pub params: Vec<Identifier>,
-    pub messages: Vec<ProtocolMessageDef>,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub enum ProtocolMessageDef {
-    Tup(Vec<ProtocolMessageDef>),
-    Protocol(ProtocolId),
-    Val(Type),
-    Const(Value),
-}
-

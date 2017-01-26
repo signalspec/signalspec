@@ -1,4 +1,4 @@
-use protocol::{ProtocolDef, ProtocolMessageDef, ProtocolId};
+use protocol::ProtocolId;
 use data::{ Shape, Type };
 use super::program::ProcessDef;
 use process::PrimitiveDef;
@@ -8,32 +8,7 @@ use super::eval::Expr;
 use super::expr;
 use session::Session;
 
-
-fn into_protocol_message_def(i: Item) -> ProtocolMessageDef {
-    match i {
-        Item::Value(Expr::Const(c)) => ProtocolMessageDef::Const(c),
-        Item::Value(ref e) => ProtocolMessageDef::Val(e.get_type()),
-        Item::Tuple(items) => ProtocolMessageDef::Tup(items.into_iter().map(into_protocol_message_def).collect()),
-        other => panic!("{:?} isn't a valid message component", other),
-    }
-}
-
-pub fn resolve_protocol<'a>(session: &Session, scope: &Scope<'a>, ast: &'a ast::Protocol) -> ProtocolDef {
-    let messages = ast.entries.iter().map(|entry| {
-        match entry {
-            &ast::ProtocolEntry::Message(ref expr) => {
-                into_protocol_message_def(super::expr::rexpr(session, scope, expr))
-            },
-        }
-    }).collect();
-
-    ProtocolDef {
-        name: ast.name.clone(),
-        params: ast.params.clone(),
-        messages: messages,
-    }
-}
-
+/// A pattern to match a protocol. These are used in the predicate of `with` blocks.
 enum ProtocolMatch<'a> {
     Protocol { id: ProtocolId, param: &'a ast::Expr },
     Type(Type),

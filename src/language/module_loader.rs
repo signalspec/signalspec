@@ -7,7 +7,9 @@ use super::scope::Scope;
 use data::Shape;
 use process::Process;
 use session::Session;
-use language::protocol::{ resolve_protocol, ProtocolScope };
+use language::protocol::ProtocolScope;
+use protocol::ProtocolId;
+use util::Index;
 
 pub type PrimitiveFn<'a> = fn(Item<'a>)->Result<Item<'a>, &'static str>;
 
@@ -17,10 +19,16 @@ pub struct ModuleLoader<'a> {
     ast_process_arena: Arena<ast::Process>,
     prelude: RefCell<Scope<'a>>,
     pub protocol_scope: RefCell<ProtocolScope<'a>>, // TODO: should be scoped
+    pub protocols: Index<ProtocolDef<'a>, ProtocolId>,
 }
 
 pub struct Module<'a> {
     ast: &'a ast::Module,
+    scope: Scope<'a>,
+}
+
+pub struct ProtocolDef<'a> {
+    ast: &'a ast::Protocol,
     scope: Scope<'a>,
 }
 
@@ -37,6 +45,7 @@ impl<'a> ModuleLoader<'a> {
             ast_process_arena: Arena::new(),
             prelude: RefCell::new(Scope::new()),
             protocol_scope: RefCell::new(ProtocolScope::new()),
+            protocols: Index::new(),
         }
     }
 
@@ -72,7 +81,7 @@ impl<'a> ModuleLoader<'a> {
                     with_blocks.push((with, d));
                 }
                 ast::ModuleEntry::Protocol(ref d) => {
-                    let protocol_id = self.session.protocols.create();
+                    let protocol_id = self.protocols.create();
                     scope.names.insert(d.name.clone(), Item::Protocol(protocol_id));
                     protocols.push((protocol_id, d));
                 }
@@ -83,7 +92,7 @@ impl<'a> ModuleLoader<'a> {
         let scope = scope; // No longer mutable
 
         for (id, protocol_ast) in protocols {
-            self.session.protocols.define(id, resolve_protocol(self.session, &scope, protocol_ast));
+            self.protocols.define(id, ProtocolDef{ ast: protocol_ast, scope: scope.clone() });
         }
 
         let mut protocol_scope = self.protocol_scope.borrow_mut();
