@@ -2,54 +2,53 @@ use super::ast;
 use super::eval;
 use std::char;
 
-#[export]
-module -> ast::Module
+pub module -> ast::Module
     = _ entries:module_entry*
     { ast::Module { entries: entries } }
 
 letstmt -> ast::LetDef
-    = LET _ name:identifier _ "=" _ value:expr BREAK
+    = LET name:IDENTIFIER EQUALS value:expr
     { ast::LetDef(name, value) }
 
 module_entry -> ast::ModuleEntry
     = l:letstmt { ast::ModuleEntry::Let(l) }
-    / USE _ name:identifier BREAK { ast::ModuleEntry::Use(name) }
-    / WITH _ with:with_protocol _
-      DEF _ name:identifier _ "(" _ param: expr_tup _ ")" _ protocol:(":" _ e:expr {e})? _ block:block BREAK
+    / USE name:IDENTIFIER { ast::ModuleEntry::Use(name) }
+    / WITH with:with_protocol
+      DEF name:IDENTIFIER LPAREN param: expr_tup RPAREN protocol:(COLON e:expr {e})? block:block
       { ast::ModuleEntry::WithDef(with, ast::Def { name:name, param:param, protocol:protocol, block:block }) }
-    / PROTOCOL _ name:identifier _ "(" _ params:(identifier ** COMMA) COMMA? _ ")" _ entries:protocol_block BREAK
-      { ast::ModuleEntry::Protocol(ast::Protocol { name:name, params: params, entries: entries  }) }
-    / t:test_block BREAK { ast::ModuleEntry::Test(t) }
+    / PROTOCOL name:IDENTIFIER LPAREN params:(IDENTIFIER ** COMMA) COMMA? RPAREN entries:protocol_block
+      { ast::ModuleEntry::Protocol(ast::Protocol { name:name, params: params, entries: entries }) }
+    / t:test_block { ast::ModuleEntry::Test(t) }
 
 with_protocol -> ast::With
-   = name:identifier _ "(" _ param: expr_tup _ ")" _ { ast::With::Protocol { name: name, param: param } }
-   / "(" _ t:(with_protocol** COMMA) COMMA? _ ")" _ { ast::With::Tup(t) }
+   = name:IDENTIFIER LPAREN param: expr_tup RPAREN { ast::With::Protocol { name: name, param: param } }
+   / LPAREN t:(with_protocol** COMMA) COMMA? RPAREN { ast::With::Tup(t) }
    / e:expr { ast::With::Type(e) }
 
 block -> ast::Block
-    = "{" _ lets:letstmt* actions:action ** (BREAK / (_ ";" _)) _ "}"
+    = LBRACE lets:letstmt* actions:action**(SEMICOLON?) RBRACE
     { ast::Block{ lets:lets, actions:actions } }
 
     action -> ast::Action
-        = REPEAT _ count:expr? _ block:block
+        = REPEAT count:expr? block:block
             { ast::Action::Repeat(count.unwrap_or(ast::Expr::Ignore), block) }
-        / ON _ expr:expr _ body:block?
+        / ON expr:expr body:block?
             { ast::Action::On(expr, body) }
-        / FOR _ items:(l:identifier _ "=" _ r:expr { (l,r) })* _  body:block
+        / FOR items:(l:IDENTIFIER EQUALS r:expr { (l,r) })* body:block
             { ast::Action::For(items, body) }
-        / ALT _ expr:expr _ "{" _  arms:alt_arm ** BREAK _ "}"
+        / ALT expr:expr LBRACE  arms:alt_arm* RBRACE
             { ast::Action::Alt(expr, arms) }
-        / expr:varexpr _ "(" _ param:expr_tup _ ")" _ body:block?
+        / expr:varexpr LPAREN param:expr_tup RPAREN body:block?
             { ast::Action::Call(expr, param, body) }
         / expr:expr
             { ast::Action::Token(expr) }
 
         alt_arm -> ast::AltArm
-          = expr:expr _ "=>" _ block:block
-          { ast::AltArm{ discriminant:expr, block:block } }
+          = expr:expr ARROW block:block
+          { ast::AltArm { discriminant:expr, block:block } }
 
 protocol_block -> Vec<ast::ProtocolEntry>
-  = _ "{" _ entries:(entry:protocol_entry ** (BREAK / (_ ";" _)) {entry}) _ "}"
+  = LBRACE entries:(entry:protocol_entry**(SEMICOLON?) {entry}) RBRACE
     { entries }
 
   protocol_entry -> ast::ProtocolEntry
@@ -57,26 +56,25 @@ protocol_block -> Vec<ast::ProtocolEntry>
 
 // Expressions
 expr -> ast::Expr
-    = "(" _ e:expr_tup _")" {e}
+    = LPAREN e:expr_tup RPAREN {e}
     / valexpr
 
 expr_tup -> ast::Expr
     = es:(expr ** COMMA) COMMA?
     { if es.len() == 1 { es.into_iter().next().unwrap() } else { ast::Expr::Tup(es) } }
 
-#[pub]
 #[cache]
-valexpr -> ast::Expr
+pub valexpr -> ast::Expr
   = valexpr_flip
 
     valexpr_flip -> ast::Expr
-        = l:valexpr_union _ "!" _ r:valexpr_union { ast::Expr::Flip(box l, box r) }
-        / "<:" _ x:valexpr_union { ast::Expr::Flip(box x, box ast::Expr::Ignore) }
-        / ":>" _ x:valexpr_union { ast::Expr::Flip(box ast::Expr::Ignore, box x) }
+        = l:valexpr_union TOKEN<"!"> r:valexpr_union { ast::Expr::Flip(box l, box r) }
+        / TOKEN<"<:"> x:valexpr_union { ast::Expr::Flip(box x, box ast::Expr::Ignore) }
+        / TOKEN<":>"> x:valexpr_union { ast::Expr::Flip(box ast::Expr::Ignore, box x) }
         / valexpr_union
 
     valexpr_union -> ast::Expr
-        = u:valexpr_range ++ (_ "|" _)
+        = u:valexpr_range ++ PIPE
         { if u.len() == 1 { u.into_iter().next().unwrap() } else { ast::Expr::Union(u) }}
 
     valexpr_range -> ast::Expr
@@ -84,36 +82,36 @@ valexpr -> ast::Expr
         / valexpr_sum
 
         rangeexpr -> ast::Expr
-            = l:valexpr_sum _ ".." _ r:valexpr_sum
+            = l:valexpr_sum TOKEN<".."> r:valexpr_sum
             { ast::Expr::Range(box l, box r) }
 
     #[cache]
     valexpr_sum -> ast::Expr
-        = l:valexpr_product _ op:sum_op _ r:valexpr_sum
+        = l:valexpr_product op:sum_op r:valexpr_sum
             { ast::Expr::Bin(box l, op, box r) }
         / valexpr_product
 
         sum_op -> eval::BinOp
-          = "+" { eval::BinOp::Add }
-          / "-" { eval::BinOp::Sub }
+          = TOKEN<"+"> { eval::BinOp::Add }
+          / TOKEN<"-"> { eval::BinOp::Sub }
 
     #[cache]
     valexpr_product -> ast::Expr
-        = l:valexpr_choose _ op:product_op _ r:valexpr_product
+        = l:valexpr_choose op:product_op r:valexpr_product
             { ast::Expr::Bin(box l, op, box r) }
         / valexpr_choose
 
         product_op -> eval::BinOp
-          = "*" { eval::BinOp::Mul }
-          / "/" { eval::BinOp::Div }
+          = TOKEN<"*"> { eval::BinOp::Mul }
+          / TOKEN<"/"> { eval::BinOp::Div }
 
     valexpr_choose -> ast::Expr
-        = e:valexpr_atom _ "[" _ vs:(k:valexpr "=" _ v:valexpr { (k,v) })**COMMA COMMA? "]"
+        = e:valexpr_atom LBRACKET vs:(k:valexpr EQUALS v:valexpr { (k,v) })**COMMA COMMA? RBRACKET
             { ast::Expr::Choose(box e, vs) }
         / valexpr_call
 
     valexpr_call -> ast::Expr
-        = e:valexpr_atom arg:("("_ arg:expr_tup _")" { arg })?
+        = e:valexpr_atom arg:(LPAREN arg:expr_tup RPAREN { arg })?
         {
           if let Some(arg) = arg {
             ast::Expr::Call(Box::new(e), Box::new(arg))
@@ -127,71 +125,55 @@ valexpr -> ast::Expr
         / ignoreliteral
         / concatexpr
         / varexpr
-        / ("(" _ v:valexpr _ ")" _ {v})
+        / (LPAREN  v:valexpr RPAREN {v})
 
     ignoreliteral -> ast::Expr
-        = "_" { ast::Expr::Ignore }
+        = UNDERSCORE { ast::Expr::Ignore }
 
     concatexpr -> ast::Expr
-        = "[" _ vs:(valexpr ++ COMMA) COMMA? "]"
+        = LBRACKET vs:(valexpr ++ COMMA) COMMA? RBRACKET
         { ast::Expr::Concat(vs) }
 
-    varexpr -> ast::Expr
-        = i:identifier
-        { ast::Expr::Var(i) }
+    varexpr -> ast::Expr = i:IDENTIFIER { ast::Expr::Var(i) }
 
     literal_expr -> ast::Expr
         = v:literal { ast::Expr::Value(v) }
-        / "(" _ args:expr_tup _ ")"_ "=>" _ body:expr { ast::Expr::Func{ args: Box::new(args), body: Box::new(body) } }
-        / s:doubleQuotedString { ast::Expr::String(s) } // Not technically a value
+        / LPAREN args:expr_tup RPAREN ARROW body:expr { ast::Expr::Func{ args: Box::new(args), body: Box::new(body) } }
+        / s:STRING { ast::Expr::String(s) }
 
-    #[export]
-    literal -> ast::Value
-        = symbolliteral
-        / integerliteral
-        / bitsliteral
-        / numberliteral
+pub literal -> ast::Value
+    = "#" i:IDENTIFIER { ast::Value::Symbol(i) }
+    / "#" n:INTEGER { ast::Value::Integer(n) }
+    / v:FLOAT u:unit { ast::Value::Number(v) }
+    / bitsliteral
 
-            symbolliteral -> ast::Value
-                = "#" i:identifier
-                { ast::Value::Symbol(i) }
+    bitsliteral -> ast::Value
+        = "'h" v:(hexchar+) _ {
+            ast::Value::Vector(v.iter().flat_map(|&i| {
+              (0..4).map(move |b|
+                ast::Value::Integer(((i & 1<<(3-b)) != 0) as i64))
+            }).collect())
+        }
+        / "'" "b"? v:(binbit+) _
+            { ast::Value::Vector(v.iter().map(|&b| ast::Value::Integer(b as i64)).collect()) }
 
-            integerliteral -> ast::Value
-                = "#" n:integer { ast::Value::Integer(n) }
+        hexchar -> u8
+            = c:$([0-9a-fA-F])
+            { u8::from_str_radix(c, 16).unwrap() }
 
-            bitsliteral -> ast::Value
-                = "'h" v:(hexchar+) {
-                    ast::Value::Vector(v.iter().flat_map(|&i| {
-                      (0..4).map(move |b|
-                        ast::Value::Integer(((i & 1<<(3-b)) != 0) as i64))
-                    }).collect())
-                }
-                / "'" "b"? v:(binbit+)
-                    { ast::Value::Vector(v.iter().map(|&b| ast::Value::Integer(b as i64)).collect()) }
+        binbit -> bool
+            = "0" {false} / "1" {true}
 
-                hexchar -> u8
-                    = c:$([0-9a-fA-F])
-                    { u8::from_str_radix(c, 16).unwrap() }
-
-                binbit -> bool
-                    = "0" {false} / "1" {true}
-
-            numberliteral -> ast::Value
-                = v:floatnumber _ u:unit
-                { ast::Value::Number(v) }
-
-            unitliteral = unit { () }
-
-                unit -> String
-                    = u:$([a-zA-Z]+) { u.to_string() }
-                    / "" { "".to_string() }
+    unit -> String
+        = u:$([a-zA-Z]+) { u.to_string() }
+        / "" { "".to_string() }
 
 #[pub]
 process -> ast::Process
   = b:block { ast::Process::Block(b) }
-  / dir:literal_direction _ "(" _ t: expr _ ")" _ b:block
+  / dir:literal_direction LPAREN t: expr RPAREN b:block
       { ast::Process::Literal(dir, t, b) }
-  / name:identifier _ param:("(" _ param:expr_tup _ ")" {param})?
+  / name:IDENTIFIER param:(LPAREN param:expr_tup RPAREN {param})?
       { ast::Process::Call(name, param.unwrap_or(ast::Expr::Tup(vec![]))) }
 
     literal_direction -> ast::ProcessLiteralDirection
@@ -201,62 +183,63 @@ process -> ast::Process
       / "@roundtrip" { ast::ProcessLiteralDirection::RoundTrip }
 
 test_block -> ast::Test
-  = TEST _ fails:"fail"? _ processes:(process**_) ";"
+  = TEST fails:(KEYWORD<"fail">)? processes:process* SEMICOLON
   { ast::Test { should_fail: fails.is_some(), processes: processes } }
 
 // Lexer
 
+TERM = "\r"? "\n"
+COMMENT = "//" (!TERM .)*
+TERMINATOR = COMMENT? TERM
 WHITESPACE
     = [\u{09}\u{0B}\u{0C}\u{20}\u{A0}\u{FEFF}\u{1680}\u{180E}\u{2000}-\u{200A}\u{202F}\u{205F}\u{3000}]
     / "\\" TERM
+_ = #quiet<(WHITESPACE / TERMINATOR)*>
 
-TERM
-    = "\r"? "\n"
-
-COMMENT = "//" (!TERM .)*
-
-TERMINATOR
-    = COMMENT? TERM
-
-BREAK = WHITESPACE* TERMINATOR _
-
-COMMA = (_ "," _)
-
-_ = (WHITESPACE / TERMINATOR)*
+TOKEN<t> = t _
+COMMA      = TOKEN<",">
+COLON      = TOKEN<":">
+SEMICOLON  = TOKEN<";">
+EQUALS     = TOKEN<"=">
+ARROW      = TOKEN<"=>">
+UNDERSCORE = TOKEN<"_">
+PIPE       = TOKEN<"|">
+LPAREN     = TOKEN<"(">
+RPAREN     = TOKEN<")">
+LBRACE     = TOKEN<"{">
+RBRACE     = TOKEN<"}">
+LBRACKET   = TOKEN<"[">
+RBRACKET   = TOKEN<"]">
 
 IDCHAR = [0-9a-zA-Z_]
+KEYWORD<id> = id !IDCHAR _
 
-USE    = "use"    !IDCHAR
-LET    = "let"    !IDCHAR
-DEF    = "def"    !IDCHAR
-PROTOCOL = "protocol"    !IDCHAR
-WITH   = "with"   !IDCHAR
-REPEAT = "repeat" !IDCHAR
-ON     = "on"     !IDCHAR
-FOR    = "for"    !IDCHAR
-ALT   = "alt"   !IDCHAR
-TEST   = "test"   !IDCHAR
+USE      = KEYWORD<"use">
+LET      = KEYWORD<"let">
+DEF      = KEYWORD<"def">
+PROTOCOL = KEYWORD<"protocol">
+WITH     = KEYWORD<"with">
+REPEAT   = KEYWORD<"repeat">
+ON       = KEYWORD<"on">
+FOR      = KEYWORD<"for">
+ALT      = KEYWORD<"alt">
+TEST     = KEYWORD<"test">
 
-identifier -> String = i:$([a-zA-Z_][0-9a-zA-Z_]*)
-    { i.to_string() }
+IDENTIFIER -> String = #quiet<i:$([a-zA-Z_][0-9a-zA-Z_]*) _ { i.to_string() }> / #expected("identifier")
 
-integer -> i64 = i:$("-"?[0-9]+)
-    { i.parse().unwrap() }
+INTEGER -> i64 = #quiet<i:$("-"?[0-9]+) _ { i.parse().unwrap() }> / #expected("integer")
+FLOAT -> f64 = #quiet<i:$("-"?[0-9]+("."[0-9]+)?) _ { i.parse().unwrap() }> / #expected("float")
 
-floatnumber -> f64 = i:$("-"?[0-9]+("."[0-9]+)?)
-    { i.parse().unwrap() }
+STRING -> String = #quiet<'"' s:doubleQuotedCharacter* '"' _ { s.into_iter().collect() }> / #expected("string")
 
-doubleQuotedString -> String
-  = '"' s:doubleQuotedCharacter* '"' { s.into_iter().collect() }
+  doubleQuotedCharacter -> char
+    = simpleDoubleQuotedCharacter
+    / unicodeEscapeSequence
 
-doubleQuotedCharacter -> char
-  = simpleDoubleQuotedCharacter
-  / unicodeEscapeSequence
+  simpleDoubleQuotedCharacter -> char
+    = !('"' / "\\" / TERM) c:$(.) { c.chars().next().unwrap() }
 
-simpleDoubleQuotedCharacter -> char
-  = !('"' / "\\" / TERM) c:$(.) { c.chars().next().unwrap() }
-
-unicodeEscapeSequence -> char
-  = "\\u{" value:$([0-9a-fA-F]+) "}" {
-      char::from_u32(u32::from_str_radix(value, 16).unwrap()).unwrap()
-    }
+  unicodeEscapeSequence -> char
+    = "\\u{" value:$([0-9a-fA-F]+) "}" {
+        char::from_u32(u32::from_str_radix(value, 16).unwrap()).unwrap()
+      }
