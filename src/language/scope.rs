@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::default::Default;
 
 use super::ast;
-use data::{ Value, DataMode, Shape, ShapeVariant, ShapeData, Type };
+use data::{ Value, Type };
 use protocol::ProtocolId;
 use session::{ Session, ValueID };
 use super::eval::{ Expr };
@@ -91,24 +91,6 @@ impl<'s> Item<'s> {
         match *self {
             Item::Value(Expr::Const(ref c)) => Some(c),
             _ => None
-        }
-    }
-
-    /// Get a `ShapeData` corresponding to a tree of `Tuple` and `Value` `Item`s
-    pub fn into_data_shape(self, dir: DataMode) -> ShapeData {
-        match self {
-            Item::Value(Expr::Const(c)) => ShapeData::Const(c),
-            Item::Value(ref e) => ShapeData::Val(e.get_type(), dir),
-            Item::Tuple(items) => ShapeData::Tup(items.into_iter().map(|x| x.into_data_shape(dir)).collect()),
-            other => panic!("{:?} isn't a valid shape", other),
-        }
-    }
-
-    /// Get a `Shape` corresponding to an `Interface` or data example
-    pub fn into_shape(self, sess: &Session, dir: DataMode) -> Shape {
-        match self {
-            Item::Protocol(_) => unimplemented!(),
-            i => Shape { variants: vec![ ShapeVariant { data: i.into_data_shape(dir) } ] }
         }
     }
 }

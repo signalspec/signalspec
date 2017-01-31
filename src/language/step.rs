@@ -7,7 +7,6 @@ use session::{Session, ValueID};
 use super::{ ast, expr };
 use super::scope::{ Scope, Item };
 use super::eval::Expr;
-use super::program::ProcessDef;
 use super::protocol::ProtocolScope;
 use data::{ Shape, DataMode, ShapeVariant, ShapeData, Type, MessageTag };
 
@@ -118,28 +117,6 @@ impl ResolveInfo {
         self.vars_down.union_with(&o.vars_down);
         self.vars_up.union_with(&o.vars_up);
         self.repeat_up_heuristic |= o.repeat_up_heuristic;
-    }
-}
-
-pub fn call<'s, 'm>(item: &ProcessDef<'s, 'm>, session: &Session, protocol_scope: &ProtocolScope<'s>, shape_down: &Shape, param: Item<'s>) ->
-        (Shape, Step, ResolveInfo) {
-
-    match *item {
-        ProcessDef::Code(ast, scope) => {
-            let mut scope = scope.child(); // Base on lexical parent
-
-            let mut shape_up = if let Some(ref intf_expr) = ast.protocol {
-                expr::rexpr(session, &scope, intf_expr).into_shape(session, DataMode { down: false, up: true })
-            } else {
-                Shape::null()
-            };
-
-            expr::assign(session, &mut scope, &ast.param, param);
-            let (step, ri) = resolve_seq(session, &scope, protocol_scope, shape_down, &mut shape_up, &ast.block);
-
-            (shape_up, step, ri)
-        }
-        ProcessDef::Primitive(..) => panic!("unimplemented: calling primitive from within a block")
     }
 }
 

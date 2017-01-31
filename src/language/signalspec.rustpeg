@@ -13,17 +13,17 @@ letstmt -> ast::LetDef
 module_entry -> ast::ModuleEntry
     = l:letstmt { ast::ModuleEntry::Let(l) }
     / USE name:IDENTIFIER { ast::ModuleEntry::Use(name) }
-    / WITH with:with_protocol
-      DEF name:IDENTIFIER LPAREN param: expr_tup RPAREN protocol:(COLON e:expr {e})? block:block
-      { ast::ModuleEntry::WithDef(with, ast::Def { name:name, param:param, protocol:protocol, block:block }) }
+    / WITH down_protocol:protocol_ref
+      DEF name:IDENTIFIER LPAREN param: expr_tup RPAREN up_protocol:(COLON p:protocol_ref {p})? block:block
+      { ast::ModuleEntry::WithDef(ast::Def { bottom:down_protocol, name:name, param:param, top:up_protocol, block:block }) }
     / PROTOCOL name:IDENTIFIER LPAREN params:(IDENTIFIER ** COMMA) COMMA? RPAREN entries:protocol_block
       { ast::ModuleEntry::Protocol(ast::Protocol { name:name, params: params, entries: entries }) }
     / t:test_block { ast::ModuleEntry::Test(t) }
 
-with_protocol -> ast::With
-   = name:IDENTIFIER LPAREN param: expr_tup RPAREN { ast::With::Protocol { name: name, param: param } }
-   / LPAREN t:(with_protocol** COMMA) COMMA? RPAREN { ast::With::Tup(t) }
-   / e:expr { ast::With::Type(e) }
+protocol_ref -> ast::ProtocolRef
+   = name:IDENTIFIER LPAREN param: expr_tup RPAREN { ast::ProtocolRef::Protocol { name: name, param: param } }
+   / LPAREN t:(protocol_ref**COMMA) COMMA? RPAREN { ast::ProtocolRef::Tup(t) }
+   / e:expr { ast::ProtocolRef::Type(e) }
 
 block -> ast::Block
     = LBRACE lets:letstmt* actions:action**(SEMICOLON?) RBRACE
@@ -171,7 +171,7 @@ pub literal -> ast::Value
 #[pub]
 process -> ast::Process
   = b:block { ast::Process::Block(b) }
-  / dir:literal_direction LPAREN t: expr RPAREN b:block
+  / dir:literal_direction LPAREN t:protocol_ref RPAREN b:block
       { ast::Process::Literal(dir, t, b) }
   / name:IDENTIFIER param:(LPAREN param:expr_tup RPAREN {param})?
       { ast::Process::Call(name, param.unwrap_or(ast::Expr::Tup(vec![]))) }

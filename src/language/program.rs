@@ -1,21 +1,12 @@
 use super::{ ast, nfa };
 use super::dfa::{ self, Dfa };
 use super::scope::Scope;
-use super::protocol::ProtocolScope;
+use super::protocol::{ ProtocolScope, resolve_protocol_invoke };
 use data::{DataMode, Shape};
-use process::{ Process, ProcessStack, PrimitiveDef };
+use process::{ Process, ProcessStack };
 use connection::{ Connection, ConnectionMessage };
 use session::Session;
 use std::sync::mpsc;
-
-/// A definition that can be invoked with arguments to create a process
-pub enum ProcessDef<'s: 'm, 'm> {
-    /// User-defined - `def` block AST and enclosing scope
-    Code(&'s ast::Def, &'m Scope<'s>),
-
-    /// Reference to a primitive
-    Primitive(&'s PrimitiveDef),
-}
 
 pub struct Program {
     pub dfa: Dfa,
@@ -57,37 +48,31 @@ pub fn resolve_process<'s>(sess: &Session,
     match *p {
         ast::Process::Call(ref name, ref arg) => {
             let arg = super::expr::rexpr(sess, scope, arg);
-            match protocol_scope.find(shape, name) {
-                Some(item @ ProcessDef::Code(..)) => {
-                    let (shape_up, step, _) = super::step::call(&item, sess, protocol_scope, &shape, arg);
+            let (shape_up, step, _) = protocol_scope.call(sess, shape, name, arg);
 
-                    if let Some(mut f) = sess.debug_file(|| format!("{}.steps", name)) {
-                        step.write_tree(&mut f, 0).unwrap_or_else(|e| error!("{}", e));
-                    }
-
-                    let mut nfa = nfa::from_step_tree(&step);
-
-                    if let Some(mut f) = sess.debug_file(|| format!("{}.nfa.dot", name)) {
-                        nfa.to_graphviz(&mut f).unwrap_or_else(|e| error!("{}", e));
-                    }
-
-                    nfa.remove_useless_epsilons();
-
-                    if let Some(mut f) = sess.debug_file(|| format!("{}.cleaned.nfa.dot", name)) {
-                        nfa.to_graphviz(&mut f).unwrap_or_else(|e| error!("{}", e));
-                    }
-
-                    let dfa = dfa::make_dfa(&nfa, &shape, &shape_up);
-
-                    if let Some(mut f) = sess.debug_file(|| format!("{}.dfa.dot", name)) {
-                        dfa.to_graphviz(&mut f).unwrap_or_else(|e| error!("{}", e));
-                    }
-
-                    box Program{ dfa: dfa, shape_down: shape.clone(), shape_up: shape_up}
-                }
-                Some(ProcessDef::Primitive(p)) => p.invoke_def(shape, arg),
-                None => panic!("`{}` does not exist in scope", name)
+            if let Some(mut f) = sess.debug_file(|| format!("{}.steps", name)) {
+                step.write_tree(&mut f, 0).unwrap_or_else(|e| error!("{}", e));
             }
+
+            let mut nfa = nfa::from_step_tree(&step);
+
+            if let Some(mut f) = sess.debug_file(|| format!("{}.nfa.dot", name)) {
+                nfa.to_graphviz(&mut f).unwrap_or_else(|e| error!("{}", e));
+            }
+
+            nfa.remove_useless_epsilons();
+
+            if let Some(mut f) = sess.debug_file(|| format!("{}.cleaned.nfa.dot", name)) {
+                nfa.to_graphviz(&mut f).unwrap_or_else(|e| error!("{}", e));
+            }
+
+            let dfa = dfa::make_dfa(&nfa, &shape, &shape_up);
+
+            if let Some(mut f) = sess.debug_file(|| format!("{}.dfa.dot", name)) {
+                dfa.to_graphviz(&mut f).unwrap_or_else(|e| error!("{}", e));
+            }
+
+            box Program{ dfa: dfa, shape_down: shape.clone(), shape_up: shape_up}
         }
         ast::Process::Block(ref block) => {
             let mut shape_up = Shape::null();
@@ -114,11 +99,10 @@ fn make_literal_process<'s>(sess: &Session,
                             scope: &Scope<'s>,
                             protocol_scope: &ProtocolScope<'s>,
                             is_up: bool,
-                            shape_up_expr: &'s ast::Expr,
+                            shape_up_expr: &'s ast::ProtocolRef,
                             block: &'s ast::Block) -> Box<Process> {
-    let shape_item = super::expr::rexpr(sess, scope, shape_up_expr);
-    let shape_up = shape_item.clone().into_shape(sess, DataMode { down: !is_up, up: is_up });
-    let shape_flip = shape_item.into_shape(sess, DataMode { down: is_up, up: !is_up });
+    let shape_up = resolve_protocol_invoke(sess, scope, shape_up_expr, DataMode { down: !is_up, up: is_up });
+    let shape_flip = resolve_protocol_invoke(sess, scope, shape_up_expr, DataMode { down: is_up, up: !is_up });
 
     let mut shape_dn = Shape::null();
     let (step, _) = super::step::resolve_seq(sess, scope, protocol_scope, &shape_flip, &mut shape_dn, block);
@@ -167,9 +151,8 @@ pub fn compile_test<'a>(sess: &Session,
         }
 
         Some((&ast::Process::Literal(ast::ProcessLiteralDirection::RoundTrip, ref ty, _), rest)) => {
-            let shape_item = super::expr::rexpr(sess, scope, ty);
-            let shape_dn = shape_item.clone().into_shape(sess, DataMode { down: true, up: false });
-            let shape_up = shape_item.clone().into_shape(sess, DataMode { down: false, up: true });
+            let shape_dn = resolve_protocol_invoke(sess, scope, ty, DataMode { down: true, up: false });
+            let shape_up = resolve_protocol_invoke(sess, scope, ty, DataMode { down: false, up: true });
 
             let (s, r) = mpsc::channel();
             let process_dn = box Collect { shape: shape_dn, sender: s};

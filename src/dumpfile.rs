@@ -54,9 +54,7 @@ impl PrimitiveDef for DumpfileDef {
         let dir = downward_shape.match_bytes()
             .expect("Invalid shape below dumpfile::process");
 
-        let upward_shape = Shape { variants: vec![
-            ShapeVariant { data: arg.into_data_shape(dir) }
-        ]};
+        let upward_shape = unimplemented!();
 
         match dir {
             DataMode { down: false, up: true } => box ValueDumpUp(upward_shape),

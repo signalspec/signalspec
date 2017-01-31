@@ -50,7 +50,6 @@ impl<'a> ModuleLoader<'a> {
     }
 
     pub fn add_primitive_def(&self, name: &str, prim: &'a ::process::PrimitiveDef) {
-        self.protocol_scope.borrow_mut().add_primitive(self.session, name, prim);
     }
 
     pub fn add_primitive_fn(&self, name: &str, prim: PrimitiveFn<'a>) {
@@ -77,8 +76,8 @@ impl<'a> ModuleLoader<'a> {
                 ast::ModuleEntry::Use(_) => {
                     panic!("`use` unimplemented");
                 }
-                ast::ModuleEntry::WithDef(ref with, ref d) => {
-                    with_blocks.push((with, d));
+                ast::ModuleEntry::WithDef(ref def) => {
+                    with_blocks.push(def);
                 }
                 ast::ModuleEntry::Protocol(ref d) => {
                     let protocol_id = self.protocols.create();
@@ -96,8 +95,8 @@ impl<'a> ModuleLoader<'a> {
         }
 
         let mut protocol_scope = self.protocol_scope.borrow_mut();
-        for (with, def) in with_blocks {
-            protocol_scope.add_def(self.session, scope.clone(), with, def);
+        for def in with_blocks {
+            protocol_scope.add_def(self.session, scope.clone(), def);
         }
 
         Ok(Module { ast: ast, scope: scope })

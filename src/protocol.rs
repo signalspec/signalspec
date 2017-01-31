@@ -1,8 +1,6 @@
 use data::{Type, Value, DataMode};
 use language::Item;
 
-type Identifier = String;
-
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
 pub struct ProtocolId(pub usize);
 
