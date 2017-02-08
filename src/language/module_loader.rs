@@ -4,11 +4,10 @@ use ref_slice::ref_slice;
 
 use super::{ ast, grammar, Item};
 use super::scope::Scope;
-use data::Shape;
 use process::Process;
 use session::Session;
 use language::protocol::ProtocolScope;
-use protocol::ProtocolId;
+use protocol::{ ProtocolId, Shape };
 use util::Index;
 
 pub type PrimitiveFn<'a> = fn(Item<'a>)->Result<Item<'a>, &'static str>;

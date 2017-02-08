@@ -25,7 +25,8 @@ pub use session::Session;
 pub use language::{ ModuleLoader, Module, Test, Item };
 pub use process::{ Process, ProcessStack, PrimitiveDef };
 pub use connection::Connection;
-pub use data::{ Value, Type, DataMode, Shape, ShapeVariant, ShapeData };
+pub use data::{ Value, Type, DataMode };
+pub use protocol::Shape;
 pub use test_runner::run as run_test;
 
 mod file_io;

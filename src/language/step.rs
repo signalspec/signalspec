@@ -8,24 +8,10 @@ use super::{ ast, expr };
 use super::scope::{ Scope, Item };
 use super::eval::Expr;
 use super::protocol::ProtocolScope;
-use data::{ Shape, DataMode, ShapeVariant, ShapeData, Type, MessageTag };
+use protocol::Shape;
+use data::{ DataMode, Type, MessageTag };
 
-#[derive(Debug, Clone)]
-pub struct Message {
-    pub tag: MessageTag,
-    pub components: Vec<Expr>
-}
-
-impl fmt::Display for Message {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        try!(write!(f, "{}(", self.tag));
-        for (i, c) in self.components.iter().enumerate() {
-            if i != 0 { try!(write!(f, ", ")); }
-            try!(write!(f, "{}", c));
-        }
-        write!(f, ")")
-    }
-}
+pub type Message = Vec<Option<Expr>>;
 
 #[derive(Debug)]
 pub enum Step {
@@ -145,7 +131,7 @@ fn resolve_action<'s>(session: &Session,
             debug!("Token: {:?}", expr);
 
             let item = expr::rexpr(session, scope, expr);
-            let (_variant, message, ri) = resolve_token(item, shape_down);
+            let (message, ri) = resolve_token(item, shape_down);
 
             (Step::Token(message), ri)
         }
@@ -153,23 +139,28 @@ fn resolve_action<'s>(session: &Session,
             let mut body_scope = scope.child();
 
             debug!("Upper message, shape: {:?}", shape_up);
-            let (variant, msg) = expr::on_expr_message(session, &mut body_scope, shape_up, expr);
+            let msginfo = expr::on_expr_message(session, &mut body_scope, shape_up, expr);
 
-            let (step, mut ri) = body.as_ref().map(|body| {
+            let (step, mut ri) = if let &Some(ref body) = body {
                 resolve_seq(session, &body_scope, protocol_scope, shape_down, &mut Shape::null(), body)
-            }).unwrap_or((Step::Nop, ResolveInfo::new()));
+            } else {
+                (Step::Nop, ResolveInfo::new())
+            };
 
             // Update the upward shape's direction with results of analyzing the usage of
             // its data in the `on x { ... }` body.
-            for (e, (_, ref mut dir)) in msg.components.iter().zip(variant.values_mut()) {
-                if let &Expr::Variable(id, _) = e {
-                    let DataMode { up, down } = ri.mode_of(id);
-                    dir.up &= up;
-                    dir.down |= down;
-                } else if !e.down_evaluable() {
-                    dir.up = false;
-                }
-            }
+            let msg = msginfo.into_iter().map(|component| {
+                component.map(|(expr, dir)|{
+                    if let Expr::Variable(id, _) = expr {
+                        let DataMode { up, down } = ri.mode_of(id);
+                        dir.up &= up;
+                        dir.down |= down;
+                    } else if !expr.down_evaluable() {
+                        dir.up = false;
+                    }
+                    expr
+                })
+            }).collect();
 
             ri.repeat_up_heuristic = true;
 
@@ -267,30 +258,30 @@ pub fn resolve_letdef<'s>(session: &Session, scope: &mut Scope<'s>, lets: &'s [a
     }
 }
 
-fn resolve_token<'shape>(item: Item, shape: &'shape Shape) -> (&'shape ShapeVariant, Message, ResolveInfo) {
-    fn try_variant(shape: &ShapeData, item: &Item) -> bool {
+fn resolve_token<'shape>(item: Item, shape: &'shape Shape) -> (Message, ResolveInfo) {
+    fn try_variant(shape: &Shape, item: &Item) -> bool {
         match (shape, item) {
-            (&ShapeData::Val(ref t, _), &Item::Value(ref e)) => t.includes_type(&e.get_type()),
-            (&ShapeData::Const(ref c), &Item::Value(Expr::Const(ref v))) => c == v,
-            (&ShapeData::Tup(ref m), &Item::Tuple(ref t)) => {
+            (&Shape::Val(ref t, _), &Item::Value(ref e)) => t.includes_type(&e.get_type()),
+            (&Shape::Const(ref c), &Item::Value(Expr::Const(ref v))) => c == v,
+            (&Shape::Tup(ref m), &Item::Tuple(ref t)) => {
                 m.len() == t.len() && m.iter().zip(t.iter()).all(|(i, s)| { try_variant(i, s) })
             }
             _ => false,
         }
     }
 
-    fn inner(i: Item, shape: &ShapeData, msg: &mut Message, ri: &mut ResolveInfo) {
+    fn inner(i: Item, shape: &Shape, msg: &mut Message, ri: &mut ResolveInfo) {
         match shape {
-            &ShapeData::Val(_, dir) => {
+            &Shape::Val(_, dir) => {
                 if let Item::Value(v) = i {
                     ri.use_expr(&v, dir);
-                    msg.components.push(v)
+                    msg.push(Some(v));
                 } else {
                     panic!("Expected value but found {:?}", i);
                 }
             }
-            &ShapeData::Const(..) => (),
-            &ShapeData::Tup(ref m) => {
+            &Shape::Const(..) => (),
+            &Shape::Tup(ref m) => {
                 if let Item::Tuple(t) = i {
                     if t.len() == m.len() {
                         for (mi, i) in m.iter().zip(t.into_iter()) {
@@ -303,17 +294,12 @@ fn resolve_token<'shape>(item: Item, shape: &'shape Shape) -> (&'shape ShapeVari
                     panic!("Expected tuple of length {}, found {:?}", m.len(), i);
                 }
             }
+            &Shape::Protocol{..} => unimplemented!(),
         }
     }
 
-    for (idx, variant) in shape.variants.iter().enumerate() {
-        if try_variant(&variant.data, &item) {
-            let mut msg = Message { tag: idx, components: Vec::new() };
-            let mut ri = ResolveInfo::new();
-            inner(item, &variant.data, &mut msg, &mut ri);
-            return (variant, msg, ri);
-        }
-    }
-
-    panic!("Item {:?} doesn't match shape {:?}", item, shape);
+    let mut msg = vec![];
+    let mut ri = ResolveInfo::new();
+    inner(item, &shape, &mut msg, &mut ri);
+    (msg, ri)
 }

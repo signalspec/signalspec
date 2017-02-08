@@ -1,5 +1,5 @@
 use std::{thread, mem};
-use data::Shape;
+use protocol::Shape;
 use language::{Item, ModuleLoader};
 use connection::Connection;
 

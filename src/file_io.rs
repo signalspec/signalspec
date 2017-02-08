@@ -2,7 +2,8 @@ use std::io;
 use std::path::PathBuf;
 use std::fs::File;
 
-use data::{ Value, DataMode, Shape };
+use data::{ Value, DataMode };
+use protocol::Shape;
 use connection::Connection;
 use language::Item;
 use process::{Process, PrimitiveDef};

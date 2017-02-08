@@ -8,7 +8,8 @@ use std::io::{ Write, Result as IoResult };
 use std::fmt::Debug;
 use std::cell::Cell;
 
-use data::{ Value, Shape, Type };
+use data::{ Value, Type };
+use protocol::Shape;
 use session::ValueID;
 use super::step::Message;
 use super::eval::{ Expr, ConcatElem, BinOp, SignMode };
@@ -470,7 +471,8 @@ enum RecvTree<T> {
     Recv {
         side: Side,
         send: Vec<MessageSend>,
-        options: VecMap<RecvArm<T>>,
+        block: InsnBlock,
+        tree: ConditionTree<Option<(Vec<MessageSend>, T)>>,
     },
     Loop {
         send_lower: Vec<MessageSend>,
@@ -481,12 +483,6 @@ enum RecvTree<T> {
 
 impl<T> Default for RecvTree<T> {
     fn default() -> RecvTree<T> { RecvTree::Fail }
-}
-
-#[derive(Clone, Debug)]
-struct RecvArm<T> {
-    block: InsnBlock,
-    tree: ConditionTree<Option<(Vec<MessageSend>, T)>>,
 }
 
 #[derive(Clone)]
@@ -691,7 +687,7 @@ impl State {
     }
 }
 
-pub type MessageSend = (usize, Vec<InsnRef>);
+pub type MessageSend = Vec<Option<InsnRef>>;
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 enum Side {
@@ -805,6 +801,9 @@ fn closure<'nfa>(nfa: &'nfa Nfa, shape_down: &Shape, shape_up: &Shape, initial_t
     // Discovered transitions that leave this DFA state
     let mut transitions = Vec::new();
 
+    let format_up = shape_up.format();
+    let format_down = shape_down.format();
+
     while let Some(thread) = queue.pop_front() {
         debug!("In state {}", thread.state);
         closure.insert(thread.state);
@@ -829,15 +828,17 @@ fn closure<'nfa>(nfa: &'nfa Nfa, shape_down: &Shape, shape_up: &Shape, initial_t
                 }
 
                 Lower(ref msg) => {
-                    let variant = &shape_down.variants[msg.tag];
                     let mode = shape_down.data_mode();
 
                     if mode.down {
-                        let regs = msg.components.iter().zip(variant.values())
-                            .filter(|&(_, (_, dir))| dir.down)
-                            .map(|(ref e, _)| insns.eval_down(e, &thread.down_vars))
-                            .collect();
-                        thread.send_lower.push((msg.tag, regs));
+                        let regs = msg.iter().zip(format_down.iter())
+                            .map(|(e, fmt)| {
+                                match e.as_ref() {
+                                    Some(x) if fmt.dir.down => Some(insns.eval_down(x, &thread.down_vars)),
+                                    _ => None
+                                }
+                            }).collect();
+                        thread.send_lower.push(regs);
                     }
 
                     if mode.up {
@@ -859,23 +860,24 @@ fn closure<'nfa>(nfa: &'nfa Nfa, shape_down: &Shape, shape_up: &Shape, initial_t
                     }
                 }
                 UpperEnd(ref msg) => {
-                    let variant = &shape_up.variants[msg.tag];
                     let mode = shape_up.data_mode();
 
                     if mode.up {
-                        let mut send = vec![];
-                        for (ref e, (_, dir)) in msg.components.iter().zip(variant.values()) {
-                            if dir.up {
-                                send.push(insns.eval_down(e, &thread.up_vars));
-                            }
+                        let mut send = msg.iter().zip(format_up.iter()).map(|(e, fmt)| {
+                            e.as_ref().and_then(|e| {
+                                if fmt.dir.up {
+                                    Some(insns.eval_down(e, &thread.up_vars))
+                                } else { None }
+                            })
+                        }).collect();
+                        thread.send_upper.push(send);
+                    }
 
-                            e.each_var(&mut |v| {
-                                thread.down_vars.remove(&v);
-                                thread.up_vars.remove(&v);
-                            });
-                        }
-
-                        thread.send_upper.push((msg.tag, send));
+                    for e in msg.iter().filter_map(Option::as_ref) {
+                        e.each_var(&mut |v| {
+                            thread.down_vars.remove(&v);
+                            thread.up_vars.remove(&v);
+                        })
                     }
 
                     queue.push_back(thread);
@@ -1030,12 +1032,12 @@ fn closure<'nfa>(nfa: &'nfa Nfa, shape_down: &Shape, shape_up: &Shape, initial_t
 
 fn message_match(shape: &Shape, side: Side, msg: &Message, vars: &mut VarMap, block: &mut InsnBlock) -> Conditions {
     let mut conditions = Conditions::new();
-    let variant = &shape.variants[msg.tag];
 
-    for (idx, (e, _)) in msg.components.iter().zip(variant.values())
-        .filter(|&(_, (_, dir))| (side == Side::Upper && dir.down) || (side == Side::Lower && dir.up)).enumerate() {
+    for (idx, e) in msg.iter().enumerate() {
+        if let &Some(ref e) = e {
             let rx = InsnRef::Message(idx);
             block.eval_up(e, rx, vars, &mut conditions);
+        }
     }
     conditions
 }
@@ -1107,7 +1109,12 @@ pub fn make_dfa(nfa: &Nfa, shape_down: &Shape, shape_up: &Shape) -> Dfa {
 
                         match *loc {
                             RecvTree::Fail => {
-                                *loc = RecvTree::Recv { side: side, send: send_side.clone(), options: VecMap::new() };
+                                *loc = RecvTree::Recv {
+                                    side: side,
+                                    send: send_side.clone(),
+                                    block: InsnBlock::new(InsnRef::MessageMatch),
+                                    tree: ConditionTree::new()
+                                };
                             }
                             RecvTree::Recv { side: existing_side, send: ref existing_send, .. } if side == existing_side => {
                                 if send_side != existing_send { panic!("Overlapping transitions must output the same data"); }
@@ -1115,34 +1122,29 @@ pub fn make_dfa(nfa: &Nfa, shape_down: &Shape, shape_up: &Shape) -> Dfa {
                             _ => panic!("Transitions with different receive directions must have mutually-exclusive conditions")
                         }
 
-                        let arms = if let RecvTree::Recv { ref mut options, .. } = *loc { options } else { unreachable!() };
-
-                        let arm = arms.entry(msg.tag).or_insert_with(|| RecvArm {
-                            block: InsnBlock::new(InsnRef::MessageMatch),
-                            tree: ConditionTree::new()
-                        });
-
-                        let conditions = {
-                            let vars = match side {
-                                Side::Lower => &mut thread.up_vars,
-                                Side::Upper => &mut thread.down_vars,
+                        if let RecvTree::Recv { ref mut block, ref mut tree, .. } = *loc {
+                            let conditions = {
+                                let vars = match side {
+                                    Side::Lower => &mut thread.up_vars,
+                                    Side::Upper => &mut thread.down_vars,
+                                };
+                                message_match(shape, side, msg, vars, block)
                             };
-                            message_match(shape, side, msg, vars, &mut arm.block)
-                        };
 
-                        arm.tree.conditions(&conditions, |loc| {
-                            match *loc {
-                                None => {
-                                    *loc = Some((send_other.clone(), vec![thread.clone()]));
-                                }
-                                Some((ref send, ref mut threads)) => {
-                                    if send != send_other {
-                                         panic!("Overlapping transitions must output the same data");
+                            tree.conditions(&conditions, |loc| {
+                                match *loc {
+                                    None => {
+                                        *loc = Some((send_other.clone(), vec![thread.clone()]));
                                     }
-                                    threads.push(thread.clone());
+                                    Some((ref send, ref mut threads)) => {
+                                        if send != send_other {
+                                             panic!("Overlapping transitions must output the same data");
+                                        }
+                                        threads.push(thread.clone());
+                                    }
                                 }
-                            }
-                        })
+                            })
+                        } else { unreachable!() }
                     }
                     None => {
                         match *loc {
@@ -1202,14 +1204,12 @@ pub fn make_dfa(nfa: &Nfa, shape_down: &Shape, shape_up: &Shape) -> Dfa {
         tt.map(&mut |loc| {
             match loc {
                 RecvTree::Fail => RecvTree::Fail,
-                RecvTree::Recv { side, send, options } => {
-                    let options = options.into_iter().map(|(tag, arm)| {
-                        let tree = arm.tree.map(&mut |loc| {
-                            loc.map(|(send, threads)| (send, thread_map(threads)))
-                        });
-                        (tag, RecvArm{ block: arm.block, tree: tree })
-                    }).collect();
-                    RecvTree::Recv { side: side, send: send, options: options }
+                RecvTree::Recv { side, send, block, tree } => {
+                    let tree = tree.map(&mut |loc| {
+                        loc.map(|(send, threads)| (send, thread_map(threads)))
+                    });
+
+                    RecvTree::Recv { side: side, send: send, block: block, tree: tree }
                 }
                 RecvTree::Loop { send_lower, send_upper, transition } => {
                     RecvTree::Loop { send_lower: send_lower, send_upper: send_upper, transition: thread_map(transition) }
@@ -1241,31 +1241,24 @@ impl Dfa {
             try!(state.transitions.to_graphviz(f, &condition_count, &format!("{}", id), &mut |f, parent_port, loc| {
                 match *loc {
                     RecvTree::Fail => {Ok(false)},
-                    RecvTree::Recv { side, ref send, ref options } => {
+                    RecvTree::Recv { side, ref send, ref block, ref tree } => {
                         let node = format!("r{}", condition_count.get());
                         condition_count.set(condition_count.get() + 1);
 
                         try!(writeln!(f, r#"    {} -> {}:top [label="{:?}"]"#, parent_port, node, send));
                         let color = match side { Side::Lower => "blue", Side::Upper => "green" };
                         try!(writeln!(f, r#"    {} [shape="none" fontcolor="{}" label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0">
-    <TR><TD COLSPAN="{}" PORT="top"><B>{:?}</B></TD></TR><TR>";"#, node, color, options.len(), side));
-                        for (tag, _) in options {
-                            try!(writeln!(f, r#"<TD PORT="{}">{}</TD>"#, tag, tag));
-                        }
-                        try!(writeln!(f, r#"</TR></TABLE>>];"#));
+    <TR><TD PORT="top"><B>{:?}</B></TD></TR></TABLE>>];";"#, node, color, side));
 
-                        for (tag, arm) in options {
-                            let port = format!("{}:{}", node, tag);
-
-                            try!(arm.tree.to_graphviz(f, &condition_count, &port, &mut |f, parent_port, out| {
-                                if let &Some((ref send, ref transition)) = out {
-                                    try!(writeln!(f, r#"    {} -> {} [label="{:?}"]"#, parent_port, transition.dest_state, send));
-                                    Ok(true)
-                                } else {
-                                    Ok(false)
-                                }
-                            }));
-                        }
+                        let port = format!("{}_p", node);
+                        try!(tree.to_graphviz(f, &condition_count, &port, &mut |f, parent_port, out| {
+                            if let &Some((ref send, ref transition)) = out {
+                                try!(writeln!(f, r#"    {} -> {} [label="{:?}"]"#, parent_port, transition.dest_state, send));
+                                Ok(true)
+                            } else {
+                                Ok(false)
+                            }
+                        }));
                         Ok(true)
                     }
                     RecvTree::Loop { ref send_lower, ref send_upper, ref transition } => {
@@ -1295,10 +1288,10 @@ pub fn run(dfa: &Dfa, lower: &mut Connection, upper: &mut Connection) -> bool {
     };
 
     fn send(regs: &Regs, conn: &mut Connection, msgs: &[MessageSend], dbg_str: &str) {
-        for &(tag, ref data) in msgs {
-            let msg = data.iter().map(|&reg| regs.get(reg)).collect();
-            debug!("send {} {} {:?}", dbg_str, tag, msg);
-            conn.send((tag, msg)).ok();
+        for msg_regs in msgs {
+            let msg = msg_regs.iter().map(|&reg| reg.map(|reg| regs.get(reg))).collect();
+            debug!("send {} {:?}", dbg_str, msg);
+            conn.send(msg).ok();
         }
     }
 
@@ -1319,7 +1312,7 @@ pub fn run(dfa: &Dfa, lower: &mut Connection, upper: &mut Connection) -> bool {
                 debug!("No matching pre-conditions{}", if state.accepting {" in accepting state"} else {""});
                 return state.accepting; //TODO: check that other signals have ended?
             }
-            &RecvTree::Recv { side, send: ref send_side, ref options } => {
+            &RecvTree::Recv { side, send: ref send_side, ref block, ref tree } => {
                 let rx = match side {
                     Side::Lower => {
                         send(&regs, lower, send_side, "lower");
@@ -1333,25 +1326,20 @@ pub fn run(dfa: &Dfa, lower: &mut Connection, upper: &mut Connection) -> bool {
 
                 debug!("\trx {:?}", rx);
 
-                let (rx_tag, data) = if let Ok(r) = rx { r } else {
+                let data = if let Ok(r) = rx { r } else {
                     debug!("input completed");
                     return state.accepting;
                 };
 
-                let opt = if let Some(x) = options.get(rx_tag) { x } else {
-                    debug!("no transition matching tag {}", rx_tag);
-                    return state.accepting;
-                };
-
                 // Evaluate the message-match block
-                regs.message = data;
-                for i in &opt.block.insns {
+                regs.message = data.into_iter().map(|x| x.unwrap_or(Value::Integer(0))).collect();
+                for i in &block.insns {
                     let val = regs.eval(i);
                     debug!("\t%m{} <= {} = {:?}", regs.message_match.len(), val, i);
                     regs.message_match.push(val);
                 }
 
-                if let &Some((ref send_other, ref transition)) = opt.tree.find(&mut |r| regs.get(r)) {
+                if let &Some((ref send_other, ref transition)) = tree.find(&mut |r| regs.get(r)) {
                     match side {
                         Side::Lower => send(&regs, upper, send_other, "upper"),
                         Side::Upper => send(&regs, lower, send_other, "lower"),

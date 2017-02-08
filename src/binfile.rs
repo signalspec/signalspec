@@ -1,7 +1,8 @@
 use std::io;
 use std::io::prelude::*;
 
-use data::{ Value, DataMode, Shape };
+use data::{ Value, DataMode };
+use protocol::Shape;
 use connection::Connection;
 use process::{Process, PrimitiveDef};
 use language::Item;
@@ -51,7 +52,7 @@ impl Process for BinFileUp {
                 loop {
                     match down.read_f32::<LittleEndian>() {
                         Ok(v) => {
-                            if upwards.send((0, vec![Value::Number(v as f64)])).is_err() {
+                            if upwards.send(vec![Some(Value::Number(v as f64))]).is_err() {
                                 return false;
                             }
                         }
@@ -71,7 +72,7 @@ impl Process for BinFileUp {
                 loop {
                     match read_complex(&mut down) {
                         Ok(v) => {
-                            if upwards.send((0, vec![Value::Complex(v)])).is_err() {
+                            if upwards.send(vec![Some(Value::Complex(v))]).is_err() {
                                 return false;
                             }
                         }

@@ -2,11 +2,11 @@ use std::sync::mpsc::{Receiver, Sender, channel};
 use std::io;
 use std::io::prelude::*;
 use num_complex::Complex;
+use protocol::Shape;
 
-use data::{ Value, Shape };
-use data::MessageTag;
+use data::{ Value };
 
-pub type ConnectionMessage = (MessageTag, Vec<Value>);
+pub type ConnectionMessage = Vec<Option<Value>>;
 
 pub struct Connection {
     rx: Option<Receiver<ConnectionMessage>>,
@@ -58,7 +58,7 @@ impl Connection {
             }
             r
         } else {
-            if self.alive { Ok((0, vec![])) } else { Err(()) }
+            if self.alive { Ok(vec![]) } else { Err(()) }
         }
     }
 
@@ -90,11 +90,11 @@ impl<'a> Read for ConnectionRead<'a> {
         let mut num_read = 0;
         for p in buf.iter_mut() {
             match self.0.recv() {
-                Ok((0, v)) => {
+                Ok(v) => {
                     debug!("rx {:?}", v);
                     assert_eq!(v.len(), 1);
                     match v[0] {
-                        Value::Integer(b) => { *p = b as u8; }
+                        Some(Value::Integer(b)) => { *p = b as u8; }
                         ref x => panic!("Byte connection received {:?}", x)
                     }
                 }
@@ -117,7 +117,7 @@ impl<'a> Write for ConnectionWrite<'a> {
         debug!("write started: {}", buf.len());
 
         for b in buf.iter() {
-            if self.0.send((0, vec![Value::Integer(*b as i64)])).is_err() {
+            if self.0.send(vec![Some(Value::Integer(*b as i64))]).is_err() {
                 return Err(io::Error::new(io::ErrorKind::BrokenPipe, "Stream ended"))
             }
         }
@@ -138,14 +138,13 @@ impl<'a> Iterator for ConnectionIterNumber<'a> {
 
     fn next(&mut self) -> Option<f64> {
         match self.0.recv() {
-            Ok((0, v)) => {
+            Ok(v) => {
                 assert_eq!(v.len(), 1);
                 match v[0] {
-                    Value::Number(c) => Some(c),
+                    Some(Value::Number(c)) => Some(c),
                     ref x => panic!("Number connection received {:?}", x)
                 }
             }
-            Ok(..) => panic!("Received a message prohibited by shape"),
             Err(..) => None,
         }
     }
@@ -157,15 +156,14 @@ impl<'a> Iterator for ConnectionIterComplex<'a> {
 
     fn next(&mut self) -> Option<Complex<f64>> {
         match self.0.recv() {
-            Ok((0, v)) => {
+            Ok(v) => {
                 debug!("rx {:?}", v);
                 assert_eq!(v.len(), 1);
                 match v[0] {
-                    Value::Complex(c) => Some(c),
+                    Some(Value::Complex(c)) => Some(c),
                     ref x => panic!("Complex connection received {:?}", x)
                 }
             }
-            Ok(..) => panic!("Received a message prohibited by shape"),
             Err(..) => None,
         }
     }

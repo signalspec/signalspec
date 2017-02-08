@@ -1,8 +1,9 @@
 use super::{ ast, nfa };
 use super::dfa::{ self, Dfa };
 use super::scope::Scope;
+use protocol::Shape;
 use super::protocol::{ ProtocolScope, resolve_protocol_invoke };
-use data::{DataMode, Shape};
+use data::{DataMode};
 use process::{ Process, ProcessStack };
 use connection::{ Connection, ConnectionMessage };
 use session::Session;

@@ -1,7 +1,8 @@
 use std::io;
 use std::io::prelude::*;
 
-use data::{ Value, DataMode, Shape, ShapeVariant, ShapeData };
+use data::{ Value, DataMode };
+use protocol::Shape;
 use connection::Connection;
 use process::{Process, PrimitiveDef};
 use language::Item;
@@ -66,24 +67,24 @@ impl PrimitiveDef for DumpfileDef {
 pub static DUMPFILE_DEF: DumpfileDef = DumpfileDef;
 
 // TODO: how to support nesting, shape
-pub fn parse_line(line: &str) -> Vec<Value> {
+pub fn parse_line(line: &str) -> Vec<Option<Value>> {
     if line.trim().len() == 0 {
         return Vec::new()
     }
-    line.split(',').map(|x| ::language::parse_literal(x.trim()).unwrap()).collect()
+    line.split(',').map(|x| Some(::language::parse_literal(x.trim()).unwrap())).collect()
 }
 
 pub fn read_values(reader: &mut BufRead, port: &mut Connection) {
     for line in reader.lines() {
         let lit = parse_line(&line.unwrap());
         if port.recv().is_err() { break; }
-        if port.send((0, lit)).is_err() { break; }
+        if port.send(lit).is_err() { break; }
     }
 }
 
-pub fn write_message(w: &mut Write, values: &mut Iterator<Item=&Value>, shape: &ShapeData) -> io::Result<()> {
+pub fn write_message(w: &mut Write, values: &mut Iterator<Item=Option<Value>>, shape: &Shape) -> io::Result<()> {
     match *shape {
-        ShapeData::Tup(ref t) => {
+        Shape::Tup(ref t) => {
             try!(write!(w, "("));
             for (i, v) in t.iter().enumerate() {
                 if i > 0 { try!(write!(w, ", ")); }
@@ -91,30 +92,31 @@ pub fn write_message(w: &mut Write, values: &mut Iterator<Item=&Value>, shape: &
             }
             try!(write!(w, ")"));
         }
-        ShapeData::Val(_, ref mode) => {
+        Shape::Val(_, ref mode) => {
             if mode.up {
-                try!(write!(w, "{}", values.next().unwrap()))
+                try!(write!(w, "{}", values.next().unwrap().expect("missing value in message")))
             } else {
                 try!(write!(w, "_"));
             }
         }
-        ShapeData::Const(ref c) => {
+        Shape::Const(ref c) => {
             try!(write!(w, "{}", c));
         }
+        Shape::Protocol{..} => { unimplemented!() }
     }
     Ok(())
 }
 
 pub fn write_messages(w: &mut Write, port: &mut Connection, shape: &Shape) {
-    if port.send((0, Vec::new())).is_err() { return; }
+    if port.send(Vec::new()).is_err() { return; }
     loop {
         match port.recv() {
-            Ok((tag, v)) => {
-                write_message(w, &mut v.iter(), &shape.variants[tag].data).unwrap();
+            Ok(v) => {
+                write_message(w, &mut v.into_iter(), shape).unwrap();
                 w.write_all(b"\n").unwrap();
             }
             Err(..) => break,
         }
-        if port.send((0, Vec::new())).is_err() { break; }
+        if port.send(Vec::new()).is_err() { break; }
     }
 }

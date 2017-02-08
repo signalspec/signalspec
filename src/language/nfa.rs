@@ -188,9 +188,9 @@ impl fmt::Display for Action {
 
         match *self {
             Action::Epsilon => write!(f, "ε"),
-            Action::Lower(ref m) => write!(f, "Lower {}", m),
-            Action::UpperBegin(ref m) => write!(f, "UpperBegin {}", m),
-            Action::UpperEnd(ref m) => write!(f, "UpperEnd {}", m),
+            Action::Lower(ref m) => write!(f, "Lower {:?}", m),
+            Action::UpperBegin(ref m) => write!(f, "UpperBegin {:?}", m),
+            Action::UpperEnd(ref m) => write!(f, "UpperEnd {:?}", m),
 
             Action::RepeatDnInit(id, ref e) => write!(f, "RepeatDnInit {} {}", id, e),
             Action::RepeatDnEntry(id) => write!(f, "RepeatDnEntry {}", id),

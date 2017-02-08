@@ -1,5 +1,6 @@
 use protocol::ProtocolId;
-use data::{ Shape, ShapeData, ShapeVariant, Type, DataMode };
+use data::{ Type, DataMode };
+use protocol::Shape;
 use super::step::{ Step, ResolveInfo, resolve_seq };
 use super::scope::{Item, Scope};
 use super::ast;
@@ -14,7 +15,7 @@ enum ProtocolMatch<'a> {
     Tup(Vec<ProtocolMatch<'a>>)
 }
 
-pub fn resolve_protocol_invoke_inner<'a>(session: &Session, scope: &Scope<'a>, ast: &'a ast::ProtocolRef, dir: DataMode) -> ShapeData {
+pub fn resolve_protocol_invoke<'a>(session: &Session, scope: &Scope<'a>, ast: &'a ast::ProtocolRef, dir: DataMode) -> Shape {
     match *ast {
         ast::ProtocolRef::Protocol{ ref name, ref param } => {
             if let Some(Item::Protocol(protocol_id)) = scope.get(&name[..]) {
@@ -25,24 +26,19 @@ pub fn resolve_protocol_invoke_inner<'a>(session: &Session, scope: &Scope<'a>, a
         }
         ast::ProtocolRef::Type(ref expr) => {
             match expr::value(session, scope, expr) {
-                Expr::Const(c) => ShapeData::Const(c),
-                e => ShapeData::Val(e.get_type(), dir)
+                Expr::Const(c) => Shape::Const(c),
+                e => Shape::Val(e.get_type(), dir)
             }
         }
         ast::ProtocolRef::Tup(ref items) => {
-            let resolved_items = items.iter().map(|x| resolve_protocol_invoke_inner(session, scope, x, dir)).collect::<Vec<_>>();
+            let resolved_items = items.iter().map(|x| resolve_protocol_invoke(session, scope, x, dir)).collect::<Vec<_>>();
             if resolved_items.len() == 1 {
                 resolved_items.into_iter().next().unwrap()
             } else {
-                ShapeData::Tup(resolved_items)
+                Shape::Tup(resolved_items)
             }
         }
     }
-}
-
-pub fn resolve_protocol_invoke<'a>(session: &Session, scope: &Scope<'a>, ast: &'a ast::ProtocolRef, dir: DataMode) -> Shape {
-    let data = resolve_protocol_invoke_inner(session, scope, ast, dir);
-    Shape { variants: vec![ ShapeVariant { data: data } ] }
 }
 
 fn resolve_protocol_match<'a>(session: &Session, scope: &Scope<'a>, ast: &'a ast::ProtocolRef) -> ProtocolMatch<'a> {
