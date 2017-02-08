@@ -22,7 +22,7 @@ mod test_runner;
 mod protocol;
 
 pub use session::Session;
-pub use language::{ ModuleLoader, Module, Test, Item };
+pub use language::{ Ctxt, Module, Test, Item };
 pub use process::{ Process, ProcessStack, PrimitiveDef };
 pub use connection::Connection;
 pub use data::{ Value, Type, DataMode };
@@ -33,7 +33,7 @@ mod file_io;
 mod dumpfile;
 mod binfile;
 
-pub fn add_primitives(loader: &ModuleLoader) {
+pub fn add_primitives(loader: &Ctxt) {
     loader.add_primitive_def("file", &file_io::FILE_DEF);
     loader.add_primitive_def("dumpfile", &dumpfile::DUMPFILE_DEF);
     loader.add_primitive_def("binfile", &binfile::BINFILE_DEF);

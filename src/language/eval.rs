@@ -412,7 +412,7 @@ fn fn_complex(arg: Item) -> Result<Item, &'static str> {
     }
 }
 
-pub fn add_primitive_fns(loader: &super::ModuleLoader) {
+pub fn add_primitive_fns(loader: &super::Ctxt) {
     loader.add_primitive_fn("int", fn_int);
     loader.add_primitive_fn("signed", fn_signed);
     loader.add_primitive_fn("chunks", fn_chunks);

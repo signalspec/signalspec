@@ -11,7 +11,7 @@ mod protocol;
 
 peg_file! grammar("signalspec.rustpeg");
 
-pub use self::module_loader::{ ModuleLoader, Module, Test };
+pub use self::module_loader::{ Ctxt, Module, Test };
 pub use self::scope::Item;
 pub use self::eval::{ add_primitive_fns };
 

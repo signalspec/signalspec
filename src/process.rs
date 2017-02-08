@@ -1,6 +1,6 @@
 use std::{thread, mem};
 use protocol::Shape;
-use language::{Item, ModuleLoader};
+use language::{Item, Ctxt};
 use connection::Connection;
 
 pub trait PrimitiveDef: Send {
@@ -15,12 +15,12 @@ pub trait Process: Send {
 
 
 pub struct ProcessStack<'a> {
-    loader: &'a ModuleLoader<'a>,
+    loader: &'a Ctxt<'a>,
     processes: Vec<Box<Process>>,
 }
 
 impl<'a> ProcessStack<'a> {
-    pub fn new(loader: &'a ModuleLoader<'a>) -> ProcessStack<'a> {
+    pub fn new(loader: &'a Ctxt<'a>) -> ProcessStack<'a> {
         ProcessStack {
             processes: vec![],
             loader: loader,

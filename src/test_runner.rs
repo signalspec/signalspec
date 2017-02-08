@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::Path;
 use std::io::prelude::*;
-use language::ModuleLoader;
+use language::Ctxt;
 use session::Session;
 
 pub fn run(fname: &str) -> bool {
@@ -29,7 +29,7 @@ pub fn run_file(fname: &Path) -> bool {
     println!("Running tests for {}", fname.to_string_lossy());
 
     let sess = Session::new(None);
-    let loader = ModuleLoader::new(&sess);
+    let loader = Ctxt::new(&sess);
     ::add_primitives(&loader);
 
     let source = match fs::File::open(fname) {

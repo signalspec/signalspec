@@ -3,11 +3,12 @@ use std::fmt;
 use std::io::{Write, Result as IoResult};
 use std::iter::repeat;
 
-use session::{Session, ValueID};
+use session::ValueID;
 use super::{ ast, expr };
 use super::scope::{ Scope, Item };
 use super::eval::Expr;
 use super::protocol::ProtocolScope;
+use super::module_loader::Ctxt;
 use protocol::Shape;
 use data::{ DataMode, Type, MessageTag };
 
@@ -106,7 +107,7 @@ impl ResolveInfo {
     }
 }
 
-fn resolve_action<'s>(session: &Session,
+fn resolve_action<'s>(ctx: &Ctxt<'s>,
                       scope: &Scope<'s>,
                       protocol_scope: &ProtocolScope<'s>,
                       shape_down: &Shape,
@@ -114,15 +115,15 @@ fn resolve_action<'s>(session: &Session,
                       action: &'s ast::Action) -> (Step, ResolveInfo) {
     match *action {
         ast::Action::Call(ref expr, ref arg, ref body) => {
-            let arg = expr::rexpr(session, scope, arg);
+            let arg = expr::rexpr(ctx.session, scope, arg);
 
             if body.is_some() {
                 unimplemented!();
             }
 
             /*
-            let item = expr::rexpr(session, scope, expr);
-            let (_shape_child, step, ri) = call(&item, session, shape_down, arg);
+            let item = expr::rexpr(ctx, scope, expr);
+            let (_shape_child, step, ri) = call(&item, ctx, shape_down, arg);
             (step, ri)
             */
             unimplemented!();
@@ -130,7 +131,7 @@ fn resolve_action<'s>(session: &Session,
         ast::Action::Token(ref expr) => {
             debug!("Token: {:?}", expr);
 
-            let item = expr::rexpr(session, scope, expr);
+            let item = expr::rexpr(ctx.session, scope, expr);
             let (message, ri) = resolve_token(item, shape_down);
 
             (Step::Token(message), ri)
@@ -139,10 +140,10 @@ fn resolve_action<'s>(session: &Session,
             let mut body_scope = scope.child();
 
             debug!("Upper message, shape: {:?}", shape_up);
-            let msginfo = expr::on_expr_message(session, &mut body_scope, shape_up, expr);
+            let msginfo = expr::on_expr_message(ctx.session, &mut body_scope, shape_up, expr);
 
             let (step, mut ri) = if let &Some(ref body) = body {
-                resolve_seq(session, &body_scope, protocol_scope, shape_down, &mut Shape::null(), body)
+                resolve_seq(ctx, &body_scope, protocol_scope, shape_down, &mut Shape::null(), body)
             } else {
                 (Step::Nop, ResolveInfo::new())
             };
@@ -167,8 +168,8 @@ fn resolve_action<'s>(session: &Session,
             (Step::TokenTop(msg, box step), ri)
         }
         ast::Action::Repeat(ref count_ast, ref block) => {
-            let count = expr::value(session, scope, count_ast);
-            let (step, mut ri) = resolve_seq(session, scope, protocol_scope, shape_down, shape_up, block);
+            let count = expr::value(ctx.session, scope, count_ast);
+            let (step, mut ri) = resolve_seq(ctx, scope, protocol_scope, shape_down, shape_up, block);
             let any_up = ri.repeat_up_heuristic;
             ri.use_expr(&count, DataMode { down: !any_up, up: any_up });
             (Step::Repeat(count, box step, any_up), ri)
@@ -179,14 +180,14 @@ fn resolve_action<'s>(session: &Session,
             let mut inner_vars = Vec::with_capacity(pairs.len());
 
             for &(ref name, ref expr) in pairs {
-                let e = expr::value(session, scope, expr);
+                let e = expr::value(ctx.session, scope, expr);
                 let t = e.get_type();
                 if let Type::Vector(c, box ty) = t {
                     match count {
                         Some(count) => assert_eq!(count, c),
                         None => count = Some(c),
                     }
-                    let id = body_scope.new_variable(session, name, ty);
+                    let id = body_scope.new_variable(ctx.session, name, ty);
                     inner_vars.push((id, e, DataMode { up: false, down: false}));
                 } else {
                     panic!("Foreach must loop over vector type, not {:?}", t)
@@ -195,7 +196,7 @@ fn resolve_action<'s>(session: &Session,
 
             debug!("Foreach count: {:?}", count);
 
-            let (step, mut ri) = resolve_seq(session, &body_scope, protocol_scope, shape_down, shape_up, block);
+            let (step, mut ri) = resolve_seq(ctx, &body_scope, protocol_scope, shape_down, shape_up, block);
 
             for &mut (id, ref e, ref mut dir) in &mut inner_vars {
                 *dir = ri.mode_of(id);
@@ -205,14 +206,14 @@ fn resolve_action<'s>(session: &Session,
             (Step::Foreach(count.unwrap_or(0) as u32, inner_vars, box step), ri)
         }
         ast::Action::Alt(ref expr, ref arms) => {
-            let r = expr::rexpr(session, scope, expr);
+            let r = expr::rexpr(ctx.session, scope, expr);
             let mut outer_ri = ResolveInfo::new();
 
             let v = arms.iter().map(|arm| {
                 let mut body_scope = scope.child();
                 let mut checks = Vec::new();
-                expr::pattern_match(session, &mut body_scope, &arm.discriminant, &r, &mut checks);
-                let (step, ri) = resolve_seq(session, &body_scope, protocol_scope, shape_down, shape_up, &arm.block);
+                expr::pattern_match(ctx.session, &mut body_scope, &arm.discriminant, &r, &mut checks);
+                let (step, ri) = resolve_seq(ctx, &body_scope, protocol_scope, shape_down, shape_up, &arm.block);
                 outer_ri.merge_seq(&ri); // TODO: alt != seq ?
                 (checks, step)
             }).collect();
@@ -231,19 +232,19 @@ fn resolve_action<'s>(session: &Session,
     }
 }
 
-pub fn resolve_seq<'s>(session: &Session,
+pub fn resolve_seq<'s>(ctx: &Ctxt<'s>,
                   pscope: &Scope<'s>,
                   protocol_scope: &ProtocolScope<'s>,
                   shape_down: &Shape,
                   shape_up: &mut Shape,
                   block: &'s ast::Block) -> (Step, ResolveInfo) {
     let mut scope = pscope.child();
-    resolve_letdef(session, &mut scope, &block.lets);
+    resolve_letdef(ctx, &mut scope, &block.lets);
 
     let mut ri = ResolveInfo::new();
 
     let steps = block.actions.iter().map(|action| {
-        let (step, i) = resolve_action(session, &scope, protocol_scope, shape_down, shape_up, action);
+        let (step, i) = resolve_action(ctx, &scope, protocol_scope, shape_down, shape_up, action);
         ri.merge_seq(&i);
         step
     }).collect();
@@ -251,9 +252,9 @@ pub fn resolve_seq<'s>(session: &Session,
     (Step::Seq(steps), ri)
 }
 
-pub fn resolve_letdef<'s>(session: &Session, scope: &mut Scope<'s>, lets: &'s [ast::LetDef]) {
+pub fn resolve_letdef<'s>(ctx: &Ctxt<'s>, scope: &mut Scope<'s>, lets: &'s [ast::LetDef]) {
     for &ast::LetDef(ref name, ref expr) in lets.iter() {
-        let item = expr::rexpr(session, scope, expr);
+        let item = expr::rexpr(ctx.session, scope, expr);
         scope.bind(&name, item);
     }
 }

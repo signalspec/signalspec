@@ -12,8 +12,8 @@ use util::Index;
 
 pub type PrimitiveFn<'a> = fn(Item<'a>)->Result<Item<'a>, &'static str>;
 
-pub struct ModuleLoader<'a> {
-    session: &'a Session,
+pub struct Ctxt<'a> {
+    pub session: &'a Session,
     ast_arena: Arena<ast::Module>,
     ast_process_arena: Arena<ast::Process>,
     prelude: RefCell<Scope<'a>>,
@@ -36,9 +36,9 @@ pub struct Test<'a: 'm, 'm> {
     module: &'m Module<'a>,
 }
 
-impl<'a> ModuleLoader<'a> {
-    pub fn new(session: &'a Session) -> ModuleLoader<'a> {
-        ModuleLoader {
+impl<'a> Ctxt<'a> {
+    pub fn new(session: &'a Session) -> Ctxt<'a> {
+        Ctxt {
             session: session,
             ast_arena: Arena::new(),
             ast_process_arena: Arena::new(),
@@ -57,7 +57,7 @@ impl<'a> ModuleLoader<'a> {
 
     pub fn parse_process(&'a self, source: &str, shape_below: &Shape) -> Result<Box<Process>, grammar::ParseError> {
         let ast = &*self.ast_process_arena.alloc(try!(grammar::process(source)));
-        Ok(super::program::resolve_process(&self.session, &*self.prelude.borrow(), &*self.protocol_scope.borrow(), shape_below, &ast))
+        Ok(super::program::resolve_process(self, &*self.prelude.borrow(), &*self.protocol_scope.borrow(), shape_below, &ast))
     }
 
     pub fn parse_module(&'a self, source: &str) -> Result<Module, grammar::ParseError> {
@@ -70,7 +70,7 @@ impl<'a> ModuleLoader<'a> {
         for entry in &ast.entries {
             match *entry {
                 ast::ModuleEntry::Let(ref letdef) => {
-                    super::step::resolve_letdef(self.session, &mut scope, ref_slice(letdef));
+                    super::step::resolve_letdef(self, &mut scope, ref_slice(letdef));
                 }
                 ast::ModuleEntry::Use(_) => {
                     panic!("`use` unimplemented");
@@ -102,7 +102,7 @@ impl<'a> ModuleLoader<'a> {
     }
 
     pub fn compile_test<'m>(&'a self, test: &Test<'a, 'm>) -> super::program::CompiledTest<'a> {
-        super::program::compile_test(self.session, self, &test.module.scope, &*self.protocol_scope.borrow(), test.ast)
+        super::program::compile_test(self, &test.module.scope, &*self.protocol_scope.borrow(), test.ast)
     }
 }
 
