@@ -1,8 +1,6 @@
-use std::iter;
 use super::ast;
 use super::eval::{ Expr, ConcatElem };
 use super::scope::{ Scope, Item, Func };
-use super::step::Message;
 use data::{ Value, DataMode };
 use protocol::Shape;
 use session::Session;

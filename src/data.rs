@@ -1,7 +1,5 @@
 use std::collections::HashSet;
 use std::cmp::{min, max};
-use std::slice;
-use ref_slice::{ref_slice, mut_ref_slice};
 use num_complex::Complex;
 use std::fmt;
 
@@ -127,5 +125,3 @@ pub struct DataMode {
     pub down: bool,
     pub up: bool,
 }
-
-pub type MessageTag = usize;

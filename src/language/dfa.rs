@@ -1,6 +1,5 @@
 use std::collections::{ HashMap, HashSet, VecDeque, btree_map, BTreeMap };
 use std::iter::Peekable;
-use vec_map::VecMap;
 use std::fmt;
 use std::mem;
 use std::cmp;
@@ -863,7 +862,7 @@ fn closure<'nfa>(nfa: &'nfa Nfa, shape_down: &Shape, shape_up: &Shape, initial_t
                     let mode = shape_up.data_mode();
 
                     if mode.up {
-                        let mut send = msg.iter().zip(format_up.iter()).map(|(e, fmt)| {
+                        let send = msg.iter().zip(format_up.iter()).map(|(e, fmt)| {
                             e.as_ref().and_then(|e| {
                                 if fmt.dir.up {
                                     Some(insns.eval_down(e, &thread.up_vars))
@@ -1030,7 +1029,7 @@ fn closure<'nfa>(nfa: &'nfa Nfa, shape_down: &Shape, shape_up: &Shape, initial_t
     (closure, insns, transitions)
 }
 
-fn message_match(shape: &Shape, side: Side, msg: &Message, vars: &mut VarMap, block: &mut InsnBlock) -> Conditions {
+fn message_match(msg: &Message, vars: &mut VarMap, block: &mut InsnBlock) -> Conditions {
     let mut conditions = Conditions::new();
 
     for (idx, e) in msg.iter().enumerate() {
@@ -1093,17 +1092,15 @@ pub fn make_dfa(nfa: &Nfa, shape_down: &Shape, shape_up: &Shape) -> Dfa {
                 match recv_msg {
                     Some((side, msg)) => {
                         let mut thread = thread.clone();
-                        let (send_side, send_other, shape);
+                        let (send_side, send_other);
                         match side {
                             Side::Lower => {
                                 send_side = &send_lower;
                                 send_other = &send_upper;
-                                shape = shape_down;
                             }
                             Side::Upper => {
                                 send_side = &send_upper;
                                 send_other = &send_lower;
-                                shape = shape_up;
                             }
                         }
 
@@ -1128,7 +1125,7 @@ pub fn make_dfa(nfa: &Nfa, shape_down: &Shape, shape_up: &Shape) -> Dfa {
                                     Side::Lower => &mut thread.up_vars,
                                     Side::Upper => &mut thread.down_vars,
                                 };
-                                message_match(shape, side, msg, vars, block)
+                                message_match(msg, vars, block)
                             };
 
                             tree.conditions(&conditions, |loc| {
@@ -1241,7 +1238,7 @@ impl Dfa {
             try!(state.transitions.to_graphviz(f, &condition_count, &format!("{}", id), &mut |f, parent_port, loc| {
                 match *loc {
                     RecvTree::Fail => {Ok(false)},
-                    RecvTree::Recv { side, ref send, ref block, ref tree } => {
+                    RecvTree::Recv { side, ref send, ref tree, .. } => {
                         let node = format!("r{}", condition_count.get());
                         condition_count.set(condition_count.get() + 1);
 

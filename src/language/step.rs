@@ -1,5 +1,4 @@
 use bit_set::BitSet;
-use std::fmt;
 use std::io::{Write, Result as IoResult};
 use std::iter::repeat;
 
@@ -10,7 +9,7 @@ use super::eval::Expr;
 use super::protocol::ProtocolScope;
 use super::module_loader::Ctxt;
 use protocol::Shape;
-use data::{ DataMode, Type, MessageTag, Value };
+use data::{ DataMode, Type, Value };
 
 pub type Message = Vec<Option<Expr>>;
 

@@ -98,7 +98,6 @@ impl<'a> Read for ConnectionRead<'a> {
                         ref x => panic!("Byte connection received {:?}", x)
                     }
                 }
-                Ok(..) => panic!("Received a message prohibited by shape"),
                 Err(..) => break,
             }
             num_read += 1;

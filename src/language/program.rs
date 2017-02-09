@@ -7,7 +7,6 @@ use super::Ctxt;
 use data::{DataMode};
 use process::{ Process, ProcessStack };
 use connection::{ Connection, ConnectionMessage };
-use session::Session;
 use std::sync::mpsc;
 
 pub struct Program {
