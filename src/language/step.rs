@@ -10,7 +10,7 @@ use super::eval::Expr;
 use super::protocol::ProtocolScope;
 use super::module_loader::Ctxt;
 use protocol::Shape;
-use data::{ DataMode, Type, MessageTag };
+use data::{ DataMode, Type, MessageTag, Value };
 
 pub type Message = Vec<Option<Expr>>;
 
@@ -153,10 +153,12 @@ fn resolve_action<'s>(ctx: &Ctxt<'s>,
             let msg = msginfo.into_iter().map(|component| {
                 component.map(|(expr, dir)|{
                     if let Expr::Variable(id, _) = expr {
+                        let mut dir = dir.unwrap();
                         let DataMode { up, down } = ri.mode_of(id);
                         dir.up &= up;
                         dir.down |= down;
                     } else if !expr.down_evaluable() {
+                        let mut dir = dir.unwrap();
                         dir.up = false;
                     }
                     expr
@@ -262,11 +264,12 @@ pub fn resolve_letdef<'s>(ctx: &Ctxt<'s>, scope: &mut Scope<'s>, lets: &'s [ast:
 fn resolve_token<'shape>(item: Item, shape: &'shape Shape) -> (Message, ResolveInfo) {
     fn try_variant(shape: &Shape, item: &Item) -> bool {
         match (shape, item) {
-            (&Shape::Val(ref t, _), &Item::Value(ref e)) => t.includes_type(&e.get_type()),
             (&Shape::Const(ref c), &Item::Value(Expr::Const(ref v))) => c == v,
-            (&Shape::Tup(ref m), &Item::Tuple(ref t)) => {
-                m.len() == t.len() && m.iter().zip(t.iter()).all(|(i, s)| { try_variant(i, s) })
+            (&Shape::Val(ref t, _), &Item::Value(ref e)) => t.includes_type(&e.get_type()),
+            (&Shape::Tup(ref m), &Item::Tuple(ref t)) if m.len() == t.len() => {
+                 m.iter().zip(t.iter()).all(|(i, s)| { try_variant(i, s) })
             }
+            (&Shape::Protocol{ ref messages, .. }, i) => messages.iter().any(|m| try_variant(m, i)),
             _ => false,
         }
     }
@@ -295,7 +298,32 @@ fn resolve_token<'shape>(item: Item, shape: &'shape Shape) -> (Message, ResolveI
                     panic!("Expected tuple of length {}, found {:?}", m.len(), i);
                 }
             }
-            &Shape::Protocol{..} => unimplemented!(),
+            &Shape::Protocol { ref messages, ..} => {
+                if messages.len() == 1 {
+                    inner(i, &messages[0], msg, ri)
+                } else {
+                    let tag_idx = msg.len();
+                    msg.push(None);
+
+                    let mut matching_variants = 0;
+                    for (idx, shape) in messages.iter().enumerate() {
+                        if try_variant(shape, &i) {
+                            msg[tag_idx] = Some(Expr::Const(Value::Integer(idx as i64)));
+                            inner(i.clone(), shape, msg, ri);
+                            matching_variants += 1;
+                        } else {
+                            // Create dummy fields for other variants
+                            msg.extend((0..shape.count_fields()).map(|_| None));
+                        }
+                    }
+
+                    match matching_variants {
+                        1 => (),
+                        0 => panic!("No variant matched {:?}", i),
+                        _ => panic!("Multiple variants matched {:?}", i)
+                    }
+                }
+            }
         }
     }
 

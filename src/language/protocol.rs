@@ -17,11 +17,37 @@ enum ProtocolMatch<'a> {
     Tup(Vec<ProtocolMatch<'a>>)
 }
 
-pub fn resolve_protocol_invoke<'a>(ctx: &Ctxt, scope: &Scope<'a>, ast: &'a ast::ProtocolRef, dir: DataMode) -> Shape {
+pub fn resolve_protocol_invoke<'a>(ctx: &Ctxt<'a>, scope: &Scope<'a>, ast: &'a ast::ProtocolRef, dir: DataMode) -> Shape {
     match *ast {
         ast::ProtocolRef::Protocol{ ref name, ref param } => {
             if let Some(Item::Protocol(protocol_id)) = scope.get(&name[..]) {
-                unimplemented!();
+                let protocol = ctx.protocols.get(protocol_id);
+                let mut protocol_def_scope = protocol.scope.child();
+
+                match (expr::rexpr(ctx.session, scope, param), protocol.ast.params.len())  {
+                    (item, 1) => protocol_def_scope.bind(&protocol.ast.params[0], item),
+                    (Item::Tuple(t), x) => {
+                        if t.len() != x {
+                            panic!("Wrong number of arguments for protocol `{}`, expected {}", protocol.ast.name, x);
+                        }
+
+                        for (name, item) in protocol.ast.params.iter().zip(t.into_iter()) {
+                            protocol_def_scope.bind(name, item);
+                        }
+                    }
+                    (x, n) => panic!("Can't destructure `{:?}` as protocol parameter (required {} items)", x, n)
+                }
+
+                let mut messages = vec![];
+                for entry in &protocol.ast.entries {
+                    match *entry {
+                        ast::ProtocolEntry::Message(ref e) => {
+                            messages.push(resolve_protocol_invoke(ctx, &protocol_def_scope, e, dir));
+                        }
+                    }
+                }
+
+                Shape::Protocol { def: protocol_id, messages: messages }
             } else {
                 panic!("Protocol `{}` not found", name);
             }

@@ -27,8 +27,8 @@ pub struct Module<'a> {
 }
 
 pub struct ProtocolDef<'a> {
-    ast: &'a ast::Protocol,
-    scope: Scope<'a>,
+    pub ast: &'a ast::Protocol,
+    pub scope: Scope<'a>,
 }
 
 pub struct Test<'a: 'm, 'm> {

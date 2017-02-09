@@ -50,7 +50,7 @@ pub struct Protocol {
 }
 
 pub enum ProtocolEntry {
-    Message(Expr),
+    Message(ProtocolRef),
 }
 
 #[derive(Debug, Clone)]

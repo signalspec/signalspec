@@ -52,7 +52,7 @@ protocol_block -> Vec<ast::ProtocolEntry>
     { entries }
 
   protocol_entry -> ast::ProtocolEntry
-     = e:expr { ast::ProtocolEntry::Message(e) }
+     = e:protocol_ref { ast::ProtocolEntry::Message(e) }
 
 // Expressions
 expr -> ast::Expr

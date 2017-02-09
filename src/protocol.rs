@@ -75,10 +75,31 @@ impl Shape {
         }
     }
 
+    pub fn count_fields(&self) -> usize {
+        match *self {
+            Shape::Tup(ref x) => x.iter().map(Shape::count_fields).sum(),
+            Shape::Protocol { ref messages, .. } => {
+                let tag = if messages.len() <= 1 { 0usize } else { 1usize };
+                let inner: usize = messages.iter().map(Shape::count_fields).sum();
+                tag + inner
+            }
+            Shape::Val(..) => 1,
+            Shape::Const(..) => 0,
+        }
+    }
+
     pub fn format(&self) -> Vec<FormatElem> {
         match *self {
-            Shape::Tup(ref x) => x.iter().flat_map(|x| x.format()).collect(),
-            Shape::Protocol { ref messages, .. } => unimplemented!(),
+            Shape::Tup(ref x) => x.iter().flat_map(Shape::format).collect(),
+            Shape::Protocol { ref messages, .. } => {
+                if messages.len() <= 1 {
+                    messages[0].format()
+                } else {
+                    let len = messages.len() as i64;
+                    iter::once(FormatElem { ty: Type::Integer(len, len), dir: DataMode{ up: true, down: true }})
+                        .chain(messages.iter().flat_map(Shape::format)).collect()
+                }
+            }
             Shape::Val(ref ty, dir) => vec![FormatElem { ty: ty.clone(), dir: dir }],
             Shape::Const(..) => vec![],
         }
