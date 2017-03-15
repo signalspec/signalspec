@@ -125,3 +125,10 @@ pub struct DataMode {
     pub down: bool,
     pub up: bool,
 }
+
+impl DataMode {
+    pub fn constrain(&mut self, other: DataMode) {
+        self.up &= other.up;
+        self.down |= other.down;
+    }
+}

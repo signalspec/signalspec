@@ -49,7 +49,12 @@ pub fn resolve_process<'s>(ctx: &Ctxt<'s>,
     match *p {
         ast::Process::Call(ref name, ref arg) => {
             let arg = super::expr::rexpr(ctx.session, scope, arg);
-            let (shape_up, step, _) = protocol_scope.call(ctx, shape, name, arg);
+            let (shape_up, mut step, ri) = protocol_scope.call(ctx, shape, name, arg);
+
+            let fields_down = shape.format();
+            let mut fields_up = shape_up.format();
+            let ri2 = super::step::infer_direction(&mut step, &fields_down[..], &mut fields_up[..]);
+            assert_eq!(ri, ri2);
 
             if let Some(mut f) = ctx.session.debug_file(|| format!("{}.steps", name)) {
                 step.write_tree(&mut f, 0).unwrap_or_else(|e| error!("{}", e));
@@ -73,7 +78,7 @@ pub fn resolve_process<'s>(ctx: &Ctxt<'s>,
                 dfa.to_graphviz(&mut f).unwrap_or_else(|e| error!("{}", e));
             }
 
-            box Program{ dfa: dfa, shape_down: shape.clone(), shape_up: shape_up}
+            box Program{ dfa: dfa, shape_down: shape.clone(), shape_up: shape_up }
         }
         ast::Process::Block(ref block) => {
             let mut shape_up = Shape::null();

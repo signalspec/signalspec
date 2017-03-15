@@ -8,7 +8,8 @@ use super::scope::{ Scope, Item };
 use super::eval::Expr;
 use super::protocol::ProtocolScope;
 use super::module_loader::Ctxt;
-use protocol::Shape;
+use protocol::{ Shape, FormatElem as Field };
+
 use data::{ DataMode, Type, Value };
 
 pub type Message = Vec<Option<Expr>>;
@@ -65,6 +66,7 @@ impl Step {
 }
 
 /// Summary of the usage of values within an block and its children
+#[derive(Clone, Eq, PartialEq, Debug)]
 pub struct ResolveInfo {
     /// The set of variable IDs that will be down-evaluated to produce a value used by the
     /// block. The enclosing expression must set these variables.
@@ -330,4 +332,82 @@ fn resolve_token<'shape>(item: Item, shape: &'shape Shape) -> (Message, ResolveI
     let mut ri = ResolveInfo::new();
     inner(item, &shape, &mut msg, &mut ri);
     (msg, ri)
+}
+
+pub fn infer_direction(step: &mut Step, bottom_fields: &[Field], top_fields: &mut [Field]) -> ResolveInfo {
+    use self::Step::*;
+    match *step {
+        Nop => ResolveInfo::new(),
+        Token(ref msg) => {
+            assert_eq!(msg.len(), bottom_fields.len());
+            let mut ri = ResolveInfo::new();
+            for (m, f) in msg.iter().zip(bottom_fields.iter()) {
+                if let &Some(ref expr) = m {
+                    ri.use_expr(expr, f.dir);
+                }
+            }
+            ri
+        }
+        TokenTop(ref msg, ref mut body) => {
+            let mut ri = infer_direction(body, bottom_fields, &mut []);
+            assert_eq!(msg.len(), top_fields.len());
+
+            // Update the upward shape's direction with results of analyzing the usage of
+            // its data in the `on x { ... }` body.
+            for (m, f) in msg.iter().zip(top_fields.iter_mut()) {
+                if let &Some(ref expr) = m {
+                    let constraint = match *expr {
+                        Expr::Variable(id, _) => ri.mode_of(id),
+
+                        //TODO: is the down value right?
+                        ref e => DataMode { up: e.down_evaluable(), down: false }
+                    };
+                    f.dir.constrain(constraint);
+                }
+            }
+            ri.repeat_up_heuristic = true;
+            ri
+        }
+        Seq(ref mut steps) => {
+            let mut ri = ResolveInfo::new();
+            for step in steps {
+                ri.merge_seq(&infer_direction(step, bottom_fields, top_fields));
+            }
+            ri
+        }
+        Repeat(ref count, ref mut body, ref mut dir) => {
+            let mut ri = infer_direction(body, bottom_fields, top_fields);
+            let any_up = ri.repeat_up_heuristic;
+            ri.use_expr(&count, DataMode { down: !any_up, up: any_up });
+            assert_eq!(*dir, any_up);
+            *dir = any_up;
+            ri
+        }
+        Foreach(_, ref mut inner_vars, ref mut body) => {
+            let mut ri = infer_direction(body, bottom_fields, top_fields);
+            for &mut (id, ref e, ref mut dir) in inner_vars {
+                assert_eq!(*dir, ri.mode_of(id));
+                *dir = ri.mode_of(id);
+                ri.use_expr(e, *dir);
+            }
+            ri
+        }
+        Alt(ref mut arms, ref mut up) => {
+            let mut ri = ResolveInfo::new();
+            for &mut (_, ref mut body) in arms.iter_mut() {
+                ri.merge_seq(&infer_direction(body, bottom_fields, top_fields)); // TODO: alt != seq ?
+            }
+
+            assert_eq!(*up, ri.repeat_up_heuristic);
+            *up = ri.repeat_up_heuristic;
+
+            for &mut (ref checks, _) in arms.iter_mut() {
+                for &(_, ref r) in checks {
+                    ri.use_expr(r, DataMode { down: !*up, up: *up })
+                    // LHS is patterns that don't contain dynamic vars, so no need to mark them
+                }
+            }
+            ri
+        }
+    }
 }
