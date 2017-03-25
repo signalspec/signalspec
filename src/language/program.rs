@@ -82,7 +82,14 @@ pub fn resolve_process<'s>(ctx: &Ctxt<'s>,
         }
         ast::Process::Block(ref block) => {
             let mut shape_up = Shape::null();
-            let (step, _) = super::step::resolve_seq(ctx, scope, protocol_scope, shape, &mut shape_up, block);
+            let (mut step, ri) = super::step::resolve_seq(ctx, scope, protocol_scope, shape, &mut shape_up, block);
+
+
+            let fields_down = shape.format();
+            let mut fields_up = shape_up.format();
+            let ri2 = super::step::infer_direction(&mut step, &fields_down[..], &mut fields_up[..]);
+            assert_eq!(ri, ri2, "Failed on block {:?}", block);
+
             let mut nfa = nfa::from_step_tree(&step);
             nfa.remove_useless_epsilons();
             let dfa = dfa::make_dfa(&nfa, &shape, &shape_up);
@@ -111,7 +118,12 @@ fn make_literal_process<'s>(ctx: &Ctxt<'s>,
     let shape_flip = resolve_protocol_invoke(ctx, scope, shape_up_expr, DataMode { down: is_up, up: !is_up });
 
     let mut shape_dn = Shape::null();
-    let (step, _) = super::step::resolve_seq(ctx, scope, protocol_scope, &shape_flip, &mut shape_dn, block);
+    let (mut step, ri) = super::step::resolve_seq(ctx, scope, protocol_scope, &shape_flip, &mut shape_dn, block);
+
+    let mut fields_dn = shape_dn.format();
+    let fields_flip = shape_flip.format();
+    let ri2 = super::step::infer_direction(&mut step, &fields_flip[..], &mut fields_dn[..]);
+    assert_eq!(ri, ri2);
 
     let mut nfa = nfa::from_step_tree(&step);
     nfa.remove_useless_epsilons();

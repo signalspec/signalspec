@@ -342,8 +342,10 @@ pub fn infer_direction(step: &mut Step, bottom_fields: &[Field], top_fields: &mu
             assert_eq!(msg.len(), bottom_fields.len());
             let mut ri = ResolveInfo::new();
             for (m, f) in msg.iter().zip(bottom_fields.iter()) {
-                if let &Some(ref expr) = m {
-                    ri.use_expr(expr, f.dir);
+                if !f.is_tag {
+                    if let &Some(ref expr) = m {
+                        ri.use_expr(expr, f.dir);
+                    }
                 }
             }
             ri
@@ -355,14 +357,16 @@ pub fn infer_direction(step: &mut Step, bottom_fields: &[Field], top_fields: &mu
             // Update the upward shape's direction with results of analyzing the usage of
             // its data in the `on x { ... }` body.
             for (m, f) in msg.iter().zip(top_fields.iter_mut()) {
-                if let &Some(ref expr) = m {
-                    let constraint = match *expr {
-                        Expr::Variable(id, _) => ri.mode_of(id),
+                if !f.is_tag {
+                    if let &Some(ref expr) = m {
+                        let constraint = match *expr {
+                            Expr::Variable(id, _) => ri.mode_of(id),
 
-                        //TODO: is the down value right?
-                        ref e => DataMode { up: e.down_evaluable(), down: false }
-                    };
-                    f.dir.constrain(constraint);
+                            //TODO: is the down value right?
+                            ref e => DataMode { up: e.down_evaluable(), down: false }
+                        };
+                        f.dir.constrain(constraint);
+                    }
                 }
             }
             ri.repeat_up_heuristic = true;

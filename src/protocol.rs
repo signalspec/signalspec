@@ -96,11 +96,11 @@ impl Shape {
                     messages[0].format()
                 } else {
                     let len = messages.len() as i64;
-                    iter::once(FormatElem { ty: Type::Integer(len, len), dir: DataMode{ up: true, down: true }})
+                    iter::once(FormatElem { ty: Type::Integer(len, len), is_tag: true, dir: DataMode{ up: true, down: true }})
                         .chain(messages.iter().flat_map(Shape::format)).collect()
                 }
             }
-            Shape::Val(ref ty, dir) => vec![FormatElem { ty: ty.clone(), dir: dir }],
+            Shape::Val(ref ty, dir) => vec![FormatElem { ty: ty.clone(), is_tag: false, dir: dir }],
             Shape::Const(..) => vec![],
         }
     }
@@ -109,6 +109,7 @@ impl Shape {
 #[derive(Clone, Debug, PartialEq)]
 pub struct FormatElem {
     pub ty: Type,
+    pub is_tag: bool,
     pub dir: DataMode
 }
 
