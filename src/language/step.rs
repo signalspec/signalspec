@@ -8,7 +8,7 @@ use super::scope::{ Scope, Item };
 use super::eval::Expr;
 use super::protocol::ProtocolScope;
 use super::module_loader::Ctxt;
-use protocol::{ Shape, FormatElem as Field };
+use protocol::{ Shape, Field, Fields };
 
 use data::{ DataMode, Type, Value };
 
@@ -334,7 +334,7 @@ fn resolve_token<'shape>(item: Item, shape: &'shape Shape) -> (Message, ResolveI
     (msg, ri)
 }
 
-pub fn infer_direction(step: &mut Step, bottom_fields: &[Field], top_fields: &mut [Field]) -> ResolveInfo {
+pub fn infer_direction(step: &mut Step, bottom_fields: &Fields, top_fields: &mut Fields) -> ResolveInfo {
     use self::Step::*;
     match *step {
         Nop => ResolveInfo::new(),
@@ -351,7 +351,7 @@ pub fn infer_direction(step: &mut Step, bottom_fields: &[Field], top_fields: &mu
             ri
         }
         TokenTop(ref msg, ref mut body) => {
-            let mut ri = infer_direction(body, bottom_fields, &mut []);
+            let mut ri = infer_direction(body, bottom_fields, &mut Fields::new(vec![]));
             assert_eq!(msg.len(), top_fields.len());
 
             // Update the upward shape's direction with results of analyzing the usage of

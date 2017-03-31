@@ -8,7 +8,7 @@ use std::fmt::Debug;
 use std::cell::Cell;
 
 use data::{ Value, Type };
-use protocol::Shape;
+use protocol::Fields;
 use session::ValueID;
 use super::step::Message;
 use super::eval::{ Expr, ConcatElem, BinOp, SignMode };
@@ -786,7 +786,7 @@ impl Thread {
 
 type NfaStateSet = HashSet<nfa::StateId>;
 
-fn closure<'nfa>(nfa: &'nfa Nfa, shape_down: &Shape, shape_up: &Shape, initial_threads: Vec<Thread>)
+fn closure<'nfa>(nfa: &'nfa Nfa, fields_below: &Fields, fields_above: &Fields, initial_threads: Vec<Thread>)
     -> (NfaStateSet, InsnBlock, Vec<(Option<(Side, &'nfa Message)>, Thread)>){
 
     let mut insns = InsnBlock::new(InsnRef::Transition);
@@ -800,8 +800,8 @@ fn closure<'nfa>(nfa: &'nfa Nfa, shape_down: &Shape, shape_up: &Shape, initial_t
     // Discovered transitions that leave this DFA state
     let mut transitions = Vec::new();
 
-    let format_up = shape_up.format();
-    let format_down = shape_down.format();
+    let direction_below = fields_below.direction();
+    let direction_above = fields_above.direction();
 
     while let Some(thread) = queue.pop_front() {
         debug!("In state {}", thread.state);
@@ -827,10 +827,8 @@ fn closure<'nfa>(nfa: &'nfa Nfa, shape_down: &Shape, shape_up: &Shape, initial_t
                 }
 
                 Lower(ref msg) => {
-                    let mode = shape_down.data_mode();
-
-                    if mode.down {
-                        let regs = msg.iter().zip(format_down.iter())
+                    if direction_below.down {
+                        let regs = msg.iter().zip(fields_below.iter())
                             .map(|(e, fmt)| {
                                 match e.as_ref() {
                                     Some(x) if fmt.dir.down => Some(insns.eval_down(x, &thread.down_vars)),
@@ -840,7 +838,7 @@ fn closure<'nfa>(nfa: &'nfa Nfa, shape_down: &Shape, shape_up: &Shape, initial_t
                         thread.send_lower.push(regs);
                     }
 
-                    if mode.up {
+                    if direction_below.up {
                         transitions.push((Some((Side::Lower, msg)), thread));
                         continue;
                     } else {
@@ -849,9 +847,7 @@ fn closure<'nfa>(nfa: &'nfa Nfa, shape_down: &Shape, shape_up: &Shape, initial_t
 
                 }
                 UpperBegin(ref msg) => {
-                    let mode = shape_up.data_mode();
-
-                    if mode.down {
+                    if direction_above.down {
                         transitions.push((Some((Side::Upper, msg)), thread));
                         continue;
                     } else {
@@ -859,10 +855,8 @@ fn closure<'nfa>(nfa: &'nfa Nfa, shape_down: &Shape, shape_up: &Shape, initial_t
                     }
                 }
                 UpperEnd(ref msg) => {
-                    let mode = shape_up.data_mode();
-
-                    if mode.up {
-                        let send = msg.iter().zip(format_up.iter()).map(|(e, fmt)| {
+                    if direction_above.up {
+                        let send = msg.iter().zip(fields_above.iter()).map(|(e, fmt)| {
                             e.as_ref().and_then(|e| {
                                 if fmt.dir.up {
                                     Some(insns.eval_down(e, &thread.up_vars))
@@ -1041,8 +1035,8 @@ fn message_match(msg: &Message, vars: &mut VarMap, block: &mut InsnBlock) -> Con
     conditions
 }
 
-pub fn make_dfa(nfa: &Nfa, shape_down: &Shape, shape_up: &Shape) -> Dfa {
-    debug!("\nshape_down: {:#?}\n\nshape_up: {:#?}", shape_down, shape_up);
+pub fn make_dfa(nfa: &Nfa, fields_below: &Fields, fields_above: &Fields) -> Dfa {
+    debug!("\nfields_below: {:#?}\n\nfields_above: {:#?}", fields_below, fields_above);
     let mut states: Vec<State> = Vec::new();
     let mut state_by_nfa_entry_states: HashMap<Vec<usize>, usize> = HashMap::new();
     let mut queue: VecDeque<(DfaStateId, Vec<Thread>)> = VecDeque::new();
@@ -1067,7 +1061,7 @@ pub fn make_dfa(nfa: &Nfa, shape_down: &Shape, shape_up: &Shape) -> Dfa {
 
         // Walk the NFA states reachable from this state, and collect the NFA threads at
         // the point they they transition out of this DFA state.
-        let (closure, block, exits) = closure(nfa, shape_down, shape_up, threads);
+        let (closure, block, exits) = closure(nfa, fields_below, fields_above, threads);
 
         debug!("Creating DFA state {} = NFA states {:?} ({:?})", state, state_key, closure);
         debug!("{:#?}", block);

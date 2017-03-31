@@ -51,9 +51,9 @@ pub fn resolve_process<'s>(ctx: &Ctxt<'s>,
             let arg = super::expr::rexpr(ctx.session, scope, arg);
             let (shape_up, mut step, ri) = protocol_scope.call(ctx, shape, name, arg);
 
-            let fields_down = shape.format();
-            let mut fields_up = shape_up.format();
-            let ri2 = super::step::infer_direction(&mut step, &fields_down[..], &mut fields_up[..]);
+            let fields_down = shape.fields();
+            let mut fields_up = shape_up.fields();
+            let ri2 = super::step::infer_direction(&mut step, &fields_down, &mut fields_up);
             assert_eq!(ri, ri2);
 
             if let Some(mut f) = ctx.session.debug_file(|| format!("{}.steps", name)) {
@@ -72,7 +72,7 @@ pub fn resolve_process<'s>(ctx: &Ctxt<'s>,
                 nfa.to_graphviz(&mut f).unwrap_or_else(|e| error!("{}", e));
             }
 
-            let dfa = dfa::make_dfa(&nfa, &shape, &shape_up);
+            let dfa = dfa::make_dfa(&nfa, &fields_down, &fields_up);
 
             if let Some(mut f) = ctx.session.debug_file(|| format!("{}.dfa.dot", name)) {
                 dfa.to_graphviz(&mut f).unwrap_or_else(|e| error!("{}", e));
@@ -85,14 +85,14 @@ pub fn resolve_process<'s>(ctx: &Ctxt<'s>,
             let (mut step, ri) = super::step::resolve_seq(ctx, scope, protocol_scope, shape, &mut shape_up, block);
 
 
-            let fields_down = shape.format();
-            let mut fields_up = shape_up.format();
-            let ri2 = super::step::infer_direction(&mut step, &fields_down[..], &mut fields_up[..]);
+            let fields_down = shape.fields();
+            let mut fields_up = shape_up.fields();
+            let ri2 = super::step::infer_direction(&mut step, &fields_down, &mut fields_up);
             assert_eq!(ri, ri2, "Failed on block {:?}", block);
 
             let mut nfa = nfa::from_step_tree(&step);
             nfa.remove_useless_epsilons();
-            let dfa = dfa::make_dfa(&nfa, &shape, &shape_up);
+            let dfa = dfa::make_dfa(&nfa, &fields_down, &fields_up);
             box Program { dfa: dfa, shape_down: shape.clone(), shape_up: shape_up }
         }
         ast::Process::Literal(dir, ref shape_up_expr, ref block) => {
@@ -120,14 +120,14 @@ fn make_literal_process<'s>(ctx: &Ctxt<'s>,
     let mut shape_dn = Shape::null();
     let (mut step, ri) = super::step::resolve_seq(ctx, scope, protocol_scope, &shape_flip, &mut shape_dn, block);
 
-    let mut fields_dn = shape_dn.format();
-    let fields_flip = shape_flip.format();
-    let ri2 = super::step::infer_direction(&mut step, &fields_flip[..], &mut fields_dn[..]);
+    let mut fields_dn = shape_dn.fields();
+    let fields_flip = shape_flip.fields();
+    let ri2 = super::step::infer_direction(&mut step, &fields_flip, &mut fields_dn);
     assert_eq!(ri, ri2);
 
     let mut nfa = nfa::from_step_tree(&step);
     nfa.remove_useless_epsilons();
-    let dfa = dfa::make_dfa(&nfa, &shape_flip, &shape_dn);
+    let dfa = dfa::make_dfa(&nfa, &fields_flip, &fields_dn);
 
     box ProgramFlip { dfa: dfa, shape_down: shape_dn, shape_up: shape_up }
 }
