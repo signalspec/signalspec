@@ -38,8 +38,8 @@ block -> ast::Block
             { ast::Action::For(items, body) }
         / ALT expr:expr LBRACE  arms:alt_arm* RBRACE
             { ast::Action::Alt(expr, arms) }
-        / expr:varexpr LPAREN param:expr_tup RPAREN body:block?
-            { ast::Action::Call(expr, param, body) }
+        / name:IDENTIFIER LPAREN param:expr_tup RPAREN body:block?
+            { ast::Action::Call(name, param, body) }
         / expr:expr
             { ast::Action::Token(expr) }
 

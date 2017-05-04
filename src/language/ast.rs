@@ -14,7 +14,7 @@ pub struct Block {
 #[derive(Debug, Clone)]
 pub enum Action {
     Repeat(Expr, Block),
-    Call(Expr, Expr, Option<Block>),
+    Call(String, Expr, Option<Block>),
     Token(Expr),
     On(Expr, Option<Block>),
     For(Vec<(String, Expr)>, Block),

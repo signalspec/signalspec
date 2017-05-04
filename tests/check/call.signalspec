@@ -1,0 +1,15 @@
+with #a|#b
+def main(a, b) {
+    a
+    other(a, b)
+    b
+}
+
+with #a|#b
+def other(x, y) {
+    x
+    y
+}
+
+test @both(#a|#b){ #a; #a; #b; #b } main(#a, #b);
+test fail @up(#a|#b){ #a; #a } main(#a, #b);

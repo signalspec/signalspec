@@ -115,19 +115,16 @@ fn resolve_action<'s>(ctx: &Ctxt<'s>,
                       shape_up: &mut Shape,
                       action: &'s ast::Action) -> (Step, ResolveInfo) {
     match *action {
-        ast::Action::Call(ref expr, ref arg, ref body) => {
-            let arg = expr::rexpr(ctx.session, scope, arg);
+        ast::Action::Call(ref name, ref param_ast, ref body) => {
+            let param = expr::rexpr(ctx.session, scope, param_ast);
 
-            if body.is_some() {
+            let (child_shape, step, mut ri) = protocol_scope.call(ctx, shape_down, name, param);
+
+            if let &Some(ref _body) = body {
                 unimplemented!();
+            } else {
+                (step, ri)
             }
-
-            /*
-            let item = expr::rexpr(ctx, scope, expr);
-            let (_shape_child, step, ri) = call(&item, ctx, shape_down, arg);
-            (step, ri)
-            */
-            unimplemented!();
         }
         ast::Action::Token(ref expr) => {
             debug!("Token: {:?}", expr);
