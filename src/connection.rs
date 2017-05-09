@@ -2,7 +2,7 @@ use std::sync::mpsc::{Receiver, Sender, channel};
 use std::io;
 use std::io::prelude::*;
 use num_complex::Complex;
-use protocol::Shape;
+use protocol::Fields;
 
 use data::{ Value };
 
@@ -17,9 +17,9 @@ pub struct Connection {
 
 /// Transfers data between two stacked abstractions
 impl Connection {
-    pub fn new(shape: &Shape) -> (Connection, Connection) {
-        let direction = shape.data_mode();
-        debug!("New connection: {:?} {:?}", shape, direction);
+    pub fn new(fields: &Fields) -> (Connection, Connection) {
+        let direction = fields.direction();
+        debug!("New connection: {:?} {:?}", fields, direction);
 
         let (s1, r1) = if direction.down {
             let (a, b) = channel();

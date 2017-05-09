@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::fs::File;
 
 use data::{ Value, DataMode };
-use protocol::Shape;
+use protocol::{ Shape, Fields };
 use connection::Connection;
 use language::Item;
 use process::{Process, PrimitiveDef};
@@ -24,6 +24,8 @@ impl Process for ReaderProcess {
         }
         &SHAPE
     }
+
+    fn fields_up(&self) -> &Fields { unimplemented!() }
 }
 
 struct WriterProcess(pub PathBuf);
@@ -42,6 +44,8 @@ impl Process for WriterProcess {
         }
         &SHAPE
     }
+
+    fn fields_up(&self) -> &Fields { unimplemented!() }
 }
 
 pub struct FileDef;

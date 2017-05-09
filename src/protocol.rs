@@ -128,6 +128,7 @@ impl IntoIterator for Fields {
 
 impl Fields {
     pub fn new(fields: Vec<Field>) -> Fields { Fields { fields } }
+    pub fn null() -> Fields { Fields { fields: Vec::new() }}
     pub fn len(&self) -> usize { self.fields.len() }
     pub fn iter(&self) -> ::std::slice::Iter<Field> { self.fields.iter() }
     pub fn iter_mut(&mut self) -> ::std::slice::IterMut<Field> { self.fields.iter_mut() }

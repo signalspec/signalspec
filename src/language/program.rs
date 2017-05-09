@@ -1,7 +1,7 @@
 use super::{ ast, nfa };
 use super::dfa::{ self, Dfa };
 use super::scope::Scope;
-use protocol::Shape;
+use protocol::{ Shape, Fields };
 use super::protocol::{ ProtocolScope, resolve_protocol_invoke };
 use super::Ctxt;
 use data::{DataMode};
@@ -13,6 +13,7 @@ pub struct Program {
     pub dfa: Dfa,
     pub shape_down: Shape,
     pub shape_up: Shape,
+    pub fields_up: Fields,
 }
 
 impl Process for Program {
@@ -20,15 +21,16 @@ impl Process for Program {
         dfa::run(&self.dfa, downwards, upwards)
     }
 
-    fn shape_up(&self) -> &Shape {
-        &self.shape_up
-    }
+    fn shape_up(&self) -> &Shape { &self.shape_up }
+
+    fn fields_up(&self) -> &Fields { &self.fields_up }
 }
 
 pub struct ProgramFlip {
     pub dfa: Dfa,
     pub shape_down: Shape,
     pub shape_up: Shape,
+    pub fields_up: Fields,
 }
 
 impl Process for ProgramFlip {
@@ -39,6 +41,8 @@ impl Process for ProgramFlip {
     fn shape_up(&self) -> &Shape {
         &self.shape_up
     }
+
+    fn fields_up(&self) -> &Fields { &self.fields_up }
 }
 
 pub fn resolve_process<'s>(ctx: &Ctxt<'s>,
@@ -78,7 +82,7 @@ pub fn resolve_process<'s>(ctx: &Ctxt<'s>,
                 dfa.to_graphviz(&mut f).unwrap_or_else(|e| error!("{}", e));
             }
 
-            box Program{ dfa: dfa, shape_down: shape.clone(), shape_up: shape_up }
+            box Program{ dfa, fields_up, shape_down: shape.clone(), shape_up }
         }
         ast::Process::Block(ref block) => {
             let mut shape_up = Shape::null();
@@ -93,7 +97,7 @@ pub fn resolve_process<'s>(ctx: &Ctxt<'s>,
             let mut nfa = nfa::from_step_tree(&step);
             nfa.remove_useless_epsilons();
             let dfa = dfa::make_dfa(&nfa, &fields_down, &fields_up);
-            box Program { dfa: dfa, shape_down: shape.clone(), shape_up: shape_up }
+            box Program { dfa, shape_down: shape.clone(), shape_up, fields_up }
         }
         ast::Process::Literal(dir, ref shape_up_expr, ref block) => {
             let is_up = match dir {
@@ -117,10 +121,10 @@ fn make_literal_process<'s>(ctx: &Ctxt<'s>,
     let shape_up = resolve_protocol_invoke(ctx, scope, shape_up_expr, DataMode { down: !is_up, up: is_up });
     let shape_flip = resolve_protocol_invoke(ctx, scope, shape_up_expr, DataMode { down: is_up, up: !is_up });
 
-    let mut shape_dn = Shape::null();
-    let (mut step, ri) = super::step::resolve_seq(ctx, scope, protocol_scope, &shape_flip, &mut shape_dn, block);
+    let mut shape_down = Shape::null();
+    let (mut step, ri) = super::step::resolve_seq(ctx, scope, protocol_scope, &shape_flip, &mut shape_down, block);
 
-    let mut fields_dn = shape_dn.fields();
+    let mut fields_dn = shape_down.fields();
     let fields_flip = shape_flip.fields();
     let ri2 = super::step::infer_direction(&mut step, &fields_flip, &mut fields_dn);
     assert_eq!(ri, ri2);
@@ -129,7 +133,7 @@ fn make_literal_process<'s>(ctx: &Ctxt<'s>,
     nfa.remove_useless_epsilons();
     let dfa = dfa::make_dfa(&nfa, &fields_flip, &fields_dn);
 
-    box ProgramFlip { dfa: dfa, shape_down: shape_dn, shape_up: shape_up }
+    box ProgramFlip { dfa, fields_up: shape_up.fields(), shape_down, shape_up }
 }
 
 pub struct CompiledTest<'a> {
@@ -172,8 +176,8 @@ pub fn compile_test<'a>(ctx: &'a Ctxt<'a>,
             let shape_up = resolve_protocol_invoke(ctx, scope, ty, DataMode { down: false, up: true });
 
             let (s, r) = mpsc::channel();
-            let process_dn = box Collect { shape: shape_dn, sender: s};
-            let process_up = box Emit { shape: shape_up, receiver: r};
+            let process_dn = box Collect { fields: shape_dn.fields(), shape: shape_dn, sender: s };
+            let process_up = box Emit { fields: shape_up.fields(), shape: shape_up, receiver: r };
 
             CompiledTest {
                 down: Some(build_stack(ctx, scope, protocol_scope, process_dn, rest)),
@@ -199,6 +203,7 @@ pub fn compile_test<'a>(ctx: &'a Ctxt<'a>,
 
 struct Collect {
     shape: Shape,
+    fields: Fields,
     sender: mpsc::Sender<ConnectionMessage>,
 }
 
@@ -213,10 +218,13 @@ impl Process for Collect {
     fn shape_up(&self) -> &Shape {
         &self.shape
     }
+
+    fn fields_up(&self) -> &Fields { &self.fields }
 }
 
 struct Emit {
     shape: Shape,
+    fields: Fields,
     receiver: mpsc::Receiver<ConnectionMessage>,
 }
 
@@ -231,4 +239,6 @@ impl Process for Emit {
     fn shape_up(&self) -> &Shape {
         &self.shape
     }
+
+    fn fields_up(&self) -> &Fields { &self.fields }
 }

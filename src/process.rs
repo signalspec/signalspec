@@ -1,5 +1,5 @@
 use std::{thread, mem};
-use protocol::Shape;
+use protocol::{ Shape, Fields };
 use language::{Item, Ctxt};
 use connection::Connection;
 
@@ -10,6 +10,7 @@ pub trait PrimitiveDef: Send {
 pub trait Process: Send {
     fn run(&self, downwards: &mut Connection, upwards: &mut Connection) -> bool;
     fn shape_up(&self) -> &Shape;
+    fn fields_up(&self) -> &Fields;
 }
 
 
@@ -32,6 +33,13 @@ impl<'a> ProcessStack<'a> {
             static ref NULL_SHAPE: Shape = Shape::null();
         }
         self.processes.last().map_or(&NULL_SHAPE, |x| x.shape_up())
+    }
+
+    pub fn top_fields(&self) -> &Fields {
+        lazy_static! {
+            static ref NULL_FIELDS: Fields = Fields::null();
+        }
+        self.processes.last().map_or(&NULL_FIELDS, |x| x.fields_up())
     }
 
     pub fn add(&mut self, p: Box<Process>) {
@@ -57,7 +65,8 @@ impl<'a> ProcessStack<'a> {
         let last = self.processes.pop().expect("Spawn requires at least one process");
 
         for process in self.processes {
-            let (c2, upward) = Connection::new(process.shape_up());
+            assert_eq!(process.fields_up(), &process.shape_up().fields());
+            let (c2, upward) = Connection::new(process.fields_up());
             let downward = mem::replace(&mut connection, c2);
             threads.push(thread::spawn(move || {
                 let mut downward = downward;
@@ -77,8 +86,8 @@ impl<'a> ProcessStack<'a> {
 
     pub fn run(self) -> bool {
         // TODO: should this take &self?
-        let (_, bottom) = Connection::new(&Shape::null());
-        let (top, _) = Connection::new(&Shape::null());
+        let (_, bottom) = Connection::new(&Fields::null());
+        let (top, _) = Connection::new(&Fields::null());
 
         let threads = self.spawn(bottom, top);
 
@@ -90,10 +99,11 @@ impl<'a> ProcessStack<'a> {
     }
 
     pub fn run_with_flipped(self, other: ProcessStack<'a>) -> bool {
-        let (_, first) = Connection::new(&Shape::null());
-        let (_, last) = Connection::new(&Shape::null());
+        let (_, first) = Connection::new(&Fields::null());
+        let (_, last) = Connection::new(&Fields::null());
         //TODO: assert that self.top_shape() is other.top_shape() with inverse direction
-        let (a, b) = Connection::new(self.top_shape());
+        assert_eq!(self.top_fields(), &self.top_shape().fields());
+        let (a, b) = Connection::new(self.top_fields());
 
         let threads1 = self.spawn(first, b);
         let threads2 = other.spawn(last, a);

@@ -2,7 +2,7 @@ use std::io;
 use std::io::prelude::*;
 
 use data::{ Value, DataMode };
-use protocol::Shape;
+use protocol::{ Shape, Fields };
 use connection::Connection;
 use process::{Process, PrimitiveDef};
 use language::Item;
@@ -40,6 +40,8 @@ impl Process for BinFileDown {
     fn shape_up(&self) -> &Shape {
         &self.0
     }
+
+    fn fields_up(&self) -> &Fields { unimplemented!() }
 }
 
 struct BinFileUp(Shape, Format);
@@ -88,6 +90,8 @@ impl Process for BinFileUp {
     fn shape_up(&self) -> &Shape {
         &self.0
     }
+
+    fn fields_up(&self) -> &Fields { unimplemented!() }
 }
 
 pub struct BinFileDef;

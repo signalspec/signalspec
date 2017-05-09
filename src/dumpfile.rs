@@ -2,7 +2,7 @@ use std::io;
 use std::io::prelude::*;
 
 use data::{ Value, DataMode };
-use protocol::Shape;
+use protocol::{Shape, Fields};
 use connection::Connection;
 use process::{Process, PrimitiveDef};
 use language::Item;
@@ -18,6 +18,8 @@ impl Process for ValueDumpDown {
     fn shape_up(&self) -> &Shape {
         &self.0
     }
+
+    fn fields_up(&self) -> &Fields { unimplemented!() }
 }
 
 struct ValueDumpUp(Shape);
@@ -31,6 +33,8 @@ impl Process for ValueDumpUp {
     fn shape_up(&self) -> &Shape {
         &self.0
     }
+
+    fn fields_up(&self) -> &Fields { unimplemented!() }
 }
 
 pub struct ValueDumpPrint(pub Shape);
@@ -47,6 +51,8 @@ impl Process for ValueDumpPrint {
         }
         &SHAPE
     }
+
+    fn fields_up(&self) -> &Fields { unimplemented!() }
 }
 
 pub struct DumpfileDef;
