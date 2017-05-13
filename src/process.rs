@@ -47,7 +47,7 @@ impl<'a> ProcessStack<'a> {
     }
 
     pub fn parse_add(&mut self, call: &str) -> Result<(), String> {
-        let process = try!(self.loader.parse_process(call, self.top_shape())
+        let process = try!(self.loader.parse_process(call, self.top_shape(), self.top_fields())
             .map_err(|e| e.to_string()));
         self.processes.push(process);
         Ok(())
@@ -65,7 +65,6 @@ impl<'a> ProcessStack<'a> {
         let last = self.processes.pop().expect("Spawn requires at least one process");
 
         for process in self.processes {
-            assert_eq!(process.fields_up(), &process.shape_up().fields());
             let (c2, upward) = Connection::new(process.fields_up());
             let downward = mem::replace(&mut connection, c2);
             threads.push(thread::spawn(move || {
@@ -102,7 +101,6 @@ impl<'a> ProcessStack<'a> {
         let (_, first) = Connection::new(&Fields::null());
         let (_, last) = Connection::new(&Fields::null());
         //TODO: assert that self.top_shape() is other.top_shape() with inverse direction
-        assert_eq!(self.top_fields(), &self.top_shape().fields());
         let (a, b) = Connection::new(self.top_fields());
 
         let threads1 = self.spawn(first, b);

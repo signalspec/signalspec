@@ -97,8 +97,7 @@ impl Process for BinFileUp {
 pub struct BinFileDef;
 impl PrimitiveDef for BinFileDef {
     fn invoke_def(&self, downward_shape: &Shape, arg: Item) -> Box<Process + 'static> {
-        let dir = downward_shape.match_bytes()
-            .expect("Invalid shape below binfile");
+        if !downward_shape.match_bytes() { panic!("Invalid shape below binfile") }
 
         let arg_sym = match arg.as_constant() {
             Some(&Value::Symbol(ref s)) => s,
@@ -106,10 +105,12 @@ impl PrimitiveDef for BinFileDef {
         };
 
         let (shape, format) = match &arg_sym[..] {
-            "f32le" => (Shape::number(dir, 0.0, 1.0), Format::F32LE),
-            "c32le" => (Shape::complex(dir), Format::C32LE),
+            "f32le" => (Shape::number(0.0, 1.0), Format::F32LE),
+            "c32le" => (Shape::complex(), Format::C32LE),
             other => panic!("Invalid binfile format `{}`", other),
         };
+
+        let dir = unimplemented!();
 
         match dir {
             DataMode { down: false, up: true } => box BinFileUp(shape, format),

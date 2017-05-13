@@ -7,7 +7,7 @@ use super::scope::Scope;
 use process::Process;
 use session::Session;
 use language::protocol::ProtocolScope;
-use protocol::{ ProtocolId, Shape };
+use protocol::{ ProtocolId, Shape, Fields };
 use util::Index;
 
 pub type PrimitiveFn<'a> = fn(Item<'a>)->Result<Item<'a>, &'static str>;
@@ -55,9 +55,9 @@ impl<'a> Ctxt<'a> {
         self.prelude.borrow_mut().bind(name, Item::PrimitiveFn(prim));
     }
 
-    pub fn parse_process(&'a self, source: &str, shape_below: &Shape) -> Result<Box<Process>, grammar::ParseError> {
+    pub fn parse_process(&'a self, source: &str, shape_below: &Shape, fields_below: &Fields) -> Result<Box<Process>, grammar::ParseError> {
         let ast = &*self.ast_process_arena.alloc(try!(grammar::process(source)));
-        Ok(super::program::resolve_process(self, &*self.prelude.borrow(), &*self.protocol_scope.borrow(), shape_below, &ast))
+        Ok(super::program::resolve_process(self, &*self.prelude.borrow(), &*self.protocol_scope.borrow(), shape_below, fields_below, &ast))
     }
 
     pub fn parse_module(&'a self, source: &str) -> Result<Module, grammar::ParseError> {

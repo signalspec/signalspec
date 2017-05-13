@@ -58,8 +58,9 @@ impl Process for ValueDumpPrint {
 pub struct DumpfileDef;
 impl PrimitiveDef for DumpfileDef {
     fn invoke_def(&self, downward_shape: &Shape, arg: Item) -> Box<Process + 'static> {
-        let dir = downward_shape.match_bytes()
-            .expect("Invalid shape below dumpfile::process");
+        if !downward_shape.match_bytes() { panic!("Invalid shape below dumpfile::process") }
+
+        let dir = unimplemented!();
 
         let upward_shape = unimplemented!();
 
@@ -98,12 +99,8 @@ pub fn write_message(w: &mut Write, values: &mut Iterator<Item=Option<Value>>, s
             }
             try!(write!(w, ")"));
         }
-        Shape::Val(_, ref mode) => {
-            if mode.up {
-                try!(write!(w, "{}", values.next().unwrap().expect("missing value in message")))
-            } else {
-                try!(write!(w, "_"));
-            }
+        Shape::Val(_) => {
+            try!(write!(w, "_"));
         }
         Shape::Const(ref c) => {
             try!(write!(w, "{}", c));

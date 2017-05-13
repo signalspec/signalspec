@@ -8,7 +8,7 @@ use super::scope::{ Scope, Item };
 use super::eval::Expr;
 use super::protocol::ProtocolScope;
 use super::module_loader::Ctxt;
-use protocol::{ Shape, Field, Fields };
+use protocol::{ Shape, Fields };
 
 use data::{ DataMode, Type, Value };
 
@@ -113,26 +113,24 @@ fn resolve_action<'s>(ctx: &Ctxt<'s>,
                       protocol_scope: &ProtocolScope<'s>,
                       shape_down: &Shape,
                       shape_up: &mut Shape,
-                      action: &'s ast::Action) -> (Step, ResolveInfo) {
+                      action: &'s ast::Action) -> Step {
     match *action {
         ast::Action::Call(ref name, ref param_ast, ref body) => {
             let param = expr::rexpr(ctx.session, scope, param_ast);
 
-            let (child_shape, step, mut ri) = protocol_scope.call(ctx, shape_down, name, param);
+            let (child_shape, step) = protocol_scope.call(ctx, shape_down, name, param);
 
             if let &Some(ref _body) = body {
                 unimplemented!();
             } else {
-                (step, ri)
+                step
             }
         }
         ast::Action::Token(ref expr) => {
             debug!("Token: {:?}", expr);
 
             let item = expr::rexpr(ctx.session, scope, expr);
-            let (message, ri) = resolve_token(item, shape_down);
-
-            (Step::Token(message), ri)
+            Step::Token(resolve_token(item, shape_down))
         }
         ast::Action::On(ref expr, ref body) => {
             let mut body_scope = scope.child();
@@ -140,39 +138,20 @@ fn resolve_action<'s>(ctx: &Ctxt<'s>,
             debug!("Upper message, shape: {:?}", shape_up);
             let msginfo = expr::on_expr_message(ctx.session, &mut body_scope, shape_up, expr);
 
-            let (step, mut ri) = if let &Some(ref body) = body {
+            let step = if let &Some(ref body) = body {
                 resolve_seq(ctx, &body_scope, protocol_scope, shape_down, &mut Shape::null(), body)
             } else {
-                (Step::Nop, ResolveInfo::new())
+                Step::Nop
             };
 
-            // Update the upward shape's direction with results of analyzing the usage of
-            // its data in the `on x { ... }` body.
-            let msg = msginfo.into_iter().map(|component| {
-                component.map(|(expr, dir)|{
-                    if let Expr::Variable(id, _) = expr {
-                        let mut dir = dir.unwrap();
-                        let DataMode { up, down } = ri.mode_of(id);
-                        dir.up &= up;
-                        dir.down |= down;
-                    } else if !expr.down_evaluable() {
-                        let mut dir = dir.unwrap();
-                        dir.up = false;
-                    }
-                    expr
-                })
-            }).collect();
+            let msg = msginfo.into_iter().collect();
 
-            ri.repeat_up_heuristic = true;
-
-            (Step::TokenTop(msg, box step), ri)
+            Step::TokenTop(msg, box step)
         }
         ast::Action::Repeat(ref count_ast, ref block) => {
             let count = expr::value(ctx.session, scope, count_ast);
-            let (step, mut ri) = resolve_seq(ctx, scope, protocol_scope, shape_down, shape_up, block);
-            let any_up = ri.repeat_up_heuristic;
-            ri.use_expr(&count, DataMode { down: !any_up, up: any_up });
-            (Step::Repeat(count, box step, any_up), ri)
+            let step = resolve_seq(ctx, scope, protocol_scope, shape_down, shape_up, block);
+            Step::Repeat(count, box step, false)
         }
         ast::Action::For(ref pairs, ref block) => {
             let mut body_scope = scope.child();
@@ -194,40 +173,22 @@ fn resolve_action<'s>(ctx: &Ctxt<'s>,
                 }
             }
 
-            debug!("Foreach count: {:?}", count);
+            let step = resolve_seq(ctx, &body_scope, protocol_scope, shape_down, shape_up, block);
 
-            let (step, mut ri) = resolve_seq(ctx, &body_scope, protocol_scope, shape_down, shape_up, block);
-
-            for &mut (id, ref e, ref mut dir) in &mut inner_vars {
-                *dir = ri.mode_of(id);
-                ri.use_expr(e, *dir);
-            }
-
-            (Step::Foreach(count.unwrap_or(0) as u32, inner_vars, box step), ri)
+            Step::Foreach(count.unwrap_or(0) as u32, inner_vars, box step)
         }
         ast::Action::Alt(ref expr, ref arms) => {
             let r = expr::rexpr(ctx.session, scope, expr);
-            let mut outer_ri = ResolveInfo::new();
 
             let v = arms.iter().map(|arm| {
                 let mut body_scope = scope.child();
                 let mut checks = Vec::new();
                 expr::pattern_match(ctx.session, &mut body_scope, &arm.discriminant, &r, &mut checks);
-                let (step, ri) = resolve_seq(ctx, &body_scope, protocol_scope, shape_down, shape_up, &arm.block);
-                outer_ri.merge_seq(&ri); // TODO: alt != seq ?
+                let step = resolve_seq(ctx, &body_scope, protocol_scope, shape_down, shape_up, &arm.block);
                 (checks, step)
             }).collect();
 
-            let up = outer_ri.repeat_up_heuristic;
-
-            for &(ref checks, _) in &v {
-                for &(_, ref r) in checks {
-                    outer_ri.use_expr(r, DataMode { down: !up, up: up })
-                    // LHS is patterns that don't contain dynamic vars, so no need to mark them
-                }
-            }
-
-            (Step::Alt(v, up), outer_ri)
+            Step::Alt(v, false)
         }
     }
 }
@@ -237,19 +198,15 @@ pub fn resolve_seq<'s>(ctx: &Ctxt<'s>,
                   protocol_scope: &ProtocolScope<'s>,
                   shape_down: &Shape,
                   shape_up: &mut Shape,
-                  block: &'s ast::Block) -> (Step, ResolveInfo) {
+                  block: &'s ast::Block) -> Step {
     let mut scope = pscope.child();
     resolve_letdef(ctx, &mut scope, &block.lets);
 
-    let mut ri = ResolveInfo::new();
-
     let steps = block.actions.iter().map(|action| {
-        let (step, i) = resolve_action(ctx, &scope, protocol_scope, shape_down, shape_up, action);
-        ri.merge_seq(&i);
-        step
+        resolve_action(ctx, &scope, protocol_scope, shape_down, shape_up, action)
     }).collect();
 
-    (Step::Seq(steps), ri)
+    Step::Seq(steps)
 }
 
 pub fn resolve_letdef<'s>(ctx: &Ctxt<'s>, scope: &mut Scope<'s>, lets: &'s [ast::LetDef]) {
@@ -259,11 +216,11 @@ pub fn resolve_letdef<'s>(ctx: &Ctxt<'s>, scope: &mut Scope<'s>, lets: &'s [ast:
     }
 }
 
-fn resolve_token<'shape>(item: Item, shape: &'shape Shape) -> (Message, ResolveInfo) {
+fn resolve_token<'shape>(item: Item, shape: &'shape Shape) -> Message {
     fn try_variant(shape: &Shape, item: &Item) -> bool {
         match (shape, item) {
             (&Shape::Const(ref c), &Item::Value(Expr::Const(ref v))) => c == v,
-            (&Shape::Val(ref t, _), &Item::Value(ref e)) => t.includes_type(&e.get_type()),
+            (&Shape::Val(ref t), &Item::Value(ref e)) => t.includes_type(&e.get_type()),
             (&Shape::Tup(ref m), &Item::Tuple(ref t)) if m.len() == t.len() => {
                  m.iter().zip(t.iter()).all(|(i, s)| { try_variant(i, s) })
             }
@@ -272,11 +229,10 @@ fn resolve_token<'shape>(item: Item, shape: &'shape Shape) -> (Message, ResolveI
         }
     }
 
-    fn inner(i: Item, shape: &Shape, msg: &mut Message, ri: &mut ResolveInfo) {
+    fn inner(i: Item, shape: &Shape, msg: &mut Message) {
         match shape {
-            &Shape::Val(_, dir) => {
+            &Shape::Val(_) => {
                 if let Item::Value(v) = i {
-                    ri.use_expr(&v, dir);
                     msg.push(Some(v));
                 } else {
                     panic!("Expected value but found {:?}", i);
@@ -287,7 +243,7 @@ fn resolve_token<'shape>(item: Item, shape: &'shape Shape) -> (Message, ResolveI
                 if let Item::Tuple(t) = i {
                     if t.len() == m.len() {
                         for (mi, i) in m.iter().zip(t.into_iter()) {
-                            inner(i, mi, msg, ri)
+                            inner(i, mi, msg)
                         }
                     } else {
                         panic!("Expected tuple length {}, found {}", m.len(), t.len());
@@ -298,7 +254,7 @@ fn resolve_token<'shape>(item: Item, shape: &'shape Shape) -> (Message, ResolveI
             }
             &Shape::Protocol { ref messages, ..} => {
                 if messages.len() == 1 {
-                    inner(i, &messages[0], msg, ri)
+                    inner(i, &messages[0], msg)
                 } else {
                     let tag_idx = msg.len();
                     msg.push(None);
@@ -307,7 +263,7 @@ fn resolve_token<'shape>(item: Item, shape: &'shape Shape) -> (Message, ResolveI
                     for (idx, shape) in messages.iter().enumerate() {
                         if try_variant(shape, &i) {
                             msg[tag_idx] = Some(Expr::Const(Value::Integer(idx as i64)));
-                            inner(i.clone(), shape, msg, ri);
+                            inner(i.clone(), shape, msg);
                             matching_variants += 1;
                         } else {
                             // Create dummy fields for other variants
@@ -326,9 +282,8 @@ fn resolve_token<'shape>(item: Item, shape: &'shape Shape) -> (Message, ResolveI
     }
 
     let mut msg = vec![];
-    let mut ri = ResolveInfo::new();
-    inner(item, &shape, &mut msg, &mut ri);
-    (msg, ri)
+    inner(item, &shape, &mut msg);
+    msg
 }
 
 pub fn infer_direction(step: &mut Step, bottom_fields: &Fields, top_fields: &mut Fields) -> ResolveInfo {
@@ -380,14 +335,12 @@ pub fn infer_direction(step: &mut Step, bottom_fields: &Fields, top_fields: &mut
             let mut ri = infer_direction(body, bottom_fields, top_fields);
             let any_up = ri.repeat_up_heuristic;
             ri.use_expr(&count, DataMode { down: !any_up, up: any_up });
-            assert_eq!(*dir, any_up);
             *dir = any_up;
             ri
         }
         Foreach(_, ref mut inner_vars, ref mut body) => {
             let mut ri = infer_direction(body, bottom_fields, top_fields);
             for &mut (id, ref e, ref mut dir) in inner_vars {
-                assert_eq!(*dir, ri.mode_of(id));
                 *dir = ri.mode_of(id);
                 ri.use_expr(e, *dir);
             }
@@ -399,7 +352,6 @@ pub fn infer_direction(step: &mut Step, bottom_fields: &Fields, top_fields: &mut
                 ri.merge_seq(&infer_direction(body, bottom_fields, top_fields)); // TODO: alt != seq ?
             }
 
-            assert_eq!(*up, ri.repeat_up_heuristic);
             *up = ri.repeat_up_heuristic;
 
             for &mut (ref checks, _) in arms.iter_mut() {

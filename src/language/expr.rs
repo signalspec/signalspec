@@ -1,7 +1,7 @@
 use super::ast;
 use super::eval::{ Expr, ConcatElem };
 use super::scope::{ Scope, Item, Func };
-use data::{ Value, DataMode };
+use data::Value;
 use protocol::Shape;
 use session::Session;
 
@@ -140,14 +140,14 @@ fn resolve_call<'s>(session: &Session, scope: &Scope<'s>, func: &'s ast::Expr, a
 
 /// Resolve an expression as used in the argument of an `on` block, defining variables
 pub fn on_expr_message<'shape>(sess: &Session, scope: &mut Scope,
-        shape: &'shape mut Shape, expr: &ast::Expr) -> Vec<Option<(Expr, Option<&'shape mut DataMode>)>> {
+        shape: &'shape mut Shape, expr: &ast::Expr) -> Vec<Option<Expr>> {
 
     // First test if this shape matches the expression, in order to avoid binding variables
     // for the wrong protocol variant.
     fn try_match(shape: &Shape, e: &ast::Expr) -> bool {
         match (shape, e) {
             (&Shape::Const(ref c), &ast::Expr::Value(ref val)) => c == val,
-            (&Shape::Val(ref ty, _), &ast::Expr::Value(ref val)) => ty.includes(val),
+            (&Shape::Val(ref ty), &ast::Expr::Value(ref val)) => ty.includes(val),
             (&Shape::Tup(ref ss), &ast::Expr::Tup(ref se)) if ss.len() == se.len() => {
                 ss.iter().zip(se.iter()).all(|(s,i)| try_match(s, i))
             }
@@ -162,22 +162,22 @@ pub fn on_expr_message<'shape>(sess: &Session, scope: &mut Scope,
     match (shape, expr) {
         (&mut Shape::Const(ref c), &ast::Expr::Value(ref val)) if c == val => vec![],
 
-        (&mut Shape::Val(ref ty, ref mut dir), &ast::Expr::Var(ref name)) => { // A variable binding
+        (&mut Shape::Val(ref ty), &ast::Expr::Var(ref name)) => { // A variable binding
             let id = scope.new_variable(sess, &name[..], ty.clone());
-            vec![Some((Expr::Variable(id, ty.clone()), Some(dir)))]
+            vec![Some((Expr::Variable(id, ty.clone())))]
         }
 
         (&mut Shape::Tup(ref mut ss), &ast::Expr::Var(ref name)) => { // A variable binding for a tuple
             // Capture a tuple by recursively building a tuple Item containing each of the
             // captured variables
-            fn build_tuple<'s, 'shape>(sess: &Session, msg: &mut Vec<Option<(Expr, Option<&'shape mut DataMode>)>>, ss: &'shape mut [Shape]) -> Item<'s> {
+            fn build_tuple<'s, 'shape>(sess: &Session, msg: &mut Vec<Option<Expr>>, ss: &'shape mut [Shape]) -> Item<'s> {
                 Item::Tuple(ss.iter_mut().map(|i| {
                     match *i {
                         Shape::Const(ref c) => Item::Value(Expr::Const(c.clone())),
                         Shape::Tup(ref mut t) => build_tuple(sess, msg, &mut t[..]),
-                        Shape::Val(ref ty, ref mut dir) => {
+                        Shape::Val(ref ty) => {
                             let id = sess.make_id();
-                            msg.push(Some((Expr::Variable(id, ty.clone()), Some(dir))));
+                            msg.push(Some((Expr::Variable(id, ty.clone()))));
                             Item::Value(Expr::Variable(id, ty.clone()))
                         }
                         Shape::Protocol{..} => unimplemented!()
@@ -190,9 +190,9 @@ pub fn on_expr_message<'shape>(sess: &Session, scope: &mut Scope,
             msg
         }
 
-        (&mut Shape::Val(_, ref mut dir), expr) => { // A match against a refutable pattern
+        (&mut Shape::Val(_), expr) => { // A match against a refutable pattern
             let e = resolve(sess, None, &mut |_| { panic!("Variable binding not allowed here") }, expr);
-            vec![Some((e, Some(dir)))]
+            vec![Some(e)]
         }
 
         (&mut Shape::Tup(ref mut ss), &ast::Expr::Tup(ref se)) => {
@@ -209,7 +209,7 @@ pub fn on_expr_message<'shape>(sess: &Session, scope: &mut Scope,
                 let mut matching_variants = 0;
                 for (i, shape) in messages.iter_mut().enumerate() {
                     if try_match(shape, expr) {
-                        fields[0] = Some((Expr::Const(Value::Integer(i as i64)), None));
+                        fields[0] = Some(Expr::Const(Value::Integer(i as i64)));
                         fields.extend(on_expr_message(sess, scope, shape, expr));
                         matching_variants += 1;
                     } else {

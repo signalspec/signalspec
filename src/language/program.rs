@@ -49,16 +49,15 @@ pub fn resolve_process<'s>(ctx: &Ctxt<'s>,
                            scope: &Scope<'s>,
                            protocol_scope: &ProtocolScope<'s>,
                            shape: &Shape,
+                           fields_down: &Fields,
                            p: &'s ast::Process) -> Box<Process> {
     match *p {
         ast::Process::Call(ref name, ref arg) => {
             let arg = super::expr::rexpr(ctx.session, scope, arg);
-            let (shape_up, mut step, ri) = protocol_scope.call(ctx, shape, name, arg);
+            let (shape_up, mut step) = protocol_scope.call(ctx, shape, name, arg);
 
-            let fields_down = shape.fields();
-            let mut fields_up = shape_up.fields();
-            let ri2 = super::step::infer_direction(&mut step, &fields_down, &mut fields_up);
-            assert_eq!(ri, ri2);
+            let mut fields_up = shape_up.fields(DataMode { down: false, up: true });
+            let ri = super::step::infer_direction(&mut step, &fields_down, &mut fields_up);
 
             if let Some(mut f) = ctx.session.debug_file(|| format!("{}.steps", name)) {
                 step.write_tree(&mut f, 0).unwrap_or_else(|e| error!("{}", e));
@@ -86,13 +85,10 @@ pub fn resolve_process<'s>(ctx: &Ctxt<'s>,
         }
         ast::Process::Block(ref block) => {
             let mut shape_up = Shape::null();
-            let (mut step, ri) = super::step::resolve_seq(ctx, scope, protocol_scope, shape, &mut shape_up, block);
+            let mut step = super::step::resolve_seq(ctx, scope, protocol_scope, shape, &mut shape_up, block);
 
-
-            let fields_down = shape.fields();
-            let mut fields_up = shape_up.fields();
-            let ri2 = super::step::infer_direction(&mut step, &fields_down, &mut fields_up);
-            assert_eq!(ri, ri2, "Failed on block {:?}", block);
+            let mut fields_up = shape_up.fields(DataMode { up: false, down: false });
+            let ri = super::step::infer_direction(&mut step, &fields_down, &mut fields_up);
 
             let mut nfa = nfa::from_step_tree(&step);
             nfa.remove_useless_epsilons();
@@ -118,22 +114,21 @@ fn make_literal_process<'s>(ctx: &Ctxt<'s>,
                             is_up: bool,
                             shape_up_expr: &'s ast::ProtocolRef,
                             block: &'s ast::Block) -> Box<Process> {
-    let shape_up = resolve_protocol_invoke(ctx, scope, shape_up_expr, DataMode { down: !is_up, up: is_up });
-    let shape_flip = resolve_protocol_invoke(ctx, scope, shape_up_expr, DataMode { down: is_up, up: !is_up });
+    let shape_up = resolve_protocol_invoke(ctx, scope, shape_up_expr);
 
     let mut shape_down = Shape::null();
-    let (mut step, ri) = super::step::resolve_seq(ctx, scope, protocol_scope, &shape_flip, &mut shape_down, block);
+    let mut step = super::step::resolve_seq(ctx, scope, protocol_scope, &shape_up, &mut shape_down, block);
 
-    let mut fields_dn = shape_down.fields();
-    let fields_flip = shape_flip.fields();
-    let ri2 = super::step::infer_direction(&mut step, &fields_flip, &mut fields_dn);
-    assert_eq!(ri, ri2);
+    let mut fields_dn = shape_down.fields(DataMode { down: false, up: false });
+    let fields_up = shape_up.fields(DataMode { down: !is_up, up: is_up });
+    let fields_flip = shape_up.fields(DataMode { down: is_up, up: !is_up });
+    let ri = super::step::infer_direction(&mut step, &fields_flip, &mut fields_dn);
 
     let mut nfa = nfa::from_step_tree(&step);
     nfa.remove_useless_epsilons();
     let dfa = dfa::make_dfa(&nfa, &fields_flip, &fields_dn);
 
-    box ProgramFlip { dfa, fields_up: shape_up.fields(), shape_down, shape_up }
+    box ProgramFlip { dfa, fields_up, shape_down, shape_up }
 }
 
 pub struct CompiledTest<'a> {
@@ -152,7 +147,7 @@ pub fn compile_test<'a>(ctx: &'a Ctxt<'a>,
         stack.add(bottom_process);
 
         for process_ast in ast {
-            let process = resolve_process(ctx, scope, protocol_scope, stack.top_shape(), process_ast);
+            let process = resolve_process(ctx, scope, protocol_scope, stack.top_shape(), stack.top_fields(), process_ast);
             stack.add(process);
         }
 
@@ -172,12 +167,12 @@ pub fn compile_test<'a>(ctx: &'a Ctxt<'a>,
         }
 
         Some((&ast::Process::Literal(ast::ProcessLiteralDirection::RoundTrip, ref ty, _), rest)) => {
-            let shape_dn = resolve_protocol_invoke(ctx, scope, ty, DataMode { down: true, up: false });
-            let shape_up = resolve_protocol_invoke(ctx, scope, ty, DataMode { down: false, up: true });
+            let shape_dn = resolve_protocol_invoke(ctx, scope, ty);
+            let shape_up = resolve_protocol_invoke(ctx, scope, ty);
 
             let (s, r) = mpsc::channel();
-            let process_dn = box Collect { fields: shape_dn.fields(), shape: shape_dn, sender: s };
-            let process_up = box Emit { fields: shape_up.fields(), shape: shape_up, receiver: r };
+            let process_dn = box Collect { fields: shape_dn.fields(DataMode { down: true, up: false }), shape: shape_dn, sender: s };
+            let process_up = box Emit { fields: shape_up.fields(DataMode { down: false, up: true }), shape: shape_up, receiver: r };
 
             CompiledTest {
                 down: Some(build_stack(ctx, scope, protocol_scope, process_dn, rest)),
@@ -186,8 +181,8 @@ pub fn compile_test<'a>(ctx: &'a Ctxt<'a>,
         }
 
         Some((first, rest)) => {
-            let bottom = resolve_process(ctx, scope, protocol_scope, &Shape::null(), first);
-            let is_up = bottom.shape_up().data_mode().up;
+            let bottom = resolve_process(ctx, scope, protocol_scope, &Shape::null(), &Fields::null(), first);
+            let is_up = bottom.fields_up().direction().up;
             let stack = build_stack(ctx, scope, protocol_scope, bottom, rest);
 
             let (up, down) = if is_up { (Some(stack), None) } else { (None, Some(stack)) };

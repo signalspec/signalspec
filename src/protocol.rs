@@ -23,7 +23,7 @@ pub enum Shape {
         //params: Vec<Item<'a>>, // TODO: remove type parameter from Item
         messages: Vec<Shape>,
     },
-    Val(Type, DataMode),
+    Val(Type),
     Const(Value),
 }
 
@@ -33,45 +33,34 @@ impl Shape {
         Shape::Tup(vec![]) //TODO: this should be a specific protocol defined in the prelude
      }
 
-    /// Produces a shape for a stream of bytes in the specified direction
+    /// Produces a shape for a stream of bytes
     pub fn bytes(dir: DataMode) -> Shape {
-        Shape::Val(Type::Integer(0, 255), dir)
+        Shape::Val(Type::Integer(0, 255))
     }
 
-    /// Produces a shape for a stream of bytes in the specified direction and range
-    pub fn number(dir: DataMode, min: f64, max: f64) -> Shape {
-        Shape::Val(Type::Number(min, max), dir)
+    /// Produces a shape for a stream of numbers
+    pub fn number(min: f64, max: f64) -> Shape {
+        Shape::Val(Type::Number(min, max))
     }
 
-    /// Produces a shape for a stream of complex number in the specified direction
-    pub fn complex(dir: DataMode) -> Shape {
-        Shape::Val(Type::Complex, dir)
+    /// Produces a shape for a stream of complex number
+    pub fn complex() -> Shape {
+        Shape::Val(Type::Complex)
     }
 
     /// If the shape represents a stream of bytes, returns Some(data direction)
-    pub fn match_bytes(&self) -> Option<DataMode> {
+    pub fn match_bytes(&self) -> bool {
         match *self {
-            Shape::Val(Type::Integer(0, 255), dir) => Some(dir),
-            _ => None
+            Shape::Val(Type::Integer(0, 255)) => true,
+            _ => false
         }
     }
 
     /// If the shape represents a stream of complex number, returns Some(data direction)
-    pub fn match_complex(&self) -> Option<DataMode> {
+    pub fn match_complex(&self) -> bool {
         match *self {
-            Shape::Val(Type::Complex, dir) => Some(dir),
-            _ => None
-        }
-    }
-
-    pub fn data_mode(&self) -> DataMode {
-        let base_data_mode = DataMode { down: false, up: false };
-        let fold_data_mode = |am: DataMode, bm: DataMode| { DataMode { down: am.down || bm.down, up: am.up || bm.up  }};
-        match *self {
-            Shape::Tup(ref x) => x.iter().map(|x| x.data_mode()).fold(base_data_mode, fold_data_mode),
-            Shape::Protocol { ref messages, .. } => messages.iter().map(|x| x.data_mode()).fold(base_data_mode, fold_data_mode),
-            Shape::Val(_, mode) => mode,
-            Shape::Const(..) => base_data_mode,
+            Shape::Val(Type::Complex) => true,
+            _ => false
         }
     }
 
@@ -88,21 +77,21 @@ impl Shape {
         }
     }
 
-    pub fn fields(&self) -> Fields {
+    pub fn fields(&self, dir: DataMode) -> Fields {
         match *self {
-            Shape::Tup(ref x) => Fields::new(x.iter().flat_map(Shape::fields).collect()),
+            Shape::Tup(ref x) => Fields::new(x.iter().flat_map(|x| x.fields(dir)).collect()),
             Shape::Protocol { ref messages, .. } => {
                 if messages.len() <= 1 {
-                    messages[0].fields()
+                    messages[0].fields(dir)
                 } else {
                     let len = messages.len() as i64;
                     Fields::new(
                         iter::once(Field { ty: Type::Integer(len, len), is_tag: true, dir: DataMode{ up: true, down: true }})
-                        .chain(messages.iter().flat_map(Shape::fields)).collect()
+                        .chain(messages.iter().flat_map(|x| x.fields(dir))).collect()
                     )
                 }
             }
-            Shape::Val(ref ty, dir) => Fields::new(vec![Field { ty: ty.clone(), is_tag: false, dir: dir }]),
+            Shape::Val(ref ty) => Fields::new(vec![Field { ty: ty.clone(), is_tag: false, dir: dir }]),
             Shape::Const(..) => Fields::new(vec![]),
         }
     }
