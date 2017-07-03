@@ -4,7 +4,7 @@ use ref_slice::ref_slice;
 
 use super::{ ast, grammar, Item};
 use super::scope::Scope;
-use process::Process;
+use process::ProcessInfo;
 use session::Session;
 use language::protocol::ProtocolScope;
 use protocol::{ ProtocolId, Shape, Fields };
@@ -48,14 +48,11 @@ impl<'a> Ctxt<'a> {
         }
     }
 
-    pub fn add_primitive_def(&self, name: &str, prim: &'a ::process::PrimitiveDef) {
-    }
-
     pub fn add_primitive_fn(&self, name: &str, prim: PrimitiveFn<'a>) {
         self.prelude.borrow_mut().bind(name, Item::PrimitiveFn(prim));
     }
 
-    pub fn parse_process(&'a self, source: &str, shape_below: &Shape, fields_below: &Fields) -> Result<Box<Process>, grammar::ParseError> {
+    pub fn parse_process(&'a self, source: &str, shape_below: &Shape, fields_below: &Fields) -> Result<ProcessInfo, grammar::ParseError> {
         let ast = &*self.ast_process_arena.alloc(try!(grammar::process(source)));
         Ok(super::program::resolve_process(self, &*self.prelude.borrow(), &*self.protocol_scope.borrow(), shape_below, fields_below, &ast))
     }

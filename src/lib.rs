@@ -23,19 +23,12 @@ mod protocol;
 
 pub use session::Session;
 pub use language::{ Ctxt, Module, Test, Item };
-pub use process::{ Process, ProcessStack, PrimitiveDef };
+pub use process::{ Process, ProcessStack, PrimitiveDef, ProcessInfo };
 pub use connection::Connection;
 pub use data::{ Value, Type, DataMode };
-pub use protocol::Shape;
+pub use protocol::{ Shape, Fields };
 pub use test_runner::run as run_test;
 
-mod file_io;
-mod dumpfile;
-mod binfile;
-
 pub fn add_primitives(loader: &Ctxt) {
-    loader.add_primitive_def("file", &file_io::FILE_DEF);
-    loader.add_primitive_def("dumpfile", &dumpfile::DUMPFILE_DEF);
-    loader.add_primitive_def("binfile", &binfile::BINFILE_DEF);
     language::add_primitive_fns(loader);
 }

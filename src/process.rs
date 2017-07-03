@@ -4,20 +4,30 @@ use language::{Item, Ctxt};
 use connection::Connection;
 
 pub trait PrimitiveDef: Send {
-    fn invoke_def(&self, &Shape, Item) -> Box<Process + 'static>;
+    fn invoke_def(&self, &Shape, &Fields, Item) -> ProcessInfo;
 }
 
 pub trait Process: Send {
     fn run(&self, downwards: &mut Connection, upwards: &mut Connection) -> bool;
-    fn shape_up(&self) -> &Shape;
-    fn fields_up(&self) -> &Fields;
 }
 
+pub struct FnProcess<T: Fn(&mut Connection, &mut Connection) -> bool>(pub T);
 
+impl<T: Send + Fn(&mut Connection, &mut Connection) -> bool> Process for FnProcess<T> {
+    fn run(&self, downwards: &mut Connection, upwards: &mut Connection) -> bool {
+        (self.0)(downwards, upwards)
+    }
+}
+
+pub struct ProcessInfo {
+    pub implementation: Box<Process + 'static>,
+    pub shape_up: Shape,
+    pub fields_up: Fields,
+}
 
 pub struct ProcessStack<'a> {
     loader: &'a Ctxt<'a>,
-    processes: Vec<Box<Process>>,
+    processes: Vec<ProcessInfo>,
 }
 
 impl<'a> ProcessStack<'a> {
@@ -32,17 +42,17 @@ impl<'a> ProcessStack<'a> {
         lazy_static! {
             static ref NULL_SHAPE: Shape = Shape::null();
         }
-        self.processes.last().map_or(&NULL_SHAPE, |x| x.shape_up())
+        self.processes.last().map_or(&NULL_SHAPE, |x| &x.shape_up)
     }
 
     pub fn top_fields(&self) -> &Fields {
         lazy_static! {
             static ref NULL_FIELDS: Fields = Fields::null();
         }
-        self.processes.last().map_or(&NULL_FIELDS, |x| x.fields_up())
+        self.processes.last().map_or(&NULL_FIELDS, |x| &x.fields_up)
     }
 
-    pub fn add(&mut self, p: Box<Process>) {
+    pub fn add(&mut self, p: ProcessInfo) {
         self.processes.push(p)
     }
 
@@ -55,7 +65,7 @@ impl<'a> ProcessStack<'a> {
 
     pub fn add_print_process(&mut self) {
         let shape = self.top_shape().clone();
-        self.add(box ::dumpfile::ValueDumpPrint(shape));
+        self.add(unimplemented!());
     }
 
     fn spawn(mut self, bottom: Connection, top: Connection) -> Vec<thread::JoinHandle<bool>> {
@@ -65,19 +75,19 @@ impl<'a> ProcessStack<'a> {
         let last = self.processes.pop().expect("Spawn requires at least one process");
 
         for process in self.processes {
-            let (c2, upward) = Connection::new(process.fields_up());
+            let (c2, upward) = Connection::new(&process.fields_up);
             let downward = mem::replace(&mut connection, c2);
             threads.push(thread::spawn(move || {
                 let mut downward = downward;
                 let mut upward = upward;
-                process.run(&mut downward, &mut upward)
+                process.implementation.run(&mut downward, &mut upward)
             }))
         }
 
         threads.push(thread::spawn(move || {
             let mut connection = connection;
             let mut top = top;
-            last.run(&mut connection, &mut top)
+            last.implementation.run(&mut connection, &mut top)
         }));
 
         threads
