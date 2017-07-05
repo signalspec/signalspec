@@ -2,13 +2,26 @@ use typed_arena::Arena;
 use std::cell::RefCell;
 use ref_slice::ref_slice;
 
-use super::{ ast, grammar, Item};
+use super::{ ast, grammar, Item };
 use super::scope::Scope;
-use process::ProcessInfo;
+use process::{ ProcessInfo, Process };
 use session::Session;
 use language::protocol::ProtocolScope;
 use protocol::{ ProtocolId, Shape, Fields };
 use util::Index;
+use data::DataMode;
+
+pub enum PrimitiveDefFields {
+    Explicit(Fields),
+    Auto(DataMode)
+}
+
+pub struct PrimitiveDef {
+    pub id: &'static str,
+    pub fields_down: Fields,
+    pub fields_up: PrimitiveDefFields,
+    pub instantiate: Box<Fn(&Scope) -> Result<Box<Process>, ()>>,
+}
 
 pub type PrimitiveFn<'a> = fn(Item<'a>)->Result<Item<'a>, &'static str>;
 
@@ -16,6 +29,7 @@ pub struct Ctxt<'a> {
     pub session: &'a Session,
     ast_arena: Arena<ast::Module>,
     ast_process_arena: Arena<ast::Process>,
+    ast_header_arena: Arena<ast::PrimitiveHeader>,
     prelude: RefCell<Scope<'a>>,
     pub protocol_scope: RefCell<ProtocolScope<'a>>, // TODO: should be scoped
     pub protocols: Index<ProtocolDef<'a>, ProtocolId>,
@@ -42,6 +56,7 @@ impl<'a> Ctxt<'a> {
             session: session,
             ast_arena: Arena::new(),
             ast_process_arena: Arena::new(),
+            ast_header_arena: Arena::new(),
             prelude: RefCell::new(Scope::new()),
             protocol_scope: RefCell::new(ProtocolScope::new()),
             protocols: Index::new(),
@@ -50,6 +65,16 @@ impl<'a> Ctxt<'a> {
 
     pub fn add_primitive_fn(&self, name: &str, prim: PrimitiveFn<'a>) {
         self.prelude.borrow_mut().bind(name, Item::PrimitiveFn(prim));
+    }
+
+    pub fn define_primitive(&'a self, header: &str, implementations: Vec<PrimitiveDef>) {
+        let header = &*self.ast_header_arena.alloc(grammar::primitive_header(header).expect("failed to parse primitive header"));
+        self.protocol_scope.borrow_mut().add_primitive(self.session, &*self.prelude.borrow(), header, implementations);
+    }
+
+    pub fn define_prelude(&'a self, source: &str) {
+        let module = self.parse_module(source).expect("failed to parse prelude module");
+        *self.prelude.borrow_mut() = module.scope;
     }
 
     pub fn parse_process(&'a self, source: &str, shape_below: &Shape, fields_below: &Fields) -> Result<ProcessInfo, grammar::ParseError> {

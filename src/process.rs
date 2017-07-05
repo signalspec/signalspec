@@ -3,10 +3,6 @@ use protocol::{ Shape, Fields };
 use language::{Item, Ctxt};
 use connection::Connection;
 
-pub trait PrimitiveDef: Send {
-    fn invoke_def(&self, &Shape, &Fields, Item) -> ProcessInfo;
-}
-
 pub trait Process: Send {
     fn run(&self, downwards: &mut Connection, upwards: &mut Connection) -> bool;
 }

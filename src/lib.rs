@@ -20,15 +20,14 @@ mod language;
 mod connection;
 mod test_runner;
 mod protocol;
+mod primitives;
 
 pub use session::Session;
 pub use language::{ Ctxt, Module, Test, Item };
-pub use process::{ Process, ProcessStack, PrimitiveDef, ProcessInfo };
+pub use process::{ Process, ProcessStack, ProcessInfo };
 pub use connection::Connection;
 pub use data::{ Value, Type, DataMode };
 pub use protocol::{ Shape, Fields };
 pub use test_runner::run as run_test;
 
-pub fn add_primitives(loader: &Ctxt) {
-    language::add_primitive_fns(loader);
-}
+pub use primitives::add_primitives;

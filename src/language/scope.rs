@@ -41,6 +41,13 @@ impl<'s> Scope<'s> {
         self.names.get(name).cloned()
     }
 
+    pub fn get_as<'a, T: FromItem<'a, 's>>(&'a self, name: &str) -> Result<T, ()> {
+        match self.names.get(name) {
+            Some(i) => T::try_from_item(i).ok_or(()),
+            None => Err(())
+        }
+    }
+
     /// Create a child scope for a lexically nested block
     pub fn child(&self) -> Scope<'s> {
         Scope {
@@ -69,6 +76,16 @@ pub enum Item<'s> {
 
     /// Sequence of Unicode code points. Not a Value because it is not of constant size.
     String(String),
+}
+
+pub trait FromItem<'a, 's>: Sized { // TODO: use TryFrom once stable
+    fn try_from_item(&'a Item<'s>) -> Option<Self>;
+}
+
+impl<'a, 's> FromItem<'a, 's> for &'a str {
+    fn try_from_item(i: &'a Item<'s>) -> Option<Self> {
+        if let &Item::String(ref s) = i { Some(s) } else { None }
+    }
 }
 
 #[derive(Clone)]

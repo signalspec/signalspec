@@ -43,6 +43,13 @@ pub struct Def {
     pub block: Block,
 }
 
+pub struct PrimitiveHeader {
+    pub name: String,
+    pub param: Expr,
+    pub top: Option<ProtocolRef>,
+    pub bottom: ProtocolRef,
+}
+
 pub struct Protocol {
     pub name: String,
     pub params: Vec<String>,

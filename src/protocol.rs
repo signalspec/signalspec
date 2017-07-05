@@ -1,6 +1,6 @@
 use std::iter;
 use data::{Type, Value, DataMode};
-use language::Item;
+use std::f64;
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
 pub struct ProtocolId(pub usize);
@@ -117,7 +117,24 @@ impl IntoIterator for Fields {
 
 impl Fields {
     pub fn new(fields: Vec<Field>) -> Fields { Fields { fields } }
+
     pub fn null() -> Fields { Fields { fields: Vec::new() }}
+    pub fn bytes(dir: DataMode) -> Fields {
+        Fields {
+            fields: vec![Field { ty: Type::Integer(0, 255), is_tag: false, dir }]
+        }
+    }
+    pub fn f32(dir: DataMode) -> Fields {
+        Fields {
+            fields: vec![Field { ty: Type::Number(-f64::INFINITY, f64::INFINITY), is_tag: false, dir }]
+        }
+    }
+    pub fn cf32(dir: DataMode) -> Fields {
+        Fields {
+            fields: vec![Field { ty: Type::Complex, is_tag: false, dir }]
+        }
+    }
+
     pub fn len(&self) -> usize { self.fields.len() }
     pub fn iter(&self) -> ::std::slice::Iter<Field> { self.fields.iter() }
     pub fn iter_mut(&mut self) -> ::std::slice::IterMut<Field> { self.fields.iter_mut() }

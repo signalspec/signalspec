@@ -5,7 +5,7 @@ use super::step::{ Step, resolve_seq };
 use super::scope::{Item, Scope};
 use super::ast;
 use super::expr;
-use super::Ctxt;
+use super::{ Ctxt, PrimitiveDef };
 use super::eval::Expr;
 use session::Session;
 
@@ -95,9 +95,20 @@ fn resolve_protocol_match<'a>(session: &Session, scope: &Scope<'a>, ast: &'a ast
 struct WithBlock<'a> {
     protocol: ProtocolMatch<'a>,
     name: String,
-    def: &'a ast::Def,
-    scope: Scope<'a>,
+    implementation: WithDef<'a>
 }
+
+enum WithDef <'a> {
+    Code {
+        def: &'a ast::Def,
+        scope: Scope<'a>,
+    },
+    Primitive {
+        shape_up: &'a Option<ast::ProtocolRef>,
+        defs: Vec<PrimitiveDef>,
+    }
+ }
+
 
 pub struct ProtocolScope<'a> {
     entries: Vec<WithBlock<'a>>,
@@ -112,8 +123,18 @@ impl<'a> ProtocolScope<'a> {
         self.entries.push(WithBlock {
             protocol: resolve_protocol_match(session, &scope, &def.bottom),
             name: def.name.clone(),
-            def: def,
-            scope: scope,
+            implementation: WithDef::Code {
+                def: def,
+                scope: scope,
+            }
+        });
+    }
+
+    pub fn add_primitive(&mut self, session: &Session, scope: &Scope<'a>, header: &'a ast::PrimitiveHeader, defs: Vec<PrimitiveDef>) {
+        self.entries.push(WithBlock {
+            protocol: resolve_protocol_match(session, scope, &header.bottom),
+            name: header.name.clone(),
+            implementation: WithDef::Primitive { shape_up: &header.top, defs }
         });
     }
 
@@ -132,18 +153,21 @@ impl<'a> ProtocolScope<'a> {
     }
 
     pub fn call(&self, ctx: &Ctxt<'a>, shape: &Shape, name: &str, param: Item<'a>) -> (Shape, Step) {
-        let matched = self.find(shape, name).unwrap_or_else(|| panic!("No definition found for `{}`", name));
+        match self.find(shape, name).unwrap_or_else(|| panic!("No definition found for `{}`", name)).implementation {
+            WithDef::Code { ref def, ref scope } => {
+                let mut scope = scope.child();
+                let mut shape_up = if let Some(ref x) = def.top {
+                    resolve_protocol_invoke(ctx, &scope, x)
+                } else {
+                    Shape::null()
+                };
 
-        let mut scope = matched.scope.child();
-        let mut shape_up = if let Some(ref x) = matched.def.top {
-            resolve_protocol_invoke(ctx, &scope, x)
-        } else {
-            Shape::null()
-        };
+                expr::assign(ctx.session, &mut scope, &def.param, param);
+                let step = resolve_seq(ctx, &scope, self, shape, &mut shape_up, &def.block);
 
-        expr::assign(ctx.session, &mut scope, &matched.def.param, param);
-        let step = resolve_seq(ctx, &scope, self, shape, &mut shape_up, &matched.def.block);
-
-        (shape_up, step)
+                (shape_up, step)
+            }
+            WithDef::Primitive { .. } => panic!("Primitive not allowed here"),
+        }
     }
 }
