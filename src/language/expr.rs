@@ -1,11 +1,13 @@
 use super::ast;
+use super::Ctxt;
 use super::eval::{ Expr, ConcatElem };
-use super::scope::{ Scope, Item, Func };
+use super::scope::{ Scope, Item };
+use super::function::{FunctionDef, Func};
 use data::Value;
 use protocol::Shape;
 use session::Session;
 
-fn resolve<'s>(session: &Session, scope: Option<&Scope<'s>>, var_handler: &mut FnMut(&str) -> Expr, e: &'s ast::Expr) -> Expr {
+fn resolve<'s>(ctx: &'s Ctxt<'s>, scope: Option<&Scope>, var_handler: &mut FnMut(&str) -> Expr, e: &'s ast::Expr) -> Expr {
     match *e {
         ast::Expr::Ignore => Expr::Ignored,
         ast::Expr::Value(ref val) => Expr::Const(val.clone()),
@@ -13,14 +15,14 @@ fn resolve<'s>(session: &Session, scope: Option<&Scope<'s>>, var_handler: &mut F
         ast::Expr::Flip(box ref down, box ref up) => {
             debug!("Flip: {:?} {:?}", down, up);
             Expr::Flip(
-                box resolve(session, scope, var_handler, down),
-                box resolve(session, scope, var_handler, up),
+                box resolve(ctx, scope, var_handler, down),
+                box resolve(ctx, scope, var_handler, up),
             )
         }
 
         ast::Expr::Range(box ref min_expr, box ref max_expr) => {
-            let min = resolve(session, scope, var_handler, min_expr);
-            let max = resolve(session, scope, var_handler, max_expr);
+            let min = resolve(ctx, scope, var_handler, min_expr);
+            let max = resolve(ctx, scope, var_handler, max_expr);
 
             match (min, max) {
                 (Expr::Const(Value::Number(l)), Expr::Const(Value::Number(h))) => Expr::Range(l, h),
@@ -30,13 +32,13 @@ fn resolve<'s>(session: &Session, scope: Option<&Scope<'s>>, var_handler: &mut F
         }
 
         ast::Expr::Union(ref u) => {
-            Expr::Union(u.iter().map(|i| resolve(session, scope, var_handler, i)).collect())
+            Expr::Union(u.iter().map(|i| resolve(ctx, scope, var_handler, i)).collect())
         }
 
         ast::Expr::Choose(box ref e, ref c) => {
             let pairs: Vec<(Value, Value)> = c.iter().map(|&(ref le, ref re)| {
-                let l = resolve(session, scope, var_handler, le);
-                let r = resolve(session, scope, var_handler, re);
+                let l = resolve(ctx, scope, var_handler, le);
+                let r = resolve(ctx, scope, var_handler, re);
 
                 match (l, r) {
                     (Expr::Const(lv), Expr::Const(rv)) => (lv, rv),
@@ -44,13 +46,13 @@ fn resolve<'s>(session: &Session, scope: Option<&Scope<'s>>, var_handler: &mut F
                 }
             }).collect();
 
-            let head = resolve(session, scope, var_handler, e);
+            let head = resolve(ctx, scope, var_handler, e);
             Expr::Choose(box head, pairs)
         }
 
         ast::Expr::Concat(ref v) =>  {
             let elems = v.iter().map(|e| {
-                ConcatElem::Elem(resolve(session, scope, var_handler, e))
+                ConcatElem::Elem(resolve(ctx, scope, var_handler, e))
             }).collect();
 
             Expr::Concat(elems)
@@ -58,8 +60,8 @@ fn resolve<'s>(session: &Session, scope: Option<&Scope<'s>>, var_handler: &mut F
 
         ast::Expr::Bin(box ref a, op, box ref b) => {
             use super::eval::Expr::Const;
-            let lhs = resolve(session, scope, var_handler, a);
-            let rhs = resolve(session, scope, var_handler, b);
+            let lhs = resolve(ctx, scope, var_handler, a);
+            let rhs = resolve(ctx, scope, var_handler, b);
             match (lhs, rhs) {
                 (Const(Value::Number(a)),  Const(Value::Number(b))) => Const(Value::Number(op.eval(a, b))),
                 (Const(Value::Integer(a)), Const(Value::Integer(b))) => Const(Value::Integer(op.eval(a, b))),
@@ -75,7 +77,7 @@ fn resolve<'s>(session: &Session, scope: Option<&Scope<'s>>, var_handler: &mut F
         ast::Expr::Var(ref name) => var_handler(name),
         ast::Expr::Call(ref func, ref arg) => {
             let scope = scope.expect("Function call not allowed here");
-            match resolve_call(session, scope, func, arg) {
+            match resolve_call(ctx, scope, func, arg) {
                 Item::Value(v) => v,
                 other => panic!("Expcted value item, but function evaluated to {:?}", other),
             }
@@ -87,8 +89,8 @@ fn resolve<'s>(session: &Session, scope: Option<&Scope<'s>>, var_handler: &mut F
     }
 }
 
-pub fn value<'s>(session: &Session, scope: &Scope<'s>, e: &'s ast::Expr) -> Expr {
-    resolve(session, Some(scope), &mut |name| {
+pub fn value<'s>(ctx: &'s Ctxt<'s>, scope: &Scope, e: &'s ast::Expr) -> Expr {
+    resolve(ctx, Some(scope), &mut |name| {
         match scope.get(name) {
             Some(Item::Value(v)) => v,
             Some(..) => panic!("Variable {} is not a value expression", name),
@@ -98,49 +100,48 @@ pub fn value<'s>(session: &Session, scope: &Scope<'s>, e: &'s ast::Expr) -> Expr
 }
 
 /// Resolve an expression as used in an argument or right hand side of an assignment
-pub fn rexpr<'s>(session: &Session, scope: &Scope<'s>, e: &'s ast::Expr) -> Item<'s> {
+pub fn rexpr<'s>(ctxt: &'s Ctxt<'s>, scope: &Scope, e: &'s ast::Expr) -> Item {
     match *e {
         ast::Expr::Var(ref name) => {
             if let Some(s) = scope.get(name) { s } else { panic!("Undefined variable `{}`", name); }
         }
 
         ast::Expr::Tup(ref items) => {
-            Item::Tuple(items.iter().map(|i| rexpr(session, scope, i)).collect())
+            Item::Tuple(items.iter().map(|i| rexpr(ctxt, scope, i)).collect())
         }
 
         ast::Expr::String(ref s) => Item::String(s.clone()),
 
-        ast::Expr::Func{ ref body, ref args } => Item::Func(Func{
-            args: args,
-            body: body,
-            scope: Box::new(scope.clone()),
-        }),
-
-        ast::Expr::Call(ref func, ref arg) => {
-            resolve_call(session, scope, func, arg)
+        ast::Expr::Func{ ref body, ref args } => {
+            Item::Func(ctxt.create_function(FunctionDef::Code(Func{
+                args: args,
+                body: body,
+                scope: scope.clone(),
+            })))
         }
 
-        ref other => Item::Value(value(session, scope, other))
+        ast::Expr::Call(ref func, ref arg) => {
+            resolve_call(ctxt, scope, func, arg)
+        }
+
+        ref other => Item::Value(value(ctxt, scope, other))
     }
 }
 
-fn resolve_call<'s>(session: &Session, scope: &Scope<'s>, func: &'s ast::Expr, arg: &'s ast::Expr) -> Item<'s> {
-    let func = rexpr(session, scope, func);
-    let arg = rexpr(session, scope, arg);
-    match func {
-        Item::PrimitiveFn(f) => {
-            (f)(arg).unwrap()
-        },
-        Item::Func(func) => {
-            func.apply(session, arg)
-        }
-        i => panic!("{:?} is not a function", i),
+fn resolve_call<'s>(ctxt: &'s Ctxt<'s>, scope: &Scope, func: &'s ast::Expr, arg: &'s ast::Expr) -> Item {
+    let func = rexpr(ctxt, scope, func);
+    let arg = rexpr(ctxt, scope, arg);
+
+    if let Item::Func(fnid) = func {
+        ctxt.look_up_function(fnid).apply(ctxt, arg)
+    } else {
+        panic!("{:?} is not a function", func)
     }
 }
 
 /// Resolve an expression as used in the argument of an `on` block, defining variables
-pub fn on_expr_message<'shape>(sess: &Session, scope: &mut Scope,
-        shape: &'shape mut Shape, expr: &ast::Expr) -> Vec<Option<Expr>> {
+pub fn on_expr_message<'s>(ctx: &'s Ctxt<'s>, scope: &mut Scope,
+        shape: &mut Shape, expr: &'s ast::Expr) -> Vec<Option<Expr>> {
 
     // First test if this shape matches the expression, in order to avoid binding variables
     // for the wrong protocol variant.
@@ -163,20 +164,20 @@ pub fn on_expr_message<'shape>(sess: &Session, scope: &mut Scope,
         (&mut Shape::Const(ref c), &ast::Expr::Value(ref val)) if c == val => vec![],
 
         (&mut Shape::Val(ref ty), &ast::Expr::Var(ref name)) => { // A variable binding
-            let id = scope.new_variable(sess, &name[..], ty.clone());
+            let id = scope.new_variable(ctx.session, &name[..], ty.clone());
             vec![Some((Expr::Variable(id, ty.clone())))]
         }
 
         (&mut Shape::Tup(ref mut ss), &ast::Expr::Var(ref name)) => { // A variable binding for a tuple
             // Capture a tuple by recursively building a tuple Item containing each of the
             // captured variables
-            fn build_tuple<'s, 'shape>(sess: &Session, msg: &mut Vec<Option<Expr>>, ss: &'shape mut [Shape]) -> Item<'s> {
+            fn build_tuple<'s>(ctx: &'s Ctxt<'s>, msg: &mut Vec<Option<Expr>>, ss: &mut [Shape]) -> Item {
                 Item::Tuple(ss.iter_mut().map(|i| {
                     match *i {
                         Shape::Const(ref c) => Item::Value(Expr::Const(c.clone())),
-                        Shape::Tup(ref mut t) => build_tuple(sess, msg, &mut t[..]),
+                        Shape::Tup(ref mut t) => build_tuple(ctx, msg, &mut t[..]),
                         Shape::Val(ref ty) => {
-                            let id = sess.make_id();
+                            let id = ctx.session.make_id();
                             msg.push(Some((Expr::Variable(id, ty.clone()))));
                             Item::Value(Expr::Variable(id, ty.clone()))
                         }
@@ -186,31 +187,31 @@ pub fn on_expr_message<'shape>(sess: &Session, scope: &mut Scope,
             }
 
             let mut msg = Vec::new();
-            scope.bind(name, build_tuple(sess, &mut msg, &mut ss[..]));
+            scope.bind(name, build_tuple(ctx, &mut msg, &mut ss[..]));
             msg
         }
 
         (&mut Shape::Val(_), expr) => { // A match against a refutable pattern
-            let e = resolve(sess, None, &mut |_| { panic!("Variable binding not allowed here") }, expr);
+            let e = resolve(ctx, None, &mut |_| { panic!("Variable binding not allowed here") }, expr);
             vec![Some(e)]
         }
 
         (&mut Shape::Tup(ref mut ss), &ast::Expr::Tup(ref se)) => {
             ss.iter_mut().zip(se.iter()).flat_map(|(s, i)| {
-                on_expr_message(sess, scope, s, i)
+                on_expr_message(ctx, scope, s, i)
             }).collect()
         }
 
         (&mut Shape::Protocol { ref mut messages, ..}, expr) => {
             if messages.len() == 1 {
-                on_expr_message(sess, scope, &mut messages[0], expr)
+                on_expr_message(ctx, scope, &mut messages[0], expr)
             } else {
                 let mut fields = vec![None];
                 let mut matching_variants = 0;
                 for (i, shape) in messages.iter_mut().enumerate() {
                     if try_match(shape, expr) {
                         fields[0] = Some(Expr::Const(Value::Integer(i as i64)));
-                        fields.extend(on_expr_message(sess, scope, shape, expr));
+                        fields.extend(on_expr_message(ctx, scope, shape, expr));
                         matching_variants += 1;
                     } else {
                         // Create dummy fields for other variants
@@ -233,7 +234,7 @@ pub fn on_expr_message<'shape>(sess: &Session, scope: &mut Scope,
 
 /// Irrefutable destructuring of an item into an expression, such as the LHS of a `let` or a
 /// function argument. Only breaks down tuples and assigns variables.
-pub fn assign<'s>(session: &Session, scope: &mut Scope<'s>, l: &ast::Expr, r: Item<'s>) {
+pub fn assign<'s>(session: &Session, scope: &mut Scope, l: &ast::Expr, r: Item) {
     match *l {
         ast::Expr::Ignore => (),
 
@@ -260,7 +261,7 @@ pub fn assign<'s>(session: &Session, scope: &mut Scope<'s>, l: &ast::Expr, r: It
     }
 }
 
-pub fn pattern_match<'s>(session: &Session, scope: &mut Scope<'s>, pat: &ast::Expr, r: &Item<'s>, checks: &mut Vec<(Expr, Expr)>) {
+pub fn pattern_match<'s>(ctx: &'s Ctxt<'s>, scope: &mut Scope, pat: &'s ast::Expr, r: &Item, checks: &mut Vec<(Expr, Expr)>) {
         match (pat, r) {
             (&ast::Expr::Ignore, _) => (),
 
@@ -274,12 +275,12 @@ pub fn pattern_match<'s>(session: &Session, scope: &mut Scope<'s>, pat: &ast::Ex
                     panic!("can't match a tuple with a different length");
                 }
                 for (expr, item) in exprs.iter().zip(v.iter()) {
-                    pattern_match(session, scope, expr, item, checks);
+                    pattern_match(ctx, scope, expr, item, checks);
                 }
             }
 
             (ref other, &Item::Value(ref re)) => {
-                let le = resolve(session, None, &mut |_| { panic!("Variable binding not allowed here")}, other);
+                let le = resolve(ctx, None, &mut |_| { panic!("Variable binding not allowed here")}, other);
                 checks.push((le, re.clone()));
             }
 

@@ -4,6 +4,7 @@ use ref_slice::ref_slice;
 
 use super::{ ast, grammar, Item };
 use super::scope::Scope;
+use super::function::{ FunctionId, FunctionDef, PrimitiveFn };
 use process::{ ProcessInfo, Process };
 use session::Session;
 use language::protocol::ProtocolScope;
@@ -23,26 +24,25 @@ pub struct PrimitiveDef {
     pub instantiate: Box<Fn(&Scope) -> Result<Box<Process>, ()>>,
 }
 
-pub type PrimitiveFn<'a> = fn(Item<'a>)->Result<Item<'a>, &'static str>;
-
 pub struct Ctxt<'a> {
     pub session: &'a Session,
     ast_arena: Arena<ast::Module>,
     ast_process_arena: Arena<ast::Process>,
     ast_header_arena: Arena<ast::PrimitiveHeader>,
-    prelude: RefCell<Scope<'a>>,
+    pub prelude: RefCell<Scope>,
     pub protocol_scope: RefCell<ProtocolScope<'a>>, // TODO: should be scoped
     pub protocols: Index<ProtocolDef<'a>, ProtocolId>,
+    pub functions: Index<FunctionDef<'a>, FunctionId>,
 }
 
 pub struct Module<'a> {
     ast: &'a ast::Module,
-    scope: Scope<'a>,
+    scope: Scope,
 }
 
 pub struct ProtocolDef<'a> {
     pub ast: &'a ast::Protocol,
-    pub scope: Scope<'a>,
+    pub scope: Scope,
 }
 
 pub struct Test<'a: 'm, 'm> {
@@ -60,21 +60,33 @@ impl<'a> Ctxt<'a> {
             prelude: RefCell::new(Scope::new()),
             protocol_scope: RefCell::new(ProtocolScope::new()),
             protocols: Index::new(),
+            functions: Index::new(),
         }
     }
 
-    pub fn add_primitive_fn(&self, name: &str, prim: PrimitiveFn<'a>) {
-        self.prelude.borrow_mut().bind(name, Item::PrimitiveFn(prim));
+    pub fn add_primitive_fn(&'a self, name: &str, prim: PrimitiveFn<'a>) {
+        let fnid = self.create_function(FunctionDef::Primitive(prim));
+        self.prelude.borrow_mut().bind(name, Item::Func(fnid));
     }
 
     pub fn define_primitive(&'a self, header: &str, implementations: Vec<PrimitiveDef>) {
         let header = &*self.ast_header_arena.alloc(grammar::primitive_header(header).expect("failed to parse primitive header"));
-        self.protocol_scope.borrow_mut().add_primitive(self.session, &*self.prelude.borrow(), header, implementations);
+        self.protocol_scope.borrow_mut().add_primitive(self, &*self.prelude.borrow(), header, implementations);
     }
 
     pub fn define_prelude(&'a self, source: &str) {
         let module = self.parse_module(source).expect("failed to parse prelude module");
         *self.prelude.borrow_mut() = module.scope;
+    }
+
+    pub fn create_function(&'a self, def: FunctionDef<'a>) -> FunctionId {
+        let fnid = self.functions.create();
+        self.functions.define(fnid, def);
+        fnid
+    }
+
+    pub fn look_up_function(&self, id: FunctionId) -> &FunctionDef<'a> {
+        self.functions.get(id)
     }
 
     pub fn parse_process(&'a self, source: &str, shape_below: &Shape, fields_below: &Fields) -> Result<ProcessInfo, grammar::ParseError> {
@@ -117,7 +129,7 @@ impl<'a> Ctxt<'a> {
 
         let mut protocol_scope = self.protocol_scope.borrow_mut();
         for def in with_blocks {
-            protocol_scope.add_def(self.session, scope.clone(), def);
+            protocol_scope.add_def(self, scope.clone(), def);
         }
 
         Ok(Module { ast: ast, scope: scope })

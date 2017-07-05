@@ -108,15 +108,15 @@ impl ResolveInfo {
     }
 }
 
-fn resolve_action<'s>(ctx: &Ctxt<'s>,
-                      scope: &Scope<'s>,
+fn resolve_action<'s>(ctx: &'s Ctxt<'s>,
+                      scope: &Scope,
                       protocol_scope: &ProtocolScope<'s>,
                       shape_down: &Shape,
                       shape_up: &mut Shape,
                       action: &'s ast::Action) -> Step {
     match *action {
         ast::Action::Call(ref name, ref param_ast, ref body) => {
-            let param = expr::rexpr(ctx.session, scope, param_ast);
+            let param = expr::rexpr(ctx, scope, param_ast);
 
             let (child_shape, step) = protocol_scope.call(ctx, shape_down, name, param);
 
@@ -129,14 +129,14 @@ fn resolve_action<'s>(ctx: &Ctxt<'s>,
         ast::Action::Token(ref expr) => {
             debug!("Token: {:?}", expr);
 
-            let item = expr::rexpr(ctx.session, scope, expr);
+            let item = expr::rexpr(ctx, scope, expr);
             Step::Token(resolve_token(item, shape_down))
         }
         ast::Action::On(ref expr, ref body) => {
             let mut body_scope = scope.child();
 
             debug!("Upper message, shape: {:?}", shape_up);
-            let msginfo = expr::on_expr_message(ctx.session, &mut body_scope, shape_up, expr);
+            let msginfo = expr::on_expr_message(ctx, &mut body_scope, shape_up, expr);
 
             let step = if let &Some(ref body) = body {
                 resolve_seq(ctx, &body_scope, protocol_scope, shape_down, &mut Shape::null(), body)
@@ -149,7 +149,7 @@ fn resolve_action<'s>(ctx: &Ctxt<'s>,
             Step::TokenTop(msg, box step)
         }
         ast::Action::Repeat(ref count_ast, ref block) => {
-            let count = expr::value(ctx.session, scope, count_ast);
+            let count = expr::value(ctx, scope, count_ast);
             let step = resolve_seq(ctx, scope, protocol_scope, shape_down, shape_up, block);
             Step::Repeat(count, box step, false)
         }
@@ -159,7 +159,7 @@ fn resolve_action<'s>(ctx: &Ctxt<'s>,
             let mut inner_vars = Vec::with_capacity(pairs.len());
 
             for &(ref name, ref expr) in pairs {
-                let e = expr::value(ctx.session, scope, expr);
+                let e = expr::value(ctx, scope, expr);
                 let t = e.get_type();
                 if let Type::Vector(c, box ty) = t {
                     match count {
@@ -178,12 +178,12 @@ fn resolve_action<'s>(ctx: &Ctxt<'s>,
             Step::Foreach(count.unwrap_or(0) as u32, inner_vars, box step)
         }
         ast::Action::Alt(ref expr, ref arms) => {
-            let r = expr::rexpr(ctx.session, scope, expr);
+            let r = expr::rexpr(ctx, scope, expr);
 
             let v = arms.iter().map(|arm| {
                 let mut body_scope = scope.child();
                 let mut checks = Vec::new();
-                expr::pattern_match(ctx.session, &mut body_scope, &arm.discriminant, &r, &mut checks);
+                expr::pattern_match(ctx, &mut body_scope, &arm.discriminant, &r, &mut checks);
                 let step = resolve_seq(ctx, &body_scope, protocol_scope, shape_down, shape_up, &arm.block);
                 (checks, step)
             }).collect();
@@ -193,8 +193,8 @@ fn resolve_action<'s>(ctx: &Ctxt<'s>,
     }
 }
 
-pub fn resolve_seq<'s>(ctx: &Ctxt<'s>,
-                  pscope: &Scope<'s>,
+pub fn resolve_seq<'s>(ctx: &'s Ctxt<'s>,
+                  pscope: &Scope,
                   protocol_scope: &ProtocolScope<'s>,
                   shape_down: &Shape,
                   shape_up: &mut Shape,
@@ -209,9 +209,9 @@ pub fn resolve_seq<'s>(ctx: &Ctxt<'s>,
     Step::Seq(steps)
 }
 
-pub fn resolve_letdef<'s>(ctx: &Ctxt<'s>, scope: &mut Scope<'s>, lets: &'s [ast::LetDef]) {
+pub fn resolve_letdef<'s>(ctx: &'s Ctxt<'s>, scope: &mut Scope, lets: &'s [ast::LetDef]) {
     for &ast::LetDef(ref name, ref expr) in lets.iter() {
-        let item = expr::rexpr(ctx.session, scope, expr);
+        let item = expr::rexpr(ctx, scope, expr);
         scope.bind(&name, item);
     }
 }

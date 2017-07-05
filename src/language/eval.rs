@@ -412,7 +412,7 @@ fn fn_complex(arg: Item) -> Result<Item, &'static str> {
     }
 }
 
-pub fn add_primitive_fns(loader: &super::Ctxt) {
+pub fn add_primitive_fns<'a>(loader: &'a super::Ctxt<'a>) {
     loader.add_primitive_fn("int", fn_int);
     loader.add_primitive_fn("signed", fn_signed);
     loader.add_primitive_fn("chunks", fn_chunks);
@@ -422,18 +422,21 @@ pub fn add_primitive_fns(loader: &super::Ctxt) {
 #[test]
 fn exprs() {
     use session::Session;
+    use super::Ctxt;
     use super::grammar;
     use super::scope::Scope;
     use typed_arena::Arena;
 
-    let sess = Session::new(None);
     let ast_arena = Arena::new();
-    let mut scope = Scope::new();
-    scope.bind("complex", Item::PrimitiveFn(fn_complex));
+    let sess = Session::new(None);
+    let ctxt = Ctxt::new(&sess);
+
+    ctxt.add_primitive_fn("complex", fn_complex);
+    let mut scope = ctxt.prelude.borrow().child();
 
     let expr = |e| {
         let ast = ast_arena.alloc(grammar::valexpr(e).unwrap());
-        super::expr::value(&sess, &scope, ast)
+        super::expr::value(&ctxt, &scope, ast)
     };
 
     let two = expr("2");

@@ -8,23 +8,24 @@ use protocol::ProtocolId;
 use session::{ Session, ValueID };
 use super::eval::{ Expr };
 use super::expr;
+use super::function::FunctionId;
 
 /// A collection of named Items.
 #[derive(Clone)]
-pub struct Scope<'s>{
-    pub names: HashMap<String, Item<'s>>,
+pub struct Scope{
+    pub names: HashMap<String, Item>
 }
 
-impl<'s> Scope<'s> {
+impl Scope {
     /// Create an empty `Scope`
-    pub fn new() -> Scope<'s> {
+    pub fn new() -> Scope {
       Scope {
         names: HashMap::new(),
       }
     }
 
     /// Bind a name to a value
-    pub fn bind(&mut self, name: &str, value: Item<'s>) {
+    pub fn bind(&mut self, name: &str, value: Item) {
         self.names.insert(name.to_string(), value);
     }
 
@@ -37,11 +38,11 @@ impl<'s> Scope<'s> {
     }
 
     /// Get the item associated with the name
-    pub fn get(&self, name: &str) -> Option<Item<'s>> {
+    pub fn get(&self, name: &str) -> Option<Item> {
         self.names.get(name).cloned()
     }
 
-    pub fn get_as<'a, T: FromItem<'a, 's>>(&'a self, name: &str) -> Result<T, ()> {
+    pub fn get_as<'a, T: FromItem<'a>>(&'a self, name: &str) -> Result<T, ()> {
         match self.names.get(name) {
             Some(i) => T::try_from_item(i).ok_or(()),
             None => Err(())
@@ -49,7 +50,7 @@ impl<'s> Scope<'s> {
     }
 
     /// Create a child scope for a lexically nested block
-    pub fn child(&self) -> Scope<'s> {
+    pub fn child(&self) -> Scope {
         Scope {
             names: self.names.clone(),
         }
@@ -58,52 +59,34 @@ impl<'s> Scope<'s> {
 
 /// A thing associated with a name in a Scope
 #[derive(Clone)]
-pub enum Item<'s> {
+pub enum Item {
     /// Expression for a (possibly runtime-variable) value
     Value(Expr),
 
-    /// Function literal
-    Func(Func<'s>),
-
-    /// Reference to a primitive function
-    PrimitiveFn(super::module_loader::PrimitiveFn<'s>),
+    // Functionsession
+    Func(FunctionId),
 
     /// Interface definition - `interface` block AST and enclosing scope
     Protocol(ProtocolId),
 
     /// Collection of `Item`s
-    Tuple(Vec<Item<'s>>), // TODO: named components
+    Tuple(Vec<Item>), // TODO: named components
 
     /// Sequence of Unicode code points. Not a Value because it is not of constant size.
     String(String),
 }
 
-pub trait FromItem<'a, 's>: Sized { // TODO: use TryFrom once stable
-    fn try_from_item(&'a Item<'s>) -> Option<Self>;
+pub trait FromItem<'a>: Sized { // TODO: use TryFrom once stable
+    fn try_from_item(&'a Item) -> Option<Self>;
 }
 
-impl<'a, 's> FromItem<'a, 's> for &'a str {
-    fn try_from_item(i: &'a Item<'s>) -> Option<Self> {
+impl<'a> FromItem<'a> for &'a str {
+    fn try_from_item(i: &'a Item) -> Option<Self> {
         if let &Item::String(ref s) = i { Some(s) } else { None }
     }
 }
 
-#[derive(Clone)]
-pub struct Func<'s> {
-    pub args: &'s ast::Expr,
-    pub body: &'s ast::Expr,
-    pub scope: Box<Scope<'s>>,
-}
-
-impl<'s> Func<'s> {
-    pub fn apply(&self, session: &Session, arg: Item<'s>) -> Item<'s> {
-        let mut scope = self.scope.child();
-        expr::assign(session, &mut scope, self.args, arg);
-        expr::rexpr(session, &mut scope, self.body)
-    }
-}
-
-impl<'s> Item<'s> {
+impl Item {
     pub fn as_constant(&self) -> Option<&Value> {
         match *self {
             Item::Value(Expr::Const(ref c)) => Some(c),
@@ -112,19 +95,18 @@ impl<'s> Item<'s> {
     }
 }
 
-impl <'s> Default for Item<'s> {
-    fn default() -> Item<'s> {
+impl Default for Item {
+    fn default() -> Item {
         Item::Tuple(Vec::new())
     }
 }
 
-impl<'s> fmt::Debug for Item<'s> {
+impl fmt::Debug for Item {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             Item::Value(ref v) => write!(f, "{:?}", v),
-            Item::Func(ref func) => write!(f, "|{:?}| {:?}", func.args, func.body),
-            Item::PrimitiveFn(..) => write!(f, "<primitive fn>"),
-            Item::Protocol(..) => write!(f, "<protocol>"),
+            Item::Func(id) => write!(f, "<function {}>", id.0),
+            Item::Protocol(id) => write!(f, "<protocol {}>", id.0),
             Item::Tuple(ref v) => {
                 try!(write!(f, "("));
                 for i in v.iter() {

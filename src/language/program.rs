@@ -29,15 +29,15 @@ impl Process for ProgramFlip {
     }
 }
 
-pub fn resolve_process<'s>(ctx: &Ctxt<'s>,
-                           scope: &Scope<'s>,
+pub fn resolve_process<'s>(ctx: &'s Ctxt<'s>,
+                           scope: &Scope,
                            protocol_scope: &ProtocolScope<'s>,
                            shape: &Shape,
                            fields_down: &Fields,
                            p: &'s ast::Process) -> ProcessInfo {
     match *p {
         ast::Process::Call(ref name, ref arg) => {
-            let arg = super::expr::rexpr(ctx.session, scope, arg);
+            let arg = super::expr::rexpr(ctx, scope, arg);
             let (shape_up, mut step) = protocol_scope.call(ctx, shape, name, arg);
 
             let mut fields_up = shape_up.fields(DataMode { down: false, up: true });
@@ -92,8 +92,8 @@ pub fn resolve_process<'s>(ctx: &Ctxt<'s>,
     }
 }
 
-fn make_literal_process<'s>(ctx: &Ctxt<'s>,
-                            scope: &Scope<'s>,
+fn make_literal_process<'s>(ctx: &'s Ctxt<'s>,
+                            scope: &Scope,
                             protocol_scope: &ProtocolScope<'s>,
                             is_up: bool,
                             shape_up_expr: &'s ast::ProtocolRef,
@@ -121,11 +121,11 @@ pub struct CompiledTest<'a> {
 }
 
 pub fn compile_test<'a>(ctx: &'a Ctxt<'a>,
-                        scope: &Scope<'a>,
+                        scope: &Scope,
                         protocol_scope: &ProtocolScope<'a>,
                         test: &'a ast::Test) -> CompiledTest<'a> {
 
-    fn build_stack<'a>(ctx: &'a Ctxt<'a>, scope: &Scope<'a>, protocol_scope: &ProtocolScope<'a>,
+    fn build_stack<'a>(ctx: &'a Ctxt<'a>, scope: &Scope, protocol_scope: &ProtocolScope<'a>,
                        bottom_process: ProcessInfo, ast: &'a [ast::Process]) -> ProcessStack<'a> {
         let mut stack = ProcessStack::new(ctx);
         stack.add(bottom_process);

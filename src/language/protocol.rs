@@ -17,14 +17,14 @@ enum ProtocolMatch<'a> {
     Tup(Vec<ProtocolMatch<'a>>)
 }
 
-pub fn resolve_protocol_invoke<'a>(ctx: &Ctxt<'a>, scope: &Scope<'a>, ast: &'a ast::ProtocolRef) -> Shape {
+pub fn resolve_protocol_invoke<'a>(ctx: &'a Ctxt<'a>, scope: &Scope, ast: &'a ast::ProtocolRef) -> Shape {
     match *ast {
         ast::ProtocolRef::Protocol{ ref name, ref param } => {
             if let Some(Item::Protocol(protocol_id)) = scope.get(&name[..]) {
                 let protocol = ctx.protocols.get(protocol_id);
                 let mut protocol_def_scope = protocol.scope.child();
 
-                match (expr::rexpr(ctx.session, scope, param), protocol.ast.params.len())  {
+                match (expr::rexpr(ctx, scope, param), protocol.ast.params.len())  {
                     (item, 1) => protocol_def_scope.bind(&protocol.ast.params[0], item),
                     (Item::Tuple(t), x) => {
                         if t.len() != x {
@@ -53,7 +53,7 @@ pub fn resolve_protocol_invoke<'a>(ctx: &Ctxt<'a>, scope: &Scope<'a>, ast: &'a a
             }
         }
         ast::ProtocolRef::Type(ref expr) => {
-            match expr::value(ctx.session, scope, expr) {
+            match expr::value(ctx, scope, expr) {
                 Expr::Const(c) => Shape::Const(c),
                 e => Shape::Val(e.get_type())
             }
@@ -69,7 +69,7 @@ pub fn resolve_protocol_invoke<'a>(ctx: &Ctxt<'a>, scope: &Scope<'a>, ast: &'a a
     }
 }
 
-fn resolve_protocol_match<'a>(session: &Session, scope: &Scope<'a>, ast: &'a ast::ProtocolRef) -> ProtocolMatch<'a> {
+fn resolve_protocol_match<'a>(ctx: &'a Ctxt<'a>, scope: &Scope, ast: &'a ast::ProtocolRef) -> ProtocolMatch<'a> {
     match *ast {
         ast::ProtocolRef::Protocol{ ref name, ref param } => {
             if let Some(Item::Protocol(protocol_id)) = scope.get(&name[..]) {
@@ -79,10 +79,10 @@ fn resolve_protocol_match<'a>(session: &Session, scope: &Scope<'a>, ast: &'a ast
             }
         }
         ast::ProtocolRef::Type(ref expr) => {
-            ProtocolMatch::Type(expr::value(session, scope, expr).get_type())
+            ProtocolMatch::Type(expr::value(ctx, scope, expr).get_type())
         }
         ast::ProtocolRef::Tup(ref items) => {
-            let resolved_items = items.iter().map(|x| resolve_protocol_match(session, scope, x)).collect::<Vec<_>>();
+            let resolved_items = items.iter().map(|x| resolve_protocol_match(ctx, scope, x)).collect::<Vec<_>>();
             if resolved_items.len() == 1 {
                 resolved_items.into_iter().next().unwrap()
             } else {
@@ -101,7 +101,7 @@ struct WithBlock<'a> {
 enum WithDef <'a> {
     Code {
         def: &'a ast::Def,
-        scope: Scope<'a>,
+        scope: Scope,
     },
     Primitive {
         shape_up: &'a Option<ast::ProtocolRef>,
@@ -119,9 +119,9 @@ impl<'a> ProtocolScope<'a> {
         ProtocolScope { entries: vec![] }
     }
 
-    pub fn add_def(&mut self, session: &Session, scope: Scope<'a>, def: &'a ast::Def) {
+    pub fn add_def(&mut self, ctx: &'a Ctxt<'a>, scope: Scope, def: &'a ast::Def) {
         self.entries.push(WithBlock {
-            protocol: resolve_protocol_match(session, &scope, &def.bottom),
+            protocol: resolve_protocol_match(ctx, &scope, &def.bottom),
             name: def.name.clone(),
             implementation: WithDef::Code {
                 def: def,
@@ -130,9 +130,9 @@ impl<'a> ProtocolScope<'a> {
         });
     }
 
-    pub fn add_primitive(&mut self, session: &Session, scope: &Scope<'a>, header: &'a ast::PrimitiveHeader, defs: Vec<PrimitiveDef>) {
+    pub fn add_primitive(&mut self, ctx: &'a Ctxt<'a>, scope: &Scope, header: &'a ast::PrimitiveHeader, defs: Vec<PrimitiveDef>) {
         self.entries.push(WithBlock {
-            protocol: resolve_protocol_match(session, scope, &header.bottom),
+            protocol: resolve_protocol_match(ctx, scope, &header.bottom),
             name: header.name.clone(),
             implementation: WithDef::Primitive { shape_up: &header.top, defs }
         });
@@ -152,7 +152,7 @@ impl<'a> ProtocolScope<'a> {
         found
     }
 
-    pub fn call(&self, ctx: &Ctxt<'a>, shape: &Shape, name: &str, param: Item<'a>) -> (Shape, Step) {
+    pub fn call(&self, ctx: &'a Ctxt<'a>, shape: &Shape, name: &str, param: Item) -> (Shape, Step) {
         match self.find(shape, name).unwrap_or_else(|| panic!("No definition found for `{}`", name)).implementation {
             WithDef::Code { ref def, ref scope } => {
                 let mut scope = scope.child();
