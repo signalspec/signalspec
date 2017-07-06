@@ -1,14 +1,11 @@
 use protocol::ProtocolId;
 use data::Type;
 use protocol::Shape;
-use super::step::{ Step, resolve_seq };
 use super::scope::{Item, Scope};
 use super::ast;
 use super::expr;
 use super::{ Ctxt, PrimitiveDef };
 use super::eval::Expr;
-use session::Session;
-
 
 /// A pattern to match a protocol. These are used in the predicate of `with` blocks.
 enum ProtocolMatch<'a> {

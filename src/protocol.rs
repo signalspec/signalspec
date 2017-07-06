@@ -34,7 +34,7 @@ impl Shape {
      }
 
     /// Produces a shape for a stream of bytes
-    pub fn bytes(dir: DataMode) -> Shape {
+    pub fn bytes() -> Shape {
         Shape::Val(Type::Integer(0, 255))
     }
 

@@ -1,6 +1,6 @@
 use std::{thread, mem};
 use protocol::{ Shape, Fields };
-use language::{Item, Ctxt};
+use language::Ctxt;
 use connection::Connection;
 
 pub trait Process: Send {

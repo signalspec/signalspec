@@ -2,12 +2,10 @@ use std::fmt;
 use std::collections::HashMap;
 use std::default::Default;
 
-use super::ast;
 use data::{ Value, Type };
 use protocol::ProtocolId;
 use session::{ Session, ValueID };
 use super::eval::{ Expr };
-use super::expr;
 use super::function::FunctionId;
 
 /// A collection of named Items.
