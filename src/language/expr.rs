@@ -141,7 +141,7 @@ fn resolve_call<'s>(ctxt: &'s Ctxt<'s>, scope: &Scope, func: &'s ast::Expr, arg:
 
 /// Resolve an expression as used in the argument of an `on` block, defining variables
 pub fn on_expr_message<'s>(ctx: &'s Ctxt<'s>, scope: &mut Scope,
-        shape: &mut Shape, expr: &'s ast::Expr) -> Vec<Option<Expr>> {
+        shape: &Shape, expr: &'s ast::Expr) -> Vec<Option<Expr>> {
 
     // First test if this shape matches the expression, in order to avoid binding variables
     // for the wrong protocol variant.
@@ -161,21 +161,21 @@ pub fn on_expr_message<'s>(ctx: &'s Ctxt<'s>, scope: &mut Scope,
     }
 
     match (shape, expr) {
-        (&mut Shape::Const(ref c), &ast::Expr::Value(ref val)) if c == val => vec![],
+        (&Shape::Const(ref c), &ast::Expr::Value(ref val)) if c == val => vec![],
 
-        (&mut Shape::Val(ref ty), &ast::Expr::Var(ref name)) => { // A variable binding
+        (&Shape::Val(ref ty), &ast::Expr::Var(ref name)) => { // A variable binding
             let id = scope.new_variable(ctx.session, &name[..], ty.clone());
             vec![Some((Expr::Variable(id, ty.clone())))]
         }
 
-        (&mut Shape::Tup(ref mut ss), &ast::Expr::Var(ref name)) => { // A variable binding for a tuple
+        (&Shape::Tup(ref ss), &ast::Expr::Var(ref name)) => { // A variable binding for a tuple
             // Capture a tuple by recursively building a tuple Item containing each of the
             // captured variables
-            fn build_tuple<'s>(ctx: &'s Ctxt<'s>, msg: &mut Vec<Option<Expr>>, ss: &mut [Shape]) -> Item {
-                Item::Tuple(ss.iter_mut().map(|i| {
+            fn build_tuple<'s>(ctx: &'s Ctxt<'s>, msg: &mut Vec<Option<Expr>>, ss: &[Shape]) -> Item {
+                Item::Tuple(ss.iter().map(|i| {
                     match *i {
                         Shape::Const(ref c) => Item::Value(Expr::Const(c.clone())),
-                        Shape::Tup(ref mut t) => build_tuple(ctx, msg, &mut t[..]),
+                        Shape::Tup(ref t) => build_tuple(ctx, msg, &t[..]),
                         Shape::Val(ref ty) => {
                             let id = ctx.session.make_id();
                             msg.push(Some((Expr::Variable(id, ty.clone()))));
@@ -187,28 +187,28 @@ pub fn on_expr_message<'s>(ctx: &'s Ctxt<'s>, scope: &mut Scope,
             }
 
             let mut msg = Vec::new();
-            scope.bind(name, build_tuple(ctx, &mut msg, &mut ss[..]));
+            scope.bind(name, build_tuple(ctx, &mut msg, &ss[..]));
             msg
         }
 
-        (&mut Shape::Val(_), expr) => { // A match against a refutable pattern
+        (&Shape::Val(_), expr) => { // A match against a refutable pattern
             let e = resolve(ctx, None, &mut |_| { panic!("Variable binding not allowed here") }, expr);
             vec![Some(e)]
         }
 
-        (&mut Shape::Tup(ref mut ss), &ast::Expr::Tup(ref se)) => {
-            ss.iter_mut().zip(se.iter()).flat_map(|(s, i)| {
+        (&Shape::Tup(ref ss), &ast::Expr::Tup(ref se)) => {
+            ss.iter().zip(se.iter()).flat_map(|(s, i)| {
                 on_expr_message(ctx, scope, s, i)
             }).collect()
         }
 
-        (&mut Shape::Protocol { ref mut messages, ..}, expr) => {
+        (&Shape::Protocol { ref messages, ..}, expr) => {
             if messages.len() == 1 {
-                on_expr_message(ctx, scope, &mut messages[0], expr)
+                on_expr_message(ctx, scope, &messages[0], expr)
             } else {
                 let mut fields = vec![None];
                 let mut matching_variants = 0;
-                for (i, shape) in messages.iter_mut().enumerate() {
+                for (i, shape) in messages.iter().enumerate() {
                     if try_match(shape, expr) {
                         fields[0] = Some(Expr::Const(Value::Integer(i as i64)));
                         fields.extend(on_expr_message(ctx, scope, shape, expr));

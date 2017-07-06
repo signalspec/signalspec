@@ -95,18 +95,15 @@ fn resolve_protocol_match<'a>(ctx: &'a Ctxt<'a>, scope: &Scope, ast: &'a ast::Pr
 struct WithBlock<'a> {
     protocol: ProtocolMatch<'a>,
     name: String,
-    implementation: WithDef<'a>
+    param: &'a ast::Expr,
+    scope: Scope,
+    shape_up: &'a Option<ast::ProtocolRef>,
+    implementation: DefImpl<'a>
 }
 
-enum WithDef <'a> {
-    Code {
-        def: &'a ast::Def,
-        scope: Scope,
-    },
-    Primitive {
-        shape_up: &'a Option<ast::ProtocolRef>,
-        defs: Vec<PrimitiveDef>,
-    }
+pub enum DefImpl <'a> {
+    Code(&'a ast::Block),
+    Primitive(Vec<PrimitiveDef>)
  }
 
 
@@ -123,10 +120,10 @@ impl<'a> ProtocolScope<'a> {
         self.entries.push(WithBlock {
             protocol: resolve_protocol_match(ctx, &scope, &def.bottom),
             name: def.name.clone(),
-            implementation: WithDef::Code {
-                def: def,
-                scope: scope,
-            }
+            scope: scope,
+            param: &def.param,
+            shape_up: &def.top,
+            implementation: DefImpl::Code(&def.block)
         });
     }
 
@@ -134,11 +131,14 @@ impl<'a> ProtocolScope<'a> {
         self.entries.push(WithBlock {
             protocol: resolve_protocol_match(ctx, scope, &header.bottom),
             name: header.name.clone(),
-            implementation: WithDef::Primitive { shape_up: &header.top, defs }
+            scope: scope.child(),
+            param: &header.param,
+            shape_up: &header.top,
+            implementation: DefImpl::Primitive(defs),
         });
     }
 
-    fn find<'m>(&'m self, _shape: &Shape, name: &str) -> Option<&'m WithBlock<'a>> {
+    fn find_by_name<'m>(&'m self, _shape: &Shape, name: &str) -> Option<&'m WithBlock<'a>> {
         let mut found = None;
         for entry in &self.entries {
             if entry.name != name { continue }
@@ -152,22 +152,17 @@ impl<'a> ProtocolScope<'a> {
         found
     }
 
-    pub fn call(&self, ctx: &'a Ctxt<'a>, shape: &Shape, name: &str, param: Item) -> (Shape, Step) {
-        match self.find(shape, name).unwrap_or_else(|| panic!("No definition found for `{}`", name)).implementation {
-            WithDef::Code { ref def, ref scope } => {
-                let mut scope = scope.child();
-                let mut shape_up = if let Some(ref x) = def.top {
-                    resolve_protocol_invoke(ctx, &scope, x)
-                } else {
-                    Shape::null()
-                };
+    pub fn find(&self, ctx: &'a Ctxt<'a>, shape: &Shape, name: &str, param: Item) -> (Scope, &DefImpl<'a>, Shape) {
+        let block = self.find_by_name(shape, name).unwrap_or_else(|| panic!("No definition found for `{}`", name));
+        let mut scope = block.scope.child();
+        expr::assign(ctx.session, &mut scope, &block.param, param);
 
-                expr::assign(ctx.session, &mut scope, &def.param, param);
-                let step = resolve_seq(ctx, &scope, self, shape, &mut shape_up, &def.block);
+        let shape_up = if let &Some(ref x) = block.shape_up {
+            resolve_protocol_invoke(ctx, &scope, x)
+        } else {
+            Shape::null()
+        };
 
-                (shape_up, step)
-            }
-            WithDef::Primitive { .. } => panic!("Primitive not allowed here"),
-        }
+        (scope, &block.implementation, shape_up)
     }
 }

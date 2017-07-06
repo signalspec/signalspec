@@ -6,7 +6,7 @@ use session::ValueID;
 use super::{ ast, expr };
 use super::scope::{ Scope, Item };
 use super::eval::Expr;
-use super::protocol::ProtocolScope;
+use super::protocol::{ ProtocolScope, DefImpl };
 use super::module_loader::Ctxt;
 use protocol::{ Shape, Fields };
 
@@ -112,13 +112,20 @@ fn resolve_action<'s>(ctx: &'s Ctxt<'s>,
                       scope: &Scope,
                       protocol_scope: &ProtocolScope<'s>,
                       shape_down: &Shape,
-                      shape_up: &mut Shape,
+                      shape_up: &Shape,
                       action: &'s ast::Action) -> Step {
     match *action {
         ast::Action::Call(ref name, ref param_ast, ref body) => {
             let param = expr::rexpr(ctx, scope, param_ast);
 
-            let (child_shape, step) = protocol_scope.call(ctx, shape_down, name, param);
+            let (scope, imp, mut shape_up) = protocol_scope.find(ctx, shape_down, name, param);
+
+            let step = match *imp {
+                DefImpl::Code(ref seq) => {
+                    resolve_seq(ctx, &scope, protocol_scope, shape_down, &mut shape_up, seq)
+                }
+                DefImpl::Primitive(..) => panic!("Primitive not allowed here"),
+            };
 
             if let &Some(ref _body) = body {
                 unimplemented!();
@@ -197,7 +204,7 @@ pub fn resolve_seq<'s>(ctx: &'s Ctxt<'s>,
                   pscope: &Scope,
                   protocol_scope: &ProtocolScope<'s>,
                   shape_down: &Shape,
-                  shape_up: &mut Shape,
+                  shape_up: &Shape,
                   block: &'s ast::Block) -> Step {
     let mut scope = pscope.child();
     resolve_letdef(ctx, &mut scope, &block.lets);

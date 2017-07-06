@@ -1,7 +1,7 @@
 macro_rules! bind {
     (|$($i:ident: $t:ty),*| $body:block) => {
         Box::new(|s: &::language::Scope| {
-            $(let $i:$t = s.get_as(stringify!(s))?;)*
+            $(let $i:$t = s.get_as(stringify!($i))?;)*
             $body
         })
     };
@@ -17,6 +17,7 @@ pub fn add_primitives<'a>(loader: &'a Ctxt<'a>) {
     loader.define_prelude(r#"
     protocol Base() {}
     let Bytes = #0..#255
+    let Float32 = -1.0..1.0
     "#);
 
     add_primitive_fns(loader);

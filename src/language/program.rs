@@ -1,8 +1,9 @@
-use super::{ ast, nfa };
+use super::{ ast, nfa, PrimitiveDef, PrimitiveDefFields };
 use super::dfa::{ self, Dfa };
 use super::scope::Scope;
 use protocol::{ Shape, Fields };
-use super::protocol::{ ProtocolScope, resolve_protocol_invoke };
+use super::protocol::{ ProtocolScope, DefImpl, resolve_protocol_invoke };
+use super::step::resolve_seq;
 use super::Ctxt;
 use data::{DataMode};
 use process::{ Process, ProcessStack, ProcessInfo };
@@ -29,56 +30,93 @@ impl Process for ProgramFlip {
     }
 }
 
+fn compile_block<'s>(ctx: &'s Ctxt<'s>,
+                     scope: &Scope,
+                     protocol_scope: &ProtocolScope<'s>,
+                     shape_down: &Shape,
+                     fields_down: &Fields,
+                     shape_up: Shape,
+                     seq: &'s ast::Block,
+                     name: &str) -> ProcessInfo {
+    let mut step = resolve_seq(ctx, &scope, protocol_scope, shape_down, &shape_up, seq);
+
+    let mut fields_up = shape_up.fields(DataMode { down: false, up: true });
+    super::step::infer_direction(&mut step, &fields_down, &mut fields_up);
+
+    if let Some(mut f) = ctx.session.debug_file(|| format!("{}.steps", name)) {
+        step.write_tree(&mut f, 0).unwrap_or_else(|e| error!("{}", e));
+    }
+
+    let mut nfa = nfa::from_step_tree(&step);
+
+    if let Some(mut f) = ctx.session.debug_file(|| format!("{}.nfa.dot", name)) {
+        nfa.to_graphviz(&mut f).unwrap_or_else(|e| error!("{}", e));
+    }
+
+    nfa.remove_useless_epsilons();
+
+    if let Some(mut f) = ctx.session.debug_file(|| format!("{}.cleaned.nfa.dot", name)) {
+        nfa.to_graphviz(&mut f).unwrap_or_else(|e| error!("{}", e));
+    }
+
+    let dfa = dfa::make_dfa(&nfa, &fields_down, &fields_up);
+
+    if let Some(mut f) = ctx.session.debug_file(|| format!("{}.dfa.dot", name)) {
+        dfa.to_graphviz(&mut f).unwrap_or_else(|e| error!("{}", e));
+    }
+
+    ProcessInfo { fields_up, shape_up, implementation: Box::new(Program{dfa}) }
+}
+
+fn call_primitive<'s>(_ctx: &'s Ctxt<'s>,
+                     scope: &Scope,
+                     fields_down: &Fields,
+                     shape_up: Shape,
+                     primitive_impls: &[PrimitiveDef],
+                     name: &str) -> ProcessInfo {
+    for def in primitive_impls {
+        if fields_down == &def.fields_down {
+            info!("Using {} for primitive at {}", def.id, name);
+            let fields_up = match def.fields_up {
+                PrimitiveDefFields::Explicit(ref fields) => fields.clone(),
+                PrimitiveDefFields::Auto(dir) => shape_up.fields(dir),
+            };
+
+            let implementation = (def.instantiate)(scope).expect("Failed to instantiate primitive");
+
+            return ProcessInfo { fields_up, shape_up, implementation };
+        }
+    }
+
+    panic!("No matching call for primitive {} for {:?}", name, fields_down);
+}
+
 pub fn resolve_process<'s>(ctx: &'s Ctxt<'s>,
                            scope: &Scope,
                            protocol_scope: &ProtocolScope<'s>,
-                           shape: &Shape,
+                           shape_down: &Shape,
                            fields_down: &Fields,
                            p: &'s ast::Process) -> ProcessInfo {
     match *p {
         ast::Process::Call(ref name, ref arg) => {
             let arg = super::expr::rexpr(ctx, scope, arg);
-            let (shape_up, mut step) = protocol_scope.call(ctx, shape, name, arg);
+            let (scope, imp, shape_up) = protocol_scope.find(ctx, shape_down, name, arg);
 
-            let mut fields_up = shape_up.fields(DataMode { down: false, up: true });
-            super::step::infer_direction(&mut step, &fields_down, &mut fields_up);
-
-            if let Some(mut f) = ctx.session.debug_file(|| format!("{}.steps", name)) {
-                step.write_tree(&mut f, 0).unwrap_or_else(|e| error!("{}", e));
+            match *imp {
+                DefImpl::Code(ref seq) => {
+                    compile_block(ctx, &scope, protocol_scope, shape_down, fields_down, shape_up, seq, &name)
+                }
+                DefImpl::Primitive(ref primitive) => {
+                    call_primitive(ctx, &scope, fields_down, shape_up, primitive, &name)
+                },
             }
-
-            let mut nfa = nfa::from_step_tree(&step);
-
-            if let Some(mut f) = ctx.session.debug_file(|| format!("{}.nfa.dot", name)) {
-                nfa.to_graphviz(&mut f).unwrap_or_else(|e| error!("{}", e));
-            }
-
-            nfa.remove_useless_epsilons();
-
-            if let Some(mut f) = ctx.session.debug_file(|| format!("{}.cleaned.nfa.dot", name)) {
-                nfa.to_graphviz(&mut f).unwrap_or_else(|e| error!("{}", e));
-            }
-
-            let dfa = dfa::make_dfa(&nfa, &fields_down, &fields_up);
-
-            if let Some(mut f) = ctx.session.debug_file(|| format!("{}.dfa.dot", name)) {
-                dfa.to_graphviz(&mut f).unwrap_or_else(|e| error!("{}", e));
-            }
-
-            ProcessInfo { fields_up, shape_up, implementation: Box::new(Program{dfa}) }
         }
+
         ast::Process::Block(ref block) => {
-            let mut shape_up = Shape::null();
-            let mut step = super::step::resolve_seq(ctx, scope, protocol_scope, shape, &mut shape_up, block);
-
-            let mut fields_up = shape_up.fields(DataMode { up: false, down: false });
-            super::step::infer_direction(&mut step, &fields_down, &mut fields_up);
-
-            let mut nfa = nfa::from_step_tree(&step);
-            nfa.remove_useless_epsilons();
-            let dfa = dfa::make_dfa(&nfa, &fields_down, &fields_up);
-            ProcessInfo { shape_up, fields_up, implementation: Box::new(Program { dfa }) }
+            let shape_up = Shape::null();
+            compile_block(ctx, scope, protocol_scope, shape_down, fields_down, shape_up, block, "anon_block")
         }
+
         ast::Process::Literal(dir, ref shape_up_expr, ref block) => {
             let is_up = match dir {
                 ast::ProcessLiteralDirection::Up => true,
