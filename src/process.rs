@@ -59,11 +59,6 @@ impl<'a> ProcessStack<'a> {
         Ok(())
     }
 
-    pub fn add_print_process(&mut self) {
-        let shape = self.top_shape().clone();
-        self.add(unimplemented!());
-    }
-
     fn spawn(mut self, bottom: Connection, top: Connection) -> Vec<thread::JoinHandle<bool>> {
         let mut threads = Vec::new();
         let mut connection = bottom;

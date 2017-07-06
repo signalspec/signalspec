@@ -2,8 +2,10 @@ extern crate signalspec;
 extern crate env_logger;
 extern crate argparse;
 
-extern crate signalspec_vcd;
-extern crate signalspec_starfish;
+//extern crate signalspec_vcd;
+//extern crate signalspec_starfish;
+
+mod console;
 
 use std::io::prelude::*;
 use std::{ process, fs };
@@ -37,11 +39,11 @@ fn main() {
         process::exit( if success { 0 } else { 1 } );
     } else {
         let sess = signalspec::Session::new(debug.map(PathBuf::from));
-        let loader = signalspec::ModuleLoader::new(&sess);
+        let loader = signalspec::Ctxt::new(&sess);
 
         signalspec::add_primitives(&loader);
-        signalspec_vcd::load_plugin(&loader);
-        signalspec_starfish::load_plugin(&loader);
+        //signalspec_vcd::load_plugin(&loader);
+        //signalspec_starfish::load_plugin(&loader);
 
         for source_fname in imports {
             let mut source = String::new();
@@ -58,9 +60,9 @@ fn main() {
 
         let success;
         if sides.len() == 1 {
-            let topmost_mode = stack.top_shape().data_mode();
-            if topmost_mode.up {
-                stack.add_print_process();
+            if stack.top_fields().direction().up {
+                let shape = stack.top_shape().clone();
+                stack.add(console::make(shape));
             }
 
             success = stack.run();

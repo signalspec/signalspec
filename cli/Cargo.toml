@@ -5,8 +5,8 @@ authors = [ "km@kevinmehall.net" ]
 
 [dependencies]
 signalspec = { path = "../" }
-signalspec_vcd = { path = "../plugins/vcd/" }
-signalspec_starfish = { path = "../plugins/starfish/" }
+#signalspec_vcd = { path = "../plugins/vcd/" }
+#signalspec_starfish = { path = "../plugins/starfish/" }
 log = "0.3.2"
 env_logger = "0.3"
 argparse = "0.2.1"
