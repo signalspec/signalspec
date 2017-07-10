@@ -52,7 +52,7 @@ pub struct PrimitiveHeader {
 
 pub struct Protocol {
     pub name: String,
-    pub params: Vec<String>,
+    pub param: Expr,
     pub entries: Vec<ProtocolEntry>,
 }
 

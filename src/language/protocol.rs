@@ -1,5 +1,5 @@
 use protocol::ProtocolId;
-use data::Type;
+use data::{ Value, Type };
 use protocol::Shape;
 use super::scope::{Item, Scope};
 use super::ast;
@@ -8,32 +8,48 @@ use super::{ Ctxt, PrimitiveDef };
 use super::eval::Expr;
 
 /// A pattern to match a protocol. These are used in the predicate of `with` blocks.
+#[derive(Debug, Clone)]
 enum ProtocolMatch<'a> {
     Protocol { id: ProtocolId, param: &'a ast::Expr },
     Type(Type),
-    Tup(Vec<ProtocolMatch<'a>>)
+    Tup(Vec<ProtocolMatch<'a>>),
+    Const(Value),
+}
+
+impl<'a> ProtocolMatch<'a> {
+    /// Attempt to match the protocol pattern against the supplied shape, returning whether it
+    /// succeeded. Destructured variables are added to the scope. Even if it returns false,
+    /// the scope may have already been modified.
+    fn try_match(&self, ctx: &'a Ctxt<'a>, shape: &Shape, scope: &mut Scope) -> bool {
+        debug!("Trying to match {:?} against {:?}", self, shape);
+        match (self, shape) {
+            (&ProtocolMatch::Protocol { id: l_id, param: l_param }, &Shape::Protocol { def: r_id, param: ref r_param, ..}) => {
+                l_id == r_id && expr::lexpr(ctx, scope, l_param, r_param.clone()).is_ok()
+            }
+            (&ProtocolMatch::Type(ref l_ty), &Shape::Val(ref r_ty)) => {
+                l_ty == r_ty
+            }
+            (&ProtocolMatch::Tup(ref l_items), &Shape::Tup(ref r_items)) => {
+                l_items.len() == r_items.len() && l_items.iter().zip(r_items.iter()).all(|(p, s)| p.try_match(ctx, s, scope))
+            }
+            (&ProtocolMatch::Const(ref l_val), &Shape::Const(ref r_val)) => {
+                l_val == r_val
+            }
+            _ => false
+        }
+    }
 }
 
 pub fn resolve_protocol_invoke<'a>(ctx: &'a Ctxt<'a>, scope: &Scope, ast: &'a ast::ProtocolRef) -> Shape {
     match *ast {
-        ast::ProtocolRef::Protocol{ ref name, ref param } => {
+        ast::ProtocolRef::Protocol{ ref name, param: ref param_ast } => {
             if let Some(Item::Protocol(protocol_id)) = scope.get(&name[..]) {
                 let protocol = ctx.protocols.get(protocol_id);
+                let param = expr::rexpr(ctx, scope, param_ast);
+
                 let mut protocol_def_scope = protocol.scope.child();
-
-                match (expr::rexpr(ctx, scope, param), protocol.ast.params.len())  {
-                    (item, 1) => protocol_def_scope.bind(&protocol.ast.params[0], item),
-                    (Item::Tuple(t), x) => {
-                        if t.len() != x {
-                            panic!("Wrong number of arguments for protocol `{}`, expected {}", protocol.ast.name, x);
-                        }
-
-                        for (name, item) in protocol.ast.params.iter().zip(t.into_iter()) {
-                            protocol_def_scope.bind(name, item);
-                        }
-                    }
-                    (x, n) => panic!("Can't destructure `{:?}` as protocol parameter (required {} items)", x, n)
-                }
+                expr::lexpr(ctx, &mut protocol_def_scope, &protocol.ast.param, param.clone())
+                    .unwrap_or_else(|e| panic!("failed to match parameters for protocol `{}`: {:?}", name, e));
 
                 let mut messages = vec![];
                 for entry in &protocol.ast.entries {
@@ -44,7 +60,7 @@ pub fn resolve_protocol_invoke<'a>(ctx: &'a Ctxt<'a>, scope: &Scope, ast: &'a as
                     }
                 }
 
-                Shape::Protocol { def: protocol_id, messages: messages }
+                Shape::Protocol { def: protocol_id, messages: messages, param }
             } else {
                 panic!("Protocol `{}` not found", name);
             }
@@ -135,31 +151,35 @@ impl<'a> ProtocolScope<'a> {
         });
     }
 
-    fn find_by_name<'m>(&'m self, _shape: &Shape, name: &str) -> Option<&'m WithBlock<'a>> {
+    pub fn find(&self, ctx: &'a Ctxt<'a>, shape: &Shape, name: &str, param: Item) -> (Scope, &DefImpl<'a>, Shape) {
         let mut found = None;
         for entry in &self.entries {
             if entry.name != name { continue }
 
+            let mut scope = entry.scope.child();
+
+            if !entry.protocol.try_match(ctx, shape, &mut scope) {
+                debug!("Failed to match protocol for `{}`", name);
+                continue
+            }
+
+            if let Err(err) = expr::lexpr(ctx, &mut scope, &entry.param, param.clone()) {
+                debug!("Failed to match argument for `{}`: {:?}", name, err);
+                continue
+            }
+
             if found.is_none() {
-                found = Some(entry);
+                let shape_up = if let &Some(ref x) = entry.shape_up {
+                    resolve_protocol_invoke(ctx, &scope, x)
+                } else {
+                    Shape::null()
+                };
+
+                found = Some((scope, &entry.implementation, shape_up));
             } else {
                 panic!("Multiple definition of `{}`", name);
             }
         }
-        found
-    }
-
-    pub fn find(&self, ctx: &'a Ctxt<'a>, shape: &Shape, name: &str, param: Item) -> (Scope, &DefImpl<'a>, Shape) {
-        let block = self.find_by_name(shape, name).unwrap_or_else(|| panic!("No definition found for `{}`", name));
-        let mut scope = block.scope.child();
-        expr::assign(ctx.session, &mut scope, &block.param, param);
-
-        let shape_up = if let &Some(ref x) = block.shape_up {
-            resolve_protocol_invoke(ctx, &scope, x)
-        } else {
-            Shape::null()
-        };
-
-        (scope, &block.implementation, shape_up)
+        found.unwrap_or_else(|| panic!("No definition found for `{}`", name))
     }
 }

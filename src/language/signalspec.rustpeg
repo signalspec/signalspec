@@ -16,8 +16,8 @@ module_entry -> ast::ModuleEntry
     / WITH down_protocol:protocol_ref
       DEF name:IDENTIFIER LPAREN param: expr_tup RPAREN up_protocol:(COLON p:protocol_ref {p})? block:block
       { ast::ModuleEntry::WithDef(ast::Def { bottom:down_protocol, name:name, param:param, top:up_protocol, block:block }) }
-    / PROTOCOL name:IDENTIFIER LPAREN params:(IDENTIFIER ** COMMA) COMMA? RPAREN entries:protocol_block
-      { ast::ModuleEntry::Protocol(ast::Protocol { name:name, params: params, entries: entries }) }
+    / PROTOCOL name:IDENTIFIER LPAREN param:expr_tup RPAREN entries:protocol_block
+      { ast::ModuleEntry::Protocol(ast::Protocol { name, param, entries }) }
     / t:test_block { ast::ModuleEntry::Test(t) }
 
 

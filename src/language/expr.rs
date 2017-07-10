@@ -5,7 +5,6 @@ use super::scope::{ Scope, Item };
 use super::function::{FunctionDef, Func};
 use data::Value;
 use protocol::Shape;
-use session::Session;
 
 fn resolve<'s>(ctx: &'s Ctxt<'s>, scope: Option<&Scope>, var_handler: &mut FnMut(&str) -> Expr, e: &'s ast::Expr) -> Expr {
     match *e {
@@ -231,11 +230,16 @@ pub fn on_expr_message<'s>(ctx: &'s Ctxt<'s>, scope: &mut Scope,
     }
 }
 
+#[derive(Clone, Debug)]
+pub struct PatternError {
+    expected: &'static str,
+    found: Item,
+}
 
-/// Irrefutable destructuring of an item into an expression, such as the LHS of a `let` or a
-/// function argument. Only breaks down tuples and assigns variables.
-pub fn assign<'s>(session: &Session, scope: &mut Scope, l: &ast::Expr, r: Item) {
-    match *l {
+/// Destructures an item into left-hand-side binding, such as a function argument, returning
+/// whether the pattern matched. No runtime evaluation is allowed.
+pub fn lexpr<'s>(ctx: &'s Ctxt<'s>, scope: &mut Scope, l: &ast::Expr, r: Item) -> Result<(), PatternError> {
+    Ok(match *l {
         ast::Expr::Ignore => (),
 
         ast::Expr::Var(ref name) => {
@@ -247,20 +251,28 @@ pub fn assign<'s>(session: &Session, scope: &mut Scope, l: &ast::Expr, r: Item) 
             match r {
                 Item::Tuple(v) => {
                     if exprs.len() != v.len() {
-                        panic!("can't bind a tuple with a different length");
+                        return Err(PatternError { expected: "tuple with a different length", found: Item::Tuple(v) });
                     }
                     for (expr, item) in exprs.iter().zip(v.into_iter()) {
-                        assign(session, scope, expr, item);
+                        lexpr(ctx, scope, expr, item)?
                     }
                 }
-                _ => panic!("can't bind a tuple with a non-tuple")
+                r => return Err(PatternError { expected: "tuple", found: r })
             }
         }
 
-        _ => println!("Cannot destructure into expression {:?}", l),
-    }
+        ast::Expr::Value(ref lv) => {
+            match r {
+                Item::Value(Expr::Const(ref rv)) if lv == rv => (),
+                r => return Err(PatternError { expected: "a constant", found: r })
+            }
+        }
+
+        _ => return Err(PatternError { expected: "tuple, variable, or ignore", found: r })
+    })
 }
 
+/// Destructure an item into an expression, like lexpr, but allowing runtime pattern-matching
 pub fn pattern_match<'s>(ctx: &'s Ctxt<'s>, scope: &mut Scope, pat: &'s ast::Expr, r: &Item, checks: &mut Vec<(Expr, Expr)>) {
         match (pat, r) {
             (&ast::Expr::Ignore, _) => (),

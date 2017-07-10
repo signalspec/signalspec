@@ -1,5 +1,6 @@
 use std::iter;
 use data::{Type, Value, DataMode};
+use language::Item;
 use std::f64;
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
@@ -15,12 +16,12 @@ impl From<ProtocolId> for usize {
 
 /// Representation of token alphabet between state machine layers of abstraction.
 /// Produced from an Protocol by name resolution and direction inference.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub enum Shape {
     Tup(Vec<Shape>),
     Protocol {
         def: ProtocolId,
-        //params: Vec<Item<'a>>, // TODO: remove type parameter from Item
+        param: Item,
         messages: Vec<Shape>,
     },
     Val(Type),

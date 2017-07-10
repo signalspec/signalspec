@@ -44,7 +44,7 @@ pub struct Func<'s> {
 impl<'s> Func<'s> {
     pub fn apply(&self, ctx: &'s Ctxt<'s>, arg: Item) -> Item {
         let mut scope = self.scope.child();
-        expr::assign(ctx.session, &mut scope, self.args, arg);
-        expr::rexpr(ctx, &mut scope, self.body)
+        expr::lexpr(ctx, &mut scope, self.args, arg).expect("failed to match function argument");
+        expr::rexpr(ctx, &scope, self.body)
     }
 }
