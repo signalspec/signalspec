@@ -40,6 +40,15 @@ impl<'a> ProtocolMatch<'a> {
     }
 }
 
+fn item_to_shape(item: Item) -> Shape {
+    match item {
+        Item::Value(Expr::Const(c)) => Shape::Const(c),
+        Item::Value(e) => Shape::Val(e.get_type()),
+        Item::Tuple(t) => Shape::Tup(t.into_iter().map(item_to_shape).collect()),
+        e => panic!("{:?} cannot be converted to Shape", e),
+    }
+}
+
 pub fn resolve_protocol_invoke<'a>(ctx: &'a Ctxt<'a>, scope: &Scope, ast: &'a ast::ProtocolRef) -> Shape {
     match *ast {
         ast::ProtocolRef::Protocol{ ref name, param: ref param_ast } => {
@@ -66,10 +75,7 @@ pub fn resolve_protocol_invoke<'a>(ctx: &'a Ctxt<'a>, scope: &Scope, ast: &'a as
             }
         }
         ast::ProtocolRef::Type(ref expr) => {
-            match expr::value(ctx, scope, expr) {
-                Expr::Const(c) => Shape::Const(c),
-                e => Shape::Val(e.get_type())
-            }
+            item_to_shape(expr::rexpr(ctx, scope, expr))
         }
         ast::ProtocolRef::Tup(ref items) => {
             let resolved_items = items.iter().map(|x| resolve_protocol_invoke(ctx, scope, x)).collect::<Vec<_>>();
