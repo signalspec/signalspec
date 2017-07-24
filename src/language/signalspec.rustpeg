@@ -53,7 +53,7 @@ block -> ast::Block
           { ast::AltArm { discriminant:expr, block:block } }
 
 protocol_block -> Vec<ast::ProtocolEntry>
-  = LBRACE entries:(entry:protocol_entry**(SEMICOLON?) {entry}) RBRACE
+  = LBRACE entries:(protocol_entry**COMMA) COMMA? RBRACE
     { entries }
 
   protocol_entry -> ast::ProtocolEntry

@@ -1,6 +1,6 @@
 let t = #a|#b|#c|#d
 
-with t
+with (t, t)
 def main() {
     (#a, #b)
     (#c, #d)
