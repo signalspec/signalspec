@@ -18,6 +18,8 @@ pub fn add_primitives<'a>(loader: &'a Ctxt<'a>) {
     loader.define_prelude(r#"
     protocol Base() {}
 
+    let byte = [#0..#1, #0..#1, #0..#1, #0..#1, #0..#1, #0..#1, #0..#1, #0..#1]
+
     let Bytes = #0..#255
     let Float32 = -1.0..1.0
     "#);

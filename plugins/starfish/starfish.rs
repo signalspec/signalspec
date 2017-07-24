@@ -1,9 +1,8 @@
-extern crate signalspec;
-#[macro_use] extern crate lazy_static;
+#[macro_use] extern crate signalspec;
 #[macro_use] extern crate log;
 extern crate libusb;
 
-use signalspec::{ ModuleLoader, Connection, Process, PrimitiveDef, Value, DataMode, Type, Shape, ShapeVariant, ShapeData, Item };
+use signalspec::{ Ctxt, Fields, Field, Connection, Process, PrimitiveDef, PrimitiveDefFields, Value, DataMode, Type };
 
 mod starfish_usb;
 use starfish_usb::{ StarfishUsb, find_device };
@@ -44,30 +43,36 @@ impl Process for StarfishProcess {
         ::std::thread::sleep(::std::time::Duration::from_millis(10));
 
         let freq = 100000.;
-        let baud = ((48e6/freq - 48e6*15e-9)/2. - 5.) as u8;
+        let baud = ((48e6/freq - 48e6*15e-9)/2. - 5.0f32) as u8;
         starfish.enable_i2c(baud).unwrap();
 
         while let Ok(mut tok) = upwards.recv() {
 
+            let variant = if let Some(&Some(Value::Integer(x))) = tok.get(0) { x } else {
+                println!("starfish: invalid data on top");
+                return false;
+            };
+
             debug!("{:?}", tok);
-            match tok.0 {
+
+            match variant {
                 0 /*start*/ => {
-                    debug!("start {:x}", bitvec_to_u8(&tok.1[0]));
-                    starfish.start(bitvec_to_u8(&tok.1[0])).unwrap();
+                    debug!("start {:x}", bitvec_to_u8(tok[1].as_ref().unwrap()));
+                    starfish.start(bitvec_to_u8(tok[1].as_ref().unwrap())).unwrap();
                 }
                 1 /* r */ => {
                     starfish.rx(1).unwrap();
                     let r = starfish.recv();
                     debug!("rx => {:?}", r);
                     if let Ok(Reply::Data(b)) = r {
-                        tok.1.push(u8_to_bitvec(b));
+                        tok[2] = Some(u8_to_bitvec(b));
                     } else {
                         return false;
                     }
                 }
                 2 /* w */ => {
-                    debug!("tx {:x}", bitvec_to_u8(&tok.1[0]));
-                    starfish.tx_b(bitvec_to_u8(&tok.1[0])).unwrap();
+                    debug!("tx {:x}", bitvec_to_u8(tok[3].as_ref().unwrap()));
+                    starfish.tx_b(bitvec_to_u8(tok[3].as_ref().unwrap())).unwrap();
                 }
                 3 /* stop */ => {
                     starfish.stop().unwrap();
@@ -81,48 +86,32 @@ impl Process for StarfishProcess {
 
         true
     }
+}
 
-    fn shape_up(&self) -> &Shape {
-        lazy_static! {
-            static ref SHAPE: Shape = Shape {
-                variants: vec![
-                    ShapeVariant {
-                        data: ShapeData::Tup(vec![
-                            ShapeData::Const(Value::Symbol("start".into())),
-                            ShapeData::Val(Type::Vector(8, Box::new(Type::Integer(0, 1))), DataMode { down: true, up: false })
-                        ])
-                    },
-                    ShapeVariant {
-                        data: ShapeData::Tup(vec![
-                            ShapeData::Const(Value::Symbol("r".into())),
-                            ShapeData::Val(Type::Vector(8, Box::new(Type::Integer(0, 1))), DataMode { down: false, up: true })
-                        ])
-                    },
-                    ShapeVariant {
-                        data: ShapeData::Tup(vec![
-                            ShapeData::Const(Value::Symbol("w".into())),
-                            ShapeData::Val(Type::Vector(8, Box::new(Type::Integer(0, 1))), DataMode { down: true, up: false })
-                        ])
-                    },
-                    ShapeVariant {
-                        data: ShapeData::Const(Value::Symbol("stop".into()))
-                    }
-                ]
-            };
+
+pub fn add_primitives<'a>(loader: &'a Ctxt<'a>) {
+    loader.define_prelude(r#"
+        protocol Starfish() {
+            (#start, byte),
+            (#r, byte),
+            (#w, byte),
+            #stop,
         }
-        &SHAPE
-    }
-}
+    "#);
 
+    let bytes_ty = Type::Vector(8, Box::new(Type::Integer(0, 1)));
 
-struct StarfishDef;
-impl PrimitiveDef for StarfishDef {
-    fn invoke_def(&self, _downward_shape: &Shape, _arg: Item) -> Box<Process + 'static> {
-        Box::new(StarfishProcess)
-    }
-}
-static STARFISH_DEF: StarfishDef = StarfishDef;
-
-pub fn load_plugin(loader: &ModuleLoader) {
-    loader.add_primitive_def("starfish", &STARFISH_DEF);
+    loader.define_primitive("with () def starfish(): Starfish()", vec![
+        PrimitiveDef {
+            id: "starfish_usb",
+            fields_down: Fields::null(),
+            fields_up: PrimitiveDefFields::Explicit(Fields::new(vec![
+                Field { ty: Type::Integer(0, 3), is_tag: true, dir: DataMode { up: true, down: true } }, /* variant */
+                Field { ty: bytes_ty.clone(), is_tag: false, dir: DataMode { up: false, down: true } }, /* start */
+                Field { ty: bytes_ty.clone(), is_tag: false, dir: DataMode { up: true, down: false } }, /* r */
+                Field { ty: bytes_ty.clone(), is_tag: false, dir: DataMode { up: false, down: true } }, /* w */
+            ])),
+            instantiate: primitive_args!(|| { Ok(Box::new(StarfishProcess)) })
+        },
+    ]);
 }

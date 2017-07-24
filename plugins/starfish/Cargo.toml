@@ -6,7 +6,6 @@ authors = [ "km@kevinmehall.net" ]
 [dependencies]
 signalspec = { path = "../../" }
 libusb = { git = "https://github.com/kevinmehall/libusb-rs.git", branch="async" }
-lazy_static = "0.1.*"
 log = "0.3.2"
 
 [lib]

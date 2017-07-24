@@ -27,7 +27,7 @@ pub use language::{ Ctxt, Module, Test, Item, Scope, PrimitiveDef, PrimitiveDefF
 pub use process::{ Process, ProcessStack, ProcessInfo };
 pub use connection::Connection;
 pub use data::{ Value, Type, DataMode };
-pub use protocol::{ Shape, Fields };
+pub use protocol::{ Shape, Fields, Field };
 pub use test_runner::run as run_test;
 
 pub use primitives::add_primitives;

@@ -7,9 +7,7 @@ let WHO_AM_I = 'h0D
 let CTRL_REG1 = 'h2A
 let CTRL_REG4 = 'h2D
 
-protocol I2C() {
-
-}
+let I2C = Starfish
 
 with I2C()
 def read_reg(reg, val) {
@@ -32,7 +30,7 @@ def mma84(): (-4..4, -4..4, -4..4) {
             (#start, ADDR_WR); (#w, OUT_X_MSB); (#start, ADDR_RD);
 
             for w = [x, y, z] {
-                for b = chunks(#8, signed(#16, int(w / 16384))) { (#r, b) }
+                for b = chunks(#8, signed(#16, int(w * 16384))) { (#r, b) }
             }
 
             #stop
