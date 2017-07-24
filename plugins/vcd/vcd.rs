@@ -1,20 +1,18 @@
+#[macro_use]
 extern crate signalspec;
 extern crate vcd;
 extern crate ref_slice;
 
 use std::io;
 use ref_slice::ref_slice;
-use signalspec::{ ModuleLoader, Connection, Process, PrimitiveDef, Value, DataMode, Shape, ShapeVariant, ShapeData, Item };
+
+use signalspec::{ Connection, Process, Value, DataMode, Item, Ctxt, PrimitiveDef, PrimitiveDefFields, Fields };
 
 /// Represent a shape as a VCD scope declaration, creating mapping from message index to VCD idcode
-fn shape_to_scope(s: &Shape) -> (vcd::Scope, Vec<vcd::IdCode>) {
-    if s.variants.len() != 1 {
-        panic!("VCD shape must have one variant");
-    }
-
+fn shape_to_scope(s: &Item) -> (vcd::Scope, Vec<vcd::IdCode>) {
     let mut ids = Vec::new();
 
-    fn scope(ids: &mut Vec<vcd::IdCode>, l: &[ShapeData], name: String) -> vcd::Scope {
+    fn scope(ids: &mut Vec<vcd::IdCode>, l: &[Item], name: String) -> vcd::Scope {
         vcd::Scope {
             scope_type: vcd::ScopeType::Module,
             identifier: name,
@@ -23,9 +21,9 @@ fn shape_to_scope(s: &Shape) -> (vcd::Scope, Vec<vcd::IdCode>) {
         }
     }
 
-    fn inner(ids: &mut Vec<vcd::IdCode>, s: &ShapeData, name: String) -> vcd::ScopeItem {
+    fn inner(ids: &mut Vec<vcd::IdCode>, s: &Item, name: String) -> vcd::ScopeItem {
         match *s {
-            ShapeData::Val(_, _) => {
+            Item::Value(_) => {
                 let code = vcd::IdCode::from(ids.len() as u32);
                 ids.push(code);
 
@@ -36,22 +34,21 @@ fn shape_to_scope(s: &Shape) -> (vcd::Scope, Vec<vcd::IdCode>) {
                     reference: name
                 })
             }
-            ShapeData::Const(..) => unimplemented!(),
-            ShapeData::Tup(ref l) => vcd::ScopeItem::Scope(scope(ids, &l[..], name))
+            Item::Tuple(ref l) => vcd::ScopeItem::Scope(scope(ids, &l[..], name)),
+            _ => unimplemented!()
         }
     }
 
-    let top = scope(&mut ids, match s.variants[0].data {
-        ref d @ ShapeData::Val(..) => ref_slice(d),
-        ShapeData::Tup(ref l) => &l[..],
-        ShapeData::Const(..) => unimplemented!(),
-    }, "top".to_string());
-
+    let top = if let &Item::Tuple(ref l) = s {
+        scope(&mut ids, l, "top".to_owned())
+    } else {
+        scope(&mut ids, ref_slice(s), "top".to_owned())
+    };
     (top, ids)
 }
 
-struct VcdDown(Shape);
-impl Process for VcdDown {
+struct VcdWrite(Item);
+impl Process for VcdWrite {
     fn run(&self, downwards: &mut Connection, upwards: &mut Connection) -> bool {
         let mut c = downwards.write_bytes();
         let mut w = vcd::Writer::new(&mut c);
@@ -65,19 +62,19 @@ impl Process for VcdDown {
 
         let mut time = 0u64;
 
-        fn map_value(v: Value) -> vcd::Value {
+        fn map_value(v: Option<Value>) -> vcd::Value {
             match v {
-                Value::Symbol(ref v) if &v[..] == "h" => vcd::Value::V1,
-                Value::Symbol(ref v) if &v[..] == "l" => vcd::Value::V0,
+                Some(Value::Symbol(ref v)) if &v[..] == "h" => vcd::Value::V1,
+                Some(Value::Symbol(ref v)) if &v[..] == "l" => vcd::Value::V0,
                 _ => vcd::Value::X
             }
         }
 
         // TODO: more optimized VCD output
-        while let Ok((0, n)) = upwards.recv() {
+        while let Ok(v) = upwards.recv() {
             w.timestamp(time).unwrap();
             time += 1;
-            for (i, v) in ids.iter().zip(n.into_iter().map(map_value)) {
+            for (i, v) in ids.iter().zip(v.into_iter().map(map_value)) {
                 w.change_scalar(*i, v).unwrap();
             }
         }
@@ -85,32 +82,24 @@ impl Process for VcdDown {
 
         true
     }
-
-    fn shape_up(&self) -> &Shape {
-        &self.0
-    }
 }
 
 /// Check that a shape matches a VCD scope declaration, creating a mapping from message index to VCD idcode
-fn shape_from_scope(s: &Shape, v: &vcd::Scope) -> Vec<vcd::IdCode> {
-    if s.variants.len() != 1 {
-        panic!("VCD shape must have one variant");
-    }
-
+fn shape_from_scope(s: &Item, v: &vcd::Scope) -> Vec<vcd::IdCode> {
     let mut ids = Vec::new();
 
-    fn inner_tuple(ids: &mut Vec<vcd::IdCode>, shapes: &[ShapeData], scope: &vcd::Scope) {
+    fn inner_tuple(ids: &mut Vec<vcd::IdCode>, shapes: &[Item], scope: &vcd::Scope) {
         for (child_shape, child_scope) in shapes.iter().zip(scope.children.iter()) {
             inner(ids, child_shape, child_scope);
         }
     }
 
-    fn inner(ids: &mut Vec<vcd::IdCode>, shape: &ShapeData, scope_item: &vcd::ScopeItem) {
+    fn inner(ids: &mut Vec<vcd::IdCode>, shape: &Item, scope_item: &vcd::ScopeItem) {
         match (shape, scope_item) {
-            (&ShapeData::Val(..), &vcd::ScopeItem::Var(ref var)) => {
+            (&Item::Value(..), &vcd::ScopeItem::Var(ref var)) => {
                 ids.push(var.code)
             }
-            (&ShapeData::Tup(ref t), &vcd::ScopeItem::Scope(ref scope)) => {
+            (&Item::Tuple(ref t), &vcd::ScopeItem::Scope(ref scope)) => {
                 inner_tuple(ids, &t[..], scope)
             }
             (shape, scope) => {
@@ -119,23 +108,23 @@ fn shape_from_scope(s: &Shape, v: &vcd::Scope) -> Vec<vcd::IdCode> {
         }
     }
 
-    match s.variants[0].data {
-        ShapeData::Tup(ref t) => inner_tuple(&mut ids, &t[..], v),
-        ShapeData::Const(..) => unimplemented!(),
-        ref d @ ShapeData::Val(..) => {
+    match *s {
+        Item::Tuple(ref t) => inner_tuple(&mut ids, &t[..], v),
+        ref d @ Item::Value(..) => {
             if let Some(first_child) = v.children.first() {
                 inner(&mut ids, d, first_child);
             } else {
                 panic!("Shape {:?} doesn't match scope {:?}", s, v)
             }
         }
+        _ => unimplemented!()
     }
 
     ids
 }
 
-struct VcdUp(Shape);
-impl Process for VcdUp {
+struct VcdRead(Item);
+impl Process for VcdRead {
     fn run(&self, downwards: &mut Connection, upwards: &mut Connection) -> bool {
         let mut c = io::BufReader::new(downwards.read_bytes());
         let mut r = vcd::Parser::new(&mut c);
@@ -180,7 +169,7 @@ impl Process for VcdUp {
             }
 
             while time < next_time {
-                if upwards.send((0, values.clone())).is_err() {
+                if upwards.send(values.iter().map(|x| Some(x.clone())).collect()).is_err() {
                     break;
                 }
                 time += 1;
@@ -189,31 +178,21 @@ impl Process for VcdUp {
 
         true
     }
-
-    fn shape_up(&self) -> &Shape {
-        &self.0
-    }
 }
 
-struct VcdDef;
-impl PrimitiveDef for VcdDef {
-    fn invoke_def(&self, downward_shape: &Shape, arg: Item) -> Box<Process + 'static> {
-        let dir = downward_shape.match_bytes()
-            .expect("Invalid shape below vcd::process");
-
-        let upward_shape = Shape { variants: vec![
-            ShapeVariant { data: arg.into_data_shape(dir) }
-        ]};
-
-        match dir {
-            DataMode { down: false, up: true } => Box::new(VcdUp(upward_shape)),
-            DataMode { down: true, up: false } => Box::new(VcdDown(upward_shape)),
-            _ => panic!("Invalid direction {:?} below vcd::process", downward_shape)
+pub fn add_primitives<'a>(loader: &'a Ctxt<'a>) {
+    loader.define_primitive("with Bytes def vcd(shape): shape", vec![
+        PrimitiveDef {
+            id: "vcd_write",
+            fields_down: Fields::bytes(DataMode { up: false, down: true, }),
+            fields_up: PrimitiveDefFields::Auto(DataMode { up: false, down: true, }),
+            instantiate: primitive_args!(|shape: &Item| { Ok(Box::new(VcdWrite(shape.clone()))) })
+        },
+        PrimitiveDef {
+            id: "vcd_read",
+            fields_down: Fields::bytes(DataMode { up: true, down: false, }),
+            fields_up: PrimitiveDefFields::Auto(DataMode { up: true, down: false, }),
+            instantiate: primitive_args!(|shape: &Item| { Ok(Box::new(VcdRead(shape.clone()))) })
         }
-    }
-}
-static VCD_DEF: VcdDef = VcdDef;
-
-pub fn load_plugin(loader: &ModuleLoader) {
-    loader.add_primitive_def("vcd", &VCD_DEF);
+    ]);
 }

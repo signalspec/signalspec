@@ -84,6 +84,10 @@ impl<'a> FromItem<'a> for &'a str {
     }
 }
 
+impl<'a> FromItem<'a> for &'a Item {
+    fn try_from_item(i: &'a Item) -> Option<Self> { Some(i) }
+}
+
 impl Item {
     pub fn as_constant(&self) -> Option<&Value> {
         match *self {

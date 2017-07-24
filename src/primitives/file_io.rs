@@ -14,7 +14,7 @@ pub fn add_primitives<'a>(loader: &'a Ctxt<'a>) {
             id: "file_read",
             fields_down: Fields::null(),
             fields_up: PrimitiveDefFields::Explicit(Fields::bytes(DataMode { up: true, down: false, })),
-            instantiate: bind!(|name: &str| {
+            instantiate: primitive_args!(|name: &str| {
                 Ok(Box::new(ReaderProcess(PathBuf::from(name))))
             })
         }
@@ -25,7 +25,7 @@ pub fn add_primitives<'a>(loader: &'a Ctxt<'a>) {
             id: "file_write",
             fields_down: Fields::null(),
             fields_up: PrimitiveDefFields::Explicit(Fields::bytes(DataMode { up: false, down: true, })),
-            instantiate: bind!(|name: &str| {
+            instantiate: primitive_args!(|name: &str| {
                 Ok(Box::new(WriterProcess(PathBuf::from(name))))
             })
         }

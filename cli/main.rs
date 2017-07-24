@@ -2,7 +2,7 @@ extern crate signalspec;
 extern crate env_logger;
 extern crate argparse;
 
-//extern crate signalspec_vcd;
+extern crate signalspec_vcd;
 //extern crate signalspec_starfish;
 
 mod console;
@@ -42,7 +42,7 @@ fn main() {
         let loader = signalspec::Ctxt::new(&sess);
 
         signalspec::add_primitives(&loader);
-        //signalspec_vcd::load_plugin(&loader);
+        signalspec_vcd::add_primitives(&loader);
         //signalspec_starfish::load_plugin(&loader);
 
         for source_fname in imports {

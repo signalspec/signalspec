@@ -53,7 +53,7 @@ fn format_message<I: Iterator<Item=Option<Value>>>(w: &mut Write, values: &mut I
                 try!(write!(w, "_"));
             }
         }
-        _ => { unimplemented!() }
+        ref e => { println!("UNKNOWN({:?}): {:?}", e, values.take(e.count_fields()).collect::<Vec<_>>()) }
     }
     Ok(())
 }

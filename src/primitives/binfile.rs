@@ -16,13 +16,13 @@ pub fn add_primitives<'a>(loader: &'a Ctxt<'a>) {
             id: "f32_le_up",
             fields_down: Fields::bytes(DataMode { up: true, down: false, }),
             fields_up: PrimitiveDefFields::Explicit(Fields::f32(DataMode { up: true, down: false, })),
-            instantiate: bind!(|| { Ok(Box::new(FnProcess(f32_le_up))) })
+            instantiate: primitive_args!(|| { Ok(Box::new(FnProcess(f32_le_up))) })
         },
         PrimitiveDef {
             id: "f32_le_down",
             fields_down: Fields::bytes(DataMode { up: false, down: true, }),
             fields_up: PrimitiveDefFields::Explicit(Fields::f32(DataMode { up: false, down: true, })),
-            instantiate: bind!(|| { Ok(Box::new(FnProcess(f32_le_down))) })
+            instantiate: primitive_args!(|| { Ok(Box::new(FnProcess(f32_le_down))) })
         }
     ]);
 
@@ -31,13 +31,13 @@ pub fn add_primitives<'a>(loader: &'a Ctxt<'a>) {
             id: "cf32_le_up",
             fields_down: Fields::bytes(DataMode { up: true, down: false, }),
             fields_up: PrimitiveDefFields::Explicit(Fields::cf32(DataMode { up: true, down: false, })),
-            instantiate: bind!(|| { Ok(Box::new(FnProcess(cf32_le_up))) })
+            instantiate: primitive_args!(|| { Ok(Box::new(FnProcess(cf32_le_up))) })
         },
         PrimitiveDef {
             id: "cf32_le_down",
             fields_down: Fields::bytes(DataMode { up: false, down: true, }),
             fields_up: PrimitiveDefFields::Explicit(Fields::cf32(DataMode { up: false, down: true, })),
-            instantiate: bind!(|| { Ok(Box::new(FnProcess(cf32_le_down))) })
+            instantiate: primitive_args!(|| { Ok(Box::new(FnProcess(cf32_le_down))) })
         }
     ]);
 }
