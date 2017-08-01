@@ -56,7 +56,7 @@ impl Scope {
 }
 
 /// A thing associated with a name in a Scope
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub enum Item {
     /// Expression for a (possibly runtime-variable) value
     Value(Expr),

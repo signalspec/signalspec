@@ -26,9 +26,7 @@ pub primitive_header -> ast::PrimitiveHeader
     { ast::PrimitiveHeader { bottom:down_protocol, name:name, param:param, top:up_protocol } }
 
 protocol_ref -> ast::ProtocolRef
-   = name:IDENTIFIER LPAREN param: expr_tup RPAREN { ast::ProtocolRef::Protocol { name: name, param: param } }
-   / LPAREN t:(protocol_ref**COMMA) COMMA? RPAREN { ast::ProtocolRef::Tup(t) }
-   / e:expr { ast::ProtocolRef::Type(e) }
+   = name:IDENTIFIER LPAREN param: expr_tup RPAREN { ast::ProtocolRef { name: name, param: param } }
 
 block -> ast::Block
     = LBRACE lets:letstmt* actions:action**(SEMICOLON?) RBRACE
@@ -57,7 +55,7 @@ protocol_block -> Vec<ast::ProtocolEntry>
     { entries }
 
   protocol_entry -> ast::ProtocolEntry
-     = e:protocol_ref { ast::ProtocolEntry::Message(e) }
+     = e:expr { ast::ProtocolEntry::Message(e) }
 
 // Expressions
 expr -> ast::Expr

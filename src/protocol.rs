@@ -1,6 +1,5 @@
-use std::iter;
-use data::{Type, Value, DataMode};
-use language::Item;
+use data::{Type, DataMode};
+use language::{ Item, Expr };
 use std::f64;
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
@@ -15,85 +14,69 @@ impl From<ProtocolId> for usize {
 }
 
 /// Representation of token alphabet between state machine layers of abstraction.
-/// Produced from an Protocol by name resolution and direction inference.
 #[derive(Clone, Debug)]
 pub enum Shape {
-    Tup(Vec<Shape>),
-    Protocol {
+    None,
+    Seq {
         def: ProtocolId,
         param: Item,
-        messages: Vec<Shape>,
+        messages: Vec<Item>,
     },
-    Val(Type),
-    Const(Value),
+}
+
+pub fn count_item_fields(i: &Item) -> usize {
+    match *i {
+        Item::Value(Expr::Const(_)) => 0,
+        Item::Value(_) => 1,
+        Item::Tuple(ref t) => t.iter().map(count_item_fields).sum(),
+        _ => panic!("Item {:?} not allowed in shape", i),
+    }
 }
 
 impl Shape {
-    /// Produces a shape with no variants
-    pub fn null() -> Shape {
-        Shape::Tup(vec![]) //TODO: this should be a specific protocol defined in the prelude
-     }
-
-    /// Produces a shape for a stream of bytes
-    pub fn bytes() -> Shape {
-        Shape::Val(Type::Integer(0, 255))
-    }
-
-    /// Produces a shape for a stream of numbers
-    pub fn number(min: f64, max: f64) -> Shape {
-        Shape::Val(Type::Number(min, max))
-    }
-
-    /// Produces a shape for a stream of complex number
-    pub fn complex() -> Shape {
-        Shape::Val(Type::Complex)
-    }
-
-    /// If the shape represents a stream of bytes, returns Some(data direction)
-    pub fn match_bytes(&self) -> bool {
-        match *self {
-            Shape::Val(Type::Integer(0, 255)) => true,
-            _ => false
-        }
-    }
-
-    /// If the shape represents a stream of complex number, returns Some(data direction)
-    pub fn match_complex(&self) -> bool {
-        match *self {
-            Shape::Val(Type::Complex) => true,
-            _ => false
-        }
-    }
-
     pub fn count_fields(&self) -> usize {
         match *self {
-            Shape::Tup(ref x) => x.iter().map(Shape::count_fields).sum(),
-            Shape::Protocol { ref messages, .. } => {
+            Shape::None => 0,
+            Shape::Seq { ref messages, .. } => {
                 let tag = if messages.len() <= 1 { 0usize } else { 1usize };
-                let inner: usize = messages.iter().map(Shape::count_fields).sum();
+                let inner: usize = messages.iter().map(count_item_fields).sum();
                 tag + inner
             }
-            Shape::Val(..) => 1,
-            Shape::Const(..) => 0,
         }
     }
 
     pub fn fields(&self, dir: DataMode) -> Fields {
         match *self {
-            Shape::Tup(ref x) => Fields::new(x.iter().flat_map(|x| x.fields(dir)).collect()),
-            Shape::Protocol { ref messages, .. } => {
-                if messages.len() <= 1 {
-                    messages[0].fields(dir)
-                } else {
-                    let len = messages.len() as i64;
-                    Fields::new(
-                        iter::once(Field { ty: Type::Integer(len, len), is_tag: true, dir: DataMode{ up: true, down: true }})
-                        .chain(messages.iter().flat_map(|x| x.fields(dir))).collect()
-                    )
+            Shape::None => Fields::null(),
+            Shape::Seq { ref messages, .. } => {
+                let mut fields = vec![];
+                if messages.len() > 1 {
+                    fields.push(Field {
+                        ty: Type::Integer(0, messages.len() as i64),
+                        is_tag: true,
+                        dir: DataMode{ up: true, down: true }
+                    });
                 }
+
+                fn item_fields(fields: &mut Vec<Field>, i: &Item, dir: DataMode) {
+                    match *i {
+                        Item::Value(Expr::Const(_)) => (),
+                        Item::Value(ref e) => fields.push(Field {
+                            ty: e.get_type(),
+                            is_tag: false,
+                            dir: dir
+                        }),
+                        Item::Tuple(ref t) => for x in t { item_fields(fields, x, dir) },
+                        _ => panic!("Item {:?} not allowed in shape", i),
+                    }
+                }
+
+                for variant in messages {
+                    item_fields(&mut fields, variant, dir);
+                }
+
+                Fields::new(fields)
             }
-            Shape::Val(ref ty) => Fields::new(vec![Field { ty: ty.clone(), is_tag: false, dir: dir }]),
-            Shape::Const(..) => Fields::new(vec![]),
         }
     }
 }

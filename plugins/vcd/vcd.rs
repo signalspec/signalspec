@@ -181,7 +181,7 @@ impl Process for VcdRead {
 }
 
 pub fn add_primitives<'a>(loader: &'a Ctxt<'a>) {
-    loader.define_primitive("with Bytes def vcd(shape): shape", vec![
+    loader.define_primitive("with Bytes() def vcd(shape): Seq(shape)", vec![
         PrimitiveDef {
             id: "vcd_write",
             fields_down: Fields::bytes(DataMode { up: false, down: true, }),

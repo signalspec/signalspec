@@ -1,6 +1,6 @@
 use std::{thread, mem};
 use protocol::{ Shape, Fields };
-use language::Ctxt;
+use language::{ Ctxt, Item };
 use connection::Connection;
 
 pub trait Process: Send {
@@ -24,21 +24,28 @@ pub struct ProcessInfo {
 pub struct ProcessStack<'a> {
     loader: &'a Ctxt<'a>,
     processes: Vec<ProcessInfo>,
+    base_shape: Shape,
 }
 
 impl<'a> ProcessStack<'a> {
     pub fn new(loader: &'a Ctxt<'a>) -> ProcessStack<'a> {
+        let base_item = loader.prelude.borrow().get("Base").expect("No `Base` protocol found in prelude");
+        let base_id = if let Item::Protocol(id) = base_item { id } else { panic!("`Base` is not a protocol")};
+        let base_shape = Shape::Seq {
+            def: base_id,
+            param: Item::Tuple(vec![]),
+            messages: vec![],
+        };
+
         ProcessStack {
             processes: vec![],
-            loader: loader,
+            base_shape,
+            loader,
         }
     }
 
     pub fn top_shape(&self) -> &Shape {
-        lazy_static! {
-            static ref NULL_SHAPE: Shape = Shape::null();
-        }
-        self.processes.last().map_or(&NULL_SHAPE, |x| &x.shape_up)
+        self.processes.last().map_or(&self.base_shape, |x| &x.shape_up)
     }
 
     pub fn top_fields(&self) -> &Fields {

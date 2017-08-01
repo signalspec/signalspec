@@ -113,7 +113,7 @@ pub fn resolve_process<'s>(ctx: &'s Ctxt<'s>,
         }
 
         ast::Process::Block(ref block) => {
-            let shape_up = Shape::null();
+            let shape_up = Shape::None;
             compile_block(ctx, scope, protocol_scope, shape_down, fields_down, shape_up, block, "anon_block")
         }
 
@@ -138,7 +138,7 @@ fn make_literal_process<'s>(ctx: &'s Ctxt<'s>,
                             block: &'s ast::Block) -> ProcessInfo {
     let shape_up = resolve_protocol_invoke(ctx, scope, shape_up_expr);
 
-    let mut shape_down = Shape::null();
+    let mut shape_down = Shape::None;
     let mut step = super::step::resolve_seq(ctx, scope, protocol_scope, &shape_up, &mut shape_down, block);
 
     let mut fields_dn = shape_down.fields(DataMode { down: false, up: false });
@@ -211,7 +211,7 @@ pub fn compile_test<'a>(ctx: &'a Ctxt<'a>,
         }
 
         Some((first, rest)) => {
-            let bottom = resolve_process(ctx, scope, protocol_scope, &Shape::null(), &Fields::null(), first);
+            let bottom = resolve_process(ctx, scope, protocol_scope, &Shape::None, &Fields::null(), first);
             let is_up = bottom.fields_up.direction().up;
             let stack = build_stack(ctx, scope, protocol_scope, bottom, rest);
 

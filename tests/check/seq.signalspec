@@ -1,11 +1,11 @@
 
-with #a|#b|#c
+with Seq(#a|#b|#c)
 def main () {
     #a
     #b
     #c
 }
 
-test @both(#a|#b|#c) { #a; #b; #c } main();
-test fail @up(#a|#b|#c) { #a; #b; #a } main();
-test fail @up(#a|#b|#c) { #c; #c; #c } main();
+test @both(Seq(#a|#b|#c)) { #a; #b; #c } main();
+test fail @up(Seq(#a|#b|#c)) { #a; #b; #a } main();
+test fail @up(Seq(#a|#b|#c)) { #c; #c; #c } main();

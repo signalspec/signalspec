@@ -1,5 +1,5 @@
-with #h|#l
-def main(): #0..#3 {
+with Seq(#h|#l)
+def main(): Seq(#0..#3) {
   repeat {
     on v {
       #h
@@ -9,4 +9,4 @@ def main(): #0..#3 {
   }
 }
 
-test @up(#h|#l) { #h; #l; #h; #h; #l; #h; #h; #h; #l } main() { #0; #1; #2 };
+test @up(Seq(#h|#l)) { #h; #l; #h; #h; #l; #h; #h; #h; #l } main() { #0; #1; #2 };

@@ -7,7 +7,13 @@ let WHO_AM_I = 'h0D
 let CTRL_REG1 = 'h2A
 let CTRL_REG4 = 'h2D
 
-let I2C = Starfish
+//let I2C = Starfish
+
+protocol I2C() {
+    (#start, byte),
+    (#r|#w, byte),
+    #stop,
+}
 
 with I2C()
 def read_reg(reg, val) {
@@ -20,7 +26,7 @@ def write_reg(reg, val) {
 }
 
 with I2C()
-def mma84(): (-4..4, -4..4, -4..4) {
+def mma84(): Seq(-4..4, -4..4, -4..4) {
     read_reg(WHO_AM_I, 'h2a);
     write_reg(CTRL_REG1, 'h31);
     write_reg(XYZ_DATA_CFG, 'h00);

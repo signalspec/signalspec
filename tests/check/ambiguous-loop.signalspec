@@ -1,27 +1,27 @@
-with #x|#y
+with Seq(#x|#y)
 def main() {
     repeat _ { #x }
     #x
 }
 
-test @up(#x|#y) { #x; #x; #x; #x } main();
-test fail @up(#x|#y) { #y; #x; #x; #x } main();
+test @up(Seq(#x|#y)) { #x; #x; #x; #x } main();
+test fail @up(Seq(#x|#y)) { #y; #x; #x; #x } main();
 
-with #x|#y
+with Seq(#x|#y)
 def main2() {
     #x
     repeat _ { #x }
 }
 
-test @up(#x|#y) { #x; #x; #x; #x } main2();
-test fail @up(#x|#y) { #y; #x; #x; #x } main2();
+test @up(Seq(#x|#y)) { #x; #x; #x; #x } main2();
+test fail @up(Seq(#x|#y)) { #y; #x; #x; #x } main2();
 
-with #x|#y
+with Seq(#x|#y)
 def main3() {
     #x
     repeat #3 { #x }
     #y
 }
 
-test @up(#x|#y) { #x; #x; #x; #x; #y } main3();
-test fail @up(#x|#y) { #x; #x; #x; #y } main3();
+test @up(Seq(#x|#y)) { #x; #x; #x; #x; #y } main3();
+test fail @up(Seq(#x|#y)) { #x; #x; #x; #y } main3();

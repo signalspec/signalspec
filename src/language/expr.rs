@@ -4,7 +4,7 @@ use super::eval::{ Expr, ConcatElem };
 use super::scope::{ Scope, Item };
 use super::function::{FunctionDef, Func};
 use data::Value;
-use protocol::Shape;
+use protocol::{ Shape, count_item_fields };
 
 fn resolve<'s>(ctx: &'s Ctxt<'s>, scope: Option<&Scope>, var_handler: &mut FnMut(&str) -> Expr, e: &'s ast::Expr) -> Expr {
     match *e {
@@ -144,77 +144,86 @@ pub fn on_expr_message<'s>(ctx: &'s Ctxt<'s>, scope: &mut Scope,
 
     // First test if this shape matches the expression, in order to avoid binding variables
     // for the wrong protocol variant.
-    fn try_match(shape: &Shape, e: &ast::Expr) -> bool {
+    fn try_match(shape: &Item, e: &ast::Expr) -> bool {
         match (shape, e) {
-            (&Shape::Const(ref c), &ast::Expr::Value(ref val)) => c == val,
-            (&Shape::Val(ref ty), &ast::Expr::Value(ref val)) => ty.includes(val),
-            (&Shape::Tup(ref ss), &ast::Expr::Tup(ref se)) if ss.len() == se.len() => {
+            (&Item::Value(Expr::Const(ref c)), &ast::Expr::Value(ref val)) => c == val,
+            (&Item::Value(ref v), &ast::Expr::Value(ref val)) => v.get_type().includes(val),
+            (&Item::Tuple(ref ss), &ast::Expr::Tup(ref se)) if ss.len() == se.len() => {
                 ss.iter().zip(se.iter()).all(|(s,i)| try_match(s, i))
             }
-            (&Shape::Protocol{ ref messages, .. }, e) => messages.iter().any(|m| try_match(m, e)),
-
             // This might fail later, but can't match a different variant
-            (&Shape::Val(..), _) => true,
+            (&Item::Value(Expr::Const(..)), _) => false,
+            (&Item::Value(..), _) => true,
+
             _ => false
         }
     }
 
-    match (shape, expr) {
-        (&Shape::Const(ref c), &ast::Expr::Value(ref val)) if c == val => vec![],
+    fn perform_match<'s>(ctx: &'s Ctxt<'s>, scope: &mut Scope, shape: &Item, expr: &'s ast::Expr) -> Vec<Option<Expr>> {
+        match (shape, expr) {
+            (&Item::Value(Expr::Const(ref c)), &ast::Expr::Value(ref val)) if c == val => vec![],
 
-        (&Shape::Val(ref ty), &ast::Expr::Var(ref name)) => { // A variable binding
-            let id = scope.new_variable(ctx.session, &name[..], ty.clone());
-            vec![Some((Expr::Variable(id, ty.clone())))]
-        }
-
-        (&Shape::Tup(ref ss), &ast::Expr::Var(ref name)) => { // A variable binding for a tuple
-            // Capture a tuple by recursively building a tuple Item containing each of the
-            // captured variables
-            fn build_tuple<'s>(ctx: &'s Ctxt<'s>, msg: &mut Vec<Option<Expr>>, ss: &[Shape]) -> Item {
-                Item::Tuple(ss.iter().map(|i| {
-                    match *i {
-                        Shape::Const(ref c) => Item::Value(Expr::Const(c.clone())),
-                        Shape::Tup(ref t) => build_tuple(ctx, msg, &t[..]),
-                        Shape::Val(ref ty) => {
-                            let id = ctx.session.make_id();
-                            msg.push(Some((Expr::Variable(id, ty.clone()))));
-                            Item::Value(Expr::Variable(id, ty.clone()))
-                        }
-                        Shape::Protocol{..} => unimplemented!()
-                    }
-                }).collect())
+            (&Item::Value(ref v), &ast::Expr::Var(ref name)) => { // A variable binding
+                let ty = v.get_type();
+                let id = scope.new_variable(ctx.session, &name[..], ty.clone());
+                vec![Some((Expr::Variable(id, ty)))]
             }
 
-            let mut msg = Vec::new();
-            scope.bind(name, build_tuple(ctx, &mut msg, &ss[..]));
-            msg
-        }
+            (&Item::Tuple(ref ss), &ast::Expr::Var(ref name)) => { // A variable binding for a tuple
+                // Capture a tuple by recursively building a tuple Item containing each of the
+                // captured variables
+                fn build_tuple<'s>(ctx: &'s Ctxt<'s>, msg: &mut Vec<Option<Expr>>, ss: &[Item]) -> Item {
+                    Item::Tuple(ss.iter().map(|i| {
+                        match *i {
+                            Item::Value(Expr::Const(ref c)) => Item::Value(Expr::Const(c.clone())),
+                            Item::Tuple(ref t) => build_tuple(ctx, msg, &t[..]),
+                            Item::Value(ref v) => {
+                                let ty = v.get_type();
+                                let id = ctx.session.make_id();
+                                msg.push(Some((Expr::Variable(id, ty.clone()))));
+                                Item::Value(Expr::Variable(id, ty))
+                            }
 
-        (&Shape::Val(_), expr) => { // A match against a refutable pattern
-            let e = resolve(ctx, None, &mut |_| { panic!("Variable binding not allowed here") }, expr);
-            vec![Some(e)]
-        }
+                            _ => panic!("{:?} not allowed in shape", i)
+                        }
+                    }).collect())
+                }
 
-        (&Shape::Tup(ref ss), &ast::Expr::Tup(ref se)) => {
-            ss.iter().zip(se.iter()).flat_map(|(s, i)| {
-                on_expr_message(ctx, scope, s, i)
-            }).collect()
-        }
+                let mut msg = Vec::new();
+                scope.bind(name, build_tuple(ctx, &mut msg, &ss[..]));
+                msg
+            }
 
-        (&Shape::Protocol { ref messages, ..}, expr) => {
+            (&Item::Value(_), expr) => { // A match against a refutable pattern
+                let e = resolve(ctx, None, &mut |_| { panic!("Variable binding not allowed here") }, expr);
+                vec![Some(e)]
+            }
+
+            (&Item::Tuple(ref ss), &ast::Expr::Tup(ref se)) => {
+                ss.iter().zip(se.iter()).flat_map(|(s, i)| {
+                    perform_match(ctx, scope, s, i)
+                }).collect()
+            }
+
+            (shape, expr) => panic!("Expression {:?} doesn't match shape {:?}", expr, shape)
+        }
+    }
+
+    match (shape, expr) {
+        (&Shape::Seq { ref messages, ..}, expr) => {
             if messages.len() == 1 {
-                on_expr_message(ctx, scope, &messages[0], expr)
+                perform_match(ctx, scope, &messages[0], expr)
             } else {
                 let mut fields = vec![None];
                 let mut matching_variants = 0;
                 for (i, shape) in messages.iter().enumerate() {
                     if try_match(shape, expr) {
                         fields[0] = Some(Expr::Const(Value::Integer(i as i64)));
-                        fields.extend(on_expr_message(ctx, scope, shape, expr));
+                        fields.extend(perform_match(ctx, scope, shape, expr));
                         matching_variants += 1;
                     } else {
                         // Create dummy fields for other variants
-                        fields.extend((0..shape.count_fields()).map(|_| None));
+                        fields.extend((0..count_item_fields(shape)).map(|_| None));
                     }
                 }
 
@@ -238,7 +247,7 @@ pub struct PatternError {
 
 /// Destructures an item into left-hand-side binding, such as a function argument, returning
 /// whether the pattern matched. No runtime evaluation is allowed.
-pub fn lexpr<'s>(ctx: &'s Ctxt<'s>, scope: &mut Scope, l: &ast::Expr, r: Item) -> Result<(), PatternError> {
+pub fn lexpr<'s>(ctx: &'s Ctxt<'s>, scope: &mut Scope, l: &'s ast::Expr, r: Item) -> Result<(), PatternError> {
     Ok(match *l {
         ast::Expr::Ignore => (),
 
@@ -268,7 +277,13 @@ pub fn lexpr<'s>(ctx: &'s Ctxt<'s>, scope: &mut Scope, l: &ast::Expr, r: Item) -
             }
         }
 
-        _ => return Err(PatternError { expected: "tuple, variable, or ignore", found: r })
+        _ => {
+            let lv = Item::Value(value(ctx, scope, l));
+            debug!("{:?} == {:?} => {:?}", lv, r, lv == r);
+            if lv != r {
+                return Err(PatternError { expected: "tuple, variable, or ignore", found: r })
+            }
+        }
     })
 }
 

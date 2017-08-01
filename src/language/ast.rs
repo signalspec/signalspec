@@ -57,14 +57,13 @@ pub struct Protocol {
 }
 
 pub enum ProtocolEntry {
-    Message(ProtocolRef),
+    Message(Expr),
 }
 
 #[derive(Debug, Clone)]
-pub enum ProtocolRef {
-    Protocol { name: String, param: Expr },
-    Type(Expr),
-    Tup(Vec<ProtocolRef>)
+pub struct ProtocolRef {
+    pub name: String,
+    pub param: Expr,
 }
 
 #[derive(Debug, Clone)]

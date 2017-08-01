@@ -8,7 +8,7 @@ use super::scope::{ Scope, Item };
 use super::eval::Expr;
 use super::protocol::{ ProtocolScope, DefImpl };
 use super::module_loader::Ctxt;
-use protocol::{ Shape, Fields };
+use protocol::{ Shape, Fields, count_item_fields };
 
 use data::{ DataMode, Type, Value };
 
@@ -146,7 +146,7 @@ fn resolve_action<'s>(ctx: &'s Ctxt<'s>,
             let msginfo = expr::on_expr_message(ctx, &mut body_scope, shape_up, expr);
 
             let step = if let &Some(ref body) = body {
-                resolve_seq(ctx, &body_scope, protocol_scope, shape_down, &mut Shape::null(), body)
+                resolve_seq(ctx, &body_scope, protocol_scope, shape_down, &mut Shape::None, body)
             } else {
                 Step::Nop
             };
@@ -224,29 +224,28 @@ pub fn resolve_letdef<'s>(ctx: &'s Ctxt<'s>, scope: &mut Scope, lets: &'s [ast::
 }
 
 fn resolve_token<'shape>(item: Item, shape: &'shape Shape) -> Message {
-    fn try_variant(shape: &Shape, item: &Item) -> bool {
+    fn try_variant(shape: &Item, item: &Item) -> bool {
         match (shape, item) {
-            (&Shape::Const(ref c), &Item::Value(Expr::Const(ref v))) => c == v,
-            (&Shape::Val(ref t), &Item::Value(ref e)) => t.includes_type(&e.get_type()),
-            (&Shape::Tup(ref m), &Item::Tuple(ref t)) if m.len() == t.len() => {
+            (&Item::Value(Expr::Const(ref c)), &Item::Value(Expr::Const(ref v))) => c == v,
+            (&Item::Value(ref t), &Item::Value(ref e)) => t.get_type().includes_type(&e.get_type()),
+            (&Item::Tuple(ref m), &Item::Tuple(ref t)) if m.len() == t.len() => {
                  m.iter().zip(t.iter()).all(|(i, s)| { try_variant(i, s) })
             }
-            (&Shape::Protocol{ ref messages, .. }, i) => messages.iter().any(|m| try_variant(m, i)),
             _ => false,
         }
     }
 
-    fn inner(i: Item, shape: &Shape, msg: &mut Message) {
+    fn inner(i: Item, shape: &Item, msg: &mut Message) {
         match shape {
-            &Shape::Val(_) => {
+            &Item::Value(Expr::Const(_)) => (),
+            &Item::Value(_) => {
                 if let Item::Value(v) = i {
                     msg.push(Some(v));
                 } else {
                     panic!("Expected value but found {:?}", i);
                 }
             }
-            &Shape::Const(..) => (),
-            &Shape::Tup(ref m) => {
+            &Item::Tuple(ref m) => {
                 if let Item::Tuple(t) = i {
                     if t.len() == m.len() {
                         for (mi, i) in m.iter().zip(t.into_iter()) {
@@ -259,37 +258,40 @@ fn resolve_token<'shape>(item: Item, shape: &'shape Shape) -> Message {
                     panic!("Expected tuple of length {}, found {:?}", m.len(), i);
                 }
             }
-            &Shape::Protocol { ref messages, ..} => {
-                if messages.len() == 1 {
-                    inner(i, &messages[0], msg)
-                } else {
-                    let tag_idx = msg.len();
-                    msg.push(None);
-
-                    let mut matching_variants = 0;
-                    for (idx, shape) in messages.iter().enumerate() {
-                        if try_variant(shape, &i) {
-                            msg[tag_idx] = Some(Expr::Const(Value::Integer(idx as i64)));
-                            inner(i.clone(), shape, msg);
-                            matching_variants += 1;
-                        } else {
-                            // Create dummy fields for other variants
-                            msg.extend((0..shape.count_fields()).map(|_| None));
-                        }
-                    }
-
-                    match matching_variants {
-                        1 => (),
-                        0 => panic!("No variant matched {:?}", i),
-                        _ => panic!("Multiple variants matched {:?}", i)
-                    }
-                }
-            }
+            _ => panic!("Item {:?} not allowed in shape", shape)
         }
     }
 
     let mut msg = vec![];
-    inner(item, &shape, &mut msg);
+    match *shape {
+        Shape::None => (),
+        Shape::Seq { ref messages, .. } => {
+            if messages.len() == 1 {
+                inner(item, &messages[0], &mut msg)
+            } else {
+                let tag_idx = msg.len();
+                msg.push(None);
+
+                let mut matching_variants = 0;
+                for (idx, shape) in messages.iter().enumerate() {
+                    if try_variant(shape, &item) {
+                        msg[tag_idx] = Some(Expr::Const(Value::Integer(idx as i64)));
+                        inner(item.clone(), shape, &mut msg);
+                        matching_variants += 1;
+                    } else {
+                        // Create dummy fields for other variants
+                        msg.extend((0..count_item_fields(shape)).map(|_| None));
+                    }
+                }
+
+                match matching_variants {
+                    1 => (),
+                    0 => panic!("No variant matched {:?}", item),
+                    _ => panic!("Multiple variants matched {:?}", item)
+                }
+            }
+        }
+    }
     msg
 }
 
@@ -310,7 +312,7 @@ pub fn infer_direction(step: &mut Step, bottom_fields: &Fields, top_fields: &mut
             ri
         }
         TokenTop(ref msg, ref mut body) => {
-            let mut ri = infer_direction(body, bottom_fields, &mut Fields::new(vec![]));
+            let mut ri = infer_direction(body, bottom_fields, &mut Fields::null());
             assert_eq!(msg.len(), top_fields.len());
 
             // Update the upward shape's direction with results of analyzing the usage of

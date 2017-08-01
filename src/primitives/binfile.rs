@@ -11,7 +11,7 @@ use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use num_complex::Complex;
 
 pub fn add_primitives<'a>(loader: &'a Ctxt<'a>) {
-    loader.define_primitive("with Bytes def f32le(): Float32", vec![
+    loader.define_primitive("with Bytes() def f32le(): Seq(Float32)", vec![
         PrimitiveDef {
             id: "f32_le_up",
             fields_down: Fields::bytes(DataMode { up: true, down: false, }),
@@ -26,7 +26,7 @@ pub fn add_primitives<'a>(loader: &'a Ctxt<'a>) {
         }
     ]);
 
-    loader.define_primitive("with Bytes def cf32le(): Float32", vec![
+    loader.define_primitive("with Bytes() def cf32le(): Seq(Float32)", vec![
         PrimitiveDef {
             id: "cf32_le_up",
             fields_down: Fields::bytes(DataMode { up: true, down: false, }),

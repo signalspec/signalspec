@@ -101,7 +101,7 @@ pub fn add_primitives<'a>(loader: &'a Ctxt<'a>) {
 
     let bytes_ty = Type::Vector(8, Box::new(Type::Integer(0, 1)));
 
-    loader.define_primitive("with () def starfish(): Starfish()", vec![
+    loader.define_primitive("with Base() def starfish(): Starfish()", vec![
         PrimitiveDef {
             id: "starfish_usb",
             fields_down: Fields::null(),
