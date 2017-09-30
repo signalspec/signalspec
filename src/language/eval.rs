@@ -424,7 +424,6 @@ fn exprs() {
     use session::Session;
     use super::Ctxt;
     use super::grammar;
-    use super::scope::Scope;
     use typed_arena::Arena;
 
     let ast_arena = Arena::new();
@@ -432,7 +431,7 @@ fn exprs() {
     let ctxt = Ctxt::new(&sess);
 
     ctxt.add_primitive_fn("complex", fn_complex);
-    let mut scope = ctxt.prelude.borrow().child();
+    let scope = ctxt.prelude.borrow().child();
 
     let expr = |e| {
         let ast = ast_arena.alloc(grammar::valexpr(e).unwrap());

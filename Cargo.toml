@@ -10,11 +10,10 @@ members = ["cli", "plugins/starfish", "plugins/vcd"]
 log = "0.3.2"
 typed-arena = "1.0.1"
 bit-set = "0.4.0"
-vec_map = "0.6.0"
 lazy_static = "0.2.2"
 ref_slice = "1.1.1"
 num-complex = "0.1.35"
-byteorder = "0.5.3"
+byteorder = "1.0.0"
 peg-syntax-ext = "0.5.0"
 
 [dev-dependencies]

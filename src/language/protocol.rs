@@ -51,7 +51,7 @@ pub fn resolve_protocol_invoke<'a>(ctx: &'a Ctxt<'a>, scope: &Scope, ast: &'a as
     }
 }
 
-fn resolve_protocol_match<'a>(ctx: &'a Ctxt<'a>, scope: &Scope, ast: &'a ast::ProtocolRef) -> ProtocolMatch<'a> {
+fn resolve_protocol_match<'a>(_ctx: &'a Ctxt<'a>, scope: &Scope, ast: &'a ast::ProtocolRef) -> ProtocolMatch<'a> {
     if let Some(Item::Protocol(protocol_id)) = scope.get(&ast.name[..]) {
         ProtocolMatch { id: protocol_id, param: &ast.param }
     } else {

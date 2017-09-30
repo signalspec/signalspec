@@ -5,7 +5,6 @@
 
 extern crate typed_arena;
 extern crate bit_set;
-extern crate vec_map;
 extern crate ref_slice;
 extern crate num_complex;
 #[macro_use] extern crate lazy_static;

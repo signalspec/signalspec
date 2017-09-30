@@ -84,7 +84,7 @@ impl Connection {
 
 pub struct ConnectionRead<'a>(&'a mut Connection);
 impl<'a> Read for ConnectionRead<'a> {
-    fn read(&mut self, mut buf: &mut [u8]) -> io::Result<usize> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         debug!("Read started: {} {}", self.0.alive, buf.len());
 
         let mut num_read = 0;
