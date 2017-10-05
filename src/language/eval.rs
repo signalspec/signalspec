@@ -424,9 +424,7 @@ fn exprs() {
     use session::Session;
     use super::Ctxt;
     use super::grammar;
-    use typed_arena::Arena;
 
-    let ast_arena = Arena::new();
     let sess = Session::new(None);
     let ctxt = Ctxt::new(&sess);
 
@@ -434,8 +432,8 @@ fn exprs() {
     let scope = ctxt.prelude.borrow().child();
 
     let expr = |e| {
-        let ast = ast_arena.alloc(grammar::valexpr(e).unwrap());
-        super::expr::value(&ctxt, &scope, ast)
+        let ast = grammar::valexpr(e).unwrap();
+        super::expr::value(&ctxt, &scope, &ast)
     };
 
     let two = expr("2");

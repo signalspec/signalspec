@@ -11,16 +11,16 @@ impl From<FunctionId> for usize {
     fn from(i: FunctionId) -> usize { i.0 }
 }
 
-pub enum FunctionDef<'s> {
+pub enum FunctionDef {
     /// Function literal
-    Code(Func<'s>),
+    Code(Func),
 
     /// Reference to a primitive function
-    Primitive(PrimitiveFn<'s>),
+    Primitive(PrimitiveFn),
 }
 
-impl<'s> FunctionDef<'s> {
-    pub fn apply(&self, ctx: &'s Ctxt<'s>, arg: Item) -> Item {
+impl FunctionDef {
+    pub fn apply(&self, ctx: &Ctxt, arg: Item) -> Item {
         match *self {
             FunctionDef::Primitive(f) => {
                 (f)(arg).unwrap()
@@ -32,19 +32,19 @@ impl<'s> FunctionDef<'s> {
     }
 }
 
-pub type PrimitiveFn<'a> = fn(Item)->Result<Item, &'static str>;
+pub type PrimitiveFn = fn(Item)->Result<Item, &'static str>;
 
 #[derive(Clone)]
-pub struct Func<'s> {
-    pub args: &'s ast::Expr,
-    pub body: &'s ast::Expr,
+pub struct Func {
+    pub args: ast::Expr,
+    pub body: ast::Expr,
     pub scope: Scope,
 }
 
-impl<'s> Func<'s> {
-    pub fn apply(&self, ctx: &'s Ctxt<'s>, arg: Item) -> Item {
+impl Func {
+    pub fn apply(&self, ctx: &Ctxt, arg: Item) -> Item {
         let mut scope = self.scope.child();
-        expr::lexpr(ctx, &mut scope, self.args, arg).expect("failed to match function argument");
-        expr::rexpr(ctx, &scope, self.body)
+        expr::lexpr(ctx, &mut scope, &self.args, arg).expect("failed to match function argument");
+        expr::rexpr(ctx, &scope, &self.body)
     }
 }

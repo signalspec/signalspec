@@ -3,7 +3,6 @@
 #![feature(box_patterns)]
 #![plugin(peg_syntax_ext)]
 
-extern crate typed_arena;
 extern crate bit_set;
 extern crate ref_slice;
 extern crate num_complex;

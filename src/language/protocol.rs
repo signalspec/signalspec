@@ -7,27 +7,27 @@ use super::{ Ctxt, PrimitiveDef };
 
 /// A pattern to match a protocol. These are used in the predicate of `with` blocks.
 #[derive(Debug, Clone)]
-struct ProtocolMatch<'a> {
+struct ProtocolMatch {
     id: ProtocolId,
-    param: &'a ast::Expr
+    param: ast::Expr
 }
 
-impl<'a> ProtocolMatch<'a> {
+impl ProtocolMatch {
     /// Attempt to match the protocol pattern against the supplied shape, returning whether it
     /// succeeded. Destructured variables are added to the scope. Even if it returns false,
     /// the scope may have already been modified.
-    fn try_match(&self, ctx: &'a Ctxt<'a>, shape: &Shape, scope: &mut Scope) -> bool {
+    fn try_match(&self, ctx: &Ctxt, shape: &Shape, scope: &mut Scope) -> bool {
         debug!("Trying to match {:?} against {:?}", self, shape);
         match *shape {
             Shape::None => false,
             Shape::Seq { def: r_id, param: ref r_param, ..} => {
-                self.id == r_id && expr::lexpr(ctx, scope, self.param, r_param.clone()).is_ok()
+                self.id == r_id && expr::lexpr(ctx, scope, &self.param, r_param.clone()).is_ok()
             }
         }
     }
 }
 
-pub fn resolve_protocol_invoke<'a>(ctx: &'a Ctxt<'a>, scope: &Scope, ast: &'a ast::ProtocolRef) -> Shape {
+pub fn resolve_protocol_invoke(ctx: &Ctxt, scope: &Scope, ast: &ast::ProtocolRef) -> Shape {
     if let Some(Item::Protocol(protocol_id)) = scope.get(&ast.name[..]) {
         let protocol = ctx.protocols.get(protocol_id);
         let param = expr::rexpr(ctx, scope, &ast.param);
@@ -51,61 +51,61 @@ pub fn resolve_protocol_invoke<'a>(ctx: &'a Ctxt<'a>, scope: &Scope, ast: &'a as
     }
 }
 
-fn resolve_protocol_match<'a>(_ctx: &'a Ctxt<'a>, scope: &Scope, ast: &'a ast::ProtocolRef) -> ProtocolMatch<'a> {
+fn resolve_protocol_match(_ctx: &Ctxt, scope: &Scope, ast: ast::ProtocolRef) -> ProtocolMatch {
     if let Some(Item::Protocol(protocol_id)) = scope.get(&ast.name[..]) {
-        ProtocolMatch { id: protocol_id, param: &ast.param }
+        ProtocolMatch { id: protocol_id, param: ast.param }
     } else {
         panic!("Protocol `{}` not found", ast.name);
     }
 }
 
-struct WithBlock<'a> {
-    protocol: ProtocolMatch<'a>,
+struct WithBlock {
+    protocol: ProtocolMatch,
     name: String,
-    param: &'a ast::Expr,
+    param: ast::Expr,
     scope: Scope,
-    shape_up: &'a Option<ast::ProtocolRef>,
-    implementation: DefImpl<'a>
+    shape_up: Option<ast::ProtocolRef>,
+    implementation: DefImpl
 }
 
-pub enum DefImpl <'a> {
-    Code(&'a ast::Block),
+pub enum DefImpl {
+    Code(ast::Block),
     Primitive(Vec<PrimitiveDef>)
  }
 
 
-pub struct ProtocolScope<'a> {
-    entries: Vec<WithBlock<'a>>,
+pub struct ProtocolScope {
+    entries: Vec<WithBlock>,
 }
 
-impl<'a> ProtocolScope<'a> {
+impl ProtocolScope {
     pub fn new() -> Self {
         ProtocolScope { entries: vec![] }
     }
 
-    pub fn add_def(&mut self, ctx: &'a Ctxt<'a>, scope: Scope, def: &'a ast::Def) {
+    pub fn add_def(&mut self, ctx: &Ctxt, scope: Scope, def: ast::Def) {
         self.entries.push(WithBlock {
-            protocol: resolve_protocol_match(ctx, &scope, &def.bottom),
+            protocol: resolve_protocol_match(ctx, &scope, def.bottom),
             name: def.name.clone(),
             scope: scope,
-            param: &def.param,
-            shape_up: &def.top,
-            implementation: DefImpl::Code(&def.block)
+            param: def.param,
+            shape_up: def.top,
+            implementation: DefImpl::Code(def.block)
         });
     }
 
-    pub fn add_primitive(&mut self, ctx: &'a Ctxt<'a>, scope: &Scope, header: &'a ast::PrimitiveHeader, defs: Vec<PrimitiveDef>) {
+    pub fn add_primitive(&mut self, ctx: &Ctxt, scope: &Scope, header: ast::PrimitiveHeader, defs: Vec<PrimitiveDef>) {
         self.entries.push(WithBlock {
-            protocol: resolve_protocol_match(ctx, scope, &header.bottom),
+            protocol: resolve_protocol_match(ctx, scope, header.bottom),
             name: header.name.clone(),
             scope: scope.child(),
-            param: &header.param,
-            shape_up: &header.top,
+            param: header.param,
+            shape_up: header.top,
             implementation: DefImpl::Primitive(defs),
         });
     }
 
-    pub fn find(&self, ctx: &'a Ctxt<'a>, shape: &Shape, name: &str, param: Item) -> (Scope, &DefImpl<'a>, Shape) {
+    pub fn find(&self, ctx: &Ctxt, shape: &Shape, name: &str, param: Item) -> (Scope, &DefImpl, Shape) {
         let mut found = None;
         for entry in &self.entries {
             if entry.name != name { continue }
@@ -123,7 +123,7 @@ impl<'a> ProtocolScope<'a> {
             }
 
             if found.is_none() {
-                let shape_up = if let &Some(ref x) = entry.shape_up {
+                let shape_up = if let Some(ref x) = entry.shape_up {
                     resolve_protocol_invoke(ctx, &scope, x)
                 } else {
                     Shape::None

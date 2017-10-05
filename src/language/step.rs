@@ -108,12 +108,12 @@ impl ResolveInfo {
     }
 }
 
-fn resolve_action<'s>(ctx: &'s Ctxt<'s>,
+fn resolve_action(ctx: &Ctxt,
                       scope: &Scope,
-                      protocol_scope: &ProtocolScope<'s>,
+                      protocol_scope: &ProtocolScope,
                       shape_down: &Shape,
                       shape_up: &Shape,
-                      action: &'s ast::Action) -> Step {
+                      action: &ast::Action) -> Step {
     match *action {
         ast::Action::Call(ref name, ref param_ast, ref body) => {
             let param = expr::rexpr(ctx, scope, param_ast);
@@ -200,14 +200,17 @@ fn resolve_action<'s>(ctx: &'s Ctxt<'s>,
     }
 }
 
-pub fn resolve_seq<'s>(ctx: &'s Ctxt<'s>,
+pub fn resolve_seq(ctx: &Ctxt,
                   pscope: &Scope,
-                  protocol_scope: &ProtocolScope<'s>,
+                  protocol_scope: &ProtocolScope,
                   shape_down: &Shape,
                   shape_up: &Shape,
-                  block: &'s ast::Block) -> Step {
+                  block: &ast::Block) -> Step {
     let mut scope = pscope.child();
-    resolve_letdef(ctx, &mut scope, &block.lets);
+
+    for ld in &block.lets {
+        resolve_letdef(ctx, &mut scope, ld);
+    }
 
     let steps = block.actions.iter().map(|action| {
         resolve_action(ctx, &scope, protocol_scope, shape_down, shape_up, action)
@@ -216,11 +219,10 @@ pub fn resolve_seq<'s>(ctx: &'s Ctxt<'s>,
     Step::Seq(steps)
 }
 
-pub fn resolve_letdef<'s>(ctx: &'s Ctxt<'s>, scope: &mut Scope, lets: &'s [ast::LetDef]) {
-    for &ast::LetDef(ref name, ref expr) in lets.iter() {
-        let item = expr::rexpr(ctx, scope, expr);
-        scope.bind(&name, item);
-    }
+pub fn resolve_letdef(ctx: &Ctxt, scope: &mut Scope, ld: &ast::LetDef) {
+    let &ast::LetDef(ref name, ref expr) = ld;
+    let item = expr::rexpr(ctx, scope, expr);
+    scope.bind(&name, item);
 }
 
 fn resolve_token<'shape>(item: Item, shape: &'shape Shape) -> Message {

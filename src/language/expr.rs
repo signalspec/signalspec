@@ -6,7 +6,7 @@ use super::function::{FunctionDef, Func};
 use data::Value;
 use protocol::{ Shape, count_item_fields };
 
-fn resolve<'s>(ctx: &'s Ctxt<'s>, scope: Option<&Scope>, var_handler: &mut FnMut(&str) -> Expr, e: &'s ast::Expr) -> Expr {
+fn resolve(ctx: &Ctxt, scope: Option<&Scope>, var_handler: &mut FnMut(&str) -> Expr, e: &ast::Expr) -> Expr {
     match *e {
         ast::Expr::Ignore => Expr::Ignored,
         ast::Expr::Value(ref val) => Expr::Const(val.clone()),
@@ -88,7 +88,7 @@ fn resolve<'s>(ctx: &'s Ctxt<'s>, scope: Option<&Scope>, var_handler: &mut FnMut
     }
 }
 
-pub fn value<'s>(ctx: &'s Ctxt<'s>, scope: &Scope, e: &'s ast::Expr) -> Expr {
+pub fn value(ctx: &Ctxt, scope: &Scope, e: &ast::Expr) -> Expr {
     resolve(ctx, Some(scope), &mut |name| {
         match scope.get(name) {
             Some(Item::Value(v)) => v,
@@ -99,7 +99,7 @@ pub fn value<'s>(ctx: &'s Ctxt<'s>, scope: &Scope, e: &'s ast::Expr) -> Expr {
 }
 
 /// Resolve an expression as used in an argument or right hand side of an assignment
-pub fn rexpr<'s>(ctxt: &'s Ctxt<'s>, scope: &Scope, e: &'s ast::Expr) -> Item {
+pub fn rexpr<'s>(ctxt: &'s Ctxt<'s>, scope: &Scope, e: &ast::Expr) -> Item {
     match *e {
         ast::Expr::Var(ref name) => {
             if let Some(s) = scope.get(name) { s } else { panic!("Undefined variable `{}`", name); }
@@ -113,8 +113,8 @@ pub fn rexpr<'s>(ctxt: &'s Ctxt<'s>, scope: &Scope, e: &'s ast::Expr) -> Item {
 
         ast::Expr::Func{ ref body, ref args } => {
             Item::Func(ctxt.create_function(FunctionDef::Code(Func{
-                args: args,
-                body: body,
+                args: (**args).clone(),
+                body: (**body).clone(),
                 scope: scope.clone(),
             })))
         }
@@ -127,7 +127,7 @@ pub fn rexpr<'s>(ctxt: &'s Ctxt<'s>, scope: &Scope, e: &'s ast::Expr) -> Item {
     }
 }
 
-fn resolve_call<'s>(ctxt: &'s Ctxt<'s>, scope: &Scope, func: &'s ast::Expr, arg: &'s ast::Expr) -> Item {
+fn resolve_call<'s>(ctxt: &'s Ctxt<'s>, scope: &Scope, func: &ast::Expr, arg: &ast::Expr) -> Item {
     let func = rexpr(ctxt, scope, func);
     let arg = rexpr(ctxt, scope, arg);
 
@@ -139,8 +139,8 @@ fn resolve_call<'s>(ctxt: &'s Ctxt<'s>, scope: &Scope, func: &'s ast::Expr, arg:
 }
 
 /// Resolve an expression as used in the argument of an `on` block, defining variables
-pub fn on_expr_message<'s>(ctx: &'s Ctxt<'s>, scope: &mut Scope,
-        shape: &Shape, expr: &'s ast::Expr) -> Vec<Option<Expr>> {
+pub fn on_expr_message(ctx: &Ctxt, scope: &mut Scope,
+        shape: &Shape, expr: &ast::Expr) -> Vec<Option<Expr>> {
 
     // First test if this shape matches the expression, in order to avoid binding variables
     // for the wrong protocol variant.
@@ -159,7 +159,7 @@ pub fn on_expr_message<'s>(ctx: &'s Ctxt<'s>, scope: &mut Scope,
         }
     }
 
-    fn perform_match<'s>(ctx: &'s Ctxt<'s>, scope: &mut Scope, shape: &Item, expr: &'s ast::Expr) -> Vec<Option<Expr>> {
+    fn perform_match(ctx: &Ctxt, scope: &mut Scope, shape: &Item, expr: &ast::Expr) -> Vec<Option<Expr>> {
         match (shape, expr) {
             (&Item::Value(Expr::Const(ref c)), &ast::Expr::Value(ref val)) if c == val => vec![],
 
@@ -172,7 +172,7 @@ pub fn on_expr_message<'s>(ctx: &'s Ctxt<'s>, scope: &mut Scope,
             (&Item::Tuple(ref ss), &ast::Expr::Var(ref name)) => { // A variable binding for a tuple
                 // Capture a tuple by recursively building a tuple Item containing each of the
                 // captured variables
-                fn build_tuple<'s>(ctx: &'s Ctxt<'s>, msg: &mut Vec<Option<Expr>>, ss: &[Item]) -> Item {
+                fn build_tuple(ctx: &Ctxt, msg: &mut Vec<Option<Expr>>, ss: &[Item]) -> Item {
                     Item::Tuple(ss.iter().map(|i| {
                         match *i {
                             Item::Value(Expr::Const(ref c)) => Item::Value(Expr::Const(c.clone())),
@@ -247,7 +247,7 @@ pub struct PatternError {
 
 /// Destructures an item into left-hand-side binding, such as a function argument, returning
 /// whether the pattern matched. No runtime evaluation is allowed.
-pub fn lexpr<'s>(ctx: &'s Ctxt<'s>, scope: &mut Scope, l: &'s ast::Expr, r: Item) -> Result<(), PatternError> {
+pub fn lexpr(ctx: &Ctxt, scope: &mut Scope, l: &ast::Expr, r: Item) -> Result<(), PatternError> {
     Ok(match *l {
         ast::Expr::Ignore => (),
 
@@ -288,7 +288,7 @@ pub fn lexpr<'s>(ctx: &'s Ctxt<'s>, scope: &mut Scope, l: &'s ast::Expr, r: Item
 }
 
 /// Destructure an item into an expression, like lexpr, but allowing runtime pattern-matching
-pub fn pattern_match<'s>(ctx: &'s Ctxt<'s>, scope: &mut Scope, pat: &'s ast::Expr, r: &Item, checks: &mut Vec<(Expr, Expr)>) {
+pub fn pattern_match(ctx: &Ctxt, scope: &mut Scope, pat: &ast::Expr, r: &Item, checks: &mut Vec<(Expr, Expr)>) {
         match (pat, r) {
             (&ast::Expr::Ignore, _) => (),
 

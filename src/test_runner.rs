@@ -56,7 +56,7 @@ pub fn run_file(fname: &Path) -> bool {
 
     for (count, test) in module.tests().iter().enumerate() {
         print!("\tTest #{}:", count+1);
-        let compiled = loader.compile_test(test);
+        let compiled = test.compile(&loader);
         if let Some(stack) = compiled.down {
             let r = stack.run() ^ test.should_fail();
             print!(" down:{}", if r { "ok" } else { "FAIL" });

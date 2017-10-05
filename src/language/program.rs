@@ -30,13 +30,13 @@ impl Process for ProgramFlip {
     }
 }
 
-fn compile_block<'s>(ctx: &'s Ctxt<'s>,
+fn compile_block(ctx: &Ctxt,
                      scope: &Scope,
-                     protocol_scope: &ProtocolScope<'s>,
+                     protocol_scope: &ProtocolScope,
                      shape_down: &Shape,
                      fields_down: &Fields,
                      shape_up: Shape,
-                     seq: &'s ast::Block,
+                     seq: &ast::Block,
                      name: &str) -> ProcessInfo {
     let mut step = resolve_seq(ctx, &scope, protocol_scope, shape_down, &shape_up, seq);
 
@@ -68,12 +68,12 @@ fn compile_block<'s>(ctx: &'s Ctxt<'s>,
     ProcessInfo { fields_up, shape_up, implementation: Box::new(Program{dfa}) }
 }
 
-fn call_primitive<'s>(_ctx: &'s Ctxt<'s>,
-                     scope: &Scope,
-                     fields_down: &Fields,
-                     shape_up: Shape,
-                     primitive_impls: &[PrimitiveDef],
-                     name: &str) -> ProcessInfo {
+fn call_primitive(_ctx: &Ctxt,
+                  scope: &Scope,
+                  fields_down: &Fields,
+                  shape_up: Shape,
+                  primitive_impls: &[PrimitiveDef],
+                  name: &str) -> ProcessInfo {
     for def in primitive_impls {
         if fields_down == &def.fields_down {
             info!("Using {} for primitive at {}", def.id, name);
@@ -91,12 +91,12 @@ fn call_primitive<'s>(_ctx: &'s Ctxt<'s>,
     panic!("No matching call for primitive {} for {:?}", name, fields_down);
 }
 
-pub fn resolve_process<'s>(ctx: &'s Ctxt<'s>,
-                           scope: &Scope,
-                           protocol_scope: &ProtocolScope<'s>,
-                           shape_down: &Shape,
-                           fields_down: &Fields,
-                           p: &'s ast::Process) -> ProcessInfo {
+pub fn resolve_process(ctx: &Ctxt,
+                       scope: &Scope,
+                       protocol_scope: &ProtocolScope,
+                       shape_down: &Shape,
+                       fields_down: &Fields,
+                       p: &ast::Process) -> ProcessInfo {
     match *p {
         ast::Process::Call(ref name, ref arg) => {
             let arg = super::expr::rexpr(ctx, scope, arg);
@@ -130,12 +130,12 @@ pub fn resolve_process<'s>(ctx: &'s Ctxt<'s>,
     }
 }
 
-fn make_literal_process<'s>(ctx: &'s Ctxt<'s>,
-                            scope: &Scope,
-                            protocol_scope: &ProtocolScope<'s>,
-                            is_up: bool,
-                            shape_up_expr: &'s ast::ProtocolRef,
-                            block: &'s ast::Block) -> ProcessInfo {
+fn make_literal_process(ctx: &Ctxt,
+                        scope: &Scope,
+                        protocol_scope: &ProtocolScope,
+                        is_up: bool,
+                        shape_up_expr: &ast::ProtocolRef,
+                        block: &ast::Block) -> ProcessInfo {
     let shape_up = resolve_protocol_invoke(ctx, scope, shape_up_expr);
 
     let mut shape_down = Shape::None;
@@ -160,11 +160,11 @@ pub struct CompiledTest<'a> {
 
 pub fn compile_test<'a>(ctx: &'a Ctxt<'a>,
                         scope: &Scope,
-                        protocol_scope: &ProtocolScope<'a>,
-                        test: &'a ast::Test) -> CompiledTest<'a> {
+                        protocol_scope: &ProtocolScope,
+                        test: &ast::Test) -> CompiledTest<'a> {
 
-    fn build_stack<'a>(ctx: &'a Ctxt<'a>, scope: &Scope, protocol_scope: &ProtocolScope<'a>,
-                       bottom_process: ProcessInfo, ast: &'a [ast::Process]) -> ProcessStack<'a> {
+    fn build_stack<'a>(ctx: &'a Ctxt<'a>, scope: &Scope, protocol_scope: &ProtocolScope,
+                       bottom_process: ProcessInfo, ast: &[ast::Process]) -> ProcessStack<'a> {
         let mut stack = ProcessStack::new(ctx);
         stack.add(bottom_process);
 
