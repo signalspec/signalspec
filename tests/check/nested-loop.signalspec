@@ -2,20 +2,20 @@ let t = #a|#b|#c|#d|#e
 
 with Seq(t)
 def main() {
-    #a
+    val(#a)
     repeat {
         repeat {
-            #b
+            val(#b)
         }
         repeat {
-            #c
+            val(#c)
         }
-        #d
+        val(#d)
     }
-    #e
+    val(#e)
 }
 
-test @up(Seq(t)) { #a ; #e } main();
-test @up(Seq(t)) { #a ; #b ; #c ; #d ; #e } main();
-test @up(Seq(t)) { #a ; #b ; #b ; #c ; #c ; #c ; #d ; #b ; #d ; #e } main();
-test fail @up(Seq(t)){ #a ; #b ; #c } main();
+test @up(Seq(t)) { val(#a) ; val(#e) } main();
+test @up(Seq(t)) { val(#a) ; val(#b) ; val(#c) ; val(#d) ; val(#e) } main();
+test @up(Seq(t)) { val(#a) ; val(#b) ; val(#b) ; val(#c) ; val(#c) ; val(#c) ; val(#d) ; val(#b) ; val(#d) ; val(#e) } main();
+test fail @up(Seq(t)){ val(#a) ; val(#b) ; val(#c) } main();

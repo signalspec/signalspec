@@ -92,10 +92,10 @@ impl Process for StarfishProcess {
 pub fn add_primitives<'a>(loader: &'a Ctxt<'a>) {
     loader.define_prelude(r#"
         protocol Starfish() {
-            (#start, byte),
-            (#r, byte),
-            (#w, byte),
-            #stop,
+            start(byte),
+            r(byte),
+            w(byte),
+            stop(),
         }
     "#);
 

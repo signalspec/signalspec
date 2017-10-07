@@ -1,4 +1,4 @@
-use data::{Type, DataMode};
+use data::{ Value, Type, DataMode };
 use language::{ Item, Expr };
 use std::f64;
 
@@ -13,18 +13,7 @@ impl From<ProtocolId> for usize {
     fn from(i: ProtocolId) -> usize { i.0 }
 }
 
-/// Representation of token alphabet between state machine layers of abstraction.
-#[derive(Clone, Debug)]
-pub enum Shape {
-    None,
-    Seq {
-        def: ProtocolId,
-        param: Item,
-        messages: Vec<Item>,
-    },
-}
-
-pub fn count_item_fields(i: &Item) -> usize {
+fn count_item_fields(i: &Item) -> usize {
     match *i {
         Item::Value(Expr::Const(_)) => 0,
         Item::Value(_) => 1,
@@ -33,13 +22,39 @@ pub fn count_item_fields(i: &Item) -> usize {
     }
 }
 
+#[derive(Clone, Debug)]
+pub struct ShapeVariant {
+    pub name: String,
+    pub shape: Item,
+    pub num_fields: usize,
+}
+
+impl ShapeVariant {
+    pub fn new(name: String, shape: Item) -> ShapeVariant {
+        let num_fields = count_item_fields(&shape);
+        ShapeVariant { name, shape, num_fields }
+    }
+}
+
+/// Representation of token alphabet between state machine layers of abstraction.
+#[derive(Clone, Debug)]
+pub enum Shape {
+    None,
+    Seq {
+        def: ProtocolId,
+        param: Item,
+        messages: Vec<ShapeVariant>,
+    },
+}
+
+
 impl Shape {
     pub fn count_fields(&self) -> usize {
         match *self {
             Shape::None => 0,
             Shape::Seq { ref messages, .. } => {
                 let tag = if messages.len() <= 1 { 0usize } else { 1usize };
-                let inner: usize = messages.iter().map(count_item_fields).sum();
+                let inner: usize = messages.iter().map(|m| m.num_fields).sum();
                 tag + inner
             }
         }
@@ -72,11 +87,50 @@ impl Shape {
                 }
 
                 for variant in messages {
-                    item_fields(&mut fields, variant, dir);
+                    item_fields(&mut fields, &variant.shape, dir);
                 }
 
                 Fields::new(fields)
             }
+        }
+    }
+
+    pub fn has_variant_named(&self, name: &str) -> bool {
+        match *self {
+            Shape::Seq { ref messages, .. } => messages.iter().any(|m| m.name == name),
+            _ => false
+        }
+    }
+
+    pub fn build_variant_fields<F>(&self, name: &str, with_variant: F) -> Vec<Option<Expr>> where F: FnOnce(&Item, &mut FnMut(Expr)) {
+        match *self {
+            Shape::Seq { ref messages, .. } => {
+                messages.iter().position(|m| m.name == name).map(|variant_idx| {
+                    let variant = &messages[variant_idx];
+                    let mut v = vec![None; self.count_fields()];
+
+                    let mut offset: usize = messages[..variant_idx].iter().map(|m| m.num_fields).sum();
+
+                    if messages.len() > 1 {
+                        v[0] = Some(Expr::Const(Value::Integer(variant_idx as i64)));
+                        offset += 1;
+                    }
+
+                    let mut remaining_fields = variant.num_fields;
+
+                    with_variant(&variant.shape, &mut |e| {
+                        assert!(remaining_fields > 0);
+                        v[offset] = Some(e);
+                        offset += 1;
+                        remaining_fields -= 1;
+                    });
+
+                    assert_eq!(remaining_fields, 0);
+
+                    v
+                }).unwrap_or_else(|| panic!("Field {:?} not found on shape {:?}", name, self))
+            }
+            _ => panic!("Invalid shape for build_variant_fields: {:?}", self),
         }
     }
 }

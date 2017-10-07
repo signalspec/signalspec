@@ -2,71 +2,71 @@ with Seq(#a|#b)
 def bare() {
     alt _ {
         _ => {
-            #a
+            val(#a)
         }
         _ => {
-            #b
+            val(#b)
         }
     }
 }
 
-test @up(Seq(#a|#b)) { #a } bare();
+test @up(Seq(#a|#b)) { val(#a) } bare();
 
 with Seq(#a|#b)
 def simple(): Seq(#a | #b) {
-    on x {
+    on val(x) {
         alt x {
             #a => {
-                #a
-                #b
+                val(#a)
+                val(#b)
             }
             #b => {
-                #b
-                #a
+                val(#b)
+                val(#a)
             }
         }
     }
 }
 
-test @both(Seq(#a|#b)) { #b; #a } simple() { #b };
-test @both(Seq(#a|#b)) { #a; #b } simple() { #a };
+test @both(Seq(#a|#b)) { val(#b); val(#a) } simple() { val(#b) };
+test @both(Seq(#a|#b)) { val(#a); val(#b) } simple() { val(#a) };
 
 with Seq(#a|#b|#x|#y)
 def tuple(): Seq(#a|#b, #a|#b|#x|#y) {
-    on z {
+    on val(z) {
         alt z {
             (#a, w) => {
-                #a
-                w
+                val(#a)
+                val(w)
             }
             (#b, w) => {
-                #b
-                w
+                val(#b)
+                val(w)
             }
         }
     }
 }
 
-test @both(Seq(#a|#b|#x|#y)) { #b; #x } tuple() { (#b, #x) };
+test @both(Seq(#a|#b|#x|#y)) { val(#b); val(#x) } tuple() { val(#b, #x) };
 
 with Seq(#a|#b)
 def ambiguous(): Seq(#a | #b) {
-    on x {
+    on val(x) {
         alt x {
             #b => {
-                #a
-                #b
-                #a
+                val(#a)
+                val(#b)
+                val(#a)
             }
             #a => {
-                #a
-                #a
-                #b
+                val(#a)
+                val(#a)
+                val(#b)
             }
         }
     }
 }
 
-test @both(Seq(#a|#b)) { #a; #b; #a } ambiguous() { #b };
-test @both(Seq(#a|#b)) { #a; #a; #b } ambiguous() { #a };
-test fail @both(Seq(#a|#b)) { #a; #a; #a } ambiguous() { #a };
+test @both(Seq(#a|#b)) { val(#a); val(#b); val(#a) } ambiguous() { val(#b) };
+test @both(Seq(#a|#b)) { val(#a); val(#a); val(#b) } ambiguous() { val(#a) };
+test fail @both(Seq(#a|#b)) { val(#a); val(#a); val(#a) } ambiguous() { val(#a) };

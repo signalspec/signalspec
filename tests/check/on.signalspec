@@ -1,26 +1,26 @@
 with Seq(#0..#10)
 def main(): Seq(#0..#10) {
-    on #1 {}
-    on #2 {}
-    on a {
-        a
-        a
+    on val(#1) {}
+    on val(#2) {}
+    on val(a) {
+        val(a)
+        val(a)
     }
 }
 
-test @both(Seq(#0..#10)) { #5; #5 } main() { #1 ; #2 ; #5 };
+test @both(Seq(#0..#10)) { val(#5); val(#5) } main() { val(#1) ; val(#2) ; val(#5) };
 
 with Seq((#0..#10, #0..#10))
 def tuple(): Seq((#0..#10, #0..#10)) {
-    on (a, b) {
-        (a, b)
-        (a, b)
+    on val(a, b) {
+        val(a, b)
+        val(a, b)
     }
 
-    on x {
-        x
-        x
+    on val(x) {
+        val(x)
+        val(x)
     }
 }
 
-test @both(Seq((#0..#10, #0..#10))) { (#5, #6); (#5, #6); (#7, #8); (#7, #8) } tuple() { (#5, #6); (#7, #8) };
+test @both(Seq((#0..#10, #0..#10))) { val(#5, #6); val(#5, #6); val(#7, #8); val(#7, #8) } tuple() { val(#5, #6); val(#7, #8) };

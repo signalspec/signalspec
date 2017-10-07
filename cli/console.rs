@@ -1,6 +1,6 @@
 use std::io::prelude::*;
 use std::io;
-use signalspec::{ ProcessInfo, Shape, Fields, Process, Connection, Value, Item };
+use signalspec::{ ProcessInfo, Shape, ShapeVariant, Fields, Process, Connection, Value, Item };
 
 pub fn make(shape: Shape) -> ProcessInfo {
     ProcessInfo {
@@ -36,14 +36,17 @@ impl Process for Console {
     }
 }
 
-fn format_message<'a, 'b, 'c>(w: &mut Write, values: &[Option<Value>], shape_msg: &[Item]) -> io::Result<()> {
+fn format_message<'a, 'b, 'c>(w: &mut Write, values: &[Option<Value>], shape_msg: &[ShapeVariant]) -> io::Result<()> {
     match shape_msg.len() {
         0 => Ok(()),
-        1 => format_message_item(w, &mut values.iter(), &shape_msg[0]),
+        1 => format_message_item(w, &mut values.iter(), &shape_msg[0].shape),
         _ => {
             if let Some(&Some(Value::Integer(tag))) = values.get(0) {
                 let mut iter = values[1..].iter();
-                format_message_item(w, &mut iter, &shape_msg[tag as usize])
+                let variant = &shape_msg[tag as usize];
+                write!(w, "{}(", variant.name)?;
+                format_message_item(w, &mut iter, &variant.shape)?;
+                write!(w, ")")
             } else {
                 panic!("Message is missing tag")
             }

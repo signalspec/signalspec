@@ -1,5 +1,4 @@
-use protocol::ProtocolId;
-use protocol::Shape;
+use protocol::{ ProtocolId, Shape, ShapeVariant };
 use super::scope::{Item, Scope};
 use super::ast;
 use super::expr;
@@ -37,10 +36,11 @@ pub fn resolve_protocol_invoke(ctx: &Ctxt, scope: &Scope, ast: &ast::ProtocolRef
             .unwrap_or_else(|e| panic!("failed to match parameters for protocol `{}`: {:?}", ast.name, e));
 
         let mut messages = vec![];
+
         for entry in &protocol.ast.entries {
             match *entry {
-                ast::ProtocolEntry::Message(ref e) => {
-                    messages.push(expr::rexpr(ctx, &protocol_def_scope, e));
+                ast::ProtocolEntry::Message(ref name, ref e) => {
+                    messages.push(ShapeVariant::new(name.clone(), expr::rexpr(ctx, &protocol_def_scope, e)));
                 }
             }
         }

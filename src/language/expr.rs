@@ -4,7 +4,7 @@ use super::eval::{ Expr, ConcatElem };
 use super::scope::{ Scope, Item };
 use super::function::{FunctionDef, Func};
 use data::Value;
-use protocol::{ Shape, count_item_fields };
+use protocol::Shape;
 
 fn resolve(ctx: &Ctxt, scope: Option<&Scope>, var_handler: &mut FnMut(&str) -> Expr, e: &ast::Expr) -> Expr {
     match *e {
@@ -139,48 +139,29 @@ fn resolve_call<'s>(ctxt: &'s Ctxt<'s>, scope: &Scope, func: &ast::Expr, arg: &a
 }
 
 /// Resolve an expression as used in the argument of an `on` block, defining variables
-pub fn on_expr_message(ctx: &Ctxt, scope: &mut Scope,
-        shape: &Shape, expr: &ast::Expr) -> Vec<Option<Expr>> {
-
-    // First test if this shape matches the expression, in order to avoid binding variables
-    // for the wrong protocol variant.
-    fn try_match(shape: &Item, e: &ast::Expr) -> bool {
-        match (shape, e) {
-            (&Item::Value(Expr::Const(ref c)), &ast::Expr::Value(ref val)) => c == val,
-            (&Item::Value(ref v), &ast::Expr::Value(ref val)) => v.get_type().includes(val),
-            (&Item::Tuple(ref ss), &ast::Expr::Tup(ref se)) if ss.len() == se.len() => {
-                ss.iter().zip(se.iter()).all(|(s,i)| try_match(s, i))
-            }
-            // This might fail later, but can't match a different variant
-            (&Item::Value(Expr::Const(..)), _) => false,
-            (&Item::Value(..), _) => true,
-
-            _ => false
-        }
-    }
-
-    fn perform_match(ctx: &Ctxt, scope: &mut Scope, shape: &Item, expr: &ast::Expr) -> Vec<Option<Expr>> {
+pub fn on_expr_message(ctx: &Ctxt, scope: &mut Scope, shape: &Shape, variant: &str, expr: &ast::Expr) -> Vec<Option<Expr>> {
+    fn perform_match(ctx: &Ctxt, scope: &mut Scope, shape: &Item, expr: &ast::Expr, push: &mut FnMut(Expr)) {
         match (shape, expr) {
-            (&Item::Value(Expr::Const(ref c)), &ast::Expr::Value(ref val)) if c == val => vec![],
+            (&Item::Value(Expr::Const(ref c)), &ast::Expr::Value(ref val)) if c == val => (),
 
             (&Item::Value(ref v), &ast::Expr::Var(ref name)) => { // A variable binding
                 let ty = v.get_type();
                 let id = scope.new_variable(ctx.session, &name[..], ty.clone());
-                vec![Some((Expr::Variable(id, ty)))]
+                push(Expr::Variable(id, ty));
             }
 
             (&Item::Tuple(ref ss), &ast::Expr::Var(ref name)) => { // A variable binding for a tuple
                 // Capture a tuple by recursively building a tuple Item containing each of the
                 // captured variables
-                fn build_tuple(ctx: &Ctxt, msg: &mut Vec<Option<Expr>>, ss: &[Item]) -> Item {
+                fn build_tuple(ctx: &Ctxt, push: &mut FnMut(Expr), ss: &[Item]) -> Item {
                     Item::Tuple(ss.iter().map(|i| {
                         match *i {
                             Item::Value(Expr::Const(ref c)) => Item::Value(Expr::Const(c.clone())),
-                            Item::Tuple(ref t) => build_tuple(ctx, msg, &t[..]),
+                            Item::Tuple(ref t) => build_tuple(ctx, push, &t[..]),
                             Item::Value(ref v) => {
                                 let ty = v.get_type();
                                 let id = ctx.session.make_id();
-                                msg.push(Some((Expr::Variable(id, ty.clone()))));
+                                push(Expr::Variable(id, ty.clone()));
                                 Item::Value(Expr::Variable(id, ty))
                             }
 
@@ -189,54 +170,26 @@ pub fn on_expr_message(ctx: &Ctxt, scope: &mut Scope,
                     }).collect())
                 }
 
-                let mut msg = Vec::new();
-                scope.bind(name, build_tuple(ctx, &mut msg, &ss[..]));
-                msg
+                scope.bind(name, build_tuple(ctx, push, &ss[..]));
             }
 
             (&Item::Value(_), expr) => { // A match against a refutable pattern
-                let e = resolve(ctx, None, &mut |_| { panic!("Variable binding not allowed here") }, expr);
-                vec![Some(e)]
+                push(resolve(ctx, None, &mut |_| { panic!("Variable binding not allowed here") }, expr));
             }
 
             (&Item::Tuple(ref ss), &ast::Expr::Tup(ref se)) => {
-                ss.iter().zip(se.iter()).flat_map(|(s, i)| {
-                    perform_match(ctx, scope, s, i)
-                }).collect()
+                for (s, i) in ss.iter().zip(se.iter()) {
+                    perform_match(ctx, scope, s, i, push)
+                }
             }
 
             (shape, expr) => panic!("Expression {:?} doesn't match shape {:?}", expr, shape)
         }
     }
 
-    match (shape, expr) {
-        (&Shape::Seq { ref messages, ..}, expr) => {
-            if messages.len() == 1 {
-                perform_match(ctx, scope, &messages[0], expr)
-            } else {
-                let mut fields = vec![None];
-                let mut matching_variants = 0;
-                for (i, shape) in messages.iter().enumerate() {
-                    if try_match(shape, expr) {
-                        fields[0] = Some(Expr::Const(Value::Integer(i as i64)));
-                        fields.extend(perform_match(ctx, scope, shape, expr));
-                        matching_variants += 1;
-                    } else {
-                        // Create dummy fields for other variants
-                        fields.extend((0..count_item_fields(shape)).map(|_| None));
-                    }
-                }
-
-                match matching_variants {
-                    1 => fields,
-                    0 => panic!("No variant matched {:?}", expr),
-                    _ => panic!("Multiple variants matched {:?}", expr)
-                }
-            }
-        }
-
-        (shape, expr) => panic!("Expression {:?} doesn't match shape {:?}", expr, shape)
-    }
+    shape.build_variant_fields(variant, |variant_shape, push| {
+        perform_match(ctx, scope, variant_shape, expr, push);
+    })
 }
 
 #[derive(Clone, Debug)]

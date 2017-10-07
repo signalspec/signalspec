@@ -1,8 +1,8 @@
 with Seq(#a|#b)
 def main(a, b) {
-    a
-    b
+    val(a)
+    val(b)
 }
 
-test @both(Seq(#a|#b)){ #a; #b } main(#a, #b);
-test fail @up(Seq(#a|#b)){ #a; #a } main(#a, #b);
+test @both(Seq(#a|#b)){ val(#a); val(#b) } main(#a, #b);
+test fail @up(Seq(#a|#b)){ val(#a); val(#a) } main(#a, #b);

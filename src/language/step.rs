@@ -8,9 +8,9 @@ use super::scope::{ Scope, Item };
 use super::eval::Expr;
 use super::protocol::{ ProtocolScope, DefImpl };
 use super::module_loader::Ctxt;
-use protocol::{ Shape, Fields, count_item_fields };
+use protocol::{ Shape, Fields };
 
-use data::{ DataMode, Type, Value };
+use data::{ DataMode, Type };
 
 pub type Message = Vec<Option<Expr>>;
 
@@ -118,32 +118,26 @@ fn resolve_action(ctx: &Ctxt,
         ast::Action::Call(ref name, ref param_ast, ref body) => {
             let param = expr::rexpr(ctx, scope, param_ast);
 
-            let (scope, imp, mut shape_up) = protocol_scope.find(ctx, shape_down, name, param);
-
-            let step = match *imp {
-                DefImpl::Code(ref seq) => {
-                    resolve_seq(ctx, &scope, protocol_scope, shape_down, &mut shape_up, seq)
-                }
-                DefImpl::Primitive(..) => panic!("Primitive not allowed here"),
-            };
-
-            if let &Some(ref _body) = body {
+            if body.is_some() {
                 unimplemented!();
+            }
+
+            if shape_down.has_variant_named(name) {
+                Step::Token(resolve_token(shape_down, name, param))
             } else {
-                step
+                let (scope, imp, mut shape_up) = protocol_scope.find(ctx, shape_down, name, param);
+
+                match *imp {
+                    DefImpl::Code(ref seq) => resolve_seq(ctx, &scope, protocol_scope, shape_down, &mut shape_up, seq),
+                    DefImpl::Primitive(..) => panic!("Primitive not allowed here"),
+                }
             }
         }
-        ast::Action::Token(ref expr) => {
-            debug!("Token: {:?}", expr);
-
-            let item = expr::rexpr(ctx, scope, expr);
-            Step::Token(resolve_token(item, shape_down))
-        }
-        ast::Action::On(ref expr, ref body) => {
+        ast::Action::On(ref name, ref expr, ref body) => {
             let mut body_scope = scope.child();
 
             debug!("Upper message, shape: {:?}", shape_up);
-            let msginfo = expr::on_expr_message(ctx, &mut body_scope, shape_up, expr);
+            let msginfo = expr::on_expr_message(ctx, &mut body_scope, shape_up, name, expr);
 
             let step = if let &Some(ref body) = body {
                 resolve_seq(ctx, &body_scope, protocol_scope, shape_down, &mut Shape::None, body)
@@ -225,24 +219,13 @@ pub fn resolve_letdef(ctx: &Ctxt, scope: &mut Scope, ld: &ast::LetDef) {
     scope.bind(&name, item);
 }
 
-fn resolve_token<'shape>(item: Item, shape: &'shape Shape) -> Message {
-    fn try_variant(shape: &Item, item: &Item) -> bool {
-        match (shape, item) {
-            (&Item::Value(Expr::Const(ref c)), &Item::Value(Expr::Const(ref v))) => c == v,
-            (&Item::Value(ref t), &Item::Value(ref e)) => t.get_type().includes_type(&e.get_type()),
-            (&Item::Tuple(ref m), &Item::Tuple(ref t)) if m.len() == t.len() => {
-                 m.iter().zip(t.iter()).all(|(i, s)| { try_variant(i, s) })
-            }
-            _ => false,
-        }
-    }
-
-    fn inner(i: Item, shape: &Item, msg: &mut Message) {
+fn resolve_token(shape: &Shape, variant_name: &str, item: Item) -> Message {
+    fn inner(i: Item, shape: &Item, push: &mut FnMut(Expr)) {
         match shape {
             &Item::Value(Expr::Const(_)) => (),
             &Item::Value(_) => {
                 if let Item::Value(v) = i {
-                    msg.push(Some(v));
+                    push(v);
                 } else {
                     panic!("Expected value but found {:?}", i);
                 }
@@ -251,7 +234,7 @@ fn resolve_token<'shape>(item: Item, shape: &'shape Shape) -> Message {
                 if let Item::Tuple(t) = i {
                     if t.len() == m.len() {
                         for (mi, i) in m.iter().zip(t.into_iter()) {
-                            inner(i, mi, msg)
+                            inner(i, mi, push)
                         }
                     } else {
                         panic!("Expected tuple length {}, found {}", m.len(), t.len());
@@ -264,37 +247,9 @@ fn resolve_token<'shape>(item: Item, shape: &'shape Shape) -> Message {
         }
     }
 
-    let mut msg = vec![];
-    match *shape {
-        Shape::None => (),
-        Shape::Seq { ref messages, .. } => {
-            if messages.len() == 1 {
-                inner(item, &messages[0], &mut msg)
-            } else {
-                let tag_idx = msg.len();
-                msg.push(None);
-
-                let mut matching_variants = 0;
-                for (idx, shape) in messages.iter().enumerate() {
-                    if try_variant(shape, &item) {
-                        msg[tag_idx] = Some(Expr::Const(Value::Integer(idx as i64)));
-                        inner(item.clone(), shape, &mut msg);
-                        matching_variants += 1;
-                    } else {
-                        // Create dummy fields for other variants
-                        msg.extend((0..count_item_fields(shape)).map(|_| None));
-                    }
-                }
-
-                match matching_variants {
-                    1 => (),
-                    0 => panic!("No variant matched {:?}", item),
-                    _ => panic!("Multiple variants matched {:?}", item)
-                }
-            }
-        }
-    }
-    msg
+    shape.build_variant_fields(variant_name, |variant_shape, push| {
+        inner(item, variant_shape, push)
+    })
 }
 
 pub fn infer_direction(step: &mut Step, bottom_fields: &Fields, top_fields: &mut Fields) -> ResolveInfo {

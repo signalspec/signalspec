@@ -10,19 +10,19 @@ let CTRL_REG4 = 'h2D
 //let I2C = Starfish
 
 protocol I2C() {
-    (#start, byte),
-    (#r|#w, byte),
-    #stop,
+    start(byte),
+    data(#r|#w, byte),
+    stop(),
 }
 
 with I2C()
 def read_reg(reg, val) {
-    (#start, ADDR_WR); (#w, reg); (#start, ADDR_RD); (#r, val); #stop
+    start(ADDR_WR); data(#w, reg); start(ADDR_RD); data(#r, val); stop()
 }
 
 with I2C()
 def write_reg(reg, val) {
-    (#start, ADDR_WR); (#w, reg); (#w, val); #stop
+    start(ADDR_WR); data(#w, reg); data(#w, val); stop()
 }
 
 with I2C()
@@ -33,13 +33,15 @@ def mma84(): Seq(-4..4, -4..4, -4..4) {
     write_reg(CTRL_REG4, 'h01);
     repeat {
         on (x, y, z) {
-            (#start, ADDR_WR); (#w, OUT_X_MSB); (#start, ADDR_RD);
+            start(ADDR_WR);
+            data(#w, OUT_X_MSB);
+            start(ADDR_RD);
 
             for w = [x, y, z] {
-                for b = chunks(#8, signed(#16, int(w * 16384))) { (#r, b) }
+                for b = chunks(#8, signed(#16, int(w * 16384))) { data(#r, b) }
             }
 
-            #stop
+            stop()
         }
     }
 }

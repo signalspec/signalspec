@@ -35,16 +35,14 @@ block -> ast::Block
     action -> ast::Action
         = REPEAT count:expr? block:block
             { ast::Action::Repeat(count.unwrap_or(ast::Expr::Ignore), block) }
-        / ON expr:expr body:block?
-            { ast::Action::On(expr, body) }
+        / ON name:IDENTIFIER LPAREN expr:expr_tup RPAREN body:block?
+            { ast::Action::On(name, expr, body) }
         / FOR items:(l:IDENTIFIER EQUALS r:expr { (l,r) })* body:block
             { ast::Action::For(items, body) }
         / ALT expr:expr LBRACE  arms:alt_arm* RBRACE
             { ast::Action::Alt(expr, arms) }
         / name:IDENTIFIER LPAREN param:expr_tup RPAREN body:block?
             { ast::Action::Call(name, param, body) }
-        / expr:expr
-            { ast::Action::Token(expr) }
 
         alt_arm -> ast::AltArm
           = expr:expr ARROW block:block
@@ -55,7 +53,7 @@ protocol_block -> Vec<ast::ProtocolEntry>
     { entries }
 
   protocol_entry -> ast::ProtocolEntry
-     = e:expr { ast::ProtocolEntry::Message(e) }
+     = n:IDENTIFIER LPAREN e:expr_tup RPAREN { ast::ProtocolEntry::Message(n, e) }
 
 // Expressions
 expr -> ast::Expr

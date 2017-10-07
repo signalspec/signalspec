@@ -15,8 +15,7 @@ pub struct Block {
 pub enum Action {
     Repeat(Expr, Block),
     Call(String, Expr, Option<Block>),
-    Token(Expr),
-    On(Expr, Option<Block>),
+    On(String, Expr, Option<Block>),
     For(Vec<(String, Expr)>, Block),
     Alt(Expr, Vec<AltArm>),
 }
@@ -57,7 +56,7 @@ pub struct Protocol {
 }
 
 pub enum ProtocolEntry {
-    Message(Expr),
+    Message(String, Expr),
 }
 
 #[derive(Debug, Clone)]

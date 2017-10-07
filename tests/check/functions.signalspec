@@ -2,9 +2,9 @@ let bit = #0 | #1
 
 with Seq([bit, bit, bit])
 def test_signed(): Seq(#-4..#3) {
-        on x { (signed(#3, x)) }
-        on x { (signed(#3, x)) }
-        on x { (signed(#3, x)) }
+        on val(x) { val(signed(#3, x)) }
+        on val(x) { val(signed(#3, x)) }
+        on val(x) { val(signed(#3, x)) }
 }
 
-test @both(Seq([bit, bit, bit])) { [#1, #0, #1]; [#0, #0, #1]; [#0, #0, #0] } test_signed() { #-3; #1; #0 };
+test @both(Seq([bit, bit, bit])) { val([#1, #0, #1]); val([#0, #0, #1]); val([#0, #0, #0]) } test_signed() { val(#-3); val(#1); val(#0) };

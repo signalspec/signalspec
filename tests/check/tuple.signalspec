@@ -2,9 +2,9 @@ let t = #a|#b|#c|#d
 
 with Seq(t, t)
 def main() {
-    (#a, #b)
-    (#c, #d)
+    val(#a, #b)
+    val(#c, #d)
 }
 
-test @both(Seq(t, t)) {(#a, #b); (#c, #d)} main();
-test fail @both(Seq(t, t)) {(#a, #d); (#c, #b)} main();
+test @both(Seq(t, t)) { val(#a, #b); val(#c, #d) } main();
+test fail @both(Seq(t, t)) { val(#a, #d); val(#c, #b) } main();

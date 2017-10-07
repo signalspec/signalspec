@@ -1,12 +1,22 @@
 with Seq(#h|#l)
 def main(): Seq(#0..#3) {
   repeat {
-    on v {
-      #h
-      repeat v { #h }
+    on val(v) {
+      val(#h)
+      repeat v { val(#h) }
     }
-    repeat #1..#10 { #l }
+    repeat #1..#10 { val(#l) }
   }
 }
 
-test @up(Seq(#h|#l)) { #h; #l; #h; #h; #l; #h; #h; #h; #l } main() { #0; #1; #2 };
+test @up(Seq(#h|#l)) {
+  val(#h);
+  val(#l);
+  val(#h);
+  val(#h);
+  val(#l);
+  val(#h);
+  val(#h);
+  val(#h);
+  val(#l)
+} main() { val(#0); val(#1); val(#2) };

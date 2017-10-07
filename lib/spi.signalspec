@@ -2,31 +2,31 @@ let bit = #0|#1
 let byte = [bit, bit, bit, bit, bit, bit, bit, bit]
 
 protocol SPI() {
-  byte,
-  #start,
-  #end,
+  data(byte),
+  start(),
+  end(),
 }
 
 with Seq(#l|#h, #l|#h, #l|#h)
 def spi(): SPI() {
-  repeat <: #10 { (#h, <: #l, <: #l) }
+  repeat <: #10 { val(#h, <: #l, <: #l) }
   repeat {
-    on #start {}
+    on start() {}
     repeat #1..#100 {
-      on byte {
+      on data(byte) {
         for bit=byte {
           let b = bit[#0=#l, #1=#h]
-          (#l, #l, <: b)
-          repeat <: #4 { (#l, #l, <: b) }
-          (#l, #h, b)
-          repeat <: #4 { (#l, #h, <: b) }
+          val(#l, #l, <: b)
+          repeat <: #4 { val(#l, #l, <: b) }
+          val(#l, #h, b)
+          repeat <: #4 { val(#l, #h, <: b) }
         }
       }
     }
-    on #end {}
-    (#h, <: #l, <: #l)
-    repeat <: #9 { (#h, <: #l, <: #l) }
+    on end() {}
+    val(#h, <: #l, <: #l)
+    repeat <: #9 { val(#h, <: #l, <: #l) }
   }
 }
 
-test @roundtrip(Seq(#l|#h, #l|#h, #l|#h)) {} spi() { #start; '01011101; '11110000; #end; #start; '00001000; #end };
+test @roundtrip(Seq(#l|#h, #l|#h, #l|#h)) {} spi() { start(); data('01011101); data('11110000); end(); start(); data('00001000); end() };

@@ -17,9 +17,9 @@ use language::{ add_primitive_fns, Ctxt };
 pub fn add_primitives<'a>(loader: &'a Ctxt<'a>) {
     loader.define_prelude(r#"
     protocol Base() {}
-    protocol Seq(T) { T }
+    protocol Seq(T) { val(T) }
 
-    protocol Bytes() { #0..#255 }
+    protocol Bytes() { byte(#0..#255) }
     let Float32 = -1.0..1.0
     "#);
 

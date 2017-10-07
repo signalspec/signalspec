@@ -2,18 +2,18 @@ let t = #a|#b|#c|#d
 
 with Seq(t)
 def main(x) {
-    #a
-    #b
+    val(#a)
+    val(#b)
     repeat x {
-        #c
-        #d
+        val(#c)
+        val(#d)
     }
-    #a
+    val(#a)
 }
 
-test @both(Seq(t)) { #a ; #b ; #a } main(#0);
-test fail @up(Seq(t)) { #a ; #b ; #a } main(#1);
-test @both(Seq(t)) { #a ; #b ; #c ; #d ; #a } main(#1);
-test @both(Seq(t)) { #a ; #b ; #c ; #d ; #c ; #d ; #a } main(#2);
-test fail @up(Seq(t)) { #a ; #b ; #c ; #a } main(_);
-test fail @up(Seq(t)) { #a ; #b ; #c ; #d } main(_);
+test @both(Seq(t)) { val(#a) ; val(#b) ; val(#a) } main(#0);
+test fail @up(Seq(t)) { val(#a) ; val(#b) ; val(#a) } main(#1);
+test @both(Seq(t)) { val(#a) ; val(#b) ; val(#c) ; val(#d) ; val(#a) } main(#1);
+test @both(Seq(t)) { val(#a) ; val(#b) ; val(#c) ; val(#d) ; val(#c) ; val(#d) ; val(#a) } main(#2);
+test fail @up(Seq(t)) { val(#a) ; val(#b) ; val(#c) ; val(#a) } main(_);
+test fail @up(Seq(t)) { val(#a) ; val(#b) ; val(#c) ; val(#d) } main(_);
