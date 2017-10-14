@@ -132,8 +132,10 @@ pub valexpr -> ast::Expr
         = UNDERSCORE { ast::Expr::Ignore }
 
     concatexpr -> ast::Expr
-        = LBRACKET vs:(valexpr ++ COMMA) COMMA? RBRACKET
+        = LBRACKET vs:(concat_elem ++ COMMA) COMMA? RBRACKET
         { ast::Expr::Concat(vs) }
+
+        concat_elem -> (Option<usize>, ast::Expr) = w:(w:INTEGER COLON {w as usize})? e:valexpr { (w, e) }
 
     varexpr -> ast::Expr = i:IDENTIFIER { ast::Expr::Var(i) }
 

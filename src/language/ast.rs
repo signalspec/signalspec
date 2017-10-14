@@ -80,7 +80,7 @@ pub enum Expr {
     Flip(Box<Expr>, Box<Expr>),
     Range(Box<Expr>, Box<Expr>),
     Choose(Box<Expr>, Vec<(Expr, Expr)>),
-    Concat(Vec<Expr>),
+    Concat(Vec<(Option<usize>, Expr)>),
 
     Bin(Box<Expr>, BinOp, Box<Expr>),
 

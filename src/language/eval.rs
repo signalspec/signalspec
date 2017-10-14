@@ -12,7 +12,6 @@ pub enum ConcatElem {
     Elem(Expr),
 
     /// An `Expr` for a `Vector` value whose elements are included in a concatenation (`[8:a]`)
-    #[allow(dead_code)]
     Slice(Expr, usize),
 }
 

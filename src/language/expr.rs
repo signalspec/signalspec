@@ -50,8 +50,12 @@ fn resolve(ctx: &Ctxt, scope: Option<&Scope>, var_handler: &mut FnMut(&str) -> E
         }
 
         ast::Expr::Concat(ref v) =>  {
-            let elems = v.iter().map(|e| {
-                ConcatElem::Elem(resolve(ctx, scope, var_handler, e))
+            let elems = v.iter().map(|&(slice_width, ref e)| {
+                let expr = resolve(ctx, scope, var_handler, e);
+                match slice_width {
+                    None => ConcatElem::Elem(expr),
+                    Some(w) => ConcatElem::Slice(expr, w)
+                }
             }).collect();
 
             Expr::Concat(elems)
