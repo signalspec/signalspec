@@ -361,14 +361,22 @@ fn fn_int(arg: Item) -> Result<Item, &'static str> {
     }
 }
 
+fn fn_unsigned(arg: Item) -> Result<Item, &'static str> {
+    fn_signed_unsigned(arg, SignMode::None)
+}
+
 fn fn_signed(arg: Item) -> Result<Item, &'static str> {
+    fn_signed_unsigned(arg, SignMode::TwosComplement)
+}
+
+fn fn_signed_unsigned(arg: Item, sign_mode: SignMode) -> Result<Item, &'static str> {
     match arg {
         Item::Tuple(mut t) => {
             match (t.pop(), t.pop()) { //TODO: cleaner way to move out of vec without reversing order?
                 (Some(Item::Value(v)), Some(Item::Value(Expr::Const(Value::Integer(width))))) => {
                     Ok(Item::Value(Expr::IntToBits {
                         width: width as usize,
-                        signed: SignMode::TwosComplement,
+                        signed: sign_mode,
                         expr: Box::new(v)
                     }))
                 }
@@ -414,6 +422,7 @@ fn fn_complex(arg: Item) -> Result<Item, &'static str> {
 pub fn add_primitive_fns<'a>(loader: &'a super::Ctxt<'a>) {
     loader.add_primitive_fn("int", fn_int);
     loader.add_primitive_fn("signed", fn_signed);
+    loader.add_primitive_fn("unsigned", fn_unsigned);
     loader.add_primitive_fn("chunks", fn_chunks);
     loader.add_primitive_fn("complex", fn_complex);
 }

@@ -1461,7 +1461,7 @@ impl Regs {
                 if let Value::Number(v) = self.get(arg) {
                     Value::Integer(v as i64)
                 } else {
-                    panic!("IntToBits on non-integer");
+                    panic!("FloatToInt on non-integer");
                 }
             }
 
@@ -1469,7 +1469,7 @@ impl Regs {
                 if let Value::Integer(v) = self.get(arg) {
                     Value::Number(v as f64)
                 } else {
-                    panic!("IntToBits on non-integer");
+                    panic!("IntToFloat on non-integer");
                 }
             }
 
