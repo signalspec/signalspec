@@ -1,10 +1,11 @@
 use super::step::{ StepInfo, Message };
 use super::step::Step::*;
-use data::Value;
+use data::{ Type, Value };
 use connection::{ Connection, ConnectionMessage };
 use session::ValueID;
 use vec_map::VecMap;
 use super::matchset::MatchSet;
+use std::i64;
 
 pub fn run(step: &StepInfo, downwards: &mut Connection, upwards: &mut Connection) -> bool {
     let mut cx = RunCx { downwards, upwards, state: State::new() };
@@ -154,7 +155,13 @@ fn run_inner(step: &StepInfo, cx: &mut RunCx) -> bool {
                 debug!("repeat up");
                 let mut c = 0;
 
-                while cx.test(&inner.first) {
+                let count_type = count.get_type();
+                let hi = match count_type {
+                    Type::Integer(_, hi) => hi,
+                    _ => { warn!("Loop count type is {:?} not int", count_type); i64::MAX }
+                };
+
+                while c < hi && cx.test(&inner.first) {
                     if !run_inner(inner, cx) { return false; }
                     c += 1;
                 }

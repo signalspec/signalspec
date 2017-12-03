@@ -1,4 +1,5 @@
 use super::step::{Step, Message};
+use data::Type;
 
 #[derive(Clone, Debug)]
 pub struct MatchSet {
@@ -57,10 +58,20 @@ pub fn first(step: &Step) -> MatchSet {
             }
             first
         },
-        Repeat(ref _count, ref inner) => {
+        Repeat(ref count, ref inner) => {
             // TODO: not nullable if count won't match 0
             let mut first = inner.first.clone();
-            first.alternative(MatchSet::epsilon());
+
+            let count_type = count.get_type();
+            match count_type {
+                Type::Integer(lo, hi) => {
+                    if lo <= 0 && hi >= 0 {
+                        first.alternative(MatchSet::epsilon());
+                    }
+                }
+                _ => warn!("Loop count type is {:?} not int", count_type)
+            }
+
             first
             // TODO: check that followlast and first are nonoverlapping
             // TODO: require that inner is non-nullable?
