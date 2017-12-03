@@ -238,7 +238,177 @@ impl Expr {
             }
         }
     }
+
+    /// Down-evaluate the expression with variables from the given value function.
+    pub fn eval_down(&self, state: &Fn(ValueID)->Value) -> Value {
+        match *self {
+            Expr::Ignored | Expr::Range(..) | Expr::RangeInt(..) | Expr::Union(..) => {
+                panic!("{:?} can't be down-evaluated", self)
+            }
+            Expr::Variable(id, _) => state(id),
+            Expr::Const(ref v) => v.clone(),
+
+            Expr::Flip(ref d, _) => d.eval_down(state),
+            Expr::Choose(ref e, ref c) => eval_choose(&e.eval_down(state), c).unwrap(),
+
+            Expr::Concat(ref components) => {
+                let mut result = vec![];
+                for component in components {
+                    match component {
+                        ConcatElem::Elem(e) => result.push(e.eval_down(state)),
+                        ConcatElem::Slice(e, w) => {
+                            match e.eval_down(state) {
+                                Value::Vector(v) => result.extend(v.into_iter()),
+                                other => panic!("Slice splat expected vector of length {}, found {}", w, other)
+                            }
+                        }
+                    }
+                }
+                Value::Vector(result)
+            },
+
+            Expr::BinaryConst(ref e, op, ref c) => {
+                match (e.eval_down(state), c) {
+                    (Value::Number(l), &Value::Number(r)) => Value::Number(op.eval(l, r)),
+                    (Value::Integer(l), &Value::Integer(r)) => Value::Integer(op.eval(l, r)),
+                    (l, r) => panic!("Invalid types {} {} in BinaryConst", l, r)
+                }
+            }
+
+            Expr::FloatToInt(ref e) => {
+                match e.eval_down(state) {
+                    Value::Number(n) => Value::Integer(n as i64),
+                    e => panic!("Invalid value {} in FloatToInt", e)
+                }
+            }
+
+            Expr::IntToBits { width, ref expr, signed: _ } => {
+                match expr.eval_down(state) {
+                    Value::Integer(i) => {
+                        Value::Vector((0..width).rev().map(|bit| Value::Integer((((i as u64) >> bit) & 1) as i64) ).collect())
+                    }
+                    e => panic!("Invalid value {} in IntToBits", e)
+                }
+            }
+
+            Expr::Chunks { ref expr, width } => {
+                match expr.eval_down(state) {
+                    Value::Vector(i) => {
+                        Value::Vector(i.chunks(width).map(|s| Value::Vector(s.to_vec())).collect())
+                    }
+                    e => panic!("Invalid value {} in Chunks", e)
+                }
+            }
+        }
+    }
+
+    /// Up-evaluate a value. This accepts a value and may write variables
+    /// via the passed function. It returns whether the expression matched the value.
+    pub fn eval_up(&self, state: &mut FnMut(ValueID, Value) -> bool, v: Value) -> bool {
+        match *self {
+            Expr::Ignored => true,
+            Expr::Range(a, b) => match v {
+                Value::Number(n) => n>a && n<b,
+                _ => false,
+            },
+            Expr::RangeInt(a, b) => match v {
+                Value::Integer(n) => n>=a && n<=b,
+                _ => false,
+            },
+            Expr::Union(ref u) => {
+                u.iter().any(|i| i.eval_up(state, v.clone()))
+            }
+            Expr::Variable(id, _) => state(id, v),
+            Expr::Const(ref p) => &v == p,
+
+            Expr::Flip(_, ref u) => u.eval_up(state, v),
+            Expr::Choose(ref e, ref choices) => {
+                let r = choices.iter()
+                    .find(|& &(_, ref b)|{ *b == v })
+                    .map(|&(ref a, _)| a.clone());
+
+                if let Some(v) = r {
+                    e.eval_up(state, v)
+                } else {
+                    false
+                }
+            },
+            Expr::Concat(ref components) => {
+                let mut elems = match v {
+                    Value::Vector(e) => e.into_iter(),
+                    other => panic!("Concat expected a vector, found {}", other)
+                };
+
+                components.iter().all(|component| {
+                    match component {
+                        ConcatElem::Elem(e) => e.eval_up(state, elems.next().expect("not enough elements in slice")),
+                        &ConcatElem::Slice(ref e, w) => e.eval_up(state, Value::Vector(elems.by_ref().take(w).collect()))
+                    }
+                })
+
+
+            }
+
+            Expr::BinaryConst(ref e, op, ref c) => {
+                match (v, c) {
+                    (Value::Number(v), &Value::Number(c)) => e.eval_up(state, Value::Number(op.invert().eval(v, c))),
+                    (Value::Integer(v), &Value::Integer(c)) => e.eval_up(state, Value::Integer(op.invert().eval(v, c))),
+                    _ => false, // TODO: or type error
+                }
+            }
+
+            Expr::FloatToInt(ref e) => {
+                match v {
+                    Value::Integer(n) => e.eval_up(state, Value::Number(n as f64)),
+                    e => panic!("Invalid value {} up-evaluating FloatToInt", e)
+                }
+            }
+
+            Expr::IntToBits { width, ref expr, signed } => {
+                match v {
+                    Value::Vector(bits) => {
+                        assert_eq!(bits.len(), width);
+
+                        let v = bits.iter().fold(0, |acc, x| {
+                            match *x {
+                                Value::Integer(bit) => (acc << 1) | (bit as u64),
+                                _ => panic!("Expected bit")
+                            }
+                        });
+
+                        let v = match signed {
+                            SignMode::TwosComplement => ((v << (64-width)) as i64) >> (64-width), // sign-extend
+                            SignMode::None => v as i64
+                        };
+
+                        expr.eval_up(state, Value::Integer(v))
+                    }
+                    e => panic!("Invalid value {} up-evaluating IntToBits", e)
+                }
+            }
+
+            Expr::Chunks { ref expr, .. } => {
+                match v {
+                    Value::Vector(chunks) => {
+                        let concat = chunks.into_iter().flat_map(|c| {
+                            match c { Value::Vector(cv) => cv.into_iter(), e => panic!("Expected vector in chunks {}", e)}
+                        }).collect();
+                        expr.eval_up(state, Value::Vector(concat))
+                    }
+                    e => panic!("Expected outer vector in Chunks {}", e)
+                }
+            }
+
+        }
+    }
 }
+
+fn eval_choose(v: &Value, choices: &[(Value, Value)]) -> Option<Value> {
+    choices.iter()
+        .find(|& &(ref a, _)|{ a == v })
+        .map(|&(_, ref b)| b.clone())
+}
+
 
 impl fmt::Display for Expr {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {

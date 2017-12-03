@@ -1,4 +1,3 @@
-use bit_set::BitSet;
 use std::io::{Write, Result as IoResult};
 use std::iter::repeat;
 
@@ -6,29 +5,41 @@ use session::ValueID;
 use super::{ ast, expr };
 use super::scope::{ Scope, Item };
 use super::eval::Expr;
-use super::protocol::{ ProtocolScope, DefImpl };
-use super::module_loader::Ctxt;
 use protocol::{ Shape, Fields };
+use super::protocol::{ ProtocolScope, DefImpl, resolve_protocol_invoke };
+use super::module_loader::Ctxt;
+use process::{ Process, ProcessInfo };
+use connection::{ Connection };
+use super::exec;
+use super::matchset::{ self, MatchSet };
+use super::direction_infer::{ ResolveInfo, infer_direction, infer_top_fields };
 
 use data::{ DataMode, Type };
 
 pub type Message = Vec<Option<Expr>>;
 
 #[derive(Debug)]
+pub struct StepInfo {
+    pub step: Step,
+    pub dir: ResolveInfo,
+    pub first: MatchSet,
+}
+
+#[derive(Debug)]
 pub enum Step {
     Nop,
     Token(Message),
-    TokenTop(Message, Box<Step>),
-    Seq(Vec<Step>),
-    Repeat(Expr, Box<Step>, bool),
-    Foreach(u32, Vec<(ValueID, Expr, DataMode)>, Box<Step>),
-    Alt(Vec<(Vec<(Expr, Expr)>, Step)>, bool),
+    TokenTop(Message, Box<StepInfo>),
+    Seq(Vec<StepInfo>),
+    Repeat(Expr, Box<StepInfo>),
+    Foreach(u32, Vec<(ValueID, Expr)>, Box<StepInfo>),
+    Alt(Vec<(Vec<(Expr, Expr)>, StepInfo)>),
 }
 
-impl Step {
+impl StepInfo {
     pub fn write_tree(&self, f: &mut Write, indent: u32) -> IoResult<()> {
         let i: String = repeat(" ").take(indent as usize).collect();
-        match *self {
+        match self.step {
             Step::Nop => {},
             Step::Token(ref message) => {
                 try!(writeln!(f, "{}Token: {:?}", i, message));
@@ -43,18 +54,18 @@ impl Step {
                     try!(c.write_tree(f, indent+1));
                 }
             }
-            Step::Repeat(ref count, box ref inner, up) => {
-                try!(writeln!(f, "{}Repeat: {:?} {}", i, count, up));
+            Step::Repeat(ref count, box ref inner) => {
+                try!(writeln!(f, "{}Repeat: {:?}", i, count));
                 try!(inner.write_tree(f, indent + 1));
             }
             Step::Foreach(width, ref vars, box ref inner) => {
                 try!(write!(f, "{}For: {} ", i, width));
-                for &(id, ref expr, dir) in vars { try!(write!(f, "{}={:?} {:?}, ", id, expr, dir)); }
+                for &(id, ref expr) in vars { try!(write!(f, "{}={:?}, ", id, expr)); }
                 try!(writeln!(f, ""));
                 try!(inner.write_tree(f, indent + 1));
             }
-            Step::Alt(ref arms, up) => {
-                try!(writeln!(f, "{}Alt: {}", i, up));
+            Step::Alt(ref arms) => {
+                try!(writeln!(f, "{}Alt:", i));
                 for &(ref cond, ref inner) in arms {
                     try!(writeln!(f, "{} {:?} =>", i, cond));
                     try!(inner.write_tree(f, indent + 2));
@@ -65,152 +76,124 @@ impl Step {
     }
 }
 
-/// Summary of the usage of values within an block and its children
-#[derive(Clone, Eq, PartialEq, Debug)]
-pub struct ResolveInfo {
-    /// The set of variable IDs that will be down-evaluated to produce a value used by the
-    /// block. The enclosing expression must set these variables.
-    pub vars_down: BitSet,
-
-    /// The set of variable IDs that are produced in up-evaluation within the block.
-    pub vars_up: BitSet,
-
-    /// Whether the expression contains blocks that force an enclosing repeat block to always
-    /// up-evaluate its count.
-    pub repeat_up_heuristic: bool,
+#[derive(Clone, Copy)]
+struct StepBuilder<'a> {
+    ctx: &'a Ctxt<'a>,
+    scope: &'a Scope,
+    protocol_scope: &'a ProtocolScope,
+    shape_down: &'a Shape,
+    shape_up: &'a Shape,
+    fields_down: &'a Fields,
 }
 
-impl ResolveInfo {
-    fn new() -> ResolveInfo {
-        ResolveInfo {
-            vars_down: BitSet::new(),
-            vars_up: BitSet::new(),
-            repeat_up_heuristic: false,
-        }
+impl<'a> StepBuilder<'a> {
+    fn step(&self, step: Step) -> StepInfo {
+        let first = matchset::first(&step);
+        let dir = infer_direction(&step, self.fields_down);
+        StepInfo { step, first, dir }
     }
 
-    fn mode_of(&self, id: ValueID) -> DataMode {
-        DataMode { up: self.vars_up.contains(id), down: self.vars_down.contains(id)}
+    fn with_upper<'b>(&'b self, scope: &'b Scope, shape_up: &'b Shape) -> StepBuilder<'b> {
+        StepBuilder { scope, shape_up, ..*self }
     }
 
-    fn use_expr(&mut self, e: &Expr, dir: DataMode) {
-        e.each_var(&mut |id| {
-            if dir.down { self.vars_down.insert(id); }
-            if dir.up { self.vars_up.insert(id); }
-        });
-        self.repeat_up_heuristic |= dir.up && e.refutable();
-    }
-
-    fn merge_seq(&mut self, o: &ResolveInfo) {
-        self.vars_down.union_with(&o.vars_down);
-        self.vars_up.union_with(&o.vars_up);
-        self.repeat_up_heuristic |= o.repeat_up_heuristic;
+    fn with_scope<'b>(&'b self, scope: &'b Scope) -> StepBuilder<'b> {
+        StepBuilder { scope, ..*self }
     }
 }
 
-fn resolve_action(ctx: &Ctxt,
-                      scope: &Scope,
-                      protocol_scope: &ProtocolScope,
-                      shape_down: &Shape,
-                      shape_up: &Shape,
-                      action: &ast::Action) -> Step {
+fn resolve_action(sb: StepBuilder, action: &ast::Action) -> StepInfo {
     match *action {
         ast::Action::Call(ref name, ref param_ast, ref body) => {
-            let param = expr::rexpr(ctx, scope, param_ast);
+            let param = expr::rexpr(sb.ctx, sb.scope, param_ast);
 
             if body.is_some() {
                 unimplemented!();
             }
 
-            if shape_down.has_variant_named(name) {
-                Step::Token(resolve_token(shape_down, name, param))
+            if sb.shape_down.has_variant_named(name) {
+                sb.step(Step::Token(resolve_token(sb.shape_down, name, param)))
             } else {
-                let (scope, imp, mut shape_up) = protocol_scope.find(ctx, shape_down, name, param);
+                let (scope, imp, mut shape_up) = sb.protocol_scope.find(sb.ctx, sb.shape_down, name, param);
 
                 match *imp {
-                    DefImpl::Code(ref seq) => resolve_seq(ctx, &scope, protocol_scope, shape_down, &mut shape_up, seq),
+                    DefImpl::Code(ref seq) => resolve_seq(sb.with_upper(&scope, &shape_up), seq),
                     DefImpl::Primitive(..) => panic!("Primitive not allowed here"),
                 }
             }
         }
         ast::Action::On(ref name, ref expr, ref body) => {
-            let mut body_scope = scope.child();
+            let mut body_scope = sb.scope.child();
 
-            debug!("Upper message, shape: {:?}", shape_up);
-            let msginfo = expr::on_expr_message(ctx, &mut body_scope, shape_up, name, expr);
+            debug!("Upper message, shape: {:?}", sb.shape_up);
+            let msginfo = expr::on_expr_message(sb.ctx, &mut body_scope, sb.shape_up, name, expr);
 
             let step = if let &Some(ref body) = body {
-                resolve_seq(ctx, &body_scope, protocol_scope, shape_down, &mut Shape::None, body)
+                resolve_seq(sb.with_upper(&body_scope, &Shape::None), body)
             } else {
-                Step::Nop
+                sb.step(Step::Nop)
             };
 
             let msg = msginfo.into_iter().collect();
 
-            Step::TokenTop(msg, box step)
+            sb.step(Step::TokenTop(msg, box step))
         }
         ast::Action::Repeat(ref count_ast, ref block) => {
-            let count = expr::value(ctx, scope, count_ast);
-            let step = resolve_seq(ctx, scope, protocol_scope, shape_down, shape_up, block);
-            Step::Repeat(count, box step, false)
+            let count = expr::value(sb.ctx, sb.scope, count_ast);
+            sb.step(Step::Repeat(count, box resolve_seq(sb, block)))
         }
         ast::Action::For(ref pairs, ref block) => {
-            let mut body_scope = scope.child();
+            let mut body_scope = sb.scope.child();
             let mut count = None;
             let mut inner_vars = Vec::with_capacity(pairs.len());
 
             for &(ref name, ref expr) in pairs {
-                let e = expr::value(ctx, scope, expr);
+                let e = expr::value(sb.ctx, sb.scope, expr);
                 let t = e.get_type();
                 if let Type::Vector(c, box ty) = t {
                     match count {
                         Some(count) => assert_eq!(count, c),
                         None => count = Some(c),
                     }
-                    let id = body_scope.new_variable(ctx.session, name, ty);
-                    inner_vars.push((id, e, DataMode { up: false, down: false}));
+                    let id = body_scope.new_variable(sb.ctx.session, name, ty);
+                    inner_vars.push((id, e));
                 } else {
                     panic!("Foreach must loop over vector type, not {:?}", t)
                 }
             }
 
-            let step = resolve_seq(ctx, &body_scope, protocol_scope, shape_down, shape_up, block);
+            let step = resolve_seq(sb.with_scope(&body_scope), block);
 
-            Step::Foreach(count.unwrap_or(0) as u32, inner_vars, box step)
+            sb.step(Step::Foreach(count.unwrap_or(0) as u32, inner_vars, box step))
         }
         ast::Action::Alt(ref expr, ref arms) => {
-            let r = expr::rexpr(ctx, scope, expr);
+            let r = expr::rexpr(sb.ctx, sb.scope, expr);
 
             let v = arms.iter().map(|arm| {
-                let mut body_scope = scope.child();
+                let mut body_scope = sb.scope.child();
                 let mut checks = Vec::new();
-                expr::pattern_match(ctx, &mut body_scope, &arm.discriminant, &r, &mut checks);
-                let step = resolve_seq(ctx, &body_scope, protocol_scope, shape_down, shape_up, &arm.block);
+                expr::pattern_match(sb.ctx, &mut body_scope, &arm.discriminant, &r, &mut checks);
+                let step = resolve_seq(sb.with_scope(&body_scope), &arm.block);
                 (checks, step)
             }).collect();
 
-            Step::Alt(v, false)
+            sb.step(Step::Alt(v))
         }
     }
 }
 
-pub fn resolve_seq(ctx: &Ctxt,
-                  pscope: &Scope,
-                  protocol_scope: &ProtocolScope,
-                  shape_down: &Shape,
-                  shape_up: &Shape,
-                  block: &ast::Block) -> Step {
-    let mut scope = pscope.child();
+fn resolve_seq(sb: StepBuilder, block: &ast::Block) -> StepInfo {
+    let mut scope = sb.scope.child();
 
     for ld in &block.lets {
-        resolve_letdef(ctx, &mut scope, ld);
+        resolve_letdef(sb.ctx, &mut scope, ld);
     }
 
     let steps = block.actions.iter().map(|action| {
-        resolve_action(ctx, &scope, protocol_scope, shape_down, shape_up, action)
+        resolve_action(sb.with_scope(&scope), action)
     }).collect();
 
-    Step::Seq(steps)
+    sb.step(Step::Seq(steps))
 }
 
 pub fn resolve_letdef(ctx: &Ctxt, scope: &mut Scope, ld: &ast::LetDef) {
@@ -252,81 +235,78 @@ fn resolve_token(shape: &Shape, variant_name: &str, item: Item) -> Message {
     })
 }
 
-pub fn infer_direction(step: &mut Step, bottom_fields: &Fields, top_fields: &mut Fields) -> ResolveInfo {
-    use self::Step::*;
-    match *step {
-        Nop => ResolveInfo::new(),
-        Token(ref msg) => {
-            assert_eq!(msg.len(), bottom_fields.len());
-            let mut ri = ResolveInfo::new();
-            for (m, f) in msg.iter().zip(bottom_fields.iter()) {
-                if !f.is_tag {
-                    if let &Some(ref expr) = m {
-                        ri.use_expr(expr, f.dir);
-                    }
-                }
-            }
-            ri
-        }
-        TokenTop(ref msg, ref mut body) => {
-            let mut ri = infer_direction(body, bottom_fields, &mut Fields::null());
-            assert_eq!(msg.len(), top_fields.len());
+pub fn compile_block(ctx: &Ctxt,
+                     scope: &Scope,
+                     protocol_scope: &ProtocolScope,
+                     shape_down: &Shape,
+                     fields_down: &Fields,
+                     shape_up: Shape,
+                     seq: &ast::Block,
+                     name: &str) -> ProcessInfo {
 
-            // Update the upward shape's direction with results of analyzing the usage of
-            // its data in the `on x { ... }` body.
-            for (m, f) in msg.iter().zip(top_fields.iter_mut()) {
-                if !f.is_tag {
-                    if let &Some(ref expr) = m {
-                        let constraint = match *expr {
-                            Expr::Variable(id, _) => ri.mode_of(id),
+    let mut fields_up = shape_up.fields(DataMode { down: false, up: true });
 
-                            //TODO: is the down value right?
-                            ref e => DataMode { up: e.down_evaluable(), down: false }
-                        };
-                        f.dir.constrain(constraint);
-                    }
-                }
-            }
-            ri.repeat_up_heuristic = true;
-            ri
-        }
-        Seq(ref mut steps) => {
-            let mut ri = ResolveInfo::new();
-            for step in steps {
-                ri.merge_seq(&infer_direction(step, bottom_fields, top_fields));
-            }
-            ri
-        }
-        Repeat(ref count, ref mut body, ref mut dir) => {
-            let mut ri = infer_direction(body, bottom_fields, top_fields);
-            let any_up = ri.repeat_up_heuristic;
-            ri.use_expr(&count, DataMode { down: !any_up, up: any_up });
-            *dir = any_up;
-            ri
-        }
-        Foreach(_, ref mut inner_vars, ref mut body) => {
-            let mut ri = infer_direction(body, bottom_fields, top_fields);
-            for &mut (id, ref e, ref mut dir) in inner_vars {
-                *dir = ri.mode_of(id);
-                ri.use_expr(e, *dir);
-            }
-            ri
-        }
-        Alt(ref mut arms, ref mut up) => {
-            let mut ri = ResolveInfo::new();
-            for &mut (_, ref mut body) in arms.iter_mut() {
-                ri.merge_seq(&infer_direction(body, bottom_fields, top_fields)); // TODO: alt != seq ?
-            }
+    let step = {
+        let sb = StepBuilder { ctx, scope, protocol_scope,
+            shape_up: &shape_up, shape_down: &shape_down,
+            fields_down
+        };
 
-            *up = ri.repeat_up_heuristic;
+        resolve_seq(sb, seq)
+    };
 
-            for &mut (ref checks, _) in arms.iter_mut() {
-                for &(_, ref r) in checks {
-                    ri.use_expr(r, DataMode { down: !*up, up: *up })
-                    // LHS is patterns that don't contain dynamic vars, so no need to mark them
-                }
-            }
-            ri
-        }
+    infer_top_fields(&step, &mut fields_up);
+
+    if let Some(mut f) = ctx.session.debug_file(|| format!("{}.steps", name)) {
+        step.write_tree(&mut f, 0).unwrap_or_else(|e| error!("{}", e));
+    }
+
+    ProcessInfo { fields_up, shape_up, implementation: Box::new(Program{step}) }
+}
+
+
+pub fn make_literal_process(ctx: &Ctxt,
+                        scope: &Scope,
+                        protocol_scope: &ProtocolScope,
+                        is_up: bool,
+                        shape_up_expr: &ast::ProtocolRef,
+                        block: &ast::Block) -> ProcessInfo {
+
+    let shape_up = resolve_protocol_invoke(ctx, scope, shape_up_expr);
+    let shape_down = Shape::None;
+
+    let fields_up = shape_up.fields(DataMode { down: !is_up, up: is_up });
+    let fields_flip = shape_up.fields(DataMode { down: is_up, up: !is_up });
+
+    let step = {
+        let sb = StepBuilder { ctx, scope, protocol_scope,
+            shape_down: &shape_up, shape_up: &shape_down,
+            fields_down: &fields_flip
+        };
+
+        super::step::resolve_seq(sb, block)
+    };
+
+    ProcessInfo { fields_up, shape_up, implementation: Box::new(ProgramFlip { step })}
+}
+
+
+pub struct Program {
+    pub step: StepInfo
+}
+
+impl Process for Program {
+    fn run(&self, downwards: &mut Connection, upwards: &mut Connection) -> bool {
+        exec::run(&self.step, downwards, upwards)
+    }
+}
+
+pub struct ProgramFlip {
+    pub step: StepInfo
+}
+
+impl Process for ProgramFlip {
+    fn run(&self, downwards: &mut Connection, upwards: &mut Connection) -> bool {
+        exec::run(&self.step, upwards, downwards)
     }
 }

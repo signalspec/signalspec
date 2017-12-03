@@ -1,13 +1,4 @@
 with Seq(#x|#y)
-def main() {
-    repeat _ { val(#x) }
-    val(#x)
-}
-
-test @up(Seq(#x|#y)) { val(#x); val(#x); val(#x); val(#x) } main();
-test fail @up(Seq(#x|#y)) { val(#y); val(#x); val(#x); val(#x) } main();
-
-with Seq(#x|#y)
 def main2() {
     val(#x)
     repeat _ { val(#x) }

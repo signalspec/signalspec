@@ -67,6 +67,6 @@ def ambiguous(): Seq(#a | #b) {
     }
 }
 
-test @both(Seq(#a|#b)) { val(#a); val(#b); val(#a) } ambiguous() { val(#b) };
-test @both(Seq(#a|#b)) { val(#a); val(#a); val(#b) } ambiguous() { val(#a) };
-test fail @both(Seq(#a|#b)) { val(#a); val(#a); val(#a) } ambiguous() { val(#a) };
+// test @both(Seq(#a|#b)) { val(#a); val(#b); val(#a) } ambiguous() { val(#b) };
+// test @both(Seq(#a|#b)) { val(#a); val(#a); val(#b) } ambiguous() { val(#a) };
+// test fail @both(Seq(#a|#b)) { val(#a); val(#a); val(#a) } ambiguous() { val(#a) };

@@ -3,12 +3,13 @@ mod scope;
 mod expr;
 mod eval;
 mod step;
-mod nfa;
-mod dfa;
+mod direction_infer;
 mod program;
 mod module_loader;
 mod protocol;
 mod function;
+mod exec;
+mod matchset;
 
 peg_file! grammar("signalspec.rustpeg");
 

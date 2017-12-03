@@ -1,6 +1,7 @@
 #![feature(plugin)]
 #![feature(box_syntax)]
 #![feature(box_patterns)]
+#![feature(match_default_bindings)]
 #![plugin(peg_syntax_ext)]
 
 extern crate bit_set;
@@ -9,6 +10,7 @@ extern crate num_complex;
 #[macro_use] extern crate lazy_static;
 #[macro_use] extern crate log;
 extern crate byteorder;
+extern crate vec_map;
 
 mod session;
 mod util;

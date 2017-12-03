@@ -10,8 +10,11 @@ pub type ConnectionMessage = Vec<Option<Value>>;
 
 pub struct Connection {
     rx: Option<Receiver<ConnectionMessage>>,
+    rx_peek: Option<ConnectionMessage>,
+
     tx: Option<Sender<ConnectionMessage>>,
 
+    pub sends: Vec<bool>,
     pub alive: bool,
 }
 
@@ -33,8 +36,10 @@ impl Connection {
 
         let alive = direction.down || direction.up;
 
-        (Connection{ tx: s1, rx: r2, alive: alive },
-         Connection{ tx: s2, rx: r1, alive: alive })
+        let (sends1, sends2) = fields.iter().map(|f| (f.dir.down, f.dir.up)).unzip();
+
+        (Connection{ tx: s1, rx: r2, rx_peek: None, alive: alive, sends: sends1 },
+         Connection{ tx: s2, rx: r1, rx_peek: None, alive: alive, sends: sends2 })
     }
 
     pub fn send(&mut self, v: ConnectionMessage) -> Result<(), ()> {
@@ -50,7 +55,7 @@ impl Connection {
         }
     }
 
-    pub fn recv(&mut self) -> Result<ConnectionMessage, ()> {
+    fn do_recv(&mut self) -> Result<ConnectionMessage, ()> {
         if let Some(ref rx) = self.rx {
             let r = rx.recv().map_err(|_| ());
             if r.is_err() {
@@ -60,6 +65,18 @@ impl Connection {
         } else {
             if self.alive { Ok(vec![]) } else { Err(()) }
         }
+    }
+
+    pub fn peek(&mut self) -> Result<&ConnectionMessage, ()> {
+        if self.rx_peek.is_none() {
+            self.rx_peek = Some(self.do_recv()?);
+        }
+        Ok(self.rx_peek.as_ref().unwrap())
+    }
+
+    pub fn recv(&mut self) -> Result<ConnectionMessage, ()> {
+        self.peek()?;
+        Ok(self.rx_peek.take().unwrap())
     }
 
     pub fn can_tx(&self) -> bool { self.tx.is_some() }
