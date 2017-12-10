@@ -8,7 +8,7 @@ use super::matchset::MatchSet;
 use std::i64;
 
 pub fn run(step: &StepInfo, downwards: &mut Connection, upwards: &mut Connection) -> bool {
-    let mut cx = RunCx { downwards, upwards, state: State::new() };
+    let mut cx = RunCx { downwards, upwards, vars_down: State::new(), vars_up: State::new() };
     run_inner(step, &mut cx)
 }
 
@@ -19,7 +19,8 @@ struct RunCx<'a> {
 //    fields_above: &'a Fields,
     upwards: &'a mut Connection,
 
-    state: State,
+    vars_down: State,
+    vars_up: State,
 }
 
 
@@ -48,7 +49,7 @@ impl<'a> RunCx<'a> {
     fn send_lower(&mut self, msg: &Message) -> Result<(), ()> {
         let tx = msg.iter().zip(self.downwards.sends.iter()).map(|(oe, sends)| {
             match (oe, sends) {
-                (&Some(ref e), true) => Some(e.eval_down(&mut |var| self.state.get(var).clone())),
+                (&Some(ref e), true) => Some(e.eval_down(&mut |var| self.vars_down.get(var).clone())),
                 _ => None
             }
         }).collect();
@@ -59,7 +60,7 @@ impl<'a> RunCx<'a> {
     fn send_upper(&mut self, msg: &Message) -> Result<(), ()> {
         let tx = msg.iter().zip(self.upwards.sends.iter()).map(|(oe, sends)| {
             match (oe, sends) {
-                (&Some(ref e), true) => Some(e.eval_down(&mut |var| self.state.get(var).clone())),
+                (&Some(ref e), true) => Some(e.eval_down(&mut |var| self.vars_up.get(var).clone())),
                 _ => None
             }
         }).collect();
@@ -109,13 +110,13 @@ fn message_test(msg: &Message, rx: &ConnectionMessage) -> bool {
     })
 }
 
-fn message_match(cx: &mut RunCx, msg: &Message, rx: Result<ConnectionMessage, ()>) -> bool {
+fn message_match(state: &mut State, msg: &Message, rx: Result<ConnectionMessage, ()>) -> bool {
     if let Ok(rx) = rx {
         debug!("{:?} Rx {:?} into {:?}", ::std::thread::current().id(), rx, msg);
         msg.iter().zip(rx.into_iter()).all(|(oe, ov)| {
             match (oe, ov) {
                 (&None, None) => true,
-                (&Some(ref e), Some(ref v)) => e.eval_up(&mut |var, val| cx.state.set(var, val), v.clone()),
+                (&Some(ref e), Some(ref v)) => e.eval_up(&mut |var, val| state.set(var, val), v.clone()),
                 _ => false,
             }
         })
@@ -131,11 +132,11 @@ fn run_inner(step: &StepInfo, cx: &mut RunCx) -> bool {
             cx.send_lower(msg).ok();
 
             let rx = cx.downwards.recv();
-            message_match(cx, msg, rx)
+            message_match(&mut cx.vars_up, msg, rx)
         }
         TokenTop(ref msg, ref inner) => {
             let rx = cx.upwards.recv();
-            if !message_match(cx, msg, rx) {
+            if !message_match(&mut cx.vars_down, msg, rx) {
                 return false;
             }
 
@@ -167,11 +168,11 @@ fn run_inner(step: &StepInfo, cx: &mut RunCx) -> bool {
                 }
 
                 debug!("Repeat end {}", c);
-                count.eval_up(&mut |var, val| cx.state.set(var, val), Value::Integer(c))
+                count.eval_up(&mut |var, val| cx.vars_up.set(var, val), Value::Integer(c))
             } else {
                 debug!("repeat down");
 
-                let c = match count.eval_down(&mut |var| cx.state.get(var).clone()) {
+                let c = match count.eval_down(&mut |var| cx.vars_down.get(var).clone()) {
                     Value::Integer(i) => i,
                     other => panic!("Count evaluated to non-integer {:?}", other)
                 };
@@ -185,7 +186,7 @@ fn run_inner(step: &StepInfo, cx: &mut RunCx) -> bool {
             let mut lstate = assigns.iter().map(|&(id, ref expr)| {
                 let dir = step.dir.mode_of(id);
                 let d = if dir.down {
-                    match expr.eval_down(&mut |var| cx.state.get(var).clone()) {
+                    match expr.eval_down(&mut |var| cx.vars_down.get(var).clone()) {
                         Value::Vector(v) => Some(v.into_iter()),
                         other => panic!("For loop argument must be a vector, found {}", other)
                     }
@@ -200,7 +201,7 @@ fn run_inner(step: &StepInfo, cx: &mut RunCx) -> bool {
             for _ in 0..count {
                 for &mut (id, ref mut down, _, _) in &mut lstate {
                     if let Some(d) = down {
-                        cx.state.set(id, d.next().expect("not enough elements in loop"));
+                        cx.vars_down.set(id, d.next().expect("not enough elements in loop"));
                     }
                 }
 
@@ -208,14 +209,14 @@ fn run_inner(step: &StepInfo, cx: &mut RunCx) -> bool {
 
                 for &mut (id, _, ref mut up, _) in &mut lstate {
                     if let Some(u) = up {
-                        u.push(cx.state.take(id))
+                        u.push(cx.vars_up.take(id))
                     }
                 }
             }
 
             for (_, _, up, expr) in lstate {
                 if let Some(u) = up {
-                    if !expr.eval_up(&mut |var, val| cx.state.set(var, val), Value::Vector(u)) { return false; }
+                    if !expr.eval_up(&mut |var, val| cx.vars_up.set(var, val), Value::Vector(u)) { return false; }
                 }
             }
 
@@ -226,8 +227,8 @@ fn run_inner(step: &StepInfo, cx: &mut RunCx) -> bool {
                 for &(ref vals, ref inner) in opts {
                     if cx.test(&inner.first) {
                         for &(ref l, ref r) in vals {
-                            let v = l.eval_down(&mut |var| cx.state.get(var).clone());
-                            r.eval_up(&mut |var, val| cx.state.set(var, val), v);
+                            let v = l.eval_down(&mut |var| cx.vars_up.get(var).clone());
+                            r.eval_up(&mut |var, val| cx.vars_up.set(var, val), v);
                         }
 
                         return run_inner(inner, cx);
@@ -239,8 +240,8 @@ fn run_inner(step: &StepInfo, cx: &mut RunCx) -> bool {
 
                 for &(ref vals, ref inner) in opts {
                     let matches = vals.iter().all(|&(ref l, ref r)| {
-                        let v = r.eval_down(&mut |var| cx.state.get(var).clone());
-                        l.eval_up(&mut |var, val| cx.state.set(var, val), v)
+                        let v = r.eval_down(&mut |var| cx.vars_down.get(var).clone());
+                        l.eval_up(&mut |var, val| cx.vars_down.set(var, val), v)
                     });
 
                     if matches {
@@ -250,5 +251,6 @@ fn run_inner(step: &StepInfo, cx: &mut RunCx) -> bool {
                 false
             }
         }
+
     }
 }
