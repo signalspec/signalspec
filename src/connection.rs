@@ -97,6 +97,12 @@ impl Connection {
     pub fn iter_complex(&mut self) -> ConnectionIterComplex {
         ConnectionIterComplex(self)
     }
+
+    pub fn end(&mut self) {
+        self.rx = None;
+        self.tx = None;
+        self.alive = false;
+    }
 }
 
 pub struct ConnectionRead<'a>(&'a mut Connection);

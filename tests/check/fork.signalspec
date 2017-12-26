@@ -1,0 +1,17 @@
+with Seq(#a|#b) def main() {
+    inner() {
+        val(#x)
+        val(#y)
+        val(#y)
+    }
+}
+
+with Seq(#a|#b) def inner(): Seq(#x|#y) {
+    repeat {
+        on val(i) {
+            val(i[#x=#a, #y=#b])
+        }
+    }
+}
+
+test @both(Seq(#a|#b)) { val(#a); val(#b); val(#b) } main();

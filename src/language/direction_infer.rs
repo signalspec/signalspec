@@ -111,6 +111,11 @@ pub fn infer_direction(step: &Step, bottom_fields: &Fields) -> ResolveInfo {
 
             ri
         }
+        Fork(ref bottom, _, ref top) => {
+            let mut ri = bottom.dir.clone();
+            ri.merge_seq(&top.dir);
+            ri
+        }
     }
 }
 
@@ -147,6 +152,12 @@ pub fn infer_top_fields(step: &StepInfo, top_fields: &mut Fields) {
             for &(_, ref body) in arms {
                 infer_top_fields(body, top_fields);
             }
+        }
+
+        Fork(_, _, ref upper) => {
+            // Only the upper process has these top fields. The lower process already had its
+            // direction inferred (they're stored in the middle field of this enum).
+            infer_top_fields(upper, top_fields)
         }
     }
 }

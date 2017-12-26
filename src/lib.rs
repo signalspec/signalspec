@@ -11,6 +11,7 @@ extern crate num_complex;
 #[macro_use] extern crate log;
 extern crate byteorder;
 extern crate vec_map;
+extern crate scoped_pool;
 
 mod session;
 mod util;

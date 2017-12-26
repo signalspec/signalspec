@@ -15,6 +15,7 @@ num-complex = "0.1.35"
 byteorder = "1.0.0"
 peg-syntax-ext = "0.5.0"
 vec_map = "0.8.0"
+scoped-pool = "1.0"
 
 [dev-dependencies]
 env_logger = "0.3"

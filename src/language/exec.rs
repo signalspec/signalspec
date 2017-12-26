@@ -6,10 +6,14 @@ use session::ValueID;
 use vec_map::VecMap;
 use super::matchset::MatchSet;
 use std::i64;
+use scoped_pool::Pool;
 
 pub fn run(step: &StepInfo, downwards: &mut Connection, upwards: &mut Connection) -> bool {
-    let mut cx = RunCx { downwards, upwards, vars_down: State::new(), vars_up: State::new() };
-    run_inner(step, &mut cx)
+    let pool = Pool::new(4);
+    let mut cx = RunCx { downwards, upwards, vars_down: State::new(), vars_up: State::new(), threadpool: &pool };
+    let result = run_inner(step, &mut cx);
+    pool.shutdown();
+    result
 }
 
 
@@ -21,6 +25,8 @@ struct RunCx<'a> {
 
     vars_down: State,
     vars_up: State,
+
+    threadpool: &'a Pool,
 }
 
 
@@ -70,6 +76,7 @@ impl<'a> RunCx<'a> {
 }
 
 /// Map of register IDs to values
+#[derive(Clone)]
 pub struct State {
     registers: VecMap<Value>,
 }
@@ -94,6 +101,10 @@ impl State {
 
     pub fn take(&mut self, reg: ValueID) -> Value {
         self.registers.remove(reg).expect("value not set")
+    }
+
+    pub fn merge(&mut self, other: State) {
+        self.registers.extend(other.registers.into_iter());
     }
 }
 
@@ -252,5 +263,43 @@ fn run_inner(step: &StepInfo, cx: &mut RunCx) -> bool {
             }
         }
 
+        Fork(ref lower, ref fields, ref upper) => {
+            let (mut conn_u, mut conn_l) = Connection::new(fields);
+            let mut upper_cx = RunCx {
+                downwards: &mut conn_u,
+                upwards: cx.upwards,
+                vars_down: cx.vars_down.clone(),
+                vars_up: State::new(),
+                threadpool: cx.threadpool
+            };
+            let mut lower_cx = RunCx {
+                downwards: cx.downwards,
+                upwards: &mut conn_l,
+                vars_down: cx.vars_down.clone(),
+                vars_up: State::new(),
+                threadpool: cx.threadpool
+            };
+
+            let mut ok1 = false;
+            let mut ok2 = false;
+
+            cx.threadpool.scoped(|scoped| {
+                scoped.execute(|| {
+                    ok1 = run_inner(upper, &mut upper_cx);
+                    upper_cx.downwards.end();
+                    debug!("Fork upper end");
+                });
+                ok2 = run_inner(lower, &mut lower_cx);
+                lower_cx.upwards.end();
+                debug!("Fork lower end");
+            });
+
+            debug!("fork join");
+
+            cx.vars_up.merge(upper_cx.vars_up);
+            cx.vars_up.merge(lower_cx.vars_up);
+
+            ok1 && ok2
+        }
     }
 }

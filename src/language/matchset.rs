@@ -88,5 +88,14 @@ pub fn first(step: &Step) -> MatchSet {
             }
             first
         }
+        Fork(ref bottom, _, ref top) => {
+            let mut options = Vec::new();
+            for b in &bottom.first.options {
+                for t in &top.first.options {
+                    options.push(MatchSetItem { lower: b.lower.clone(), upper: t.upper.clone() });
+                }
+            }
+            MatchSet { options }
+        }
     }
 }

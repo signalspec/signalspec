@@ -34,6 +34,7 @@ pub enum Step {
     Repeat(Expr, Box<StepInfo>),
     Foreach(u32, Vec<(ValueID, Expr)>, Box<StepInfo>),
     Alt(Vec<(Vec<(Expr, Expr)>, StepInfo)>),
+    Fork(Box<StepInfo>, Fields, Box<StepInfo>)
 }
 
 impl StepInfo {
@@ -71,6 +72,11 @@ impl StepInfo {
                     try!(inner.write_tree(f, indent + 2));
                 }
             }
+            Step::Fork(ref bottom, ref fields, ref top) => {
+                try!(writeln!(f, "{}Fork: {:?}", i, fields));
+                try!(bottom.write_tree(f, indent+1));
+                try!(top.write_tree(f, indent+1));
+            }
         }
         Ok(())
     }
@@ -97,6 +103,10 @@ impl<'a> StepBuilder<'a> {
         StepBuilder { scope, shape_up, ..*self }
     }
 
+    fn with_lower<'b>(&'b self, shape_down: &'b Shape, fields_down: &'b Fields) -> StepBuilder<'b> {
+        StepBuilder { shape_down, fields_down, ..*self }
+    }
+
     fn with_scope<'b>(&'b self, scope: &'b Scope) -> StepBuilder<'b> {
         StepBuilder { scope, ..*self }
     }
@@ -107,18 +117,28 @@ fn resolve_action(sb: StepBuilder, action: &ast::Action) -> StepInfo {
         ast::Action::Call(ref name, ref param_ast, ref body) => {
             let param = expr::rexpr(sb.ctx, sb.scope, param_ast);
 
-            if body.is_some() {
-                unimplemented!();
-            }
-
             if sb.shape_down.has_variant_named(name) {
+                if body.is_some() {
+                    panic!("Primitives have no upward shape");
+                }
+
                 sb.step(Step::Token(resolve_token(sb.shape_down, name, param)))
             } else {
-                let (scope, imp, mut shape_up) = sb.protocol_scope.find(sb.ctx, sb.shape_down, name, param);
+                let (scope, imp, shape_up) = sb.protocol_scope.find(sb.ctx, sb.shape_down, name, param);
 
-                match *imp {
+                let inner_step = match *imp {
                     DefImpl::Code(ref seq) => resolve_seq(sb.with_upper(&scope, &shape_up), seq),
                     DefImpl::Primitive(..) => panic!("Primitive not allowed here"),
+                };
+
+                match body {
+                    Some(ref body_block) => {
+                        let mut fields_up = shape_up.fields(DataMode { down: false, up: true });
+                        infer_top_fields(&inner_step, &mut fields_up);
+                        let child_step = resolve_seq(sb.with_lower(&shape_up, &fields_up), body_block);
+                        sb.step(Step::Fork(Box::new(inner_step), fields_up, Box::new(child_step)))
+                    }
+                    None => inner_step
                 }
             }
         }
