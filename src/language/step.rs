@@ -2,7 +2,7 @@ use std::io::{Write, Result as IoResult};
 use std::iter::repeat;
 
 use session::ValueID;
-use super::{ ast, expr };
+use super::{ ast, expr, call_primitive };
 use super::scope::{ Scope, Item };
 use super::eval::Expr;
 use protocol::{ Shape, Fields };
@@ -25,6 +25,16 @@ pub struct StepInfo {
     pub first: MatchSet,
 }
 
+impl StepInfo {
+    pub fn fake(step: Step) -> StepInfo {
+        StepInfo {
+            step,
+            dir: ResolveInfo::new(),
+            first: MatchSet::null()
+        }
+    }
+}
+
 #[derive(Debug)]
 pub enum Step {
     Nop,
@@ -34,7 +44,8 @@ pub enum Step {
     Repeat(Expr, Box<StepInfo>),
     Foreach(u32, Vec<(ValueID, Expr)>, Box<StepInfo>),
     Alt(Vec<(Vec<(Expr, Expr)>, StepInfo)>),
-    Fork(Box<StepInfo>, Fields, Box<StepInfo>)
+    Fork(Box<StepInfo>, Fields, Box<StepInfo>),
+    Primitive(Box<Process + 'static>),
 }
 
 impl StepInfo {
@@ -76,6 +87,9 @@ impl StepInfo {
                 try!(writeln!(f, "{}Fork: {:?}", i, fields));
                 try!(bottom.write_tree(f, indent+1));
                 try!(top.write_tree(f, indent+1));
+            }
+            Step::Primitive(_) => {
+                try!(writeln!(f, "{}Primitive", i));
             }
         }
         Ok(())
@@ -119,26 +133,31 @@ fn resolve_action(sb: StepBuilder, action: &ast::Action) -> StepInfo {
 
             if sb.shape_down.has_variant_named(name) {
                 if body.is_some() {
-                    panic!("Primitives have no upward shape");
+                    panic!("Messages have no upward shape");
                 }
 
                 sb.step(Step::Token(resolve_token(sb.shape_down, name, param)))
             } else {
                 let (scope, imp, shape_up) = sb.protocol_scope.find(sb.ctx, sb.shape_down, name, param);
 
-                let inner_step = match *imp {
-                    DefImpl::Code(ref seq) => resolve_seq(sb.with_upper(&scope, &shape_up), seq),
-                    DefImpl::Primitive(..) => panic!("Primitive not allowed here"),
+                let (impl_step, fields_up) = match *imp {
+                    DefImpl::Code(ref seq) => {
+                        let impl_step = resolve_seq(sb.with_upper(&scope, &shape_up), seq);
+                        let mut fields_up = shape_up.fields(DataMode { down: false, up: true });
+                        infer_top_fields(&impl_step, &mut fields_up);
+                        (impl_step, fields_up)
+                    }
+                    DefImpl::Primitive(ref primitive) => {
+                        call_primitive(sb.ctx, &scope, sb.fields_down, &shape_up, primitive, &name)
+                    }
                 };
 
                 match body {
                     Some(ref body_block) => {
-                        let mut fields_up = shape_up.fields(DataMode { down: false, up: true });
-                        infer_top_fields(&inner_step, &mut fields_up);
                         let child_step = resolve_seq(sb.with_lower(&shape_up, &fields_up), body_block);
-                        sb.step(Step::Fork(Box::new(inner_step), fields_up, Box::new(child_step)))
+                        sb.step(Step::Fork(Box::new(impl_step), fields_up, Box::new(child_step)))
                     }
-                    None => inner_step
+                    None => impl_step
                 }
             }
         }
@@ -281,9 +300,8 @@ pub fn compile_block(ctx: &Ctxt,
         step.write_tree(&mut f, 0).unwrap_or_else(|e| error!("{}", e));
     }
 
-    ProcessInfo { fields_up, shape_up, implementation: Box::new(Program{step}) }
+    ProcessInfo { fields_up, shape_up, step }
 }
-
 
 pub fn make_literal_process(ctx: &Ctxt,
                         scope: &Scope,
@@ -307,20 +325,16 @@ pub fn make_literal_process(ctx: &Ctxt,
         super::step::resolve_seq(sb, block)
     };
 
-    ProcessInfo { fields_up, shape_up, implementation: Box::new(ProgramFlip { step })}
+    let step = StepInfo {
+        step: Step::Primitive(Box::new(ProgramFlip { step })),
+        dir: ResolveInfo::new(),
+        first: MatchSet::null(),
+    };
+
+    ProcessInfo { fields_up, shape_up, step }
 }
 
-
-pub struct Program {
-    pub step: StepInfo
-}
-
-impl Process for Program {
-    fn run(&self, downwards: &mut Connection, upwards: &mut Connection) -> bool {
-        exec::run(&self.step, downwards, upwards)
-    }
-}
-
+#[derive(Debug)]
 pub struct ProgramFlip {
     pub step: StepInfo
 }

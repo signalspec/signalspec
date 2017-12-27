@@ -3,6 +3,7 @@ use std::path::Path;
 use std::io::prelude::*;
 use language::Ctxt;
 use session::Session;
+use connection::Connection;
 
 pub fn run(fname: &str) -> bool {
     let fname = Path::new(fname);
@@ -57,14 +58,23 @@ pub fn run_file(fname: &Path) -> bool {
     for (count, test) in module.tests().iter().enumerate() {
         print!("\tTest #{}:", count+1);
         let compiled = test.compile(&loader);
+
+        let (mut conn1, mut conn2) = if let Some(ref fields) = compiled.roundtrip_fields {
+            Connection::new(fields)
+        } else {
+            (Connection::null(), Connection::null())
+        };
+
         if let Some(stack) = compiled.down {
-            let r = stack.run() ^ test.should_fail();
+            let r = stack.run(&mut conn1, &mut Connection::null()) ^ test.should_fail();
             print!(" down:{}", if r { "ok" } else { "FAIL" });
             success &= r;
         }
 
+        drop(conn1);
+
         if let Some(stack) = compiled.up {
-            let r = stack.run() ^ test.should_fail();
+            let r = stack.run(&mut conn2, &mut Connection::null()) ^ test.should_fail();
             print!(" up:{}", if r { "ok" } else { "FAIL" });
             success &= r;
         }

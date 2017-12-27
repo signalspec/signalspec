@@ -1,26 +1,13 @@
 use std::cell::RefCell;
 
-use super::{ ast, grammar, Item };
+use super::{ ast, grammar, Item, PrimitiveDef };
 use super::scope::Scope;
 use super::function::{ FunctionId, FunctionDef, PrimitiveFn };
-use process::{ ProcessInfo, Process };
+use process::{ ProcessInfo };
 use session::Session;
 use language::protocol::ProtocolScope;
 use protocol::{ ProtocolId, Shape, Fields };
 use util::Index;
-use data::DataMode;
-
-pub enum PrimitiveDefFields {
-    Explicit(Fields),
-    Auto(DataMode)
-}
-
-pub struct PrimitiveDef {
-    pub id: &'static str,
-    pub fields_down: Fields,
-    pub fields_up: PrimitiveDefFields,
-    pub instantiate: Box<Fn(&Scope) -> Result<Box<Process>, ()>>,
-}
 
 pub struct Ctxt<'a> {
     pub session: &'a Session,

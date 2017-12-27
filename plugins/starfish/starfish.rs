@@ -27,6 +27,7 @@ fn u8_to_bitvec(v: u8) -> Value {
     Value::Vector((0..8).rev().map(|bit| Value::Integer(((v >> bit) & 1) as i64) ).collect())
 }
 
+#[derive(Debug)]
 struct StarfishProcess;
 impl Process for StarfishProcess {
     fn run(&self, _: &mut Connection, upwards: &mut Connection) -> bool {

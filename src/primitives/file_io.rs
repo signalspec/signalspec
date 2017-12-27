@@ -44,6 +44,12 @@ impl Process for ReaderProcess {
     }
 }
 
+impl ::std::fmt::Debug for ReaderProcess {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> Result<(), ::std::fmt::Error> {
+        write!(f, "ReaderProcess({})", self.0.display())
+    }
+}
+
 struct WriterProcess(pub PathBuf);
 impl Process for WriterProcess {
     fn run(&self, _: &mut Connection, upwards: &mut Connection) -> bool {
@@ -52,5 +58,11 @@ impl Process for WriterProcess {
         let mut c = upwards.read_bytes();
         let mut file = File::create(&self.0).unwrap();
         io::copy(&mut c, &mut file).is_ok()
+    }
+}
+
+impl ::std::fmt::Debug for WriterProcess {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> Result<(), ::std::fmt::Error> {
+        write!(f, "WriterProcess({})", self.0.display())
     }
 }

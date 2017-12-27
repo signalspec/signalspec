@@ -1,39 +1,28 @@
 use std::io::prelude::*;
 use std::io;
-use signalspec::{ ProcessInfo, Shape, ShapeVariant, Fields, Process, Connection, Value, Item };
+use signalspec::{ Shape, ShapeVariant, Connection, Value, Item };
 
-pub fn make(shape: Shape) -> ProcessInfo {
-    ProcessInfo {
-        implementation: Box::new(Console(shape)),
-        shape_up: Shape::None,
-        fields_up: Fields::null(),
-    }
-}
+pub fn run(shape: &Shape, downwards: &mut Connection) -> bool {
+    let stdout = ::std::io::stdout();
+    if downwards.send(Vec::new()).is_err() { return false; }
+    let shape_msg = match shape {
+        &Shape::None => return true,
+        &Shape::Seq { ref messages, .. } => &messages[..],
+    };
 
-struct Console(pub Shape);
-impl Process for Console {
-    fn run(&self, downwards: &mut Connection, _upwards: &mut Connection) -> bool {
-        let stdout = ::std::io::stdout();
-        if downwards.send(Vec::new()).is_err() { return false; }
-        let shape_msg = match &self.0 {
-            &Shape::None => return true,
-            &Shape::Seq { ref messages, .. } => &messages[..],
-        };
-
-        loop {
-            match downwards.recv() {
-                Ok(v) => {
-                    let mut w = stdout.lock();
-                    format_message(&mut w, &v[..], shape_msg).unwrap();
-                    w.write_all(b"\n").unwrap();
-                }
-                Err(..) => break,
+    loop {
+        match downwards.recv() {
+            Ok(v) => {
+                let mut w = stdout.lock();
+                format_message(&mut w, &v[..], shape_msg).unwrap();
+                w.write_all(b"\n").unwrap();
             }
-            if downwards.send(Vec::new()).is_err() { break; }
+            Err(..) => break,
         }
-
-        true
+        if downwards.send(Vec::new()).is_err() { break; }
     }
+
+    true
 }
 
 fn format_message<'a, 'b, 'c>(w: &mut Write, values: &[Option<Value>], shape_msg: &[ShapeVariant]) -> io::Result<()> {

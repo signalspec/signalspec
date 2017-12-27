@@ -47,6 +47,7 @@ fn shape_to_scope(s: &Item) -> (vcd::Scope, Vec<vcd::IdCode>) {
     (top, ids)
 }
 
+#[derive(Debug)]
 struct VcdWrite(Item);
 impl Process for VcdWrite {
     fn run(&self, downwards: &mut Connection, upwards: &mut Connection) -> bool {
@@ -123,6 +124,7 @@ fn shape_from_scope(s: &Item, v: &vcd::Scope) -> Vec<vcd::IdCode> {
     ids
 }
 
+#[derive(Debug)]
 struct VcdRead(Item);
 impl Process for VcdRead {
     fn run(&self, downwards: &mut Connection, upwards: &mut Connection) -> bool {

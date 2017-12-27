@@ -13,8 +13,8 @@ pub struct MatchSetItem {
 }
 
 impl MatchSet {
-    fn null() -> MatchSet { MatchSet { options: vec![] } }
-    fn epsilon() -> MatchSet { MatchSet { options: vec![ MatchSetItem { lower: None, upper: None }] } }
+    pub fn null() -> MatchSet { MatchSet { options: vec![] } }
+    pub fn epsilon() -> MatchSet { MatchSet { options: vec![ MatchSetItem { lower: None, upper: None }] } }
     fn lower(m: Message) -> MatchSet { MatchSet { options: vec![ MatchSetItem { lower: Some(m), upper: None }] } }
     fn upper(m: Message) -> MatchSet { MatchSet { options: vec![ MatchSetItem { lower: None, upper: Some(m) }] } }
 
@@ -96,6 +96,9 @@ pub fn first(step: &Step) -> MatchSet {
                 }
             }
             MatchSet { options }
+        }
+        Primitive(_) => {
+            MatchSet::epsilon() //TODO: should also include all tokens
         }
     }
 }

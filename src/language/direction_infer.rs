@@ -21,7 +21,7 @@ pub struct ResolveInfo {
 }
 
 impl ResolveInfo {
-    fn new() -> ResolveInfo {
+    pub fn new() -> ResolveInfo {
         ResolveInfo {
             vars_down: BitSet::new(),
             vars_up: BitSet::new(),
@@ -116,6 +116,7 @@ pub fn infer_direction(step: &Step, bottom_fields: &Fields) -> ResolveInfo {
             ri.merge_seq(&top.dir);
             ri
         }
+        Primitive(_) => panic!("Direction metadata for primitive must be provided directly")
     }
 }
 
@@ -158,6 +159,10 @@ pub fn infer_top_fields(step: &StepInfo, top_fields: &mut Fields) {
             // Only the upper process has these top fields. The lower process already had its
             // direction inferred (they're stored in the middle field of this enum).
             infer_top_fields(upper, top_fields)
+        }
+
+        Primitive(_) => {
+            // Primitives can only exist in calls, and do not affect the top direction of the containing process
         }
     }
 }

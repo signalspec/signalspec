@@ -10,6 +10,7 @@ mod console;
 use std::io::prelude::*;
 use std::{ process, fs };
 use std::path::PathBuf;
+use std::thread;
 
 use argparse::{ArgumentParser, Collect, StoreOption};
 
@@ -51,34 +52,21 @@ fn main() {
             loader.parse_module(&source).unwrap();
         }
 
-        let sides: Vec<_> = cmds.split(|x| x == "/").collect();
-
         let mut stack = signalspec::ProcessStack::new(&loader);
-        for arg in sides[0] {
+        for arg in cmds {
             stack.parse_add(&arg).unwrap_or_else(|e| panic!("Error parsing argument: {}", e));
         }
 
-        let success;
-        if sides.len() == 1 {
-            if stack.top_fields().direction().up {
-                let shape = stack.top_shape().clone();
-                stack.add(console::make(shape));
-            }
+        let mut c_top = if stack.top_fields().direction().up {
+            let (mut c1, c2) = signalspec::Connection::new(stack.top_fields());
+            let shape = stack.top_shape().clone();
+            thread::spawn(move || {
+                console::run(&shape, &mut c1);
+            });
+            c2
+        } else { signalspec::Connection::null() };
 
-            success = stack.run();
-        } else if sides.len() == 2 {
-            let mut stack2 = signalspec::ProcessStack::new(&loader);
-            for arg in sides[1].iter().rev() {
-                stack2.parse_add(&arg).unwrap_or_else(|e| panic!("Error parsing argument: {}", e));
-            }
-
-            println!("side1 {:?}", stack.top_shape());
-            println!("side2 {:?}", stack2.top_shape());
-
-            success = stack.run_with_flipped(stack2);
-        } else {
-            panic!("Direction change argument `/` can only appear once");
-        }
+        let success = stack.run(&mut signalspec::Connection::null(), &mut c_top);
 
         process::exit(if success { 0 } else { 1 });
     }

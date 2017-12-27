@@ -7,7 +7,6 @@
 extern crate bit_set;
 extern crate ref_slice;
 extern crate num_complex;
-#[macro_use] extern crate lazy_static;
 #[macro_use] extern crate log;
 extern crate byteorder;
 extern crate vec_map;
@@ -25,7 +24,7 @@ mod primitives;
 
 pub use session::Session;
 pub use language::{ Ctxt, Module, Test, Item, Scope, PrimitiveDef, PrimitiveDefFields };
-pub use process::{ Process, ProcessStack, ProcessInfo };
+pub use process::{ Process, ProcessStack };
 pub use connection::Connection;
 pub use data::{ Value, Type, DataMode };
 pub use protocol::{ Shape, ShapeVariant, Fields, Field };

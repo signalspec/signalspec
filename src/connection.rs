@@ -42,6 +42,16 @@ impl Connection {
          Connection{ tx: s2, rx: r1, rx_peek: None, alive: alive, sends: sends2 })
     }
 
+    pub fn null() -> Connection {
+        Connection {
+            rx: None,
+            rx_peek: None,
+            tx: None,
+            sends: Vec::new(),
+            alive: false,
+        }
+    }
+
     pub fn send(&mut self, v: ConnectionMessage) -> Result<(), ()> {
         if let Some(ref tx) = self.tx {
             let r = tx.send(v).map_err(|_| ());

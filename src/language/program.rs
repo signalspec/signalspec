@@ -1,37 +1,12 @@
-use super::{ ast, PrimitiveDef, PrimitiveDefFields };
+use super::ast;
 use super::scope::Scope;
 use protocol::{ Shape, Fields };
 use super::protocol::{ ProtocolScope, DefImpl, resolve_protocol_invoke };
 use super::step::{ compile_block, make_literal_process };
 use super::Ctxt;
-use data::{DataMode};
-use process::{ Process, ProcessStack, ProcessInfo };
-use connection::{ Connection, ConnectionMessage };
-use std::sync::mpsc;
-
-
-fn call_primitive(_ctx: &Ctxt,
-                  scope: &Scope,
-                  fields_down: &Fields,
-                  shape_up: Shape,
-                  primitive_impls: &[PrimitiveDef],
-                  name: &str) -> ProcessInfo {
-    for def in primitive_impls {
-        if fields_down == &def.fields_down {
-            info!("Using {} for primitive at {}", def.id, name);
-            let fields_up = match def.fields_up {
-                PrimitiveDefFields::Explicit(ref fields) => fields.clone(),
-                PrimitiveDefFields::Auto(dir) => shape_up.fields(dir),
-            };
-
-            let implementation = (def.instantiate)(scope).expect("Failed to instantiate primitive");
-
-            return ProcessInfo { fields_up, shape_up, implementation };
-        }
-    }
-
-    panic!("No matching call for primitive {} for {:?}", name, fields_down);
-}
+use super::primitive::call_primitive;
+use process::{ ProcessStack, ProcessInfo };
+use data::DataMode;
 
 pub fn resolve_process(ctx: &Ctxt,
                        scope: &Scope,
@@ -49,14 +24,14 @@ pub fn resolve_process(ctx: &Ctxt,
                     compile_block(ctx, &scope, protocol_scope, shape_down, fields_down, shape_up, seq, &name)
                 }
                 DefImpl::Primitive(ref primitive) => {
-                    call_primitive(ctx, &scope, fields_down, shape_up, primitive, &name)
+                    let (step, fields_up) = call_primitive(ctx, &scope, fields_down, &shape_up, primitive, &name);
+                    ProcessInfo { step, fields_up, shape_up }
                 },
             }
         }
 
         ast::Process::Block(ref block) => {
-            let shape_up = Shape::None;
-            compile_block(ctx, scope, protocol_scope, shape_down, fields_down, shape_up, block, "anon_block")
+            compile_block(ctx, scope, protocol_scope, shape_down, fields_down, Shape::None, block, "anon_block")
         }
 
         ast::Process::Literal(dir, ref shape_up_expr, ref block) => {
@@ -76,6 +51,7 @@ pub fn resolve_process(ctx: &Ctxt,
 pub struct CompiledTest<'a> {
     pub down: Option<ProcessStack<'a>>,
     pub up: Option<ProcessStack<'a>>,
+    pub roundtrip_fields: Option<Fields>,
 }
 
 pub fn compile_test<'a>(ctx: &'a Ctxt<'a>,
@@ -84,9 +60,14 @@ pub fn compile_test<'a>(ctx: &'a Ctxt<'a>,
                         test: &ast::Test) -> CompiledTest<'a> {
 
     fn build_stack<'a>(ctx: &'a Ctxt<'a>, scope: &Scope, protocol_scope: &ProtocolScope,
-                       bottom_process: ProcessInfo, ast: &[ast::Process]) -> ProcessStack<'a> {
-        let mut stack = ProcessStack::new(ctx);
-        stack.add(bottom_process);
+                       shape: Option<(Shape, Fields)>, bottom_process: Option<ProcessInfo>, ast: &[ast::Process]) -> ProcessStack<'a> {
+        let mut stack = if let Some((shape, fields)) = shape {
+            ProcessStack::with_shape(ctx, shape, fields)
+        } else { ProcessStack::new(ctx) };
+
+        if let Some(bottom_process) = bottom_process {
+            stack.add(bottom_process);
+        }
 
         for process_ast in ast {
             let process = resolve_process(ctx, scope, protocol_scope, stack.top_shape(), stack.top_fields(), process_ast);
@@ -103,71 +84,33 @@ pub fn compile_test<'a>(ctx: &'a Ctxt<'a>,
             let up_base = make_literal_process(ctx, scope, protocol_scope, true, shape_expr, block);
 
             CompiledTest {
-                down: Some(build_stack(ctx, scope, protocol_scope, dn_base, rest)),
-                up:   Some(build_stack(ctx, scope, protocol_scope, up_base, rest)),
+                down: Some(build_stack(ctx, scope, protocol_scope, None, Some(dn_base), rest)),
+                up:   Some(build_stack(ctx, scope, protocol_scope, None, Some(up_base), rest)),
+                roundtrip_fields: None,
             }
         }
 
         Some((&ast::Process::Literal(ast::ProcessLiteralDirection::RoundTrip, ref ty, _), rest)) => {
-            let shape_dn = resolve_protocol_invoke(ctx, scope, ty);
-            let shape_up = resolve_protocol_invoke(ctx, scope, ty);
-
-            let (s, r) = mpsc::channel();
-            let process_dn = ProcessInfo {
-                fields_up: shape_dn.fields(DataMode { down: true, up: false }),
-                shape_up: shape_dn,
-                implementation: Box::new(Collect { sender: s })
-            };
-            let process_up = ProcessInfo {
-                fields_up: shape_up.fields(DataMode { down: false, up: true }),
-                shape_up: shape_up,
-                implementation: Box::new(Emit { receiver: r })
-            };
+            let shape = resolve_protocol_invoke(ctx, scope, ty);
+            let fields_dn = shape.fields(DataMode { down: true, up: false });
+            let fields_up = shape.fields(DataMode { down: false, up: true });
 
             CompiledTest {
-                down: Some(build_stack(ctx, scope, protocol_scope, process_dn, rest)),
-                up:   Some(build_stack(ctx, scope, protocol_scope, process_up, rest)),
+                down: Some(build_stack(ctx, scope, protocol_scope, Some((shape.clone(), fields_dn.clone())), None, rest)),
+                up:   Some(build_stack(ctx, scope, protocol_scope, Some((shape, fields_up)), None, rest)),
+                roundtrip_fields: Some(fields_dn)
             }
         }
 
         Some((first, rest)) => {
             let bottom = resolve_process(ctx, scope, protocol_scope, &Shape::None, &Fields::null(), first);
             let is_up = bottom.fields_up.direction().up;
-            let stack = build_stack(ctx, scope, protocol_scope, bottom, rest);
+            let stack = build_stack(ctx, scope, protocol_scope, None, Some(bottom), rest);
 
             let (up, down) = if is_up { (Some(stack), None) } else { (None, Some(stack)) };
-            CompiledTest {
-                down: down,
-                up:   up,
-            }
+            CompiledTest { down, up, roundtrip_fields: None }
         }
 
-        None => CompiledTest { down: None, up: None }
-    }
-}
-
-struct Collect {
-    sender: mpsc::Sender<ConnectionMessage>,
-}
-
-impl Process for Collect {
-    fn run(&self, _: &mut Connection, upwards: &mut Connection) -> bool {
-        while let Ok(d) = upwards.recv() {
-            if self.sender.send(d).is_err() { return false; }
-        }
-        true
-    }
-}
-
-struct Emit {
-    receiver: mpsc::Receiver<ConnectionMessage>,
-}
-
-impl Process for Emit {
-    fn run(&self, _: &mut Connection, upwards: &mut Connection) -> bool {
-        while let Ok(d) = self.receiver.recv() {
-            if upwards.send(d).is_err() { return false; }
-        }
-        true
+        None => CompiledTest { down: None, up: None, roundtrip_fields: None }
     }
 }

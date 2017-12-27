@@ -301,5 +301,9 @@ fn run_inner(step: &StepInfo, cx: &mut RunCx) -> bool {
 
             ok1 && ok2
         }
+
+        Primitive(ref p) => {
+            p.run(cx.downwards, cx.upwards)
+        }
     }
 }

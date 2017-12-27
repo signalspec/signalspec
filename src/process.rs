@@ -1,30 +1,38 @@
-use std::{thread, mem};
+use std::mem;
+use std::fmt::Debug;
 use protocol::{ Shape, Fields };
-use language::{ Ctxt, Item };
+use language::{ Ctxt, Item, Step, StepInfo };
 use connection::Connection;
 
-pub trait Process: Send {
+pub trait Process: Debug + Send + Sync {
     fn run(&self, downwards: &mut Connection, upwards: &mut Connection) -> bool;
 }
 
-pub struct FnProcess<T: Fn(&mut Connection, &mut Connection) -> bool>(pub T);
+pub struct FnProcess<T: Fn(&mut Connection, &mut Connection) -> bool>(pub T, pub &'static str);
 
-impl<T: Send + Fn(&mut Connection, &mut Connection) -> bool> Process for FnProcess<T> {
+impl<T: Sync + Send + Fn(&mut Connection, &mut Connection) -> bool> Process for FnProcess<T> {
     fn run(&self, downwards: &mut Connection, upwards: &mut Connection) -> bool {
         (self.0)(downwards, upwards)
     }
 }
 
-pub struct ProcessInfo {
-    pub implementation: Box<Process + 'static>,
-    pub shape_up: Shape,
-    pub fields_up: Fields,
+impl<T: Sync +Send + Fn(&mut Connection, &mut Connection) -> bool> Debug for FnProcess<T> {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> Result<(), ::std::fmt::Error> {
+        write!(f, "{}", self.1)
+    }
 }
 
 pub struct ProcessStack<'a> {
     loader: &'a Ctxt<'a>,
-    processes: Vec<ProcessInfo>,
-    base_shape: Shape,
+    step: Option<StepInfo>,
+    top_shape: Shape,
+    top_fields: Fields,
+}
+
+pub struct ProcessInfo {
+    pub step: StepInfo,
+    pub shape_up: Shape,
+    pub fields_up: Fields,
 }
 
 impl<'a> ProcessStack<'a> {
@@ -37,87 +45,44 @@ impl<'a> ProcessStack<'a> {
             messages: vec![],
         };
 
+        ProcessStack::with_shape(loader, base_shape, Fields::null())
+    }
+
+    pub fn with_shape(loader: &'a Ctxt<'a>, shape: Shape, fields: Fields) -> ProcessStack<'a> {
         ProcessStack {
-            processes: vec![],
-            base_shape,
+            step: None,
+            top_shape: shape,
+            top_fields: fields,
             loader,
         }
     }
 
-    pub fn top_shape(&self) -> &Shape {
-        self.processes.last().map_or(&self.base_shape, |x| &x.shape_up)
-    }
-
-    pub fn top_fields(&self) -> &Fields {
-        lazy_static! {
-            static ref NULL_FIELDS: Fields = Fields::null();
-        }
-        self.processes.last().map_or(&NULL_FIELDS, |x| &x.fields_up)
-    }
+    pub fn top_shape(&self) -> &Shape { &self.top_shape }
+    pub fn top_fields(&self) -> &Fields { &self.top_fields }
 
     pub fn add(&mut self, p: ProcessInfo) {
-        self.processes.push(p)
+        let top_fields = mem::replace(&mut self.top_fields, p.fields_up);
+        self.top_shape = p.shape_up;
+
+        if let Some(existing_step) = self.step.take() {
+            self.step = Some(StepInfo::fake(Step::Fork(Box::new(existing_step), top_fields, Box::new(p.step))));
+        } else {
+            self.step = Some(p.step);
+        }
     }
 
     pub fn parse_add(&mut self, call: &str) -> Result<(), String> {
         let process = try!(self.loader.parse_process(call, self.top_shape(), self.top_fields())
             .map_err(|e| e.to_string()));
-        self.processes.push(process);
+        self.add(process);
         Ok(())
     }
 
-    fn spawn(mut self, bottom: Connection, top: Connection) -> Vec<thread::JoinHandle<bool>> {
-        let mut threads = Vec::new();
-        let mut connection = bottom;
-
-        let last = self.processes.pop().expect("Spawn requires at least one process");
-
-        for process in self.processes {
-            let (c2, upward) = Connection::new(&process.fields_up);
-            let downward = mem::replace(&mut connection, c2);
-            threads.push(thread::spawn(move || {
-                let mut downward = downward;
-                let mut upward = upward;
-                process.implementation.run(&mut downward, &mut upward)
-            }))
+    pub fn run(&self, bottom: &mut Connection, top: &mut Connection) -> bool {
+        if let Some(ref step) = self.step {
+            ::language::run(&step, bottom, top)
+        } else {
+            true
         }
-
-        threads.push(thread::spawn(move || {
-            let mut connection = connection;
-            let mut top = top;
-            last.implementation.run(&mut connection, &mut top)
-        }));
-
-        threads
-    }
-
-    pub fn run(self) -> bool {
-        // TODO: should this take &self?
-        let (_, bottom) = Connection::new(&Fields::null());
-        let (top, _) = Connection::new(&Fields::null());
-
-        let threads = self.spawn(bottom, top);
-
-        let mut success = true;
-        for t in threads {
-            success &= t.join().unwrap();
-        }
-        success
-    }
-
-    pub fn run_with_flipped(self, other: ProcessStack<'a>) -> bool {
-        let (_, first) = Connection::new(&Fields::null());
-        let (_, last) = Connection::new(&Fields::null());
-        //TODO: assert that self.top_shape() is other.top_shape() with inverse direction
-        let (a, b) = Connection::new(self.top_fields());
-
-        let threads1 = self.spawn(first, b);
-        let threads2 = other.spawn(last, a);
-
-        let mut success = true;
-        for t in threads1.into_iter().chain(threads2.into_iter()) {
-            success &= t.join().unwrap();
-        }
-        success
     }
 }
