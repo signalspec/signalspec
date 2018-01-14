@@ -3,65 +3,63 @@ use super::eval;
 use std::char;
 
 pub module -> ast::Module
-    = _ entries:module_entry*
+    = _ entries:module_entry**__ _
     { ast::Module { entries: entries } }
 
 letstmt -> ast::LetDef
-    = LET name:IDENTIFIER EQUALS value:expr
+    = LET _ name:IDENTIFIER _ EQUALS _ value:expr
     { ast::LetDef(name, value) }
 
 module_entry -> ast::ModuleEntry
     = l:letstmt { ast::ModuleEntry::Let(l) }
-    / USE name:IDENTIFIER { ast::ModuleEntry::Use(name) }
-    / WITH down_protocol:protocol_ref
-      DEF name:IDENTIFIER LPAREN param: expr_tup RPAREN up_protocol:(COLON p:protocol_ref {p})? block:block
+    / USE _ name:IDENTIFIER { ast::ModuleEntry::Use(name) }
+    / WITH _ down_protocol:protocol_ref _
+      DEF _ name:IDENTIFIER _ param:expr_tup _ up_protocol:(COLON _ p:protocol_ref {p})? _ block:block
       { ast::ModuleEntry::WithDef(ast::Def { bottom:down_protocol, name:name, param:param, top:up_protocol, block:block }) }
-    / PROTOCOL name:IDENTIFIER LPAREN param:expr_tup RPAREN entries:protocol_block
+    / PROTOCOL _ name:IDENTIFIER _ param:expr_tup _ entries:protocol_block
       { ast::ModuleEntry::Protocol(ast::Protocol { name, param, entries }) }
     / t:test_block { ast::ModuleEntry::Test(t) }
 
 
 pub primitive_header -> ast::PrimitiveHeader
-  = WITH down_protocol:protocol_ref DEF name:IDENTIFIER LPAREN param: expr_tup RPAREN up_protocol:(COLON p:protocol_ref {p})?
+  = WITH _ down_protocol:protocol_ref _ DEF _ name:IDENTIFIER _ param:expr_tup _ up_protocol:(COLON _ p:protocol_ref {p})?
     { ast::PrimitiveHeader { bottom:down_protocol, name:name, param:param, top:up_protocol } }
 
 protocol_ref -> ast::ProtocolRef
-   = name:IDENTIFIER LPAREN param: expr_tup RPAREN { ast::ProtocolRef { name: name, param: param } }
+   = name:IDENTIFIER _ param:expr_tup { ast::ProtocolRef { name: name, param: param } }
 
 block -> ast::Block
-    = LBRACE lets:letstmt* actions:action**(SEMICOLON?) RBRACE
+    = LBRACE _ lets:letstmt**_ _ actions:action**(_ (SEMICOLON _)?) _ RBRACE
     { ast::Block{ lets:lets, actions:actions } }
 
     action -> ast::Action
-        = REPEAT count:expr? block:block
+        = REPEAT _ count:expr? _ block:block
             { ast::Action::Repeat(count.unwrap_or(ast::Expr::Ignore), block) }
-        / ON name:IDENTIFIER LPAREN expr:expr_tup RPAREN body:block?
+        / ON _ name:IDENTIFIER _ expr:expr_tup _ body:block?
             { ast::Action::On(name, expr, body) }
-        / FOR items:(l:IDENTIFIER EQUALS r:expr { (l,r) })* body:block
+        / FOR _ items:(l:IDENTIFIER _ EQUALS _ r:expr { (l,r) })**__ _ body:block
             { ast::Action::For(items, body) }
-        / ALT expr:expr LBRACE  arms:alt_arm* RBRACE
+        / ALT _ expr:expr _ arms:BLOCK<alt_arm**__>
             { ast::Action::Alt(expr, arms) }
-        / name:IDENTIFIER LPAREN param:expr_tup RPAREN body:block?
+        / name:IDENTIFIER _ param:expr_tup _ body:block?
             { ast::Action::Call(name, param, body) }
 
         alt_arm -> ast::AltArm
-          = expr:expr ARROW block:block
+          = expr:expr _ ARROW _ block:block
           { ast::AltArm { discriminant:expr, block:block } }
 
-protocol_block -> Vec<ast::ProtocolEntry>
-  = LBRACE entries:(protocol_entry**COMMA) COMMA? RBRACE
-    { entries }
+protocol_block -> Vec<ast::ProtocolEntry> = BLOCK<COMMASEP<protocol_entry>>
 
   protocol_entry -> ast::ProtocolEntry
-     = n:IDENTIFIER LPAREN e:expr_tup RPAREN { ast::ProtocolEntry::Message(n, e) }
+     = n:IDENTIFIER _ e:expr_tup { ast::ProtocolEntry::Message(n, e) }
 
 // Expressions
 expr -> ast::Expr
-    = LPAREN e:expr_tup RPAREN {e}
+    = expr_tup
     / valexpr
 
 expr_tup -> ast::Expr
-    = es:(expr ** COMMA) COMMA?
+    = es:PARENTHESIZED<COMMASEP<expr>>
     { if es.len() == 1 { es.into_iter().next().unwrap() } else { ast::Expr::Tup(es) } }
 
 #[cache]
@@ -69,13 +67,13 @@ pub valexpr -> ast::Expr
   = valexpr_flip
 
     valexpr_flip -> ast::Expr
-        = l:valexpr_union TOKEN<"!"> r:valexpr_union { ast::Expr::Flip(box l, box r) }
-        / TOKEN<"<:"> x:valexpr_union { ast::Expr::Flip(box x, box ast::Expr::Ignore) }
-        / TOKEN<":>"> x:valexpr_union { ast::Expr::Flip(box ast::Expr::Ignore, box x) }
+        = l:valexpr_union _ TOKEN<"!"> _ r:valexpr_union { ast::Expr::Flip(box l, box r) }
+        / TOKEN<"<:"> _ x:valexpr_union { ast::Expr::Flip(box x, box ast::Expr::Ignore) }
+        / TOKEN<":>"> _ x:valexpr_union { ast::Expr::Flip(box ast::Expr::Ignore, box x) }
         / valexpr_union
 
     valexpr_union -> ast::Expr
-        = u:valexpr_range ++ PIPE
+        = u:valexpr_range ++ (_ PIPE _)
         { if u.len() == 1 { u.into_iter().next().unwrap() } else { ast::Expr::Union(u) }}
 
     valexpr_range -> ast::Expr
@@ -83,12 +81,12 @@ pub valexpr -> ast::Expr
         / valexpr_sum
 
         rangeexpr -> ast::Expr
-            = l:valexpr_sum TOKEN<".."> r:valexpr_sum
+            = l:valexpr_sum _ TOKEN<".."> _ r:valexpr_sum
             { ast::Expr::Range(box l, box r) }
 
     #[cache]
     valexpr_sum -> ast::Expr
-        = l:valexpr_product op:sum_op r:valexpr_sum
+        = l:valexpr_product _ op:sum_op _ r:valexpr_sum
             { ast::Expr::Bin(box l, op, box r) }
         / valexpr_product
 
@@ -98,7 +96,7 @@ pub valexpr -> ast::Expr
 
     #[cache]
     valexpr_product -> ast::Expr
-        = l:valexpr_choose op:product_op r:valexpr_product
+        = l:valexpr_choose _ op:product_op _ r:valexpr_product
             { ast::Expr::Bin(box l, op, box r) }
         / valexpr_choose
 
@@ -107,17 +105,16 @@ pub valexpr -> ast::Expr
           / TOKEN<"/"> { eval::BinOp::Div }
 
     valexpr_choose -> ast::Expr
-        = e:valexpr_atom LBRACKET vs:(k:valexpr EQUALS v:valexpr { (k,v) })**COMMA COMMA? RBRACKET
+        = e:valexpr_atom _ vs:BRACKETED<COMMASEP<(k:valexpr _ EQUALS _ v:valexpr { (k,v) })>>
             { ast::Expr::Choose(box e, vs) }
         / valexpr_call
 
     valexpr_call -> ast::Expr
-        = e:valexpr_atom arg:(LPAREN arg:expr_tup RPAREN { arg })?
+        = e:valexpr_atom arg:expr_tup?
         {
-          if let Some(arg) = arg {
-            ast::Expr::Call(Box::new(e), Box::new(arg))
-          } else {
-            e
+          match arg {
+            Some(arg) => ast::Expr::Call(Box::new(e), Box::new(arg)),
+            None => e
           }
         }
 
@@ -126,22 +123,19 @@ pub valexpr -> ast::Expr
         / ignoreliteral
         / concatexpr
         / varexpr
-        / (LPAREN  v:valexpr RPAREN {v})
+        / PARENTHESIZED<valexpr>
 
     ignoreliteral -> ast::Expr
         = UNDERSCORE { ast::Expr::Ignore }
 
-    concatexpr -> ast::Expr
-        = LBRACKET vs:(concat_elem ++ COMMA) COMMA? RBRACKET
-        { ast::Expr::Concat(vs) }
-
+    concatexpr -> ast::Expr = vs:BRACKETED<COMMASEP<concat_elem>> { ast::Expr::Concat(vs) }
         concat_elem -> (Option<usize>, ast::Expr) = w:(w:INTEGER COLON {w as usize})? e:valexpr { (w, e) }
 
     varexpr -> ast::Expr = i:IDENTIFIER { ast::Expr::Var(i) }
 
     literal_expr -> ast::Expr
         = v:literal { ast::Expr::Value(v) }
-        / LPAREN args:expr_tup RPAREN ARROW body:expr { ast::Expr::Func{ args: Box::new(args), body: Box::new(body) } }
+        / args:expr_tup _ ARROW _ body:expr { ast::Expr::Func { args: Box::new(args), body: Box::new(body) } }
         / s:STRING { ast::Expr::String(s) }
 
 pub literal -> ast::Value
@@ -151,13 +145,13 @@ pub literal -> ast::Value
     / bitsliteral
 
     bitsliteral -> ast::Value
-        = "'h" v:(hexchar+) _ {
+        = "'h" v:(hexchar+) {
             ast::Value::Vector(v.iter().flat_map(|&i| {
               (0..4).map(move |b|
                 ast::Value::Integer(((i & 1<<(3-b)) != 0) as i64))
             }).collect())
         }
-        / "'" "b"? v:(binbit+) _
+        / "'" "b"? v:(binbit+)
             { ast::Value::Vector(v.iter().map(|&b| ast::Value::Integer(b as i64)).collect()) }
 
         hexchar -> u8
@@ -174,9 +168,9 @@ pub literal -> ast::Value
 #[pub]
 process -> ast::Process
   = b:block { ast::Process::Block(b) }
-  / dir:literal_direction LPAREN t:protocol_ref RPAREN b:block
+  / dir:literal_direction _ t:PARENTHESIZED<protocol_ref> _ b:block
       { ast::Process::Literal(dir, t, b) }
-  / name:IDENTIFIER param:(LPAREN param:expr_tup RPAREN {param})?
+  / name:IDENTIFIER _ param:expr_tup?
       { ast::Process::Call(name, param.unwrap_or(ast::Expr::Tup(vec![]))) }
 
     literal_direction -> ast::ProcessLiteralDirection
@@ -186,7 +180,7 @@ process -> ast::Process
       / "@roundtrip" { ast::ProcessLiteralDirection::RoundTrip }
 
 test_block -> ast::Test
-  = TEST fails:(KEYWORD<"fail">)? processes:process* SEMICOLON
+  = TEST _ fails:(KEYWORD<"fail"> __)? processes:process**__ SEMICOLON
   { ast::Test { should_fail: fails.is_some(), processes: processes } }
 
 // Lexer
@@ -198,8 +192,9 @@ WHITESPACE
     = [\u{09}\u{0B}\u{0C}\u{20}\u{A0}\u{FEFF}\u{1680}\u{180E}\u{2000}-\u{200A}\u{202F}\u{205F}\u{3000}]
     / "\\" TERM
 _ = #quiet<(WHITESPACE / TERMINATOR)*>
+__ = #quiet<(WHITESPACE / TERMINATOR)+>
 
-TOKEN<t> = t _
+TOKEN<t> = t
 COMMA      = TOKEN<",">
 COLON      = TOKEN<":">
 SEMICOLON  = TOKEN<";">
@@ -214,8 +209,13 @@ RBRACE     = TOKEN<"}">
 LBRACKET   = TOKEN<"[">
 RBRACKET   = TOKEN<"]">
 
+PARENTHESIZED<x>  = "(" _ v:x _ ")" {v}
+BLOCK<x>          = "{" _ v:x _ "}" {v}
+BRACKETED<x>      = "[" _ v:x _ "]" {v}
+COMMASEP<x>       = v:(x ** (_ "," _)) (_ ",")? {v}
+
 IDCHAR = [0-9a-zA-Z_]
-KEYWORD<id> = id !IDCHAR _
+KEYWORD<id> = id !IDCHAR
 
 USE      = KEYWORD<"use">
 LET      = KEYWORD<"let">
@@ -228,12 +228,12 @@ FOR      = KEYWORD<"for">
 ALT      = KEYWORD<"alt">
 TEST     = KEYWORD<"test">
 
-IDENTIFIER -> String = #quiet<i:$([a-zA-Z_][0-9a-zA-Z_]*) _ { i.to_string() }> / #expected("identifier")
+IDENTIFIER -> String = #quiet<i:$([a-zA-Z_][0-9a-zA-Z_]*) { i.to_string() }> / #expected("identifier")
 
-INTEGER -> i64 = #quiet<i:$("-"?[0-9]+) _ { i.parse().unwrap() }> / #expected("integer")
-FLOAT -> f64 = #quiet<i:$("-"?[0-9]+("."[0-9]+)?) _ { i.parse().unwrap() }> / #expected("float")
+INTEGER -> i64 = #quiet<i:$("-"?[0-9]+) { i.parse().unwrap() }> / #expected("integer")
+FLOAT -> f64 = #quiet<i:$("-"?[0-9]+("."[0-9]+)?) { i.parse().unwrap() }> / #expected("float")
 
-STRING -> String = #quiet<'"' s:doubleQuotedCharacter* '"' _ { s.into_iter().collect() }> / #expected("string")
+STRING -> String = #quiet<'"' s:doubleQuotedCharacter* '"' { s.into_iter().collect() }> / #expected("string")
 
   doubleQuotedCharacter -> char
     = simpleDoubleQuotedCharacter
