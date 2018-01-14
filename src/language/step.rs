@@ -178,7 +178,7 @@ fn resolve_action(sb: StepBuilder, action: &ast::Action) -> StepInfo {
             sb.step(Step::TokenTop(msg, box step))
         }
         ast::Action::Repeat(ref count_ast, ref block) => {
-            let count = expr::value(sb.ctx, sb.scope, count_ast);
+            let count = expr::value(sb.ctx, sb.scope, count_ast.as_ref().map_or(&ast::Expr::Ignore, |s| &s.node));
             sb.step(Step::Repeat(count, box resolve_seq(sb, block)))
         }
         ast::Action::For(ref pairs, ref block) => {

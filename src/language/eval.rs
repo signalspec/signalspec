@@ -609,8 +609,9 @@ fn exprs() {
     ctxt.add_primitive_fn("complex", fn_complex);
     let scope = ctxt.prelude.borrow().child();
 
-    let expr = |e| {
-        let ast = grammar::valexpr(e).unwrap();
+    let expr = |e: &str| {
+        let file = ctxt.codemap.borrow_mut().add_file("<expr>".into(), e.into());
+        let ast = grammar::valexpr(&file.source(), file.span).unwrap();
         super::expr::value(&ctxt, &scope, &ast)
     };
 

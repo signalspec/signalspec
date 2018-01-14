@@ -53,7 +53,7 @@ pub fn resolve_protocol_invoke(ctx: &Ctxt, scope: &Scope, ast: &ast::ProtocolRef
 
 fn resolve_protocol_match(_ctx: &Ctxt, scope: &Scope, ast: ast::ProtocolRef) -> ProtocolMatch {
     if let Some(Item::Protocol(protocol_id)) = scope.get(&ast.name[..]) {
-        ProtocolMatch { id: protocol_id, param: ast.param }
+        ProtocolMatch { id: protocol_id, param: ast.param.node }
     } else {
         panic!("Protocol `{}` not found", ast.name);
     }
@@ -88,7 +88,7 @@ impl ProtocolScope {
             protocol: resolve_protocol_match(ctx, &scope, def.bottom),
             name: def.name.clone(),
             scope: scope,
-            param: def.param,
+            param: def.param.node,
             shape_up: def.top,
             implementation: DefImpl::Code(def.block)
         });
@@ -99,7 +99,7 @@ impl ProtocolScope {
             protocol: resolve_protocol_match(ctx, scope, header.bottom),
             name: header.name.clone(),
             scope: scope.child(),
-            param: header.param,
+            param: header.param.node,
             shape_up: header.top,
             implementation: DefImpl::Primitive(defs),
         });

@@ -11,6 +11,7 @@ extern crate num_complex;
 extern crate byteorder;
 extern crate vec_map;
 extern crate scoped_pool;
+extern crate codemap;
 
 mod session;
 mod util;

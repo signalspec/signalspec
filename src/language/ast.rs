@@ -1,28 +1,29 @@
 use super::eval::BinOp;
 pub use data::Value;
+pub use codemap::Spanned;
 
 pub struct Module {
-    pub entries: Vec<ModuleEntry>,
+    pub entries: Vec<Spanned<ModuleEntry>>,
 }
 
 #[derive(Debug, Clone)]
 pub struct Block {
-    pub lets: Vec<LetDef>,
-    pub actions: Vec<Action>,
+    pub lets: Vec<Spanned<LetDef>>,
+    pub actions: Vec<Spanned<Action>>,
 }
 
 #[derive(Debug, Clone)]
 pub enum Action {
-    Repeat(Expr, Block),
-    Call(String, Expr, Option<Block>),
-    On(String, Expr, Option<Block>),
-    For(Vec<(String, Expr)>, Block),
-    Alt(Expr, Vec<AltArm>),
+    Repeat(Option<SpannedExpr>, Block),
+    Call(String, SpannedExpr, Option<Block>),
+    On(String, SpannedExpr, Option<Block>),
+    For(Vec<(String, SpannedExpr)>, Block),
+    Alt(SpannedExpr, Vec<AltArm>),
 }
 
 #[derive(Debug, Clone)]
 pub struct AltArm {
-    pub discriminant: Expr,
+    pub discriminant: SpannedExpr,
     pub block: Block,
 }
 
@@ -36,7 +37,7 @@ pub enum ModuleEntry {
 
 pub struct Def {
     pub name: String,
-    pub param: Expr,
+    pub param: SpannedExpr,
     pub top: Option<ProtocolRef>,
     pub bottom: ProtocolRef,
     pub block: Block,
@@ -44,53 +45,55 @@ pub struct Def {
 
 pub struct PrimitiveHeader {
     pub name: String,
-    pub param: Expr,
+    pub param: SpannedExpr,
     pub top: Option<ProtocolRef>,
     pub bottom: ProtocolRef,
 }
 
 pub struct Protocol {
     pub name: String,
-    pub param: Expr,
+    pub param: SpannedExpr,
     pub entries: Vec<ProtocolEntry>,
 }
 
 pub enum ProtocolEntry {
-    Message(String, Expr),
+    Message(String, SpannedExpr),
 }
 
 #[derive(Debug, Clone)]
 pub struct ProtocolRef {
     pub name: String,
-    pub param: Expr,
+    pub param: SpannedExpr,
 }
 
 #[derive(Debug, Clone)]
-pub struct LetDef(pub String, pub Expr);
+pub struct LetDef(pub String, pub SpannedExpr);
+
+pub type SpannedExpr = Spanned<Expr>;
 
 #[derive(Debug, Clone)]
 pub enum Expr {
     Value(Value),
     String(String), // Produces an Item, not a Value, because it isn't fixed size
-    Func{ args: Box<Expr>, body: Box<Expr> }, // Produces an Item
-    Tup(Vec<Expr>),
+    Func{ args: Box<SpannedExpr>, body: Box<SpannedExpr> }, // Produces an Item
+    Tup(Vec<SpannedExpr>),
     Ignore,
 
-    Union(Vec<Expr>),
-    Flip(Box<Expr>, Box<Expr>),
-    Range(Box<Expr>, Box<Expr>),
-    Choose(Box<Expr>, Vec<(Expr, Expr)>),
-    Concat(Vec<(Option<usize>, Expr)>),
+    Union(Vec<SpannedExpr>),
+    Flip(Option<Box<SpannedExpr>>, Option<Box<SpannedExpr>>),
+    Range(Box<SpannedExpr>, Box<SpannedExpr>),
+    Choose(Box<SpannedExpr>, Vec<(SpannedExpr, SpannedExpr)>),
+    Concat(Vec<(Option<usize>, SpannedExpr)>),
 
-    Bin(Box<Expr>, BinOp, Box<Expr>),
+    Bin(Box<SpannedExpr>, BinOp, Box<SpannedExpr>),
 
-    Call(Box<Expr>, Box<Expr>),
+    Call(Box<SpannedExpr>, Box<SpannedExpr>),
     Var(String),
 }
 
 #[derive(Debug, Clone)]
 pub enum Process {
-    Call(String, Expr),
+    Call(String, SpannedExpr),
     Literal(ProcessLiteralDirection, ProtocolRef, Block),
     Block(Block)
 }

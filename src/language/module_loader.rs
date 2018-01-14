@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use codemap::{ CodeMap, File };
 
 use super::{ ast, grammar, Item, PrimitiveDef };
 use super::scope::Scope;
@@ -15,6 +16,7 @@ pub struct Ctxt<'a> {
     pub protocol_scope: RefCell<ProtocolScope>, // TODO: should be scoped
     pub protocols: Index<ProtocolDef, ProtocolId>,
     pub functions: Index<FunctionDef, FunctionId>,
+    pub codemap: RefCell<CodeMap>,
 }
 
 pub struct Module {
@@ -35,6 +37,7 @@ impl<'a> Ctxt<'a> {
             protocol_scope: RefCell::new(ProtocolScope::new()),
             protocols: Index::new(),
             functions: Index::new(),
+            codemap: RefCell::new(CodeMap::new()),
         }
     }
 
@@ -44,12 +47,14 @@ impl<'a> Ctxt<'a> {
     }
 
     pub fn define_primitive(&self, header_src: &str, implementations: Vec<PrimitiveDef>) {
-        let header = grammar::primitive_header(header_src).expect("failed to parse primitive header");
+        let file = self.codemap.borrow_mut().add_file("<primitive>".into(), header_src.into());
+        let header = grammar::primitive_header(&file.source(), file.span).expect("failed to parse primitive header");
         self.protocol_scope.borrow_mut().add_primitive(self, &*self.prelude.borrow(), header, implementations);
     }
 
     pub fn define_prelude(&self, source: &str) {
-        let module = self.parse_module(source).expect("failed to parse prelude module");
+        let file = self.codemap.borrow_mut().add_file("<prelude>".into(), source.into());
+        let module = self.parse_module(&file).expect("failed to parse prelude module");
         *self.prelude.borrow_mut() = module.scope;
     }
 
@@ -64,12 +69,13 @@ impl<'a> Ctxt<'a> {
     }
 
     pub fn parse_process(&self, source: &str, shape_below: &Shape, fields_below: &Fields) -> Result<ProcessInfo, grammar::ParseError> {
-        let ast = try!(grammar::process(source));
+        let file = self.codemap.borrow_mut().add_file("<process>".into(), source.into());
+        let ast = try!(grammar::process(&file.source(), file.span));
         Ok(super::program::resolve_process(self, &*self.prelude.borrow(), &*self.protocol_scope.borrow(), shape_below, fields_below, &ast))
     }
 
-    pub fn parse_module(&self, source: &str) -> Result<Module, grammar::ParseError> {
-        let ast = grammar::module(source)?;
+    pub fn parse_module(&self, file: &File) -> Result<Module, grammar::ParseError> {
+        let ast = grammar::module(&file.source(), file.span)?;
 
         let mut scope = self.prelude.borrow().child();
         let mut with_blocks = vec![];
@@ -77,7 +83,7 @@ impl<'a> Ctxt<'a> {
         let mut tests = vec![];
 
         for entry in ast.entries {
-            match entry {
+            match entry.node {
                 ast::ModuleEntry::Let(letdef) => {
                     super::step::resolve_letdef(self, &mut scope, &letdef);
                 }

@@ -11,11 +11,10 @@ fn resolve(ctx: &Ctxt, scope: Option<&Scope>, var_handler: &mut FnMut(&str) -> E
         ast::Expr::Ignore => Expr::Ignored,
         ast::Expr::Value(ref val) => Expr::Const(val.clone()),
 
-        ast::Expr::Flip(box ref down, box ref up) => {
-            debug!("Flip: {:?} {:?}", down, up);
+        ast::Expr::Flip(ref down, ref up) => {
             Expr::Flip(
-                box resolve(ctx, scope, var_handler, down),
-                box resolve(ctx, scope, var_handler, up),
+                box resolve(ctx, scope, var_handler, down.as_ref().map_or(&ast::Expr::Ignore, |s| &s.node)),
+                box resolve(ctx, scope, var_handler, up.as_ref().map_or(&ast::Expr::Ignore, |s| &s.node)),
             )
         }
 
@@ -117,8 +116,8 @@ pub fn rexpr<'s>(ctxt: &'s Ctxt<'s>, scope: &Scope, e: &ast::Expr) -> Item {
 
         ast::Expr::Func{ ref body, ref args } => {
             Item::Func(ctxt.create_function(FunctionDef::Code(Func{
-                args: (**args).clone(),
-                body: (**body).clone(),
+                args: args.node.clone(),
+                body: body.node.clone(),
                 scope: scope.clone(),
             })))
         }

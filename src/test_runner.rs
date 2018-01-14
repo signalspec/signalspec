@@ -45,7 +45,8 @@ pub fn run_file(fname: &Path) -> bool {
         }
     };
 
-    let module = match loader.parse_module(&source) {
+    let file = loader.codemap.borrow_mut().add_file(fname.to_string_lossy().to_string(), source);
+    let module = match loader.parse_module(&file) {
         Ok(m) => m,
         Err(e) => {
             println!("\tParse error: {}", e);
