@@ -23,7 +23,7 @@ impl<T: Sync +Send + Fn(&mut Connection, &mut Connection) -> bool> Debug for FnP
 }
 
 pub struct ProcessStack<'a> {
-    loader: &'a Ctxt<'a>,
+    loader: &'a Ctxt,
     step: Option<StepInfo>,
     top_shape: Shape,
     top_fields: Fields,
@@ -36,7 +36,7 @@ pub struct ProcessInfo {
 }
 
 impl<'a> ProcessStack<'a> {
-    pub fn new(loader: &'a Ctxt<'a>) -> ProcessStack<'a> {
+    pub fn new(loader: &'a Ctxt) -> ProcessStack<'a> {
         let base_item = loader.prelude.borrow().get("Base").expect("No `Base` protocol found in prelude");
         let base_id = if let Item::Protocol(id) = base_item { id } else { panic!("`Base` is not a protocol")};
         let base_shape = Shape::Seq {
@@ -48,7 +48,7 @@ impl<'a> ProcessStack<'a> {
         ProcessStack::with_shape(loader, base_shape, Fields::null())
     }
 
-    pub fn with_shape(loader: &'a Ctxt<'a>, shape: Shape, fields: Fields) -> ProcessStack<'a> {
+    pub fn with_shape(loader: &'a Ctxt, shape: Shape, fields: Fields) -> ProcessStack<'a> {
         ProcessStack {
             step: None,
             top_shape: shape,

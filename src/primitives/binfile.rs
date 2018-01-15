@@ -10,7 +10,7 @@ use language::{ Ctxt, PrimitiveDef, PrimitiveDefFields };
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use num_complex::Complex;
 
-pub fn add_primitives<'a>(loader: &'a Ctxt<'a>) {
+pub fn add_primitives<'a>(loader: &'a Ctxt) {
     loader.define_primitive("with Bytes() def f32le(): Seq(Float32)", vec![
         PrimitiveDef {
             id: "f32_le_up",

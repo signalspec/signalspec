@@ -54,12 +54,12 @@ pub struct CompiledTest<'a> {
     pub roundtrip_fields: Option<Fields>,
 }
 
-pub fn compile_test<'a>(ctx: &'a Ctxt<'a>,
+pub fn compile_test<'a>(ctx: &'a Ctxt,
                         scope: &Scope,
                         protocol_scope: &ProtocolScope,
                         test: &ast::Test) -> CompiledTest<'a> {
 
-    fn build_stack<'a>(ctx: &'a Ctxt<'a>, scope: &Scope, protocol_scope: &ProtocolScope,
+    fn build_stack<'a>(ctx: &'a Ctxt, scope: &Scope, protocol_scope: &ProtocolScope,
                        shape: Option<(Shape, Fields)>, bottom_process: Option<ProcessInfo>, ast: &[ast::Process]) -> ProcessStack<'a> {
         let mut stack = if let Some((shape, fields)) = shape {
             ProcessStack::with_shape(ctx, shape, fields)

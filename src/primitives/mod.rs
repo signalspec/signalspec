@@ -14,7 +14,7 @@ mod binfile;
 
 use language::{ add_primitive_fns, Ctxt };
 
-pub fn add_primitives<'a>(loader: &'a Ctxt<'a>) {
+pub fn add_primitives<'a>(loader: &'a Ctxt) {
     loader.define_prelude(r#"
     protocol Base() {}
     protocol Seq(T) { val(T) }

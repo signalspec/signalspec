@@ -102,7 +102,7 @@ pub fn value(ctx: &Ctxt, scope: &Scope, e: &ast::Expr) -> Expr {
 }
 
 /// Resolve an expression as used in an argument or right hand side of an assignment
-pub fn rexpr<'s>(ctxt: &'s Ctxt<'s>, scope: &Scope, e: &ast::Expr) -> Item {
+pub fn rexpr<'s>(ctxt: &'s Ctxt, scope: &Scope, e: &ast::Expr) -> Item {
     match *e {
         ast::Expr::Var(ref name) => {
             if let Some(s) = scope.get(name) { s } else { panic!("Undefined variable `{}`", name); }
@@ -130,7 +130,7 @@ pub fn rexpr<'s>(ctxt: &'s Ctxt<'s>, scope: &Scope, e: &ast::Expr) -> Item {
     }
 }
 
-fn resolve_call<'s>(ctxt: &'s Ctxt<'s>, scope: &Scope, func: &ast::Expr, arg: &ast::Expr) -> Item {
+fn resolve_call<'s>(ctxt: &'s Ctxt, scope: &Scope, func: &ast::Expr, arg: &ast::Expr) -> Item {
     let func = rexpr(ctxt, scope, func);
     let arg = rexpr(ctxt, scope, arg);
 
@@ -149,7 +149,7 @@ pub fn on_expr_message(ctx: &Ctxt, scope: &mut Scope, shape: &Shape, variant: &s
 
             (&Item::Value(ref v), &ast::Expr::Var(ref name)) => { // A variable binding
                 let ty = v.get_type();
-                let id = scope.new_variable(ctx.session, &name[..], ty.clone());
+                let id = scope.new_variable(ctx, &name[..], ty.clone());
                 push(Expr::Variable(id, ty));
             }
 
@@ -163,7 +163,7 @@ pub fn on_expr_message(ctx: &Ctxt, scope: &mut Scope, shape: &Shape, variant: &s
                             Item::Tuple(ref t) => build_tuple(ctx, push, &t[..]),
                             Item::Value(ref v) => {
                                 let ty = v.get_type();
-                                let id = ctx.session.make_id();
+                                let id = ctx.make_id();
                                 push(Expr::Variable(id, ty.clone()));
                                 Item::Value(Expr::Variable(id, ty))
                             }

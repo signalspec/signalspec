@@ -1,6 +1,6 @@
 use super::Item;
 use data::{ Value, Type };
-use session::{ValueID};
+use language::ValueID;
 use std::fmt;
 use std::ops::{Add, Sub, Mul, Div};
 use num_complex::Complex;
@@ -589,7 +589,7 @@ fn fn_complex(arg: Item) -> Result<Item, &'static str> {
     }
 }
 
-pub fn add_primitive_fns<'a>(loader: &'a super::Ctxt<'a>) {
+pub fn add_primitive_fns(loader: &super::Ctxt) {
     loader.add_primitive_fn("int", fn_int);
     loader.add_primitive_fn("signed", fn_signed);
     loader.add_primitive_fn("unsigned", fn_unsigned);
@@ -599,12 +599,10 @@ pub fn add_primitive_fns<'a>(loader: &'a super::Ctxt<'a>) {
 
 #[test]
 fn exprs() {
-    use session::Session;
     use super::Ctxt;
     use super::grammar;
 
-    let sess = Session::new(None);
-    let ctxt = Ctxt::new(&sess);
+    let ctxt = Ctxt::new(Default::default());
 
     ctxt.add_primitive_fn("complex", fn_complex);
     let scope = ctxt.prelude.borrow().child();

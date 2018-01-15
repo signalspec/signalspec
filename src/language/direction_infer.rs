@@ -1,5 +1,5 @@
 use bit_set::BitSet;
-use session::ValueID;
+use language::ValueID;
 use super::eval::Expr;
 use super::step::{ Step, StepInfo };
 use protocol::Fields;

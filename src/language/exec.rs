@@ -2,7 +2,7 @@ use super::step::{ StepInfo, Message };
 use super::step::Step::*;
 use data::{ Type, Value };
 use connection::{ Connection, ConnectionMessage };
-use session::ValueID;
+use language::ValueID;
 use vec_map::VecMap;
 use super::matchset::MatchSet;
 use std::i64;

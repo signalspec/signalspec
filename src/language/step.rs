@@ -1,7 +1,7 @@
 use std::io::{Write, Result as IoResult};
 use std::iter::repeat;
 
-use session::ValueID;
+use super::ValueID;
 use super::{ ast, expr, call_primitive };
 use super::scope::{ Scope, Item };
 use super::eval::Expr;
@@ -98,7 +98,7 @@ impl StepInfo {
 
 #[derive(Clone, Copy)]
 struct StepBuilder<'a> {
-    ctx: &'a Ctxt<'a>,
+    ctx: &'a Ctxt,
     scope: &'a Scope,
     protocol_scope: &'a ProtocolScope,
     shape_down: &'a Shape,
@@ -194,7 +194,7 @@ fn resolve_action(sb: StepBuilder, action: &ast::Action) -> StepInfo {
                         Some(count) => assert_eq!(count, c),
                         None => count = Some(c),
                     }
-                    let id = body_scope.new_variable(sb.ctx.session, name, ty);
+                    let id = body_scope.new_variable(sb.ctx, name, ty);
                     inner_vars.push((id, e));
                 } else {
                     panic!("Foreach must loop over vector type, not {:?}", t)
@@ -296,7 +296,7 @@ pub fn compile_block(ctx: &Ctxt,
 
     infer_top_fields(&step, &mut fields_up);
 
-    if let Some(mut f) = ctx.session.debug_file(|| format!("{}.steps", name)) {
+    if let Some(mut f) = ctx.debug_file(|| format!("{}.steps", name)) {
         step.write_tree(&mut f, 0).unwrap_or_else(|e| error!("{}", e));
     }
 

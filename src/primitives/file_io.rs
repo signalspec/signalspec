@@ -8,7 +8,7 @@ use connection::Connection;
 use language::{ Ctxt, PrimitiveDef, PrimitiveDefFields };
 use process::Process;
 
-pub fn add_primitives<'a>(loader: &'a Ctxt<'a>) {
+pub fn add_primitives<'a>(loader: &'a Ctxt) {
     loader.define_primitive("with Base() def file(#r, name): Bytes()", vec![
         PrimitiveDef {
             id: "file_read",

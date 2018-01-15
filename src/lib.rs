@@ -13,7 +13,6 @@ extern crate vec_map;
 extern crate scoped_pool;
 extern crate codemap;
 
-mod session;
 mod util;
 mod process;
 mod data;
@@ -23,8 +22,7 @@ mod test_runner;
 mod protocol;
 mod primitives;
 
-pub use session::Session;
-pub use language::{ Ctxt, Module, Test, Item, Scope, PrimitiveDef, PrimitiveDefFields };
+pub use language::{ Config, Ctxt, Module, Test, Item, Scope, PrimitiveDef, PrimitiveDefFields };
 pub use process::{ Process, ProcessStack };
 pub use connection::Connection;
 pub use data::{ Value, Type, DataMode };

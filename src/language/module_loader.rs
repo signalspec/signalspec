@@ -1,17 +1,25 @@
 use std::cell::RefCell;
 use codemap::{ CodeMap, File };
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::path::PathBuf;
+use std::fs;
 
 use super::{ ast, grammar, Item, PrimitiveDef };
 use super::scope::Scope;
 use super::function::{ FunctionId, FunctionDef, PrimitiveFn };
 use process::{ ProcessInfo };
-use session::Session;
 use language::protocol::ProtocolScope;
 use protocol::{ ProtocolId, Shape, Fields };
 use util::Index;
 
-pub struct Ctxt<'a> {
-    pub session: &'a Session,
+#[derive(Clone, Default, Debug)]
+pub struct Config {
+    pub debug_dir: Option<PathBuf>
+}
+
+pub struct Ctxt {
+    pub id_counter: AtomicUsize,
+    pub debug_dir: Option<PathBuf>,
     pub prelude: RefCell<Scope>,
     pub protocol_scope: RefCell<ProtocolScope>, // TODO: should be scoped
     pub protocols: Index<ProtocolDef, ProtocolId>,
@@ -29,16 +37,36 @@ pub struct ProtocolDef {
     pub scope: Scope,
 }
 
-impl<'a> Ctxt<'a> {
-    pub fn new(session: &'a Session) -> Ctxt<'a> {
+impl Ctxt {
+    pub fn new(config: Config) -> Ctxt {
+        if let Some(ref p) = config.debug_dir {
+            fs::create_dir_all(p)
+                .unwrap_or_else(|e| error!("Failed to create debug directory `{}`: {}", p.display(), e));
+        }
+
         Ctxt {
-            session: session,
+            id_counter: AtomicUsize::new(1),
+            debug_dir: config.debug_dir,
             prelude: RefCell::new(Scope::new()),
             protocol_scope: RefCell::new(ProtocolScope::new()),
             protocols: Index::new(),
             functions: Index::new(),
             codemap: RefCell::new(CodeMap::new()),
         }
+    }
+
+    pub fn make_id(&self) -> usize {
+        self.id_counter.fetch_add(1, Ordering::Relaxed)
+    }
+
+    pub fn debug_file<T: FnOnce() -> String>(&self, name: T) -> Option<fs::File> {
+        self.debug_dir.as_ref().and_then(|path| {
+            let mut p = path.to_owned();
+            p.push(name());
+            fs::File::create(&p)
+                .map_err(|e| error!("Failed to open debug file `{}`: {}", p.display(), e))
+                .ok()
+        })
     }
 
     pub fn add_primitive_fn(&self, name: &str, prim: PrimitiveFn) {
@@ -133,7 +161,7 @@ pub struct Test<'m> {
 }
 
 impl<'m> Test<'m> {
-    pub fn compile<'s>(&self, ctx: &'s Ctxt<'s>) -> super::program::CompiledTest<'s> {
+    pub fn compile<'s>(&self, ctx: &'s Ctxt) -> super::program::CompiledTest<'s> {
         super::program::compile_test(ctx, &self.scope, &*ctx.protocol_scope.borrow(), &self.ast)
     }
 

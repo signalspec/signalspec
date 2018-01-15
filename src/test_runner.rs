@@ -1,8 +1,7 @@
 use std::fs;
 use std::path::Path;
 use std::io::prelude::*;
-use language::Ctxt;
-use session::Session;
+use language::{Config, Ctxt};
 use connection::Connection;
 
 pub fn run(fname: &str) -> bool {
@@ -29,8 +28,7 @@ pub fn run(fname: &str) -> bool {
 pub fn run_file(fname: &Path) -> bool {
     println!("Running tests for {}", fname.to_string_lossy());
 
-    let sess = Session::new(None);
-    let loader = Ctxt::new(&sess);
+    let loader = Ctxt::new(Config::default());
     ::add_primitives(&loader);
 
     let source = match fs::File::open(fname) {

@@ -39,8 +39,9 @@ fn main() {
         let success = signalspec::run_test(&*path);
         process::exit( if success { 0 } else { 1 } );
     } else {
-        let sess = signalspec::Session::new(debug.map(PathBuf::from));
-        let loader = signalspec::Ctxt::new(&sess);
+        let loader = signalspec::Ctxt::new(signalspec::Config {
+            debug_dir: debug.map(PathBuf::from)
+        });
 
         signalspec::add_primitives(&loader);
         signalspec_vcd::add_primitives(&loader);
