@@ -11,8 +11,8 @@ use super::module_loader::Ctxt;
 use process::{ Process, ProcessInfo };
 use connection::{ Connection };
 use super::exec;
-use super::matchset::{ self, MatchSet };
-use super::direction_infer::{ ResolveInfo, infer_direction, infer_top_fields };
+use super::matchset::MatchSet;
+use super::direction_infer::{ ResolveInfo, infer_top_fields };
 
 use data::{ DataMode, Type };
 
@@ -107,10 +107,87 @@ struct StepBuilder<'a> {
 }
 
 impl<'a> StepBuilder<'a> {
-    fn step(&self, step: Step) -> StepInfo {
-        let first = matchset::first(&step);
-        let dir = infer_direction(&step, self.fields_down);
-        StepInfo { step, first, dir }
+    fn nop(&self) -> StepInfo {
+        StepInfo {
+            first: MatchSet::epsilon(),
+            dir: ResolveInfo::new(),
+            step: Step::Nop
+        }
+    }
+
+    fn token(&self, message: Message) -> StepInfo {
+        StepInfo {
+            first: MatchSet::lower(message.clone()),
+            dir: ResolveInfo::from_message(&message, self.fields_down),
+            step: Step::Token(message)
+        }
+    }
+
+    fn token_top(&self, message: Message, inner: StepInfo) -> StepInfo {
+        StepInfo {
+            first: MatchSet::upper(message.clone()).followed_by(inner.first.clone()),
+            dir: inner.dir.with_up(),
+            step: Step::TokenTop(message, Box::new(inner))
+        }
+    }
+
+    fn seq(&self, steps: Vec<StepInfo>) -> StepInfo {
+        //TODO: check that each adjacent followlast and first are non-overlapping
+        StepInfo {
+            first: steps.iter().fold(MatchSet::epsilon(), |a, s| a.followed_by(s.first.clone())),
+            dir: ResolveInfo::steps(&steps),
+            step: Step::Seq(steps)
+        }
+    }
+
+    fn repeat(&self, count: Expr, inner: StepInfo) -> StepInfo {
+        let count_includes_zero = match count.get_type() {
+            Type::Integer(lo, hi) => lo <= 0 && hi >= 0,
+            count_type => {
+                warn!("Loop count type is {:?} not int", count_type);
+                false
+            }
+        };
+
+        // TODO: check that inner followlast and first are nonoverlapping
+        // TODO: require that inner is non-nullable?
+
+        StepInfo {
+            first: if count_includes_zero {
+                inner.first.clone().alternative(MatchSet::epsilon())
+            } else {
+                inner.first.clone()
+            },
+            dir: inner.dir.repeat(&count),
+            step: Step::Repeat(count, Box::new(inner))
+        }
+    }
+
+    fn foreach(&self, length: u32, vars: Vec<(ValueID, Expr)>, inner: StepInfo) -> StepInfo {
+        //TODO: check that inner followlast and first are non-overlapping
+
+        StepInfo {
+            first: inner.first.clone(),
+            dir: inner.dir.foreach(&vars),
+            step: Step::Foreach(length, vars, Box::new(inner))
+        }
+    }
+
+    fn alt(&self, opts: Vec<(Vec<(Expr, Expr)>, StepInfo)>) -> StepInfo {
+        // TODO: check that first is nonoverlapping
+        StepInfo {
+            first: opts.iter().fold(MatchSet::null(), |a, &(_, ref inner)| a.alternative(inner.first.clone())),
+            dir: ResolveInfo::alt(&opts),
+            step: Step::Alt(opts)
+        }
+    }
+
+    fn fork(&self, lower: StepInfo, fields: Fields, upper: StepInfo) -> StepInfo {
+        StepInfo {
+            first: MatchSet::join(&lower.first, &upper.first),
+            dir: lower.dir.clone().merge_seq(&upper.dir),
+            step: Step::Fork(Box::new(lower), fields, Box::new(upper)),
+        }
     }
 
     fn with_upper<'b>(&'b self, scope: &'b Scope, shape_up: &'b Shape) -> StepBuilder<'b> {
@@ -136,7 +213,7 @@ fn resolve_action(sb: StepBuilder, action: &ast::Action) -> StepInfo {
                     panic!("Messages have no upward shape");
                 }
 
-                sb.step(Step::Token(resolve_token(sb.shape_down, name, param)))
+                sb.token(resolve_token(sb.shape_down, name, param))
             } else {
                 let (scope, imp, shape_up) = sb.protocol_scope.find(sb.ctx, sb.shape_down, name, param);
 
@@ -155,7 +232,7 @@ fn resolve_action(sb: StepBuilder, action: &ast::Action) -> StepInfo {
                 match body {
                     Some(ref body_block) => {
                         let child_step = resolve_seq(sb.with_lower(&shape_up, &fields_up), body_block);
-                        sb.step(Step::Fork(Box::new(impl_step), fields_up, Box::new(child_step)))
+                        sb.fork(impl_step, fields_up, child_step)
                     }
                     None => impl_step
                 }
@@ -170,16 +247,16 @@ fn resolve_action(sb: StepBuilder, action: &ast::Action) -> StepInfo {
             let step = if let &Some(ref body) = body {
                 resolve_seq(sb.with_upper(&body_scope, &Shape::None), body)
             } else {
-                sb.step(Step::Nop)
+                sb.nop()
             };
 
             let msg = msginfo.into_iter().collect();
 
-            sb.step(Step::TokenTop(msg, box step))
+            sb.token_top(msg, step)
         }
         ast::Action::Repeat(ref count_ast, ref block) => {
             let count = expr::value(sb.ctx, sb.scope, count_ast.as_ref().map_or(&ast::Expr::Ignore, |s| &s.node));
-            sb.step(Step::Repeat(count, box resolve_seq(sb, block)))
+            sb.repeat(count, resolve_seq(sb, block))
         }
         ast::Action::For(ref pairs, ref block) => {
             let mut body_scope = sb.scope.child();
@@ -203,7 +280,7 @@ fn resolve_action(sb: StepBuilder, action: &ast::Action) -> StepInfo {
 
             let step = resolve_seq(sb.with_scope(&body_scope), block);
 
-            sb.step(Step::Foreach(count.unwrap_or(0) as u32, inner_vars, box step))
+            sb.foreach(count.unwrap_or(0) as u32, inner_vars, step)
         }
         ast::Action::Alt(ref expr, ref arms) => {
             let r = expr::rexpr(sb.ctx, sb.scope, expr);
@@ -216,7 +293,7 @@ fn resolve_action(sb: StepBuilder, action: &ast::Action) -> StepInfo {
                 (checks, step)
             }).collect();
 
-            sb.step(Step::Alt(v))
+            sb.alt(v)
         }
     }
 }
@@ -232,7 +309,7 @@ fn resolve_seq(sb: StepBuilder, block: &ast::Block) -> StepInfo {
         resolve_action(sb.with_scope(&scope), action)
     }).collect();
 
-    sb.step(Step::Seq(steps))
+    sb.seq(steps)
 }
 
 pub fn resolve_letdef(ctx: &Ctxt, scope: &mut Scope, ld: &ast::LetDef) {

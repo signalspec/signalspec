@@ -1,7 +1,7 @@
 use bit_set::BitSet;
 use language::ValueID;
 use super::eval::Expr;
-use super::step::{ Step, StepInfo };
+use super::step::{ Step, StepInfo, Message };
 use protocol::Fields;
 use data::DataMode;
 
@@ -29,6 +29,25 @@ impl ResolveInfo {
         }
     }
 
+    pub fn from_message(msg: &Message, bottom_fields: &Fields) -> ResolveInfo {
+        assert_eq!(msg.len(), bottom_fields.len());
+        let mut ri = ResolveInfo::new();
+        for (m, f) in msg.iter().zip(bottom_fields.iter()) {
+            if !f.is_tag {
+                if let &Some(ref expr) = m {
+                    ri.use_expr(expr, f.dir);
+                }
+            }
+        }
+        ri
+    }
+
+    pub fn with_up(&self) -> ResolveInfo {
+        let mut ri = self.clone();
+        ri.repeat_up_heuristic = true;
+        ri
+    }
+
     pub fn mode_of(&self, id: ValueID) -> DataMode {
         DataMode { up: self.vars_up.contains(id), down: self.vars_down.contains(id)}
     }
@@ -41,85 +60,55 @@ impl ResolveInfo {
         self.repeat_up_heuristic |= dir.up && e.refutable();
     }
 
-    fn merge_seq(&mut self, o: &ResolveInfo) {
+    pub fn merge_seq(mut self, o: &ResolveInfo) -> Self {
         self.vars_down.union_with(&o.vars_down);
         self.vars_up.union_with(&o.vars_up);
         self.repeat_up_heuristic |= o.repeat_up_heuristic;
+        self
     }
-}
 
-pub fn infer_direction(step: &Step, bottom_fields: &Fields) -> ResolveInfo {
-    use self::Step::*;
-    match *step {
-        Nop => ResolveInfo::new(),
-        Token(ref msg) => {
-            assert_eq!(msg.len(), bottom_fields.len());
-            let mut ri = ResolveInfo::new();
-            for (m, f) in msg.iter().zip(bottom_fields.iter()) {
-                if !f.is_tag {
-                    if let &Some(ref expr) = m {
-                        ri.use_expr(expr, f.dir);
-                    }
-                }
-            }
-            ri
-        }
-        TokenTop(_, ref body) => {
-            let mut ri = body.dir.clone();
-            ri.repeat_up_heuristic = true;
-            ri
-        }
-        Seq(ref steps) => {
-            let mut ri = ResolveInfo::new();
-            for step in steps {
-                ri.merge_seq(&step.dir);
-            }
-            ri
-        }
-        Repeat(ref count, ref body) => {
-            let mut ri = body.dir.clone();
-            let any_up = ri.repeat_up_heuristic;
-            ri.use_expr(&count, DataMode { down: !any_up, up: any_up });
-            assert_eq!(any_up, ri.repeat_up_heuristic);
-            ri
-        }
-        Foreach(_, ref inner_vars, ref body) => {
-            let mut ri = body.dir.clone();
-            for &(id, ref e) in inner_vars {
-                let dir = ri.mode_of(id);
-                ri.use_expr(e, dir);
-            }
-            ri
-        }
-        Alt(ref arms) => {
-            let mut ri = ResolveInfo::new();
-            for &(_, ref body) in arms {
-                ri.merge_seq(&body.dir); // TODO: alt != seq ?
-            }
-
-            let up = ri.repeat_up_heuristic;
-
-            for &(ref checks, _) in arms {
-                for &(_, ref r) in checks {
-                    ri.use_expr(r, DataMode { down: !up, up: up })
-                    // LHS is patterns that don't contain dynamic vars, so no need to mark them
-                }
-            }
-
-            assert_eq!(up, ri.repeat_up_heuristic);
-
-
-            ri
-        }
-        Fork(ref bottom, _, ref top) => {
-            let mut ri = bottom.dir.clone();
-            ri.merge_seq(&top.dir);
-            ri
-        }
-        Primitive(_) => panic!("Direction metadata for primitive must be provided directly")
+    pub fn steps(steps: &Vec<StepInfo>) -> ResolveInfo {
+        steps.iter().fold(ResolveInfo::new(), |ri, step| ri.merge_seq(&step.dir))
     }
-}
 
+    pub fn repeat(&self, count: &Expr) -> ResolveInfo {
+        let mut ri = self.clone();
+        let any_up = ri.repeat_up_heuristic;
+        ri.use_expr(count, DataMode { down: !any_up, up: any_up });
+        assert_eq!(any_up, ri.repeat_up_heuristic);
+        ri
+    }
+
+    pub fn foreach(&self, inner_vars: &Vec<(ValueID, Expr)>) -> ResolveInfo {
+        let mut ri = self.clone();
+        for &(id, ref e) in inner_vars {
+            let dir = ri.mode_of(id);
+            ri.use_expr(e, dir);
+        }
+        ri
+    }
+
+    pub fn alt(arms: &Vec<(Vec<(Expr, Expr)>, StepInfo)>) -> ResolveInfo {
+        let mut ri = ResolveInfo::new();
+        for &(_, ref body) in arms {
+            ri = ri.merge_seq(&body.dir); // TODO: alt != seq ?
+        }
+
+        let up = ri.repeat_up_heuristic;
+
+        for &(ref checks, _) in arms {
+            for &(_, ref r) in checks {
+                ri.use_expr(r, DataMode { down: !up, up: up })
+                // LHS is patterns that don't contain dynamic vars, so no need to mark them
+            }
+        }
+
+        assert_eq!(up, ri.repeat_up_heuristic);
+        ri
+    }
+
+
+}
 
 pub fn infer_top_fields(step: &StepInfo, top_fields: &mut Fields) {
     use self::Step::*;
