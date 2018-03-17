@@ -7,4 +7,4 @@ def main() {
 }
 
 test @both(Seq(t, t)) { val(#a, #b); val(#c, #d) } main();
-test fail @both(Seq(t, t)) { val(#a, #d); val(#c, #b) } main();
+test fail @up(Seq(t, t)) { val(#a, #d); val(#c, #b) } main(); //TODO: failure semantics

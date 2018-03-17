@@ -5,8 +5,9 @@ use super::protocol::{ ProtocolScope, DefImpl, resolve_protocol_invoke };
 use super::step::{ compile_block, make_literal_process };
 use super::Ctxt;
 use super::primitive::call_primitive;
-use process::{ ProcessStack, ProcessInfo };
+use process::{ Handle, ProcessInfo };
 use data::DataMode;
+use connection::Connection;
 
 pub fn resolve_process(ctx: &Ctxt,
                        scope: &Scope,
@@ -47,34 +48,22 @@ pub fn resolve_process(ctx: &Ctxt,
     }
 }
 
-
-pub struct CompiledTest<'a> {
-    pub down: Option<ProcessStack<'a>>,
-    pub up: Option<ProcessStack<'a>>,
-    pub roundtrip_fields: Option<Fields>,
+pub struct TestResult {
+    pub up: Option<bool>,
+    pub down: Option<bool>
 }
 
-pub fn compile_test<'a>(ctx: &'a Ctxt,
+pub fn run_test<'a>(ctx: &'a Ctxt,
                         scope: &Scope,
                         protocol_scope: &ProtocolScope,
-                        test: &ast::Test) -> CompiledTest<'a> {
+                        test: &ast::Test) -> TestResult {
 
-    fn build_stack<'a>(ctx: &'a Ctxt, scope: &Scope, protocol_scope: &ProtocolScope,
-                       shape: Option<(Shape, Fields)>, bottom_process: Option<ProcessInfo>, ast: &[ast::Process]) -> ProcessStack<'a> {
-        let mut stack = if let Some((shape, fields)) = shape {
-            ProcessStack::with_shape(ctx, shape, fields)
-        } else { ProcessStack::new(ctx) };
-
-        if let Some(bottom_process) = bottom_process {
-            stack.add(bottom_process);
-        }
-
+    fn run_stack<'a>(ctx: &'a Ctxt, mut handle: Handle<'a>, scope: &Scope, protocol_scope: &ProtocolScope, ast: &[ast::Process]) -> bool {
         for process_ast in ast {
-            let process = resolve_process(ctx, scope, protocol_scope, stack.top_shape(), stack.top_fields(), process_ast);
-            stack.add(process);
+            let process = resolve_process(ctx, scope, protocol_scope, handle.top_shape(), handle.top_fields(), process_ast);
+            handle = handle.spawn(process);
         }
-
-        stack
+        handle.join()
     }
 
     // If the test uses `@both`, generate `@up` and `@dn` versions and run them
@@ -83,10 +72,15 @@ pub fn compile_test<'a>(ctx: &'a Ctxt,
             let dn_base = make_literal_process(ctx, scope, protocol_scope, false, shape_expr, block);
             let up_base = make_literal_process(ctx, scope, protocol_scope, true, shape_expr, block);
 
-            CompiledTest {
-                down: Some(build_stack(ctx, scope, protocol_scope, None, Some(dn_base), rest)),
-                up:   Some(build_stack(ctx, scope, protocol_scope, None, Some(up_base), rest)),
-                roundtrip_fields: None,
+            let dn_handle = Handle::base(ctx).spawn(dn_base);
+            let down_res = run_stack(ctx, dn_handle, scope, protocol_scope, rest);
+
+            let up_handle = Handle::base(ctx).spawn(up_base);
+            let up_res = run_stack(ctx, up_handle, scope, protocol_scope, rest);
+
+            TestResult {
+                down: Some(down_res ^ test.should_fail),
+                up:   Some(up_res ^ test.should_fail),
             }
         }
 
@@ -95,22 +89,28 @@ pub fn compile_test<'a>(ctx: &'a Ctxt,
             let fields_dn = shape.fields(DataMode { down: true, up: false });
             let fields_up = shape.fields(DataMode { down: false, up: true });
 
-            CompiledTest {
-                down: Some(build_stack(ctx, scope, protocol_scope, Some((shape.clone(), fields_dn.clone())), None, rest)),
-                up:   Some(build_stack(ctx, scope, protocol_scope, Some((shape, fields_up)), None, rest)),
-                roundtrip_fields: Some(fields_dn)
+            let (c1, c2) = Connection::new(&fields_dn);
+
+            let h1 = Handle::new(ctx, shape.clone(), fields_dn, c1, None);
+            let h2 = Handle::new(ctx, shape, fields_up, c2, None);
+
+            TestResult {
+                down: Some(run_stack(ctx, h1, scope, protocol_scope, rest) ^ test.should_fail),
+                up:   Some(run_stack(ctx, h2, scope, protocol_scope, rest) ^ test.should_fail),
             }
         }
 
         Some((first, rest)) => {
             let bottom = resolve_process(ctx, scope, protocol_scope, &Shape::None, &Fields::null(), first);
             let is_up = bottom.fields_up.direction().up;
-            let stack = build_stack(ctx, scope, protocol_scope, None, Some(bottom), rest);
 
-            let (up, down) = if is_up { (Some(stack), None) } else { (None, Some(stack)) };
-            CompiledTest { down, up, roundtrip_fields: None }
+            let handle = Handle::base(ctx).spawn(bottom);
+            let r = run_stack(ctx, handle, scope, protocol_scope, rest) ^ test.should_fail;
+
+            let (up, down) = if is_up { (Some(r), None) } else { (None, Some(r)) };
+            TestResult { down, up }
         }
 
-        None => CompiledTest { down: None, up: None, roundtrip_fields: None }
+        None => panic!("No tests to run")
     }
 }

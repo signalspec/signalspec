@@ -23,7 +23,7 @@ mod protocol;
 mod primitives;
 
 pub use language::{ Config, Ctxt, Module, Test, Item, Scope, PrimitiveDef, PrimitiveDefFields };
-pub use process::{ Process, ProcessStack };
+pub use process::{ Process, Handle };
 pub use connection::Connection;
 pub use data::{ Value, Type, DataMode };
 pub use protocol::{ Shape, ShapeVariant, Fields, Field };

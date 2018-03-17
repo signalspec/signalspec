@@ -10,7 +10,6 @@ mod console;
 use std::io::prelude::*;
 use std::{ process, fs };
 use std::path::PathBuf;
-use std::thread;
 
 use argparse::{ArgumentParser, Collect, StoreOption};
 
@@ -54,21 +53,16 @@ fn main() {
             loader.parse_module(&file).unwrap();
         }
 
-        let mut stack = signalspec::ProcessStack::new(&loader);
+        let mut stack = signalspec::Handle::base(&loader);
         for arg in cmds {
-            stack.parse_add(&arg).unwrap_or_else(|e| panic!("Error parsing argument: {}", e));
+            stack = stack.parse_spawn(&arg).unwrap_or_else(|e| panic!("Error parsing argument: {}", e));
         }
 
-        let mut c_top = if stack.top_fields().direction().up {
-            let (mut c1, c2) = signalspec::Connection::new(stack.top_fields());
-            let shape = stack.top_shape().clone();
-            thread::spawn(move || {
-                console::run(&shape, &mut c1);
-            });
-            c2
-        } else { signalspec::Connection::null() };
+        if stack.top_fields().direction().up {
+            console::run(stack.top_shape(), &mut stack.connection());
+        }
 
-        let success = stack.run(&mut signalspec::Connection::null(), &mut c_top);
+        let success = stack.join();
 
         process::exit(if success { 0 } else { 1 });
     }

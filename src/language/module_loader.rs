@@ -161,8 +161,8 @@ pub struct Test<'m> {
 }
 
 impl<'m> Test<'m> {
-    pub fn compile<'s>(&self, ctx: &'s Ctxt) -> super::program::CompiledTest<'s> {
-        super::program::compile_test(ctx, &self.scope, &*ctx.protocol_scope.borrow(), &self.ast)
+    pub fn run<'s>(&self, ctx: &'s Ctxt) -> super::program::TestResult {
+        super::program::run_test(ctx, &self.scope, &*ctx.protocol_scope.borrow(), &self.ast)
     }
 
     pub fn should_fail(&self) -> bool { self.ast.should_fail }

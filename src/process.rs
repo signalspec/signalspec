@@ -1,8 +1,9 @@
-use std::mem;
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::fmt::Debug;
 use protocol::{ Shape, Fields };
-use language::{ Ctxt, Item, Step, StepInfo };
+use language::{ Ctxt, Item, StepInfo };
 use connection::Connection;
+use std::thread;
 
 pub trait Process: Debug + Send + Sync {
     fn run(&self, downwards: &mut Connection, upwards: &mut Connection) -> bool;
@@ -22,11 +23,12 @@ impl<T: Sync +Send + Fn(&mut Connection, &mut Connection) -> bool> Debug for FnP
     }
 }
 
-pub struct ProcessStack<'a> {
+pub struct Handle<'a> {
     loader: &'a Ctxt,
-    step: Option<StepInfo>,
     top_shape: Shape,
     top_fields: Fields,
+    connection: Arc<Mutex<Connection>>,
+    thread: Option<thread::JoinHandle<bool>>,
 }
 
 pub struct ProcessInfo {
@@ -35,8 +37,19 @@ pub struct ProcessInfo {
     pub fields_up: Fields,
 }
 
-impl<'a> ProcessStack<'a> {
-    pub fn new(loader: &'a Ctxt) -> ProcessStack<'a> {
+
+impl<'a> Handle<'a> {
+    pub fn new(loader: &'a Ctxt, shape: Shape, fields: Fields, connection: Connection, thread: Option<thread::JoinHandle<bool>>) -> Handle<'a> {
+        Handle {
+            top_shape: shape,
+            top_fields: fields,
+            loader,
+            connection: Arc::new(Mutex::new(connection)),
+            thread,
+        }
+    }
+
+    pub fn base(loader: &'a Ctxt) -> Handle<'a> {
         let base_item = loader.prelude.borrow().get("Base").expect("No `Base` protocol found in prelude");
         let base_id = if let Item::Protocol(id) = base_item { id } else { panic!("`Base` is not a protocol")};
         let base_shape = Shape::Seq {
@@ -45,44 +58,40 @@ impl<'a> ProcessStack<'a> {
             messages: vec![],
         };
 
-        ProcessStack::with_shape(loader, base_shape, Fields::null())
-    }
-
-    pub fn with_shape(loader: &'a Ctxt, shape: Shape, fields: Fields) -> ProcessStack<'a> {
-        ProcessStack {
-            step: None,
-            top_shape: shape,
-            top_fields: fields,
-            loader,
-        }
+        Handle::new(loader, base_shape, Fields::null(), Connection::null(), None)
     }
 
     pub fn top_shape(&self) -> &Shape { &self.top_shape }
     pub fn top_fields(&self) -> &Fields { &self.top_fields }
 
-    pub fn add(&mut self, p: ProcessInfo) {
-        let top_fields = mem::replace(&mut self.top_fields, p.fields_up);
-        self.top_shape = p.shape_up;
+    pub fn spawn(&mut self, p: ProcessInfo) -> Handle<'a> {
+        let (c2, mut c1) = Connection::new(&p.fields_up);
 
-        if let Some(existing_step) = self.step.take() {
-            self.step = Some(StepInfo::fake(Step::Fork(Box::new(existing_step), top_fields, Box::new(p.step))));
-        } else {
-            self.step = Some(p.step);
-        }
+        let step = p.step;
+        let conn = self.connection.clone();
+
+        let thread = thread::spawn(move || {
+            let mut conn = conn.try_lock().expect("already in use");
+            ::language::run(&step, &mut conn, &mut c1)
+        });
+
+        Handle::new(self.loader, p.shape_up, p.fields_up, c2, Some(thread))
     }
 
-    pub fn parse_add(&mut self, call: &str) -> Result<(), String> {
+    pub fn parse_spawn(&mut self, call: &str) -> Result<Handle<'a>, String> {
+        info!("parse_spawn `{}` on {:?}", call, self.top_shape());
         let process = try!(self.loader.parse_process(call, self.top_shape(), self.top_fields())
             .map_err(|e| e.to_string()));
-        self.add(process);
-        Ok(())
+        info!("parse_spawn starting {:?} {:?}", process.shape_up, process.fields_up);
+        Ok(self.spawn(process))
     }
 
-    pub fn run(&self, bottom: &mut Connection, top: &mut Connection) -> bool {
-        if let Some(ref step) = self.step {
-            ::language::run(&step, bottom, top)
-        } else {
-            true
-        }
+    pub fn connection(&self) -> MutexGuard<Connection> {
+        self.connection.try_lock().expect("already in use")
+    }
+
+    pub fn join(self) -> bool {
+        self.connection().end();
+        self.thread.map_or(true, |t| t.join().unwrap())
     }
 }
