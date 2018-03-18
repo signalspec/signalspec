@@ -1,10 +1,7 @@
 use super::{ Ctxt, Scope };
-use super::step::{ Step, StepInfo };
-use super::direction_infer::ResolveInfo;
-use super::matchset::MatchSet;
 use data::DataMode;
 use protocol::{ Fields, Shape };
-use process::Process;
+use process::PrimitiveProcess;
 
 pub enum PrimitiveDefFields {
     Explicit(Fields),
@@ -15,7 +12,7 @@ pub struct PrimitiveDef {
     pub id: &'static str,
     pub fields_down: Fields,
     pub fields_up: PrimitiveDefFields,
-    pub instantiate: Box<Fn(&Scope) -> Result<Box<Process>, ()>>,
+    pub instantiate: Box<Fn(&Scope) -> Result<Box<PrimitiveProcess>, ()>>,
 }
 
 pub fn call_primitive(_ctx: &Ctxt,
@@ -23,7 +20,7 @@ pub fn call_primitive(_ctx: &Ctxt,
                   fields_down: &Fields,
                   shape_up: &Shape,
                   primitive_impls: &[PrimitiveDef],
-                  name: &str) -> (StepInfo, Fields) {
+                  name: &str) -> (Box<PrimitiveProcess>, Fields) {
     for def in primitive_impls {
         if fields_down == &def.fields_down {
             info!("Using {} for primitive at {}", def.id, name);
@@ -34,13 +31,7 @@ pub fn call_primitive(_ctx: &Ctxt,
 
             let implementation = (def.instantiate)(scope).expect("Failed to instantiate primitive");
 
-            let step = StepInfo {
-                step: Step::Primitive(implementation),
-                dir: ResolveInfo::new(),
-                first: MatchSet::epsilon(), //TODO
-            };
-
-            return (step, fields_up);
+            return (implementation, fields_up);
         }
     }
 

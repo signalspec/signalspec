@@ -20,9 +20,9 @@ letstmt -> ast::LetDef
 module_entry -> ast::ModuleEntry
     = l:letstmt { ast::ModuleEntry::Let(l) }
     / USE _ name:IDENTIFIER { ast::ModuleEntry::Use(name) }
-    / WITH _ down_protocol:protocol_ref _
-      DEF _ name:IDENTIFIER _ param:expr_tup _ up_protocol:(COLON _ p:protocol_ref {p})? _ block:block
-      { ast::ModuleEntry::WithDef(ast::Def { bottom:down_protocol, name:name, param:param, top:up_protocol, block:block }) }
+    / WITH _ bottom:protocol_ref _
+      DEF _ name:IDENTIFIER _ param:expr_tup _ EQUALS _ processes:process_chain
+      { ast::ModuleEntry::WithDef(ast::Def { bottom, name, param, processes }) }
     / PROTOCOL _ name:IDENTIFIER _ param:expr_tup _ entries:protocol_block
       { ast::ModuleEntry::Protocol(ast::Protocol { name, param, entries }) }
     / t:test_block { ast::ModuleEntry::Test(t) }
@@ -48,8 +48,8 @@ block -> ast::Block
             { ast::Action::For(items, body) }
         / ALT _ expr:expr _ arms:BLOCK<alt_arm**__>
             { ast::Action::Alt(expr, arms) }
-        / name:IDENTIFIER _ param:expr_tup _ body:block?
-            { ast::Action::Call(name, param, body) }
+        / p:process_chain
+            { ast::Action::Process(p) }
 
         alt_arm -> ast::AltArm
           = expr:expr _ ARROW _ block:block
@@ -160,12 +160,15 @@ pub literal -> ast::Value
         / "" { "".to_string() }
 
 #[pub]
-process -> ast::Process
-  = b:block { ast::Process::Block(b) }
-  / dir:literal_direction _ t:PARENTHESIZED<protocol_ref> _ b:block
-      { ast::Process::Literal(dir, t, b) }
-  / name:IDENTIFIER _ param:expr_tup
-      { ast::Process::Call(name, param) }
+process_chain -> Vec<ast::Process>
+  = process ++ (_ PIPE _)
+
+  process -> ast::Process
+    = proto:protocol_ref _ block:block { ast::Process::Seq(proto, block) }
+    / name:IDENTIFIER _ param:expr_tup { ast::Process::Call(name, param) }
+    / block:block { ast::Process::InferSeq(block) }
+    / dir:literal_direction _ t:PARENTHESIZED<protocol_ref> _ b:block
+        { ast::Process::Literal(dir, t, b) }
 
     literal_direction -> ast::ProcessLiteralDirection
       = "@up"   { ast::ProcessLiteralDirection::Up }
@@ -174,7 +177,7 @@ process -> ast::Process
       / "@roundtrip" { ast::ProcessLiteralDirection::RoundTrip }
 
 test_block -> ast::Test
-  = TEST _ fails:(KEYWORD<"fail"> __)? processes:process**__ SEMICOLON
+  = TEST _ fails:(KEYWORD<"fail"> __)? processes:process_chain _ SEMICOLON
   { ast::Test { should_fail: fails.is_some(), processes: processes } }
 
 // Lexer

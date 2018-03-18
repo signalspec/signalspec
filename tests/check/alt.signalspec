@@ -1,5 +1,5 @@
 with Seq(#a|#b)
-def bare() {
+def bare() = {
     alt _ {
         _ => {
             val(#a)
@@ -10,10 +10,10 @@ def bare() {
     }
 }
 
-test @up(Seq(#a|#b)) { val(#a) } bare();
+test @up(Seq(#a|#b)) { val(#a) } | bare();
 
 with Seq(#a|#b)
-def simple(): Seq(#a | #b) {
+def simple() = Seq(#a | #b) {
     on val(x) {
         alt x {
             #a => {
@@ -28,11 +28,11 @@ def simple(): Seq(#a | #b) {
     }
 }
 
-test @both(Seq(#a|#b)) { val(#b); val(#a) } simple() { val(#b) };
-test @both(Seq(#a|#b)) { val(#a); val(#b) } simple() { val(#a) };
+test @both(Seq(#a|#b)) { val(#b); val(#a) } | simple() | { val(#b) };
+test @both(Seq(#a|#b)) { val(#a); val(#b) } | simple() | { val(#a) };
 
 with Seq(#a|#b|#x|#y)
-def tuple(): Seq(#a|#b, #a|#b|#x|#y) {
+def tuple() = Seq(#a|#b, #a|#b|#x|#y) {
     on val(z) {
         alt z {
             (#a, w) => {
@@ -47,10 +47,10 @@ def tuple(): Seq(#a|#b, #a|#b|#x|#y) {
     }
 }
 
-test @both(Seq(#a|#b|#x|#y)) { val(#b); val(#x) } tuple() { val(#b, #x) };
+test @both(Seq(#a|#b|#x|#y)) { val(#b); val(#x) } | tuple() | { val(#b, #x) };
 
 with Seq(#a|#b)
-def ambiguous(): Seq(#a | #b) {
+def ambiguous() = Seq(#a | #b) {
     on val(x) {
         alt x {
             #b => {

@@ -7,7 +7,7 @@ use std::fs;
 use super::{ ast, grammar, Item, PrimitiveDef };
 use super::scope::Scope;
 use super::function::{ FunctionId, FunctionDef, PrimitiveFn };
-use process::{ ProcessInfo };
+use process::{ ProcessChain };
 use language::protocol::ProtocolScope;
 use protocol::{ ProtocolId, Shape, Fields };
 use util::Index;
@@ -96,9 +96,9 @@ impl Ctxt {
         self.functions.get(id)
     }
 
-    pub fn parse_process(&self, source: &str, shape_below: &Shape, fields_below: &Fields) -> Result<ProcessInfo, grammar::ParseError> {
+    pub fn parse_process(&self, source: &str, shape_below: &Shape, fields_below: &Fields) -> Result<ProcessChain, grammar::ParseError> {
         let file = self.codemap.borrow_mut().add_file("<process>".into(), source.into());
-        let ast = try!(grammar::process(&file.source(), file.span));
+        let ast = try!(grammar::process_chain(&file.source(), file.span));
         Ok(super::program::resolve_process(self, &*self.prelude.borrow(), &*self.protocol_scope.borrow(), shape_below, fields_below, &ast))
     }
 

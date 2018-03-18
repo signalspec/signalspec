@@ -2,7 +2,7 @@
 #[macro_use] extern crate log;
 extern crate libusb;
 
-use signalspec::{ Ctxt, Fields, Field, Connection, Process, PrimitiveDef, PrimitiveDefFields, Value, DataMode, Type };
+use signalspec::{ Ctxt, Fields, Field, Connection, PrimitiveProcess, PrimitiveDef, PrimitiveDefFields, Value, DataMode, Type };
 
 mod starfish_usb;
 use starfish_usb::{ StarfishUsb, find_device };
@@ -29,7 +29,7 @@ fn u8_to_bitvec(v: u8) -> Value {
 
 #[derive(Debug)]
 struct StarfishProcess;
-impl Process for StarfishProcess {
+impl PrimitiveProcess for StarfishProcess {
     fn run(&self, _: &mut Connection, upwards: &mut Connection) -> bool {
         let context = libusb::Context::new().unwrap();
         let dev = match find_device(&context, 0x59e3, 0x5555) {

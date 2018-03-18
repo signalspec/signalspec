@@ -1,18 +1,18 @@
 with Seq(#x|#y)
-def main2() {
+def main2() = {
     val(#x)
     repeat _ { val(#x) }
 }
 
-test @up(Seq(#x|#y)) { val(#x); val(#x); val(#x); val(#x) } main2();
-test fail @up(Seq(#x|#y)) { val(#y); val(#x); val(#x); val(#x) } main2();
+test @up(Seq(#x|#y)) { val(#x); val(#x); val(#x); val(#x) } | main2();
+test fail @up(Seq(#x|#y)) { val(#y); val(#x); val(#x); val(#x) } | main2();
 
 with Seq(#x|#y)
-def main3() {
+def main3() = {
     val(#x)
     repeat #3 { val(#x) }
     val(#y)
 }
 
-test @up(Seq(#x|#y)) { val(#x); val(#x); val(#x); val(#x); val(#y) } main3();
-test fail @up(Seq(#x|#y)) { val(#x); val(#x); val(#x); val(#y) } main3();
+test @up(Seq(#x|#y)) { val(#x); val(#x); val(#x); val(#x); val(#y) } | main3();
+test fail @up(Seq(#x|#y)) { val(#x); val(#x); val(#x); val(#y) } | main3();

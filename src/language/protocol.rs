@@ -64,13 +64,12 @@ struct WithBlock {
     name: String,
     param: ast::Expr,
     scope: Scope,
-    shape_up: Option<ast::ProtocolRef>,
     implementation: DefImpl
 }
 
 pub enum DefImpl {
-    Code(ast::Block),
-    Primitive(Vec<PrimitiveDef>)
+    Code(Vec<ast::Process>),
+    Primitive(Vec<PrimitiveDef>, Option<ast::ProtocolRef>)
  }
 
 
@@ -89,8 +88,7 @@ impl ProtocolScope {
             name: def.name.clone(),
             scope: scope,
             param: def.param.node,
-            shape_up: def.top,
-            implementation: DefImpl::Code(def.block)
+            implementation: DefImpl::Code(def.processes)
         });
     }
 
@@ -100,12 +98,11 @@ impl ProtocolScope {
             name: header.name.clone(),
             scope: scope.child(),
             param: header.param.node,
-            shape_up: header.top,
-            implementation: DefImpl::Primitive(defs),
+            implementation: DefImpl::Primitive(defs, header.top),
         });
     }
 
-    pub fn find(&self, ctx: &Ctxt, shape: &Shape, name: &str, param: Item) -> (Scope, &DefImpl, Shape) {
+    pub fn find(&self, ctx: &Ctxt, shape: &Shape, name: &str, param: Item) -> (Scope, &DefImpl) {
         let mut found = None;
         for entry in &self.entries {
             if entry.name != name { continue }
@@ -123,13 +120,7 @@ impl ProtocolScope {
             }
 
             if found.is_none() {
-                let shape_up = if let Some(ref x) = entry.shape_up {
-                    resolve_protocol_invoke(ctx, &scope, x)
-                } else {
-                    Shape::None
-                };
-
-                found = Some((scope, &entry.implementation, shape_up));
+                found = Some((scope, &entry.implementation));
             } else {
                 panic!("Multiple definition of `{}`", name);
             }

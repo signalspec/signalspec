@@ -1,11 +1,12 @@
 use super::ast;
 use super::scope::Scope;
 use protocol::{ Shape, Fields };
+use super::expr;
 use super::protocol::{ ProtocolScope, DefImpl, resolve_protocol_invoke };
-use super::step::{ compile_block, make_literal_process };
+use super::step::{ compile_block, make_literal_process, resolve_token };
 use super::Ctxt;
 use super::primitive::call_primitive;
-use process::{ Handle, ProcessInfo };
+use process::{ Handle, ProcessInfo, Process, ProcessChain };
 use data::DataMode;
 use connection::Connection;
 
@@ -14,38 +15,66 @@ pub fn resolve_process(ctx: &Ctxt,
                        protocol_scope: &ProtocolScope,
                        shape_down: &Shape,
                        fields_down: &Fields,
-                       p: &ast::Process) -> ProcessInfo {
-    match *p {
-        ast::Process::Call(ref name, ref arg) => {
-            let arg = super::expr::rexpr(ctx, scope, arg);
-            let (scope, imp, shape_up) = protocol_scope.find(ctx, shape_down, name, arg);
+                       processes_ast: &[ast::Process]) -> ProcessChain {
 
-            match *imp {
-                DefImpl::Code(ref seq) => {
-                    compile_block(ctx, &scope, protocol_scope, shape_down, fields_down, shape_up, seq, &name)
+    let mut processes: Vec<ProcessInfo> = vec![];
+
+    for process_ast in processes_ast {
+        let (shape_down, fields_down) = processes.last().map_or((shape_down, fields_down), |p|(&p.shape_up, &p.fields_up));
+
+        match *process_ast {
+            ast::Process::Call(ref name, ref param_ast) => {
+                let param = expr::rexpr(ctx, scope, param_ast);
+
+                if shape_down.has_variant_named(name) {
+                    processes.push(ProcessInfo {
+                        process: Process::Token(resolve_token(shape_down, name, param)),
+                        shape_up: Shape::None,
+                        fields_up: Fields::null()
+                    })
+                } else {
+                    let (scope, imp) = protocol_scope.find(ctx, shape_down, name, param);
+                    match *imp {
+                        DefImpl::Code(ref callee_ast) => {
+                            let chain = resolve_process(ctx, &scope, protocol_scope, shape_down, fields_down, callee_ast);
+                            processes.extend(chain.processes);
+                        }
+                        DefImpl::Primitive(ref primitive, ref shape_up_ast) => {
+                            let shape_up = if let Some(ref x) = shape_up_ast {
+                                resolve_protocol_invoke(ctx, &scope, x)
+                            } else {
+                                Shape::None
+                            };
+                            let (prim, fields_up) = call_primitive(ctx, &scope, fields_down, &shape_up, primitive, &name);
+                            processes.push(ProcessInfo { process: Process::Primitive(prim), fields_up, shape_up });
+                        }
+                    }
                 }
-                DefImpl::Primitive(ref primitive) => {
-                    let (step, fields_up) = call_primitive(ctx, &scope, fields_down, &shape_up, primitive, &name);
-                    ProcessInfo { step, fields_up, shape_up }
-                },
             }
-        }
 
-        ast::Process::Block(ref block) => {
-            compile_block(ctx, scope, protocol_scope, shape_down, fields_down, Shape::None, block, "anon_block")
-        }
+            ast::Process::Seq(ref top_shape, ref block) => {
+                let top_shape = resolve_protocol_invoke(ctx, &scope, top_shape);
+                processes.push(compile_block(ctx, scope, protocol_scope, shape_down, fields_down, top_shape, block, "anon_block"));
+            }
 
-        ast::Process::Literal(dir, ref shape_up_expr, ref block) => {
-            let is_up = match dir {
-                ast::ProcessLiteralDirection::Up => true,
-                ast::ProcessLiteralDirection::Down => false,
-                ast::ProcessLiteralDirection::Both => panic!("@both is only usable in tests"),
-                ast::ProcessLiteralDirection::RoundTrip => panic!("@roundtrip is only usable in tests"),
-            };
+            ast::Process::InferSeq(ref block) => {
+                processes.push(compile_block(ctx, scope, protocol_scope, shape_down, fields_down, Shape::None, block, "anon_block"));
+            }
 
-            make_literal_process(ctx, scope, protocol_scope, is_up, shape_up_expr, block)
-        }
+            ast::Process::Literal(dir, ref shape_up_expr, ref block) => {
+                let is_up = match dir {
+                    ast::ProcessLiteralDirection::Up => true,
+                    ast::ProcessLiteralDirection::Down => false,
+                    ast::ProcessLiteralDirection::Both => panic!("@both is only usable in tests"),
+                    ast::ProcessLiteralDirection::RoundTrip => panic!("@roundtrip is only usable in tests"),
+                };
+
+                processes.extend(make_literal_process(ctx, scope, protocol_scope, is_up, shape_up_expr, block).processes);
+            }
+        };
     }
+
+    ProcessChain { processes }
 }
 
 pub struct TestResult {
@@ -59,11 +88,8 @@ pub fn run_test<'a>(ctx: &'a Ctxt,
                         test: &ast::Test) -> TestResult {
 
     fn run_stack<'a>(ctx: &'a Ctxt, mut handle: Handle<'a>, scope: &Scope, protocol_scope: &ProtocolScope, ast: &[ast::Process]) -> bool {
-        for process_ast in ast {
-            let process = resolve_process(ctx, scope, protocol_scope, handle.top_shape(), handle.top_fields(), process_ast);
-            handle = handle.spawn(process);
-        }
-        handle.join()
+        let p = resolve_process(ctx, scope, protocol_scope, handle.top_shape(), handle.top_fields(), ast);
+        handle.spawn(p).join()
     }
 
     // If the test uses `@both`, generate `@up` and `@dn` versions and run them
@@ -100,12 +126,12 @@ pub fn run_test<'a>(ctx: &'a Ctxt,
             }
         }
 
-        Some((first, rest)) => {
-            let bottom = resolve_process(ctx, scope, protocol_scope, &Shape::None, &Fields::null(), first);
-            let is_up = bottom.fields_up.direction().up;
+        Some(_) => {
+            let mut handle = Handle::base(ctx);
+            let p = resolve_process(ctx, scope, protocol_scope, handle.top_shape(), handle.top_fields(), &test.processes);
+            let is_up = p.processes[0].fields_up.direction().up;
 
-            let handle = Handle::base(ctx).spawn(bottom);
-            let r = run_stack(ctx, handle, scope, protocol_scope, rest) ^ test.should_fail;
+            let r = handle.spawn(p).join() ^ test.should_fail;
 
             let (up, down) = if is_up { (Some(r), None) } else { (None, Some(r)) };
             TestResult { down, up }

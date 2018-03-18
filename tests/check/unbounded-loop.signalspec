@@ -1,5 +1,5 @@
 with Seq(#h|#l)
-def main(): Seq(#0..#3) {
+def main() = Seq(#0..#3) {
   repeat {
     on val(v) {
       val(#h)
@@ -19,4 +19,4 @@ test @up(Seq(#h|#l)) {
   val(#h);
   val(#h);
   val(#l)
-} main() { val(#0); val(#1); val(#2) };
+} | main() | { val(#0); val(#1); val(#2) };

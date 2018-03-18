@@ -1,7 +1,7 @@
 let t = #a|#b|#c|#d
 
 with Seq(t)
-def main(x) {
+def main(x) = {
     val(#a)
     val(#b)
     repeat x {
@@ -11,9 +11,9 @@ def main(x) {
     val(#a)
 }
 
-test @both(Seq(t)) { val(#a) ; val(#b) ; val(#a) } main(#0);
-test fail @up(Seq(t)) { val(#a) ; val(#b) ; val(#a) } main(#1);
-test @both(Seq(t)) { val(#a) ; val(#b) ; val(#c) ; val(#d) ; val(#a) } main(#1);
-test @both(Seq(t)) { val(#a) ; val(#b) ; val(#c) ; val(#d) ; val(#c) ; val(#d) ; val(#a) } main(#2);
-test fail @up(Seq(t)) { val(#a) ; val(#b) ; val(#c) ; val(#a) } main(_);
-test fail @up(Seq(t)) { val(#a) ; val(#b) ; val(#c) ; val(#d) } main(_);
+test @both(Seq(t)) { val(#a) ; val(#b) ; val(#a) } | main(#0);
+test fail @up(Seq(t)) { val(#a) ; val(#b) ; val(#a) } | main(#1);
+test @both(Seq(t)) { val(#a) ; val(#b) ; val(#c) ; val(#d) ; val(#a) } | main(#1);
+test @both(Seq(t)) { val(#a) ; val(#b) ; val(#c) ; val(#d) ; val(#c) ; val(#d) ; val(#a) } | main(#2);
+test fail @up(Seq(t)) { val(#a) ; val(#b) ; val(#c) ; val(#a) } | main(_);
+test fail @up(Seq(t)) { val(#a) ; val(#b) ; val(#c) ; val(#d) } | main(_);

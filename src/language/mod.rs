@@ -1,4 +1,4 @@
-mod ast;
+pub mod ast;
 mod scope;
 mod expr;
 mod eval;
@@ -19,7 +19,7 @@ pub use self::scope::{ Item, Scope };
 pub use self::eval::{ Expr, add_primitive_fns };
 pub use self::function::PrimitiveFn;
 pub use self::primitive::{ PrimitiveDef, PrimitiveDefFields, call_primitive };
-pub use self::step::{ Step, StepInfo };
+pub use self::step::{ Step, StepInfo, Message };
 pub use self::exec::run;
 
 pub use self::grammar::literal as parse_literal;

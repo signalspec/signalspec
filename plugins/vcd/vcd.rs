@@ -6,7 +6,7 @@ extern crate ref_slice;
 use std::io;
 use ref_slice::ref_slice;
 
-use signalspec::{ Connection, Process, Value, DataMode, Item, Ctxt, PrimitiveDef, PrimitiveDefFields, Fields };
+use signalspec::{ Connection, PrimitiveProcess, Value, DataMode, Item, Ctxt, PrimitiveDef, PrimitiveDefFields, Fields };
 
 /// Represent a shape as a VCD scope declaration, creating mapping from message index to VCD idcode
 fn shape_to_scope(s: &Item) -> (vcd::Scope, Vec<vcd::IdCode>) {
@@ -49,7 +49,7 @@ fn shape_to_scope(s: &Item) -> (vcd::Scope, Vec<vcd::IdCode>) {
 
 #[derive(Debug)]
 struct VcdWrite(Item);
-impl Process for VcdWrite {
+impl PrimitiveProcess for VcdWrite {
     fn run(&self, downwards: &mut Connection, upwards: &mut Connection) -> bool {
         let mut c = downwards.write_bytes();
         let mut w = vcd::Writer::new(&mut c);
@@ -126,7 +126,7 @@ fn shape_from_scope(s: &Item, v: &vcd::Scope) -> Vec<vcd::IdCode> {
 
 #[derive(Debug)]
 struct VcdRead(Item);
-impl Process for VcdRead {
+impl PrimitiveProcess for VcdRead {
     fn run(&self, downwards: &mut Connection, upwards: &mut Connection) -> bool {
         let mut c = io::BufReader::new(downwards.read_bytes());
         let mut r = vcd::Parser::new(&mut c);

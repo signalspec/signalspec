@@ -6,7 +6,7 @@ use data::{ DataMode };
 use protocol::{ Fields };
 use connection::Connection;
 use language::{ Ctxt, PrimitiveDef, PrimitiveDefFields };
-use process::Process;
+use process::PrimitiveProcess;
 
 pub fn add_primitives<'a>(loader: &'a Ctxt) {
     loader.define_primitive("with Base() def file(#r, name): Bytes()", vec![
@@ -34,7 +34,7 @@ pub fn add_primitives<'a>(loader: &'a Ctxt) {
 
 
 struct ReaderProcess(pub PathBuf);
-impl Process for ReaderProcess {
+impl PrimitiveProcess for ReaderProcess {
     fn run(&self, _: &mut Connection, upwards: &mut Connection) -> bool {
         debug!("reader started");
 
@@ -51,7 +51,7 @@ impl ::std::fmt::Debug for ReaderProcess {
 }
 
 struct WriterProcess(pub PathBuf);
-impl Process for WriterProcess {
+impl PrimitiveProcess for WriterProcess {
     fn run(&self, _: &mut Connection, upwards: &mut Connection) -> bool {
         debug!("writer started {} {}", upwards.can_tx(), upwards.can_rx());
 

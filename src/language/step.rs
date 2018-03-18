@@ -2,13 +2,14 @@ use std::io::{Write, Result as IoResult};
 use std::iter::repeat;
 
 use super::ValueID;
-use super::{ ast, expr, call_primitive };
+use super::{ ast, expr };
 use super::scope::{ Scope, Item };
 use super::eval::Expr;
 use protocol::{ Shape, Fields };
-use super::protocol::{ ProtocolScope, DefImpl, resolve_protocol_invoke };
+use super::protocol::{ ProtocolScope, resolve_protocol_invoke };
+use super::program::resolve_process;
 use super::module_loader::Ctxt;
-use process::{ Process, ProcessInfo };
+use process::{ PrimitiveProcess, Process, ProcessInfo, ProcessChain };
 use connection::{ Connection };
 use super::exec;
 use super::matchset::MatchSet;
@@ -38,23 +39,33 @@ impl StepInfo {
 #[derive(Debug)]
 pub enum Step {
     Nop,
-    Token(Message),
+    Process(ProcessChain),
     TokenTop(Message, Box<StepInfo>),
     Seq(Vec<StepInfo>),
     Repeat(Expr, Box<StepInfo>),
     Foreach(u32, Vec<(ValueID, Expr)>, Box<StepInfo>),
     Alt(Vec<(Vec<(Expr, Expr)>, StepInfo)>),
-    Fork(Box<StepInfo>, Fields, Box<StepInfo>),
-    Primitive(Box<Process + 'static>),
 }
+
+
 
 impl StepInfo {
     pub fn write_tree(&self, f: &mut Write, indent: u32) -> IoResult<()> {
         let i: String = repeat(" ").take(indent as usize).collect();
         match self.step {
             Step::Nop => {},
-            Step::Token(ref message) => {
-                try!(writeln!(f, "{}Token: {:?}", i, message));
+            Step::Process(ref processes) => {
+                writeln!(f, "{}Process:", i)?;
+                for p in &processes.processes {
+                    match p.process {
+                        Process::Token(ref message) => writeln!(f, "{} Token: {:?}", i, message)?,
+                        Process::Seq(ref step) => {
+                            writeln!(f, "{} Seq:", i)?;
+                            step.write_tree(f, indent+2)?;
+                        }
+                        Process::Primitive(_) => writeln!(f, "{} Primitive", i)?
+                    }
+                }
             }
             Step::TokenTop(ref message, box ref body) => {
                 try!(writeln!(f, "{}Up: {:?}", i, message));
@@ -83,14 +94,6 @@ impl StepInfo {
                     try!(inner.write_tree(f, indent + 2));
                 }
             }
-            Step::Fork(ref bottom, ref fields, ref top) => {
-                try!(writeln!(f, "{}Fork: {:?}", i, fields));
-                try!(bottom.write_tree(f, indent+1));
-                try!(top.write_tree(f, indent+1));
-            }
-            Step::Primitive(_) => {
-                try!(writeln!(f, "{}Primitive", i));
-            }
         }
         Ok(())
     }
@@ -115,11 +118,42 @@ impl<'a> StepBuilder<'a> {
         }
     }
 
-    fn token(&self, message: Message) -> StepInfo {
+    fn process(&self, p: ProcessChain) -> StepInfo {
+        if p.processes.len() == 1 {
+            if let Process::Seq(_) = p.processes[0].process {
+                match p.processes.into_iter().next().unwrap().process {
+                    Process::Seq(s) => return s,
+                    _ => unreachable!()
+                }
+            }
+        }
+
+        fn process_first(p: &ProcessInfo) -> MatchSet {
+            match p.process {
+                Process::Token(ref msg) => MatchSet::lower(msg.clone()),
+                Process::Seq(ref s) => s.first.clone(),
+                Process::Primitive(_) => unimplemented!(),
+            }
+        }
+
+        let bottom_first = process_first(p.processes.first().unwrap());
+        let top_first = process_first(p.processes.last().unwrap());
+
+        let mut dir = ResolveInfo::new();
+        let mut fields_down = self.fields_down;
+        for process in &p.processes {
+            match process.process {
+                Process::Token(ref msg) => dir = dir.merge_seq(&ResolveInfo::from_message(&msg, fields_down)),
+                Process::Seq(ref s) => dir = dir.merge_seq(&s.dir),
+                Process::Primitive(_) => unimplemented!(),
+            }
+            fields_down = &process.fields_up;
+        }
+
         StepInfo {
-            first: MatchSet::lower(message.clone()),
-            dir: ResolveInfo::from_message(&message, self.fields_down),
-            step: Step::Token(message)
+            first: MatchSet::join(&bottom_first, &top_first),
+            dir,
+            step: Step::Process(p)
         }
     }
 
@@ -182,20 +216,8 @@ impl<'a> StepBuilder<'a> {
         }
     }
 
-    fn fork(&self, lower: StepInfo, fields: Fields, upper: StepInfo) -> StepInfo {
-        StepInfo {
-            first: MatchSet::join(&lower.first, &upper.first),
-            dir: lower.dir.clone().merge_seq(&upper.dir),
-            step: Step::Fork(Box::new(lower), fields, Box::new(upper)),
-        }
-    }
-
     fn with_upper<'b>(&'b self, scope: &'b Scope, shape_up: &'b Shape) -> StepBuilder<'b> {
         StepBuilder { scope, shape_up, ..*self }
-    }
-
-    fn with_lower<'b>(&'b self, shape_down: &'b Shape, fields_down: &'b Fields) -> StepBuilder<'b> {
-        StepBuilder { shape_down, fields_down, ..*self }
     }
 
     fn with_scope<'b>(&'b self, scope: &'b Scope) -> StepBuilder<'b> {
@@ -205,38 +227,8 @@ impl<'a> StepBuilder<'a> {
 
 fn resolve_action(sb: StepBuilder, action: &ast::Action) -> StepInfo {
     match *action {
-        ast::Action::Call(ref name, ref param_ast, ref body) => {
-            let param = expr::rexpr(sb.ctx, sb.scope, param_ast);
-
-            if sb.shape_down.has_variant_named(name) {
-                if body.is_some() {
-                    panic!("Messages have no upward shape");
-                }
-
-                sb.token(resolve_token(sb.shape_down, name, param))
-            } else {
-                let (scope, imp, shape_up) = sb.protocol_scope.find(sb.ctx, sb.shape_down, name, param);
-
-                let (impl_step, fields_up) = match *imp {
-                    DefImpl::Code(ref seq) => {
-                        let impl_step = resolve_seq(sb.with_upper(&scope, &shape_up), seq);
-                        let mut fields_up = shape_up.fields(DataMode { down: false, up: true });
-                        infer_top_fields(&impl_step, &mut fields_up);
-                        (impl_step, fields_up)
-                    }
-                    DefImpl::Primitive(ref primitive) => {
-                        call_primitive(sb.ctx, &scope, sb.fields_down, &shape_up, primitive, &name)
-                    }
-                };
-
-                match body {
-                    Some(ref body_block) => {
-                        let child_step = resolve_seq(sb.with_lower(&shape_up, &fields_up), body_block);
-                        sb.fork(impl_step, fields_up, child_step)
-                    }
-                    None => impl_step
-                }
-            }
+        ast::Action::Process(ref processes) => {
+            sb.process(resolve_process(sb.ctx, sb.scope, sb.protocol_scope, sb.shape_down, sb.fields_down, &processes[..]))
         }
         ast::Action::On(ref name, ref expr, ref body) => {
             let mut body_scope = sb.scope.child();
@@ -318,7 +310,7 @@ pub fn resolve_letdef(ctx: &Ctxt, scope: &mut Scope, ld: &ast::LetDef) {
     scope.bind(&name, item);
 }
 
-fn resolve_token(shape: &Shape, variant_name: &str, item: Item) -> Message {
+pub fn resolve_token(shape: &Shape, variant_name: &str, item: Item) -> Message {
     fn inner(i: Item, shape: &Item, push: &mut FnMut(Expr)) {
         match shape {
             &Item::Value(Expr::Const(_)) => (),
@@ -377,7 +369,7 @@ pub fn compile_block(ctx: &Ctxt,
         step.write_tree(&mut f, 0).unwrap_or_else(|e| error!("{}", e));
     }
 
-    ProcessInfo { fields_up, shape_up, step }
+    ProcessInfo { fields_up: fields_up.clone(), shape_up, process: Process::Seq(step) }
 }
 
 pub fn make_literal_process(ctx: &Ctxt,
@@ -385,7 +377,7 @@ pub fn make_literal_process(ctx: &Ctxt,
                         protocol_scope: &ProtocolScope,
                         is_up: bool,
                         shape_up_expr: &ast::ProtocolRef,
-                        block: &ast::Block) -> ProcessInfo {
+                        block: &ast::Block) -> ProcessChain {
 
     let shape_up = resolve_protocol_invoke(ctx, scope, shape_up_expr);
     let shape_down = Shape::None;
@@ -402,22 +394,28 @@ pub fn make_literal_process(ctx: &Ctxt,
         super::step::resolve_seq(sb, block)
     };
 
-    let step = StepInfo {
-        step: Step::Primitive(Box::new(ProgramFlip { step })),
-        dir: ResolveInfo::new(),
-        first: MatchSet::null(),
+    let inner_process =  ProcessChain {
+        processes: vec![ProcessInfo {
+            shape_up: Shape::None,
+            fields_up: Fields::null(),
+            process: Process::Seq(step)
+        }]
     };
 
-    ProcessInfo { fields_up, shape_up, step }
+    ProcessChain {
+        processes: vec![ProcessInfo { fields_up, shape_up,
+            process: Process::Primitive(Box::new(ProgramFlip { inner_process }))
+        }]
+    }
 }
 
 #[derive(Debug)]
 pub struct ProgramFlip {
-    pub step: StepInfo
+    pub inner_process: ProcessChain
 }
 
-impl Process for ProgramFlip {
+impl PrimitiveProcess for ProgramFlip {
     fn run(&self, downwards: &mut Connection, upwards: &mut Connection) -> bool {
-        exec::run(&self.step, upwards, downwards)
+        exec::run(&self.inner_process, upwards, downwards)
     }
 }

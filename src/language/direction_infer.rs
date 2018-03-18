@@ -106,14 +106,21 @@ impl ResolveInfo {
         assert_eq!(up, ri.repeat_up_heuristic);
         ri
     }
-
-
 }
 
 pub fn infer_top_fields(step: &StepInfo, top_fields: &mut Fields) {
     use self::Step::*;
     match step.step {
-        Nop | Token(..) => (),
+        Nop => (),
+
+        Process(ref processes) => {
+            if let Some(ref last) = processes.processes.last() {
+                if last.fields_up.len() > 0 {
+                    unimplemented!();
+                }
+            }
+        }
+
         TokenTop(ref msg, ref body) => {
 
             // Update the upward shape's direction with results of analyzing the usage of
@@ -142,16 +149,6 @@ pub fn infer_top_fields(step: &StepInfo, top_fields: &mut Fields) {
             for &(_, ref body) in arms {
                 infer_top_fields(body, top_fields);
             }
-        }
-
-        Fork(_, _, ref upper) => {
-            // Only the upper process has these top fields. The lower process already had its
-            // direction inferred (they're stored in the middle field of this enum).
-            infer_top_fields(upper, top_fields)
-        }
-
-        Primitive(_) => {
-            // Primitives can only exist in calls, and do not affect the top direction of the containing process
         }
     }
 }

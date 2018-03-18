@@ -1,5 +1,6 @@
 use super::step::{ StepInfo, Message };
-use super::step::Step::*;
+use process::{ProcessInfo, ProcessChain, Process};
+
 use data::{ Type, Value };
 use connection::{ Connection, ConnectionMessage };
 use language::ValueID;
@@ -8,10 +9,10 @@ use super::matchset::MatchSet;
 use std::i64;
 use scoped_pool::Pool;
 
-pub fn run(step: &StepInfo, downwards: &mut Connection, upwards: &mut Connection) -> bool {
+pub fn run(processes: &ProcessChain, downwards: &mut Connection, upwards: &mut Connection) -> bool {
     let pool = Pool::new(4);
     let mut cx = RunCx { downwards, upwards, vars_down: State::new(), vars_up: State::new(), threadpool: &pool };
-    let result = run_inner(step, &mut cx);
+    let result = run_processes(&processes.processes, &mut cx);
     pool.shutdown();
     result
 }
@@ -136,29 +137,85 @@ fn message_match(state: &mut State, msg: &Message, rx: Result<ConnectionMessage,
     }
 }
 
-fn run_inner(step: &StepInfo, cx: &mut RunCx) -> bool {
-    match step.step {
-        Nop => true,
-        Token(ref msg) => {
-            cx.send_lower(msg).ok();
+fn run_processes(processes: &[ProcessInfo], cx: &mut RunCx) -> bool {
+    let (child, chain) = match processes.split_first() {
+        Some(x) => x,
+        None => return true
+    };
 
+    if chain.len() == 0 {
+        run_process(child, cx)
+    } else {
+        let (mut conn_u, mut conn_l) = Connection::new(&child.fields_up);
+        let mut upper_cx = RunCx {
+            downwards: &mut conn_u,
+            upwards: cx.upwards,
+            vars_down: cx.vars_down.clone(),
+            vars_up: State::new(),
+            threadpool: cx.threadpool
+        };
+        let mut lower_cx = RunCx {
+            downwards: cx.downwards,
+            upwards: &mut conn_l,
+            vars_down: cx.vars_down.clone(),
+            vars_up: State::new(),
+            threadpool: cx.threadpool
+        };
+
+        let mut ok1 = false;
+        let mut ok2 = false;
+
+        cx.threadpool.scoped(|scoped| {
+            scoped.execute(|| {
+                ok1 = run_processes(chain, &mut upper_cx);
+                upper_cx.downwards.end();
+                debug!("Fork upper end");
+            });
+            ok2 = run_process(child, &mut lower_cx);
+            lower_cx.upwards.end();
+            debug!("Fork lower end");
+        });
+
+        debug!("fork join");
+
+        cx.vars_up.merge(upper_cx.vars_up);
+        cx.vars_up.merge(lower_cx.vars_up);
+
+        ok1 && ok2
+    }
+}
+
+fn run_process(process: &ProcessInfo, cx: &mut RunCx) -> bool {
+    match process.process {
+        Process::Token(ref msg) => {
+            cx.send_lower(msg).ok();
             let rx = cx.downwards.recv();
             message_match(&mut cx.vars_up, msg, rx)
         }
+        Process::Seq(ref step) => run_step(step, cx),
+        Process::Primitive(ref p) => p.run(cx.downwards, cx.upwards),
+    }
+}
+
+fn run_step(step: &StepInfo, cx: &mut RunCx) -> bool {
+    use super::step::Step::*;
+    match step.step {
+        Nop => true,
+        Process(ref p) => run_processes(&p.processes, cx),
         TokenTop(ref msg, ref inner) => {
             let rx = cx.upwards.recv();
             if !message_match(&mut cx.vars_down, msg, rx) {
                 return false;
             }
 
-            if !run_inner(inner, cx) { return false; }
+            if !run_step(inner, cx) { return false; }
 
             cx.send_upper(msg).ok();
             true
         }
         Seq(ref steps) => {
             for step in steps {
-                if !run_inner(step, cx) { return false; }
+                if !run_step(step, cx) { return false; }
             }
             true
         }
@@ -174,7 +231,7 @@ fn run_inner(step: &StepInfo, cx: &mut RunCx) -> bool {
                 };
 
                 while c < hi && cx.test(&inner.first) {
-                    if !run_inner(inner, cx) { return false; }
+                    if !run_step(inner, cx) { return false; }
                     c += 1;
                 }
 
@@ -188,7 +245,7 @@ fn run_inner(step: &StepInfo, cx: &mut RunCx) -> bool {
                     other => panic!("Count evaluated to non-integer {:?}", other)
                 };
                 for _ in 0..c {
-                    if !run_inner(inner, cx) { return false; }
+                    if !run_step(inner, cx) { return false; }
                 }
                 true
             }
@@ -216,7 +273,7 @@ fn run_inner(step: &StepInfo, cx: &mut RunCx) -> bool {
                     }
                 }
 
-                if !run_inner(inner, cx) { return false; }
+                if !run_step(inner, cx) { return false; }
 
                 for &mut (id, _, ref mut up, _) in &mut lstate {
                     if let Some(u) = up {
@@ -242,7 +299,7 @@ fn run_inner(step: &StepInfo, cx: &mut RunCx) -> bool {
                             r.eval_up(&mut |var, val| cx.vars_up.set(var, val), v);
                         }
 
-                        return run_inner(inner, cx);
+                        return run_step(inner, cx);
                     }
                 }
                 false
@@ -256,54 +313,11 @@ fn run_inner(step: &StepInfo, cx: &mut RunCx) -> bool {
                     });
 
                     if matches {
-                        return run_inner(inner, cx);
+                        return run_step(inner, cx);
                     }
                 }
                 false
             }
-        }
-
-        Fork(ref lower, ref fields, ref upper) => {
-            let (mut conn_u, mut conn_l) = Connection::new(fields);
-            let mut upper_cx = RunCx {
-                downwards: &mut conn_u,
-                upwards: cx.upwards,
-                vars_down: cx.vars_down.clone(),
-                vars_up: State::new(),
-                threadpool: cx.threadpool
-            };
-            let mut lower_cx = RunCx {
-                downwards: cx.downwards,
-                upwards: &mut conn_l,
-                vars_down: cx.vars_down.clone(),
-                vars_up: State::new(),
-                threadpool: cx.threadpool
-            };
-
-            let mut ok1 = false;
-            let mut ok2 = false;
-
-            cx.threadpool.scoped(|scoped| {
-                scoped.execute(|| {
-                    ok1 = run_inner(upper, &mut upper_cx);
-                    upper_cx.downwards.end();
-                    debug!("Fork upper end");
-                });
-                ok2 = run_inner(lower, &mut lower_cx);
-                lower_cx.upwards.end();
-                debug!("Fork lower end");
-            });
-
-            debug!("fork join");
-
-            cx.vars_up.merge(upper_cx.vars_up);
-            cx.vars_up.merge(lower_cx.vars_up);
-
-            ok1 && ok2
-        }
-
-        Primitive(ref p) => {
-            p.run(cx.downwards, cx.upwards)
         }
     }
 }
