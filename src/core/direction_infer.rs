@@ -1,9 +1,5 @@
 use bit_set::BitSet;
-use language::ValueID;
-use super::eval::Expr;
-use super::step::{ Step, StepInfo, Message };
-use protocol::Fields;
-use data::DataMode;
+use core::{ ValueId, Expr, Step, StepInfo, Message, Fields, DataMode };
 
 /// Summary of the usage of values within an block and its children
 #[derive(Clone, Eq, PartialEq, Debug)]
@@ -48,7 +44,7 @@ impl ResolveInfo {
         ri
     }
 
-    pub fn mode_of(&self, id: ValueID) -> DataMode {
+    pub fn mode_of(&self, id: ValueId) -> DataMode {
         DataMode { up: self.vars_up.contains(id), down: self.vars_down.contains(id)}
     }
 
@@ -79,7 +75,7 @@ impl ResolveInfo {
         ri
     }
 
-    pub fn foreach(&self, inner_vars: &Vec<(ValueID, Expr)>) -> ResolveInfo {
+    pub fn foreach(&self, inner_vars: &Vec<(ValueId, Expr)>) -> ResolveInfo {
         let mut ri = self.clone();
         for &(id, ref e) in inner_vars {
             let dir = ri.mode_of(id);

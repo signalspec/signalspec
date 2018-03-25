@@ -1,8 +1,17 @@
-use protocol::{ ProtocolId, Shape, ShapeVariant };
-use super::scope::{Item, Scope};
-use super::ast;
-use super::expr;
-use super::{ Ctxt, PrimitiveDef };
+use syntax::ast;
+use super::{ Item, Scope, Shape, ShapeVariant, Ctxt, PrimitiveDef };
+use super::{ lexpr, rexpr };
+
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
+pub struct ProtocolId(pub usize);
+
+impl From<usize> for ProtocolId {
+    fn from(i: usize) -> ProtocolId { ProtocolId(i) }
+}
+
+impl From<ProtocolId> for usize {
+    fn from(i: ProtocolId) -> usize { i.0 }
+}
 
 /// A pattern to match a protocol. These are used in the predicate of `with` blocks.
 #[derive(Debug, Clone)]
@@ -20,7 +29,7 @@ impl ProtocolMatch {
         match *shape {
             Shape::None => false,
             Shape::Seq { def: r_id, param: ref r_param, ..} => {
-                self.id == r_id && expr::lexpr(ctx, scope, &self.param, r_param.clone()).is_ok()
+                self.id == r_id && lexpr(ctx, scope, &self.param, r_param.clone()).is_ok()
             }
         }
     }
@@ -29,10 +38,10 @@ impl ProtocolMatch {
 pub fn resolve_protocol_invoke(ctx: &Ctxt, scope: &Scope, ast: &ast::ProtocolRef) -> Shape {
     if let Some(Item::Protocol(protocol_id)) = scope.get(&ast.name[..]) {
         let protocol = ctx.protocols.get(protocol_id);
-        let param = expr::rexpr(ctx, scope, &ast.param);
+        let param = rexpr(ctx, scope, &ast.param);
 
         let mut protocol_def_scope = protocol.scope.child();
-        expr::lexpr(ctx, &mut protocol_def_scope, &protocol.ast.param, param.clone())
+        lexpr(ctx, &mut protocol_def_scope, &protocol.ast.param, param.clone())
             .unwrap_or_else(|e| panic!("failed to match parameters for protocol `{}`: {:?}", ast.name, e));
 
         let mut messages = vec![];
@@ -40,7 +49,7 @@ pub fn resolve_protocol_invoke(ctx: &Ctxt, scope: &Scope, ast: &ast::ProtocolRef
         for entry in &protocol.ast.entries {
             match *entry {
                 ast::ProtocolEntry::Message(ref name, ref e) => {
-                    messages.push(ShapeVariant::new(name.clone(), expr::rexpr(ctx, &protocol_def_scope, e)));
+                    messages.push(ShapeVariant::new(name.clone(), rexpr(ctx, &protocol_def_scope, e)));
                 }
             }
         }
@@ -114,7 +123,7 @@ impl ProtocolScope {
                 continue
             }
 
-            if let Err(err) = expr::lexpr(ctx, &mut scope, &entry.param, param.clone()) {
+            if let Err(err) = lexpr(ctx, &mut scope, &entry.param, param.clone()) {
                 debug!("Failed to match argument for `{}`: {:?}", name, err);
                 continue
             }

@@ -1,5 +1,4 @@
-use super::ast;
-use super::eval;
+use super::{ ast, BinOp };
 use std::char;
 use codemap::{ Span, Spanned };
 
@@ -94,18 +93,18 @@ pub valexpr -> ast::SpannedExpr
         = spanned<l:valexpr_product _ op:sum_op _ r:valexpr_sum { ast::Expr::Bin(box l, op, box r) }>
         / valexpr_product
 
-        sum_op -> eval::BinOp
-          = TOKEN<"+"> { eval::BinOp::Add }
-          / TOKEN<"-"> { eval::BinOp::Sub }
+        sum_op -> BinOp
+          = TOKEN<"+"> { BinOp::Add }
+          / TOKEN<"-"> { BinOp::Sub }
 
     #[cache]
     valexpr_product -> ast::SpannedExpr
         = spanned<l:valexpr_choose _ op:product_op _ r:valexpr_product { ast::Expr::Bin(box l, op, box r) }>
         / valexpr_choose
 
-        product_op -> eval::BinOp
-          = TOKEN<"*"> { eval::BinOp::Mul }
-          / TOKEN<"/"> { eval::BinOp::Div }
+        product_op -> BinOp
+          = TOKEN<"*"> { BinOp::Mul }
+          / TOKEN<"/"> { BinOp::Div }
 
     valexpr_choose -> ast::SpannedExpr
         = spanned<e:valexpr_atom _ vs:BRACKETED<COMMASEP<(k:valexpr _ EQUALS _ v:valexpr { (k,v) })>> { ast::Expr::Choose(box e, vs) }>

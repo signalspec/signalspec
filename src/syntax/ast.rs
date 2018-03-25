@@ -1,5 +1,4 @@
-use super::eval::BinOp;
-pub use data::Value;
+pub use super::{ BinOp, Value };
 pub use codemap::Spanned;
 
 pub struct Module {

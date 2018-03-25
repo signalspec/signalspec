@@ -1,56 +1,17 @@
-use std::sync::{Arc, Mutex, MutexGuard};
-use std::fmt::Debug;
-use protocol::{ Shape, Fields };
-use language::{ Ctxt, Item, StepInfo, Message };
-use connection::Connection;
 use std::thread;
+use std::sync::{Arc, Mutex, MutexGuard};
 
-pub trait PrimitiveProcess: Debug + Send + Sync {
-    fn run(&self, downwards: &mut Connection, upwards: &mut Connection) -> bool;
-}
+mod connection;
+mod exec;
+mod test_runner;
+mod primitives;
 
-pub struct FnProcess<T: Fn(&mut Connection, &mut Connection) -> bool>(pub T, pub &'static str);
+pub use self::connection::{ Connection, ConnectionMessage };
+pub use self::test_runner::run as run_tests_in_file;
+pub use self::primitives::{ PrimitiveProcess, add_primitives };
+pub use self::exec::run;
 
-impl<T: Sync + Send + Fn(&mut Connection, &mut Connection) -> bool> PrimitiveProcess for FnProcess<T> {
-    fn run(&self, downwards: &mut Connection, upwards: &mut Connection) -> bool {
-        (self.0)(downwards, upwards)
-    }
-}
-
-impl<T: Sync +Send + Fn(&mut Connection, &mut Connection) -> bool> Debug for FnProcess<T> {
-    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> Result<(), ::std::fmt::Error> {
-        write!(f, "{}", self.1)
-    }
-}
-
-#[derive(Debug)]
-pub enum Process {
-    Token(Message),
-    Seq(StepInfo),
-    Primitive(Box<PrimitiveProcess + 'static>),
-}
-
-#[derive(Debug)]
-pub struct ProcessInfo {
-    pub process: Process,
-    pub shape_up: Shape,
-    pub fields_up: Fields,
-}
-
-#[derive(Debug)]
-pub struct ProcessChain {
-    pub processes: Vec<ProcessInfo>
-}
-
-impl ProcessChain {
-    pub fn fields_up(&self) -> &Fields {
-        &self.processes.last().unwrap().fields_up
-    }
-
-    pub fn shape_up(&self) -> &Shape {
-        &self.processes.last().unwrap().shape_up
-    }
-}
+use core::{ Ctxt, Shape, Fields, Item, ProcessChain };
 
 pub struct Handle<'a> {
     loader: &'a Ctxt,
@@ -95,7 +56,7 @@ impl<'a> Handle<'a> {
 
         let thread = thread::spawn(move || {
             let mut conn = conn.try_lock().expect("already in use");
-            ::language::run(&processes, &mut conn, &mut c1)
+            exec::run(&processes, &mut conn, &mut c1)
         });
 
         Handle::new(self.loader, shape_up, fields_up, c2, Some(thread))

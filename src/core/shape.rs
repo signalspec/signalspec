@@ -1,17 +1,6 @@
-use data::{ Value, Type, DataMode };
-use language::{ Item, Expr };
 use std::f64;
-
-#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
-pub struct ProtocolId(pub usize);
-
-impl From<usize> for ProtocolId {
-    fn from(i: usize) -> ProtocolId { ProtocolId(i) }
-}
-
-impl From<ProtocolId> for usize {
-    fn from(i: ProtocolId) -> usize { i.0 }
-}
+use syntax::Value;
+use super::{ Type, DataMode, Item, Expr, ProtocolId };
 
 fn count_item_fields(i: &Item) -> usize {
     match *i {

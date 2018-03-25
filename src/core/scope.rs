@@ -2,11 +2,8 @@ use std::fmt;
 use std::collections::HashMap;
 use std::default::Default;
 
-use data::{ Value, Type };
-use protocol::ProtocolId;
-use super::{ Ctxt, ValueID };
-use super::eval::{ Expr };
-use super::function::FunctionId;
+use syntax::Value;
+use super::{ Type, ProtocolId, Ctxt, ValueId, Expr, FunctionId };
 
 /// A collection of named Items.
 #[derive(Clone)]
@@ -28,7 +25,7 @@ impl Scope {
     }
 
     /// Create a new runtime variable, bind it to a name in this scope, and return its ID
-    pub fn new_variable(&mut self, ctxt: &Ctxt, name: &str, ty: Type) -> ValueID {
+    pub fn new_variable(&mut self, ctxt: &Ctxt, name: &str, ty: Type) -> ValueId {
         let id = ctxt.make_id();
         debug!("Variable {} {}", id, name);
         self.bind(name, Item::Value(Expr::Variable(id, ty)));

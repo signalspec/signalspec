@@ -1,7 +1,5 @@
-use super::{ Ctxt, Scope };
-use data::DataMode;
-use protocol::{ Fields, Shape };
-use process::PrimitiveProcess;
+use super::{ Ctxt, Scope, DataMode, Fields, Shape };
+use runtime::PrimitiveProcess;
 
 pub enum PrimitiveDefFields {
     Explicit(Fields),

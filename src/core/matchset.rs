@@ -1,4 +1,4 @@
-use super::step::Message;
+use super::Message;
 
 #[derive(Clone, Debug)]
 pub struct MatchSet {

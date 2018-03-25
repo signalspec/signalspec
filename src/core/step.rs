@@ -1,21 +1,15 @@
 use std::io::{Write, Result as IoResult};
 use std::iter::repeat;
 
-use super::ValueID;
-use super::{ ast, expr };
-use super::scope::{ Scope, Item };
-use super::eval::Expr;
-use protocol::{ Shape, Fields };
-use super::protocol::{ ProtocolScope, resolve_protocol_invoke };
-use super::program::resolve_process;
-use super::module_loader::Ctxt;
-use process::{ PrimitiveProcess, Process, ProcessInfo, ProcessChain };
-use connection::{ Connection };
-use super::exec;
-use super::matchset::MatchSet;
-use super::direction_infer::{ ResolveInfo, infer_top_fields };
+use syntax::ast;
+use super::{ Scope, Item, Expr, Shape, Fields, ProtocolScope, ValueId,
+    Ctxt, Process, ProcessInfo, ProcessChain, MatchSet, ResolveInfo, DataMode, Type };
+use super::{ on_expr_message, value, pattern_match, rexpr };
 
-use data::{ DataMode, Type };
+use super::protocol::resolve_protocol_invoke;
+use super::process::resolve_process;
+use super::direction_infer::infer_top_fields;
+use runtime::{PrimitiveProcess, Connection};
 
 pub type Message = Vec<Option<Expr>>;
 
@@ -43,7 +37,7 @@ pub enum Step {
     TokenTop(Message, Box<StepInfo>),
     Seq(Vec<StepInfo>),
     Repeat(Expr, Box<StepInfo>),
-    Foreach(u32, Vec<(ValueID, Expr)>, Box<StepInfo>),
+    Foreach(u32, Vec<(ValueId, Expr)>, Box<StepInfo>),
     Alt(Vec<(Vec<(Expr, Expr)>, StepInfo)>),
 }
 
@@ -197,7 +191,7 @@ impl<'a> StepBuilder<'a> {
         }
     }
 
-    fn foreach(&self, length: u32, vars: Vec<(ValueID, Expr)>, inner: StepInfo) -> StepInfo {
+    fn foreach(&self, length: u32, vars: Vec<(ValueId, Expr)>, inner: StepInfo) -> StepInfo {
         //TODO: check that inner followlast and first are non-overlapping
 
         StepInfo {
@@ -234,7 +228,7 @@ fn resolve_action(sb: StepBuilder, action: &ast::Action) -> StepInfo {
             let mut body_scope = sb.scope.child();
 
             debug!("Upper message, shape: {:?}", sb.shape_up);
-            let msginfo = expr::on_expr_message(sb.ctx, &mut body_scope, sb.shape_up, name, expr);
+            let msginfo = on_expr_message(sb.ctx, &mut body_scope, sb.shape_up, name, expr);
 
             let step = if let &Some(ref body) = body {
                 resolve_seq(sb.with_upper(&body_scope, &Shape::None), body)
@@ -247,7 +241,7 @@ fn resolve_action(sb: StepBuilder, action: &ast::Action) -> StepInfo {
             sb.token_top(msg, step)
         }
         ast::Action::Repeat(ref count_ast, ref block) => {
-            let count = expr::value(sb.ctx, sb.scope, count_ast.as_ref().map_or(&ast::Expr::Ignore, |s| &s.node));
+            let count = value(sb.ctx, sb.scope, count_ast.as_ref().map_or(&ast::Expr::Ignore, |s| &s.node));
             sb.repeat(count, resolve_seq(sb, block))
         }
         ast::Action::For(ref pairs, ref block) => {
@@ -256,7 +250,7 @@ fn resolve_action(sb: StepBuilder, action: &ast::Action) -> StepInfo {
             let mut inner_vars = Vec::with_capacity(pairs.len());
 
             for &(ref name, ref expr) in pairs {
-                let e = expr::value(sb.ctx, sb.scope, expr);
+                let e = value(sb.ctx, sb.scope, expr);
                 let t = e.get_type();
                 if let Type::Vector(c, box ty) = t {
                     match count {
@@ -275,12 +269,12 @@ fn resolve_action(sb: StepBuilder, action: &ast::Action) -> StepInfo {
             sb.foreach(count.unwrap_or(0) as u32, inner_vars, step)
         }
         ast::Action::Alt(ref expr, ref arms) => {
-            let r = expr::rexpr(sb.ctx, sb.scope, expr);
+            let r = rexpr(sb.ctx, sb.scope, expr);
 
             let v = arms.iter().map(|arm| {
                 let mut body_scope = sb.scope.child();
                 let mut checks = Vec::new();
-                expr::pattern_match(sb.ctx, &mut body_scope, &arm.discriminant, &r, &mut checks);
+                pattern_match(sb.ctx, &mut body_scope, &arm.discriminant, &r, &mut checks);
                 let step = resolve_seq(sb.with_scope(&body_scope), &arm.block);
                 (checks, step)
             }).collect();
@@ -306,7 +300,7 @@ fn resolve_seq(sb: StepBuilder, block: &ast::Block) -> StepInfo {
 
 pub fn resolve_letdef(ctx: &Ctxt, scope: &mut Scope, ld: &ast::LetDef) {
     let &ast::LetDef(ref name, ref expr) = ld;
-    let item = expr::rexpr(ctx, scope, expr);
+    let item = rexpr(ctx, scope, expr);
     scope.bind(&name, item);
 }
 
@@ -416,6 +410,6 @@ pub struct ProgramFlip {
 
 impl PrimitiveProcess for ProgramFlip {
     fn run(&self, downwards: &mut Connection, upwards: &mut Connection) -> bool {
-        exec::run(&self.inner_process, upwards, downwards)
+        ::runtime::run(&self.inner_process, upwards, downwards)
     }
 }

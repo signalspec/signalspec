@@ -4,13 +4,11 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::path::PathBuf;
 use std::fs;
 
-use super::{ ast, grammar, Item, PrimitiveDef };
-use super::scope::Scope;
-use super::function::{ FunctionId, FunctionDef, PrimitiveFn };
-use process::{ ProcessChain };
-use language::protocol::ProtocolScope;
-use protocol::{ ProtocolId, Shape, Fields };
 use util::Index;
+use syntax::{ ast, parse_module, parse_process_chain, ParseError};
+use super::{ Item, PrimitiveDef, Scope, FunctionId, FunctionDef, PrimitiveFn, ProcessChain, ProtocolScope, ProtocolId, Shape, Fields };
+use super::{ resolve_process };
+
 
 #[derive(Clone, Default, Debug)]
 pub struct Config {
@@ -76,7 +74,7 @@ impl Ctxt {
 
     pub fn define_primitive(&self, header_src: &str, implementations: Vec<PrimitiveDef>) {
         let file = self.codemap.borrow_mut().add_file("<primitive>".into(), header_src.into());
-        let header = grammar::primitive_header(&file.source(), file.span).expect("failed to parse primitive header");
+        let header = ::syntax::parse_primitive_header(&file.source(), file.span).expect("failed to parse primitive header");
         self.protocol_scope.borrow_mut().add_primitive(self, &*self.prelude.borrow(), header, implementations);
     }
 
@@ -96,14 +94,14 @@ impl Ctxt {
         self.functions.get(id)
     }
 
-    pub fn parse_process(&self, source: &str, shape_below: &Shape, fields_below: &Fields) -> Result<ProcessChain, grammar::ParseError> {
+    pub fn parse_process(&self, source: &str, shape_below: &Shape, fields_below: &Fields) -> Result<ProcessChain, ParseError> {
         let file = self.codemap.borrow_mut().add_file("<process>".into(), source.into());
-        let ast = try!(grammar::process_chain(&file.source(), file.span));
-        Ok(super::program::resolve_process(self, &*self.prelude.borrow(), &*self.protocol_scope.borrow(), shape_below, fields_below, &ast))
+        let ast = try!(parse_process_chain(&file.source(), file.span));
+        Ok(resolve_process(self, &*self.prelude.borrow(), &*self.protocol_scope.borrow(), shape_below, fields_below, &ast))
     }
 
-    pub fn parse_module(&self, file: &File) -> Result<Module, grammar::ParseError> {
-        let ast = grammar::module(&file.source(), file.span)?;
+    pub fn parse_module(&self, file: &File) -> Result<Module, ParseError> {
+        let ast = parse_module(&file.source(), file.span)?;
 
         let mut scope = self.prelude.borrow().child();
         let mut with_blocks = vec![];
@@ -156,14 +154,10 @@ impl Module {
 }
 
 pub struct Test<'m> {
-    scope: &'m Scope,
-    ast: &'m ast::Test,
+    pub scope: &'m Scope,
+    pub ast: &'m ast::Test,
 }
 
 impl<'m> Test<'m> {
-    pub fn run<'s>(&self, ctx: &'s Ctxt) -> super::program::TestResult {
-        super::program::run_test(ctx, &self.scope, &*ctx.protocol_scope.borrow(), &self.ast)
-    }
-
     pub fn should_fail(&self) -> bool { self.ast.should_fail }
 }

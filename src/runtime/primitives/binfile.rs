@@ -1,14 +1,13 @@
 use std::io;
 use std::io::prelude::*;
 
-use data::{ Value, DataMode };
-use protocol::{ Fields };
-use connection::Connection;
-use process::{ FnProcess };
-use language::{ Ctxt, PrimitiveDef, PrimitiveDefFields };
-
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use num_complex::Complex;
+
+use syntax::Value;
+use core::{ DataMode, Fields, Ctxt, PrimitiveDef, PrimitiveDefFields };
+use runtime::Connection;
+use runtime::primitives::FnProcess;
 
 pub fn add_primitives<'a>(loader: &'a Ctxt) {
     loader.define_primitive("with Bytes() def f32le(): Seq(Float32)", vec![

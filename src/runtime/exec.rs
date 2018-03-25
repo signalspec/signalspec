@@ -1,13 +1,12 @@
-use super::step::{ StepInfo, Message };
-use process::{ProcessInfo, ProcessChain, Process};
-
-use data::{ Type, Value };
-use connection::{ Connection, ConnectionMessage };
-use language::ValueID;
-use vec_map::VecMap;
-use super::matchset::MatchSet;
 use std::i64;
 use scoped_pool::Pool;
+use vec_map::VecMap;
+
+use syntax::Value;
+use core::{ Step, StepInfo, Message, ProcessInfo, ProcessChain, Process, Type, ValueId, MatchSet };
+
+use runtime::{ Connection, ConnectionMessage };
+
 
 pub fn run(processes: &ProcessChain, downwards: &mut Connection, upwards: &mut Connection) -> bool {
     let pool = Pool::new(4);
@@ -89,18 +88,18 @@ impl State {
         }
     }
 
-    pub fn get(&self, reg: ValueID) -> &Value {
+    pub fn get(&self, reg: ValueId) -> &Value {
         debug!("get {}: {:?}", reg, self.registers.get(reg));
         &self.registers[reg]
     }
 
-    pub fn set(&mut self, reg: ValueID, v: Value) -> bool {
+    pub fn set(&mut self, reg: ValueId, v: Value) -> bool {
         debug!("set {}: {:?}", reg, v);
         self.registers.insert(reg, v);
         true
     }
 
-    pub fn take(&mut self, reg: ValueID) -> Value {
+    pub fn take(&mut self, reg: ValueId) -> Value {
         self.registers.remove(reg).expect("value not set")
     }
 
@@ -198,7 +197,7 @@ fn run_process(process: &ProcessInfo, cx: &mut RunCx) -> bool {
 }
 
 fn run_step(step: &StepInfo, cx: &mut RunCx) -> bool {
-    use super::step::Step::*;
+    use self::Step::*;
     match step.step {
         Nop => true,
         Process(ref p) => run_processes(&p.processes, cx),

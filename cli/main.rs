@@ -35,7 +35,7 @@ fn main() {
     }
 
     if let Some(path) = test {
-        let success = signalspec::run_test(&*path);
+        let success = signalspec::run_tests_in_file(&*path);
         process::exit( if success { 0 } else { 1 } );
     } else {
         let loader = signalspec::Ctxt::new(signalspec::Config {

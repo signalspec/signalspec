@@ -1,16 +1,6 @@
 use std::collections::HashSet;
 use std::cmp::{min, max};
-use num_complex::Complex;
-use std::fmt;
-
-#[derive(PartialEq, Clone)]
-pub enum Value {
-    Number(f64),
-    Integer(i64),
-    Complex(Complex<f64>),
-    Symbol(String),
-    Vector(Vec<Value>),
-}
+use syntax::Value;
 
 impl Value {
     pub fn get_type(&self) -> Type {
@@ -24,37 +14,6 @@ impl Value {
         }
     }
 }
-
-impl fmt::Display for Value {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
-            Value::Number(n) => write!(f, "{}", n),
-            Value::Complex(c) => write!(f, "{}+{}i", c.re, c.im),
-            Value::Integer(n) => write!(f, "#{}", n),
-            Value::Symbol(ref s) => write!(f, "#{}", *s),
-            Value::Vector(ref n) => write!(f, "{:?}", n),
-        }
-    }
-}
-
-impl fmt::Debug for Value {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        fmt::Display::fmt(self, f)
-    }
-}
-
-impl ::std::hash::Hash for Value {
-    fn hash<H>(&self, state: &mut H) where H: ::std::hash::Hasher {
-        match *self {
-            Value::Number(_) | Value::Complex(_) => (),
-            Value::Integer(n) => n.hash(state),
-            Value::Symbol(ref s) => s.hash(state),
-            Value::Vector(ref n) => n.hash(state),
-        }
-    }
-}
-
-impl ::std::cmp::Eq for Value {}
 
 /// A type represents a set of possible values
 #[derive(Debug, PartialEq, Clone)]

@@ -15,19 +15,10 @@ extern crate scoped_pool;
 extern crate codemap;
 
 mod util;
-mod process;
-mod data;
-mod language;
-mod connection;
-mod test_runner;
-mod protocol;
-mod primitives;
+mod core;
+pub mod syntax;
+mod runtime;
 
-pub use language::{ Config, Ctxt, Module, Test, Item, Scope, PrimitiveDef, PrimitiveDefFields };
-pub use process::{ PrimitiveProcess, Process, Handle };
-pub use connection::Connection;
-pub use data::{ Value, Type, DataMode };
-pub use protocol::{ Shape, ShapeVariant, Fields, Field };
-pub use test_runner::run as run_test;
-
-pub use primitives::add_primitives;
+pub use syntax::Value;
+pub use core::{ Ctxt, Config, Scope, Item, DataMode, Fields, Field, PrimitiveDef, PrimitiveDefFields, Type, Shape, ShapeVariant };
+pub use runtime::{ Handle, Connection, PrimitiveProcess, run_tests_in_file, add_primitives };

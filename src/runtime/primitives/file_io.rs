@@ -2,11 +2,8 @@ use std::io;
 use std::path::PathBuf;
 use std::fs::File;
 
-use data::{ DataMode };
-use protocol::{ Fields };
-use connection::Connection;
-use language::{ Ctxt, PrimitiveDef, PrimitiveDefFields };
-use process::PrimitiveProcess;
+use core::{ DataMode, Fields, Ctxt, PrimitiveDef, PrimitiveDefFields };
+use runtime::{ Connection, PrimitiveProcess };
 
 pub fn add_primitives<'a>(loader: &'a Ctxt) {
     loader.define_primitive("with Base() def file(#r, name): Bytes()", vec![

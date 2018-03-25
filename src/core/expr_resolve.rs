@@ -1,10 +1,5 @@
-use super::ast;
-use super::Ctxt;
-use super::eval::{ Expr, ConcatElem };
-use super::scope::{ Scope, Item };
-use super::function::{FunctionDef, Func};
-use data::Value;
-use protocol::Shape;
+use syntax::{ast, Value};
+use super::{ Ctxt, Expr, ConcatElem, Scope, Item , FunctionDef, Func, Shape };
 
 fn resolve(ctx: &Ctxt, scope: Option<&Scope>, var_handler: &mut FnMut(&str) -> Expr, e: &ast::Expr) -> Expr {
     match *e {
@@ -61,7 +56,7 @@ fn resolve(ctx: &Ctxt, scope: Option<&Scope>, var_handler: &mut FnMut(&str) -> E
         }
 
         ast::Expr::Bin(box ref a, op, box ref b) => {
-            use super::eval::Expr::Const;
+            use self::Expr::Const;
             let lhs = resolve(ctx, scope, var_handler, a);
             let rhs = resolve(ctx, scope, var_handler, b);
             match (lhs, rhs) {

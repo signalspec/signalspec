@@ -2,9 +2,8 @@ use std::sync::mpsc::{Receiver, Sender, channel};
 use std::io;
 use std::io::prelude::*;
 use num_complex::Complex;
-use protocol::Fields;
-
-use data::{ Value };
+use syntax::Value;
+use core::Fields;
 
 pub type ConnectionMessage = Vec<Option<Value>>;
 

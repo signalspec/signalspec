@@ -1,4 +1,5 @@
-use super::{ expr, ast, Item, Scope, Ctxt };
+use syntax::ast;
+use super::{ rexpr, lexpr, Item, Scope, Ctxt };
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
 pub struct FunctionId(pub usize);
@@ -44,7 +45,7 @@ pub struct Func {
 impl Func {
     pub fn apply(&self, ctx: &Ctxt, arg: Item) -> Item {
         let mut scope = self.scope.child();
-        expr::lexpr(ctx, &mut scope, &self.args, arg).expect("failed to match function argument");
-        expr::rexpr(ctx, &scope, &self.body)
+        lexpr(ctx, &mut scope, &self.args, arg).expect("failed to match function argument");
+        rexpr(ctx, &scope, &self.body)
     }
 }

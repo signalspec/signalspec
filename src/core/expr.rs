@@ -1,9 +1,7 @@
-use super::Item;
-use data::{ Value, Type };
-use language::ValueID;
 use std::fmt;
-use std::ops::{Add, Sub, Mul, Div};
 use num_complex::Complex;
+use syntax::{ Value, BinOp };
+use super::{ Item, Type, ValueId };
 
 /// Element of Expr::Concat
 #[derive(PartialEq, Debug, Clone)]
@@ -49,7 +47,7 @@ pub enum SignMode {
 pub enum Expr {
     Ignored,
     Const(Value),
-    Variable(ValueID, Type),
+    Variable(ValueId, Type),
 
     Range(f64, f64),
     RangeInt(i64, i64),
@@ -67,7 +65,7 @@ pub enum Expr {
 
 impl Expr {
     /// Call `f` with the ID of each runtime variable referenced in the expression
-    pub fn each_var(&self, f: &mut FnMut(ValueID)) {
+    pub fn each_var(&self, f: &mut FnMut(ValueId)) {
         use self::Expr::*;
         match *self {
             Variable(id, _) => f(id),
@@ -240,7 +238,7 @@ impl Expr {
     }
 
     /// Down-evaluate the expression with variables from the given value function.
-    pub fn eval_down(&self, state: &Fn(ValueID)->Value) -> Value {
+    pub fn eval_down(&self, state: &Fn(ValueId)->Value) -> Value {
         match *self {
             Expr::Ignored | Expr::Range(..) | Expr::RangeInt(..) | Expr::Union(..) => {
                 panic!("{:?} can't be down-evaluated", self)
@@ -304,7 +302,7 @@ impl Expr {
 
     /// Up-evaluate a value. This accepts a value and may write variables
     /// via the passed function. It returns whether the expression matched the value.
-    pub fn eval_up(&self, state: &mut FnMut(ValueID, Value) -> bool, v: Value) -> bool {
+    pub fn eval_up(&self, state: &mut FnMut(ValueId, Value) -> bool, v: Value) -> bool {
         match *self {
             Expr::Ignored => true,
             Expr::Range(a, b) => match v {
@@ -461,67 +459,6 @@ impl fmt::Display for Expr {
     }
 }
 
-/// Binary numeric operators
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
-pub enum BinOp {
-    /// a + b
-    Add,
-    /// a - b
-    Sub,
-    /// b - a
-    SubSwap,
-    /// a * b
-    Mul,
-    /// a / b
-    Div,
-    /// b / a
-    DivSwap,
-}
-
-impl BinOp {
-    /// a `op` b
-    pub fn eval<A, B, C>(&self, a: A, b: B) -> C where
-        A: Add<B, Output=C>,
-        A: Sub<B, Output=C>,
-        B: Sub<A, Output=C>,
-        A: Mul<B, Output=C>,
-        A: Div<B, Output=C>,
-        B: Div<A, Output=C> {
-        match *self {
-            BinOp::Add     => a + b,
-            BinOp::Sub     => a - b,
-            BinOp::SubSwap => b - a,
-            BinOp::Mul     => a * b,
-            BinOp::Div     => a / b,
-            BinOp::DivSwap => b / a,
-        }
-    }
-
-    /// (a `op` b) == (b `op.swap()` a)
-    pub fn swap(&self) -> BinOp {
-        match *self {
-            BinOp::Add     => BinOp::Add,
-            BinOp::Sub     => BinOp::SubSwap,
-            BinOp::SubSwap => BinOp::Sub,
-            BinOp::Mul     => BinOp::Mul,
-            BinOp::Div     => BinOp::DivSwap,
-            BinOp::DivSwap => BinOp::Div,
-        }
-    }
-
-    /// ((a `op` b) `op.invert()` b) == a
-    pub fn invert(&self) -> BinOp {
-        match *self {
-            BinOp::Add     => BinOp::Sub,
-            BinOp::Sub     => BinOp::Add,
-            BinOp::SubSwap => BinOp::SubSwap,
-            BinOp::Mul     => BinOp::Div,
-            BinOp::Div     => BinOp::Mul,
-            BinOp::DivSwap => BinOp::DivSwap,
-        }
-    }
-}
-
 fn fn_int(arg: Item) -> Result<Item, &'static str> {
     match arg {
         Item::Value(v) => {
@@ -599,8 +536,8 @@ pub fn add_primitive_fns(loader: &super::Ctxt) {
 
 #[test]
 fn exprs() {
-    use super::Ctxt;
-    use super::grammar;
+    use syntax::parse_valexpr;
+    use core::{Ctxt, value};
 
     let ctxt = Ctxt::new(Default::default());
 
@@ -609,8 +546,8 @@ fn exprs() {
 
     let expr = |e: &str| {
         let file = ctxt.codemap.borrow_mut().add_file("<expr>".into(), e.into());
-        let ast = grammar::valexpr(&file.source(), file.span).unwrap();
-        super::expr::value(&ctxt, &scope, &ast)
+        let ast = parse_valexpr(&file.source(), file.span).unwrap();
+        value(&ctxt, &scope, &ast)
     };
 
     let two = expr("2");
