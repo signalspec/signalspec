@@ -550,19 +550,19 @@ fn exprs() {
         value(&ctxt, &scope, &ast)
     };
 
-    let two = expr("2");
+    let two = expr("2.");
     assert_eq!(two.get_type(), Type::Number(2.0, 2.0));
 
-    let four = expr("2 + 2");
+    let four = expr("2. + 2.");
     assert_eq!(four.get_type(), Type::Number(4.0, 4.0));
 
-    let fiveint = expr("#2 + #3");
+    let fiveint = expr("2 + 3");
     assert_eq!(fiveint.get_type(), Type::Integer(5, 5));
 
-    let one_one_i = expr("complex(1, 0) + complex(0, 1)");
+    let one_one_i = expr("complex(1., 0.) + complex(0., 1.)");
     assert_eq!(one_one_i.get_type(), Type::Complex);
 
-    let two_two_i = expr("complex(1, 1) * 2");
+    let two_two_i = expr("complex(1., 1.) * 2.");
     assert_eq!(two_two_i.get_type(), Type::Complex);
 
     let ignore = expr("_");
@@ -571,9 +571,9 @@ fn exprs() {
     let down = expr("<: #h");
     assert_eq!(down.get_type(), Type::Symbol(Some("h".to_string()).into_iter().collect()));
 
-    let range = expr("0..5");
+    let range = expr("0.0..5.0");
     assert_eq!(range.get_type(), Type::Number(0.0, 5.0));
 
-    let fncall = expr("((a) => a+3)(2)");
+    let fncall = expr("((a) => a+3.0)(2.0)");
     assert_eq!(fncall.get_type(), Type::Number(5., 5.));
 }

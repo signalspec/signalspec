@@ -10,7 +10,7 @@ test fail @up(Seq(#x|#y)) { val(#y); val(#x); val(#x); val(#x) } | main2();
 with Seq(#x|#y)
 def main3() = {
     val(#x)
-    repeat #3 { val(#x) }
+    repeat 3 { val(#x) }
     val(#y)
 }
 

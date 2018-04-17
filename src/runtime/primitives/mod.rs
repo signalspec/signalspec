@@ -22,7 +22,7 @@ pub fn add_primitives<'a>(loader: &'a Ctxt) {
     protocol Base() {}
     protocol Seq(T) { val(T) }
 
-    protocol Bytes() { byte(#0..#255) }
+    protocol Bytes() { byte(0..255) }
     let Float32 = -1.0..1.0
     "#);
 

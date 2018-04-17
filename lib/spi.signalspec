@@ -1,4 +1,4 @@
-let bit = #0|#1
+let bit = 0|1
 let byte = [bit, bit, bit, bit, bit, bit, bit, bit]
 
 protocol SPI() {
@@ -9,23 +9,23 @@ protocol SPI() {
 
 with Seq(#l|#h, #l|#h, #l|#h)
 def spi() = SPI() {
-  repeat <: #10 { val(#h, <: #l, <: #l) }
+  repeat <: 10 { val(#h, <: #l, <: #l) }
   repeat {
     on start() {}
-    repeat #1..#100 {
+    repeat 1..100 {
       on data(byte) {
         for bit=byte {
-          let b = bit[#0=#l, #1=#h]
+          let b = bit[0=#l, 1=#h]
           val(#l, #l, <: b)
-          repeat <: #4 { val(#l, #l, <: b) }
+          repeat <: 4 { val(#l, #l, <: b) }
           val(#l, #h, b)
-          repeat <: #4 { val(#l, #h, <: b) }
+          repeat <: 4 { val(#l, #h, <: b) }
         }
       }
     }
     on end() {}
     val(#h, <: #l, <: #l)
-    repeat <: #9 { val(#h, <: #l, <: #l) }
+    repeat <: 9 { val(#h, <: #l, <: #l) }
   }
 }
 
