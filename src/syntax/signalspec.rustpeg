@@ -74,9 +74,9 @@ pub valexpr -> ast::SpannedExpr
 
     valexpr_flip -> ast::SpannedExpr
         = spanned<
-          l:valexpr_union _ TOKEN<"!"> _ r:valexpr_union { ast::Expr::Flip(Some(box l), Some(box r)) }
-          / t:TOKEN<"<:"> _ x:valexpr_union { ast::Expr::Flip(Some(box x), None) }
-          / t:TOKEN<":>"> _ x:valexpr_union { ast::Expr::Flip(None, Some(box x)) }
+          l:valexpr_union _ TOKEN<"!"> _ r:valexpr_union { ast::Expr::Flip(Some(Box::new(l)), Some(Box::new(r))) }
+          / t:TOKEN<"<:"> _ x:valexpr_union { ast::Expr::Flip(Some(Box::new(x)), None) }
+          / t:TOKEN<":>"> _ x:valexpr_union { ast::Expr::Flip(None, Some(Box::new(x))) }
         >
         / valexpr_union
 
@@ -85,12 +85,12 @@ pub valexpr -> ast::SpannedExpr
         / valexpr_range
 
     valexpr_range -> ast::SpannedExpr
-        = spanned<l:valexpr_sum _ TOKEN<".."> _ r:valexpr_sum { ast::Expr::Range(box l, box r) }>
+        = spanned<l:valexpr_sum _ TOKEN<".."> _ r:valexpr_sum { ast::Expr::Range(Box::new(l), Box::new(r)) }>
         / valexpr_sum
 
     #[cache]
     valexpr_sum -> ast::SpannedExpr
-        = spanned<l:valexpr_product _ op:sum_op _ r:valexpr_sum { ast::Expr::Bin(box l, op, box r) }>
+        = spanned<l:valexpr_product _ op:sum_op _ r:valexpr_sum { ast::Expr::Bin(Box::new(l), op, Box::new(r)) }>
         / valexpr_product
 
         sum_op -> BinOp
@@ -99,7 +99,7 @@ pub valexpr -> ast::SpannedExpr
 
     #[cache]
     valexpr_product -> ast::SpannedExpr
-        = spanned<l:valexpr_choose _ op:product_op _ r:valexpr_product { ast::Expr::Bin(box l, op, box r) }>
+        = spanned<l:valexpr_choose _ op:product_op _ r:valexpr_product { ast::Expr::Bin(Box::new(l), op, Box::new(r)) }>
         / valexpr_choose
 
         product_op -> BinOp
@@ -107,7 +107,7 @@ pub valexpr -> ast::SpannedExpr
           / TOKEN<"/"> { BinOp::Div }
 
     valexpr_choose -> ast::SpannedExpr
-        = spanned<e:valexpr_atom _ vs:BRACKETED<COMMASEP<(k:valexpr _ EQUALS _ v:valexpr { (k,v) })>> { ast::Expr::Choose(box e, vs) }>
+        = spanned<e:valexpr_atom _ vs:BRACKETED<COMMASEP<(k:valexpr _ EQUALS _ v:valexpr { (k,v) })>> { ast::Expr::Choose(Box::new(e), vs) }>
         / valexpr_call
 
     valexpr_call -> ast::SpannedExpr

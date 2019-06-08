@@ -18,9 +18,9 @@ impl ConcatElem {
         match *self {
             ConcatElem::Elem(ref v) => v.get_type(),
             ConcatElem::Slice(ref e, count) => {
-                if let Type::Vector(c, box ref t) = e.get_type() {
+                if let Type::Vector(c, t) = e.get_type() {
                     assert!(c == count);
-                    t.clone()
+                    (*t).clone()
                 } else {
                     panic!("Concatenated slice is not a vector")
                 }
@@ -183,7 +183,7 @@ impl Expr {
                 Type::union_iter(choices.iter().map(|&(_, ref r)| r.get_type()))
             },
             Expr::Concat(ref elems) => {
-                let t = box Type::union_iter(elems.iter().map(ConcatElem::elem_type));
+                let t = Box::new(Type::union_iter(elems.iter().map(ConcatElem::elem_type)));
                 let c = elems.iter().map(ConcatElem::elem_count).sum();
                 Type::Vector(c, t)
             },
@@ -410,15 +410,15 @@ fn eval_choose(v: &Value, choices: &[(Value, Value)]) -> Option<Value> {
 
 impl fmt::Display for Expr {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
+        match self {
             Expr::Ignored => write!(f, "_"),
             Expr::Range(a, b) => write!(f, "{}..{}", a, b),
             Expr::RangeInt(a, b) => write!(f, "#{}..#{}", a, b),
             Expr::Variable(id, _) => write!(f, "${}", id),
             Expr::Const(ref p) => write!(f, "{}", p),
-            Expr::Flip(box Expr::Ignored, box ref u) => write!(f, ":> {}", u),
-            Expr::Flip(box ref d, box Expr::Ignored) => write!(f, "<: {}", d),
-            Expr::Flip(box ref d, box ref u) => write!(f, "{}!{}", d, u),
+            Expr::Flip(ref d, ref u) if **d == Expr::Ignored => write!(f, ":> {}", u),
+            Expr::Flip(ref d, ref u) if **u == Expr::Ignored => write!(f, "<: {}", d),
+            Expr::Flip(d, u) => write!(f, "{}!{}", d, u),
             Expr::Union(ref t) => {
                 for (k, i) in t.iter().enumerate() {
                     if k > 0 { try!(write!(f, "|")) }
@@ -426,7 +426,7 @@ impl fmt::Display for Expr {
                 }
                 Ok(())
             }
-            Expr::Choose(box ref e, ref choices) => {
+            Expr::Choose(e, choices) => {
                 try!(write!(f, "{}[", e));
                 for (i, &(ref a, ref b)) in choices.iter().enumerate()  {
                     if i != 0 { try!(write!(f, ", ")); }

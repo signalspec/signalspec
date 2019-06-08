@@ -10,7 +10,7 @@ impl Value {
             Value::Integer(v) => Type::Integer(v, v),
             Value::Symbol(ref v) => Type::Symbol(Some(v.clone()).into_iter().collect()),
             Value::Vector(ref n) => Type::Vector(n.len(),
-                box n.first().map_or(Type::Bottom, Value::get_type)),
+                Box::new(n.first().map_or(Type::Bottom, Value::get_type))),
         }
     }
 }
@@ -33,9 +33,9 @@ impl Type {
         match (t1, t2) {
             (Bottom, x) | (x, Bottom) => x,
             (Symbol(a), Symbol(b)) => Symbol(a.union(&b).cloned().collect()),
-            (Vector(n1, box t1), Vector(n2, box t2)) => {
+            (Vector(n1, t1), Vector(n2, t2)) => {
                 assert_eq!(n1, n2);
-                Vector(n1, box Type::union(t1, t2))
+                Vector(n1, Box::new(Type::union(*t1, *t2)))
             }
             (Integer(l1, h1), Integer(l2, h2)) => Integer(min(l1, l2), max(h1, h2)),
             (Number (l1, h1), Number (l2, h2)) => Number (f64::min(l1, l2), f64::max(h1, h2)),

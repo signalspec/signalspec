@@ -4,7 +4,10 @@ mod value;
 pub use self::binop::BinOp;
 pub use self::value::Value;
 
-peg_file! grammar("signalspec.rustpeg");
+mod grammar {
+    include!(concat!(env!("OUT_DIR"), "/signalspec.rs"));
+}
+
 
 pub use self::grammar::{
     ParseError,

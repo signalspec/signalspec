@@ -8,12 +8,12 @@ fn resolve(ctx: &Ctxt, scope: Option<&Scope>, var_handler: &mut FnMut(&str) -> E
 
         ast::Expr::Flip(ref down, ref up) => {
             Expr::Flip(
-                box resolve(ctx, scope, var_handler, down.as_ref().map_or(&ast::Expr::Ignore, |s| &s.node)),
-                box resolve(ctx, scope, var_handler, up.as_ref().map_or(&ast::Expr::Ignore, |s| &s.node)),
+                Box::new(resolve(ctx, scope, var_handler, down.as_ref().map_or(&ast::Expr::Ignore, |s| &s.node))),
+                Box::new(resolve(ctx, scope, var_handler, up.as_ref().map_or(&ast::Expr::Ignore, |s| &s.node))),
             )
         }
 
-        ast::Expr::Range(box ref min_expr, box ref max_expr) => {
+        ast::Expr::Range(ref min_expr, ref max_expr) => {
             let min = resolve(ctx, scope, var_handler, min_expr);
             let max = resolve(ctx, scope, var_handler, max_expr);
 
@@ -28,7 +28,7 @@ fn resolve(ctx: &Ctxt, scope: Option<&Scope>, var_handler: &mut FnMut(&str) -> E
             Expr::Union(u.iter().map(|i| resolve(ctx, scope, var_handler, i)).collect())
         }
 
-        ast::Expr::Choose(box ref e, ref c) => {
+        ast::Expr::Choose(ref e, ref c) => {
             let pairs: Vec<(Value, Value)> = c.iter().map(|&(ref le, ref re)| {
                 let l = resolve(ctx, scope, var_handler, le);
                 let r = resolve(ctx, scope, var_handler, re);
@@ -40,7 +40,7 @@ fn resolve(ctx: &Ctxt, scope: Option<&Scope>, var_handler: &mut FnMut(&str) -> E
             }).collect();
 
             let head = resolve(ctx, scope, var_handler, e);
-            Expr::Choose(box head, pairs)
+            Expr::Choose(Box::new(head), pairs)
         }
 
         ast::Expr::Concat(ref v) =>  {
@@ -55,7 +55,7 @@ fn resolve(ctx: &Ctxt, scope: Option<&Scope>, var_handler: &mut FnMut(&str) -> E
             Expr::Concat(elems)
         }
 
-        ast::Expr::Bin(box ref a, op, box ref b) => {
+        ast::Expr::Bin(ref a, op, ref b) => {
             use self::Expr::Const;
             let lhs = resolve(ctx, scope, var_handler, a);
             let rhs = resolve(ctx, scope, var_handler, b);
@@ -65,8 +65,8 @@ fn resolve(ctx: &Ctxt, scope: Option<&Scope>, var_handler: &mut FnMut(&str) -> E
                 (Const(Value::Complex(a)), Const(Value::Complex(b))) => Const(Value::Complex(op.eval(a, b))),
                 (Const(Value::Complex(a)), Const(Value::Number(b))) => Const(Value::Complex(op.eval(a, b))),
                 (Const(Value::Number(a)),  Const(Value::Complex(b))) => Const(Value::Complex(op.eval(a, b))),
-                (l, Const(b)) => Expr::BinaryConst(box l, op, b),
-                (Const(a), r) => Expr::BinaryConst(box r, op.swap(), a),
+                (l, Const(b)) => Expr::BinaryConst(Box::new(l), op, b),
+                (Const(a), r) => Expr::BinaryConst(Box::new(r), op.swap(), a),
                 _ => panic!("One side of a binary operation must be constant")
             }
         }

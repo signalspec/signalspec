@@ -49,8 +49,9 @@ pub fn resolve_process(ctx: &Ctxt,
                 let param = rexpr(ctx, scope, param_ast);
 
                 if shape_down.has_variant_named(name) {
+                    let token_proc = resolve_token(shape_down, name, param);
                     processes.push(ProcessInfo {
-                        process: Process::Token(resolve_token(shape_down, name, param)),
+                        process: Process::Token(token_proc),
                         shape_up: Shape::None,
                         fields_up: Fields::null()
                     })
@@ -76,11 +77,13 @@ pub fn resolve_process(ctx: &Ctxt,
 
             ast::Process::Seq(ref top_shape, ref block) => {
                 let top_shape = resolve_protocol_invoke(ctx, &scope, top_shape);
-                processes.push(compile_block(ctx, scope, protocol_scope, shape_down, fields_down, top_shape, block, "anon_block"));
+                let block = compile_block(ctx, scope, protocol_scope, shape_down, fields_down, top_shape, block, "anon_block");
+                processes.push(block);
             }
 
             ast::Process::InferSeq(ref block) => {
-                processes.push(compile_block(ctx, scope, protocol_scope, shape_down, fields_down, Shape::None, block, "anon_block"));
+                let block = compile_block(ctx, scope, protocol_scope, shape_down, fields_down, Shape::None, block, "anon_block");
+                processes.push(block);
             }
 
             ast::Process::Literal(dir, ref shape_up_expr, ref block) => {

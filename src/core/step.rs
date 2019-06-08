@@ -61,7 +61,7 @@ impl StepInfo {
                     }
                 }
             }
-            Step::TokenTop(ref message, box ref body) => {
+            Step::TokenTop(ref message, ref body) => {
                 try!(writeln!(f, "{}Up: {:?}", i, message));
                 try!(body.write_tree(f, indent+1));
             }
@@ -71,11 +71,11 @@ impl StepInfo {
                     try!(c.write_tree(f, indent+1));
                 }
             }
-            Step::Repeat(ref count, box ref inner) => {
+            Step::Repeat(ref count, ref inner) => {
                 try!(writeln!(f, "{}Repeat: {:?}", i, count));
                 try!(inner.write_tree(f, indent + 1));
             }
-            Step::Foreach(width, ref vars, box ref inner) => {
+            Step::Foreach(width, ref vars, ref inner) => {
                 try!(write!(f, "{}For: {} ", i, width));
                 for &(id, ref expr) in vars { try!(write!(f, "{}={:?}, ", id, expr)); }
                 try!(writeln!(f, ""));
@@ -252,12 +252,12 @@ fn resolve_action(sb: StepBuilder, action: &ast::Action) -> StepInfo {
             for &(ref name, ref expr) in pairs {
                 let e = value(sb.ctx, sb.scope, expr);
                 let t = e.get_type();
-                if let Type::Vector(c, box ty) = t {
+                if let Type::Vector(c, ty) = t {
                     match count {
                         Some(count) => assert_eq!(count, c),
                         None => count = Some(c),
                     }
-                    let id = body_scope.new_variable(sb.ctx, name, ty);
+                    let id = body_scope.new_variable(sb.ctx, name, *ty);
                     inner_vars.push((id, e));
                 } else {
                     panic!("Foreach must loop over vector type, not {:?}", t)

@@ -1,10 +1,3 @@
-#![feature(plugin)]
-#![feature(box_syntax)]
-#![feature(box_patterns)]
-#![feature(match_default_bindings)]
-#![feature(nll)]
-#![plugin(peg_syntax_ext)]
-
 extern crate bit_set;
 extern crate ref_slice;
 extern crate num_complex;
