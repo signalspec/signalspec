@@ -64,8 +64,8 @@ impl<'a> Handle<'a> {
 
     pub fn parse_spawn(&mut self, call: &str) -> Result<Handle<'a>, String> {
         info!("parse_spawn `{}` on {:?}", call, self.top_shape());
-        let process = r#try!(self.loader.parse_process(call, self.top_shape(), self.top_fields())
-            .map_err(|e| e.to_string()));
+        let process = self.loader.parse_process(call, self.top_shape(), self.top_fields())
+            .map_err(|e| e.to_string())?;
         info!("parse_spawn starting {:?} {:?}", process.shape_up(), process.fields_up());
         Ok(self.spawn(process))
     }

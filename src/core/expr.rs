@@ -421,16 +421,16 @@ impl fmt::Display for Expr {
             Expr::Flip(d, u) => write!(f, "{}!{}", d, u),
             Expr::Union(ref t) => {
                 for (k, i) in t.iter().enumerate() {
-                    if k > 0 { r#try!(write!(f, "|")) }
-                    r#try!(write!(f, "{}", i));
+                    if k > 0 { write!(f, "|")? }
+                    write!(f, "{}", i)?;
                 }
                 Ok(())
             }
             Expr::Choose(e, choices) => {
-                r#try!(write!(f, "{}[", e));
+                write!(f, "{}[", e)?;
                 for (i, &(ref a, ref b)) in choices.iter().enumerate()  {
-                    if i != 0 { r#try!(write!(f, ", ")); }
-                    r#try!(write!(f, "{}={}", a, b));
+                    if i != 0 { write!(f, ", ")?; }
+                    write!(f, "{}={}", a, b)?;
                 }
                 write!(f, "]")
             },

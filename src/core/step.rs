@@ -62,30 +62,30 @@ impl StepInfo {
                 }
             }
             Step::TokenTop(ref message, ref body) => {
-                r#try!(writeln!(f, "{}Up: {:?}", i, message));
-                r#try!(body.write_tree(f, indent+1));
+                writeln!(f, "{}Up: {:?}", i, message)?;
+                body.write_tree(f, indent+1)?;
             }
             Step::Seq(ref steps) => {
-                r#try!(writeln!(f, "{}Seq", i));
+                writeln!(f, "{}Seq", i)?;
                 for c in steps.iter() {
-                    r#try!(c.write_tree(f, indent+1));
+                    c.write_tree(f, indent+1)?;
                 }
             }
             Step::Repeat(ref count, ref inner) => {
-                r#try!(writeln!(f, "{}Repeat: {:?}", i, count));
-                r#try!(inner.write_tree(f, indent + 1));
+                writeln!(f, "{}Repeat: {:?}", i, count)?;
+                inner.write_tree(f, indent + 1)?;
             }
             Step::Foreach(width, ref vars, ref inner) => {
-                r#try!(write!(f, "{}For: {} ", i, width));
-                for &(id, ref expr) in vars { r#try!(write!(f, "{}={:?}, ", id, expr)); }
-                r#try!(writeln!(f, ""));
-                r#try!(inner.write_tree(f, indent + 1));
+                write!(f, "{}For: {} ", i, width)?;
+                for &(id, ref expr) in vars { write!(f, "{}={:?}, ", id, expr)?; }
+                writeln!(f, "")?;
+                inner.write_tree(f, indent + 1)?;
             }
             Step::Alt(ref arms) => {
-                r#try!(writeln!(f, "{}Alt:", i));
+                writeln!(f, "{}Alt:", i)?;
                 for &(ref cond, ref inner) in arms {
-                    r#try!(writeln!(f, "{} {:?} =>", i, cond));
-                    r#try!(inner.write_tree(f, indent + 2));
+                    writeln!(f, "{} {:?} =>", i, cond)?;
+                    inner.write_tree(f, indent + 2)?;
                 }
             }
         }

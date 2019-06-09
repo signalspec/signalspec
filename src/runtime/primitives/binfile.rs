@@ -77,8 +77,8 @@ fn cf32_le_down(downwards: &mut Connection, upwards: &mut Connection) -> bool {
 fn cf32_le_up(downwards: &mut Connection, upwards: &mut Connection) -> bool {
     let mut down = io::BufReader::new(downwards.read_bytes());
     fn read_complex<R: Read>(r: &mut R) -> io::Result<Complex<f64>> {
-        let re = r#try!(r.read_f32::<LittleEndian>()) as f64;
-        let im = r#try!(r.read_f32::<LittleEndian>()) as f64;
+        let re = r.read_f32::<LittleEndian>()? as f64;
+        let im = r.read_f32::<LittleEndian>()? as f64;
         Ok(Complex::new(re, im))
     }
 

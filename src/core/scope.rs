@@ -107,10 +107,10 @@ impl fmt::Debug for Item {
             Item::Func(id) => write!(f, "<function {}>", id.0),
             Item::Protocol(id) => write!(f, "<protocol {}>", id.0),
             Item::Tuple(ref v) => {
-                r#try!(write!(f, "("));
+                write!(f, "(")?;
                 for i in v.iter() {
-                    r#try!(i.fmt(f));
-                    r#try!(write!(f, ", "));
+                    i.fmt(f)?;
+                    write!(f, ", ")?;
                 }
                 write!(f, ")")
             }

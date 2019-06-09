@@ -96,7 +96,7 @@ impl Ctxt {
 
     pub fn parse_process(&self, source: &str, shape_below: &Shape, fields_below: &Fields) -> Result<ProcessChain, ParseError> {
         let file = self.codemap.borrow_mut().add_file("<process>".into(), source.into());
-        let ast = r#try!(parse_process_chain(&file.source(), file.span));
+        let ast = parse_process_chain(&file.source(), file.span)?;
         Ok(resolve_process(self, &*self.prelude.borrow(), &*self.protocol_scope.borrow(), shape_below, fields_below, &ast))
     }
 
