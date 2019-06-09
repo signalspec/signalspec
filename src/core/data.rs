@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 use std::cmp::{min, max};
-use syntax::Value;
+use crate::syntax::Value;
 
 impl Value {
     pub fn get_type(&self) -> Type {

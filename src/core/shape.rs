@@ -1,5 +1,5 @@
 use std::f64;
-use syntax::Value;
+use crate::syntax::Value;
 use super::{ Type, DataMode, Item, Expr, ProtocolId };
 
 fn count_item_fields(i: &Item) -> usize {
@@ -91,7 +91,7 @@ impl Shape {
         }
     }
 
-    pub fn build_variant_fields<F>(&self, name: &str, with_variant: F) -> Vec<Option<Expr>> where F: FnOnce(&Item, &mut FnMut(Expr)) {
+    pub fn build_variant_fields<F>(&self, name: &str, with_variant: F) -> Vec<Option<Expr>> where F: FnOnce(&Item, &mut dyn FnMut(Expr)) {
         match *self {
             Shape::Seq { ref messages, .. } => {
                 messages.iter().position(|m| m.name == name).map(|variant_idx| {
@@ -163,8 +163,8 @@ impl Fields {
     }
 
     pub fn len(&self) -> usize { self.fields.len() }
-    pub fn iter(&self) -> ::std::slice::Iter<Field> { self.fields.iter() }
-    pub fn iter_mut(&mut self) -> ::std::slice::IterMut<Field> { self.fields.iter_mut() }
+    pub fn iter(&self) -> ::std::slice::Iter<'_, Field> { self.fields.iter() }
+    pub fn iter_mut(&mut self) -> ::std::slice::IterMut<'_, Field> { self.fields.iter_mut() }
     pub fn direction(&self) -> DataMode {
         DataMode {
             up: self.iter().any(|f| f.dir.up && !f.is_tag),

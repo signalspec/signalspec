@@ -2,8 +2,8 @@ use std::io;
 use std::path::PathBuf;
 use std::fs::File;
 
-use core::{ DataMode, Fields, Ctxt, PrimitiveDef, PrimitiveDefFields };
-use runtime::{ Connection, PrimitiveProcess };
+use crate::core::{ DataMode, Fields, Ctxt, PrimitiveDef, PrimitiveDefFields };
+use crate::runtime::{ Connection, PrimitiveProcess };
 
 pub fn add_primitives<'a>(loader: &'a Ctxt) {
     loader.define_primitive("with Base() def file(#r, name): Bytes()", vec![
@@ -42,7 +42,7 @@ impl PrimitiveProcess for ReaderProcess {
 }
 
 impl ::std::fmt::Debug for ReaderProcess {
-    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> Result<(), ::std::fmt::Error> {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> Result<(), ::std::fmt::Error> {
         write!(f, "ReaderProcess({})", self.0.display())
     }
 }
@@ -59,7 +59,7 @@ impl PrimitiveProcess for WriterProcess {
 }
 
 impl ::std::fmt::Debug for WriterProcess {
-    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> Result<(), ::std::fmt::Error> {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> Result<(), ::std::fmt::Error> {
         write!(f, "WriterProcess({})", self.0.display())
     }
 }

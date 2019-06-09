@@ -2,7 +2,7 @@ use std::fmt;
 use std::collections::HashMap;
 use std::default::Default;
 
-use syntax::Value;
+use crate::syntax::Value;
 use super::{ Type, ProtocolId, Ctxt, ValueId, Expr, FunctionId };
 
 /// A collection of named Items.
@@ -72,7 +72,7 @@ pub enum Item {
 }
 
 pub trait FromItem<'a>: Sized { // TODO: use TryFrom once stable
-    fn try_from_item(&'a Item) -> Option<Self>;
+    fn try_from_item(_: &'a Item) -> Option<Self>;
 }
 
 impl<'a> FromItem<'a> for &'a str {
@@ -101,16 +101,16 @@ impl Default for Item {
 }
 
 impl fmt::Debug for Item {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
             Item::Value(ref v) => write!(f, "{:?}", v),
             Item::Func(id) => write!(f, "<function {}>", id.0),
             Item::Protocol(id) => write!(f, "<protocol {}>", id.0),
             Item::Tuple(ref v) => {
-                try!(write!(f, "("));
+                r#try!(write!(f, "("));
                 for i in v.iter() {
-                    try!(i.fmt(f));
-                    try!(write!(f, ", "));
+                    r#try!(i.fmt(f));
+                    r#try!(write!(f, ", "));
                 }
                 write!(f, ")")
             }

@@ -1,5 +1,5 @@
-extern crate signalspec;
-extern crate env_logger;
+use signalspec;
+use env_logger;
 use std::process;
 
 fn main() {

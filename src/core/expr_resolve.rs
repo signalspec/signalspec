@@ -1,7 +1,7 @@
-use syntax::{ast, Value};
+use crate::syntax::{ast, Value};
 use super::{ Ctxt, Expr, ConcatElem, Scope, Item , FunctionDef, Func, Shape };
 
-fn resolve(ctx: &Ctxt, scope: Option<&Scope>, var_handler: &mut FnMut(&str) -> Expr, e: &ast::Expr) -> Expr {
+fn resolve(ctx: &Ctxt, scope: Option<&Scope>, var_handler: &mut dyn FnMut(&str) -> Expr, e: &ast::Expr) -> Expr {
     match *e {
         ast::Expr::Ignore => Expr::Ignored,
         ast::Expr::Value(ref val) => Expr::Const(val.clone()),
@@ -138,7 +138,7 @@ fn resolve_call<'s>(ctxt: &'s Ctxt, scope: &Scope, func: &ast::Expr, arg: &ast::
 
 /// Resolve an expression as used in the argument of an `on` block, defining variables
 pub fn on_expr_message(ctx: &Ctxt, scope: &mut Scope, shape: &Shape, variant: &str, expr: &ast::Expr) -> Vec<Option<Expr>> {
-    fn perform_match(ctx: &Ctxt, scope: &mut Scope, shape: &Item, expr: &ast::Expr, push: &mut FnMut(Expr)) {
+    fn perform_match(ctx: &Ctxt, scope: &mut Scope, shape: &Item, expr: &ast::Expr, push: &mut dyn FnMut(Expr)) {
         match (shape, expr) {
             (&Item::Value(Expr::Const(ref c)), &ast::Expr::Value(ref val)) if c == val => (),
 
@@ -151,7 +151,7 @@ pub fn on_expr_message(ctx: &Ctxt, scope: &mut Scope, shape: &Shape, variant: &s
             (&Item::Tuple(ref ss), &ast::Expr::Var(ref name)) => { // A variable binding for a tuple
                 // Capture a tuple by recursively building a tuple Item containing each of the
                 // captured variables
-                fn build_tuple(ctx: &Ctxt, push: &mut FnMut(Expr), ss: &[Item]) -> Item {
+                fn build_tuple(ctx: &Ctxt, push: &mut dyn FnMut(Expr), ss: &[Item]) -> Item {
                     Item::Tuple(ss.iter().map(|i| {
                         match *i {
                             Item::Value(Expr::Const(ref c)) => Item::Value(Expr::Const(c.clone())),

@@ -2,10 +2,10 @@ use std::i64;
 use scoped_pool::Pool;
 use vec_map::VecMap;
 
-use syntax::Value;
-use core::{ Step, StepInfo, Message, ProcessInfo, ProcessChain, Process, Type, ValueId, MatchSet };
+use crate::syntax::Value;
+use crate::core::{ Step, StepInfo, Message, ProcessInfo, ProcessChain, Process, Type, ValueId, MatchSet };
 
-use runtime::{ Connection, ConnectionMessage };
+use crate::runtime::{ Connection, ConnectionMessage };
 
 
 pub fn run(processes: &ProcessChain, downwards: &mut Connection, upwards: &mut Connection) -> bool {
@@ -136,7 +136,7 @@ fn message_match(state: &mut State, msg: &Message, rx: Result<ConnectionMessage,
     }
 }
 
-fn run_processes(processes: &[ProcessInfo], cx: &mut RunCx) -> bool {
+fn run_processes(processes: &[ProcessInfo], cx: &mut RunCx<'_>) -> bool {
     let (child, chain) = match processes.split_first() {
         Some(x) => x,
         None => return true
@@ -184,7 +184,7 @@ fn run_processes(processes: &[ProcessInfo], cx: &mut RunCx) -> bool {
     }
 }
 
-fn run_process(process: &ProcessInfo, cx: &mut RunCx) -> bool {
+fn run_process(process: &ProcessInfo, cx: &mut RunCx<'_>) -> bool {
     match process.process {
         Process::Token(ref msg) => {
             cx.send_lower(msg).ok();
@@ -196,7 +196,7 @@ fn run_process(process: &ProcessInfo, cx: &mut RunCx) -> bool {
     }
 }
 
-fn run_step(step: &StepInfo, cx: &mut RunCx) -> bool {
+fn run_step(step: &StepInfo, cx: &mut RunCx<'_>) -> bool {
     use self::Step::*;
     match step.step {
         Nop => true,

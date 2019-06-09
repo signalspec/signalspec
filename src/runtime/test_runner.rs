@@ -2,10 +2,10 @@ use std::fs;
 use std::path::Path;
 use std::io::prelude::*;
 
-use syntax::ast;
-use core::{ Ctxt, Config, Scope, DataMode, ProtocolScope };
-use core::{resolve_protocol_invoke, make_literal_process, resolve_process };
-use runtime::{ Handle, Connection };
+use crate::syntax::ast;
+use crate::core::{ Ctxt, Config, Scope, DataMode, ProtocolScope };
+use crate::core::{resolve_protocol_invoke, make_literal_process, resolve_process };
+use crate::runtime::{ Handle, Connection };
 
 
 pub fn run(fname: &str) -> bool {

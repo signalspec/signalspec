@@ -11,7 +11,7 @@ pub use self::test_runner::run as run_tests_in_file;
 pub use self::primitives::{ PrimitiveProcess, add_primitives };
 pub use self::exec::run;
 
-use core::{ Ctxt, Shape, Fields, Item, ProcessChain };
+use crate::core::{ Ctxt, Shape, Fields, Item, ProcessChain };
 
 pub struct Handle<'a> {
     loader: &'a Ctxt,
@@ -64,13 +64,13 @@ impl<'a> Handle<'a> {
 
     pub fn parse_spawn(&mut self, call: &str) -> Result<Handle<'a>, String> {
         info!("parse_spawn `{}` on {:?}", call, self.top_shape());
-        let process = try!(self.loader.parse_process(call, self.top_shape(), self.top_fields())
+        let process = r#try!(self.loader.parse_process(call, self.top_shape(), self.top_fields())
             .map_err(|e| e.to_string()));
         info!("parse_spawn starting {:?} {:?}", process.shape_up(), process.fields_up());
         Ok(self.spawn(process))
     }
 
-    pub fn connection(&self) -> MutexGuard<Connection> {
+    pub fn connection(&self) -> MutexGuard<'_, Connection> {
         self.connection.try_lock().expect("already in use")
     }
 

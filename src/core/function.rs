@@ -1,4 +1,4 @@
-use syntax::ast;
+use crate::syntax::ast;
 use super::{ rexpr, lexpr, Item, Scope, Ctxt };
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]

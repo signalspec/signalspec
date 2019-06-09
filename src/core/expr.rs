@@ -1,6 +1,6 @@
 use std::fmt;
 use num_complex::Complex;
-use syntax::{ Value, BinOp };
+use crate::syntax::{ Value, BinOp };
 use super::{ Item, Type, ValueId };
 
 /// Element of Expr::Concat
@@ -65,7 +65,7 @@ pub enum Expr {
 
 impl Expr {
     /// Call `f` with the ID of each runtime variable referenced in the expression
-    pub fn each_var(&self, f: &mut FnMut(ValueId)) {
+    pub fn each_var(&self, f: &mut dyn FnMut(ValueId)) {
         use self::Expr::*;
         match *self {
             Variable(id, _) => f(id),
@@ -238,7 +238,7 @@ impl Expr {
     }
 
     /// Down-evaluate the expression with variables from the given value function.
-    pub fn eval_down(&self, state: &Fn(ValueId)->Value) -> Value {
+    pub fn eval_down(&self, state: &dyn Fn(ValueId)->Value) -> Value {
         match *self {
             Expr::Ignored | Expr::Range(..) | Expr::RangeInt(..) | Expr::Union(..) => {
                 panic!("{:?} can't be down-evaluated", self)
@@ -302,7 +302,7 @@ impl Expr {
 
     /// Up-evaluate a value. This accepts a value and may write variables
     /// via the passed function. It returns whether the expression matched the value.
-    pub fn eval_up(&self, state: &mut FnMut(ValueId, Value) -> bool, v: Value) -> bool {
+    pub fn eval_up(&self, state: &mut dyn FnMut(ValueId, Value) -> bool, v: Value) -> bool {
         match *self {
             Expr::Ignored => true,
             Expr::Range(a, b) => match v {
@@ -409,7 +409,7 @@ fn eval_choose(v: &Value, choices: &[(Value, Value)]) -> Option<Value> {
 
 
 impl fmt::Display for Expr {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Expr::Ignored => write!(f, "_"),
             Expr::Range(a, b) => write!(f, "{}..{}", a, b),
@@ -421,16 +421,16 @@ impl fmt::Display for Expr {
             Expr::Flip(d, u) => write!(f, "{}!{}", d, u),
             Expr::Union(ref t) => {
                 for (k, i) in t.iter().enumerate() {
-                    if k > 0 { try!(write!(f, "|")) }
-                    try!(write!(f, "{}", i));
+                    if k > 0 { r#try!(write!(f, "|")) }
+                    r#try!(write!(f, "{}", i));
                 }
                 Ok(())
             }
             Expr::Choose(e, choices) => {
-                try!(write!(f, "{}[", e));
+                r#try!(write!(f, "{}[", e));
                 for (i, &(ref a, ref b)) in choices.iter().enumerate()  {
-                    if i != 0 { try!(write!(f, ", ")); }
-                    try!(write!(f, "{}={}", a, b));
+                    if i != 0 { r#try!(write!(f, ", ")); }
+                    r#try!(write!(f, "{}={}", a, b));
                 }
                 write!(f, "]")
             },
@@ -536,8 +536,8 @@ pub fn add_primitive_fns(loader: &super::Ctxt) {
 
 #[test]
 fn exprs() {
-    use syntax::parse_valexpr;
-    use core::{Ctxt, value};
+    use crate::syntax::parse_valexpr;
+    use crate::core::{Ctxt, value};
 
     let ctxt = Ctxt::new(Default::default());
 

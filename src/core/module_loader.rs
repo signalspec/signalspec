@@ -4,8 +4,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::path::PathBuf;
 use std::fs;
 
-use util::Index;
-use syntax::{ ast, parse_module, parse_process_chain, ParseError};
+use crate::util::Index;
+use crate::syntax::{ ast, parse_module, parse_process_chain, ParseError};
 use super::{ Item, PrimitiveDef, Scope, FunctionId, FunctionDef, PrimitiveFn, ProcessChain, ProtocolScope, ProtocolId, Shape, Fields };
 use super::{ resolve_process };
 
@@ -74,7 +74,7 @@ impl Ctxt {
 
     pub fn define_primitive(&self, header_src: &str, implementations: Vec<PrimitiveDef>) {
         let file = self.codemap.borrow_mut().add_file("<primitive>".into(), header_src.into());
-        let header = ::syntax::parse_primitive_header(&file.source(), file.span).expect("failed to parse primitive header");
+        let header = crate::syntax::parse_primitive_header(&file.source(), file.span).expect("failed to parse primitive header");
         self.protocol_scope.borrow_mut().add_primitive(self, &*self.prelude.borrow(), header, implementations);
     }
 
@@ -96,7 +96,7 @@ impl Ctxt {
 
     pub fn parse_process(&self, source: &str, shape_below: &Shape, fields_below: &Fields) -> Result<ProcessChain, ParseError> {
         let file = self.codemap.borrow_mut().add_file("<process>".into(), source.into());
-        let ast = try!(parse_process_chain(&file.source(), file.span));
+        let ast = r#try!(parse_process_chain(&file.source(), file.span));
         Ok(resolve_process(self, &*self.prelude.borrow(), &*self.protocol_scope.borrow(), shape_below, fields_below, &ast))
     }
 

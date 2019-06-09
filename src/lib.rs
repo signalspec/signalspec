@@ -1,17 +1,10 @@
-extern crate bit_set;
-extern crate ref_slice;
-extern crate num_complex;
 #[macro_use] extern crate log;
-extern crate byteorder;
-extern crate vec_map;
-extern crate scoped_pool;
-extern crate codemap;
 
 mod util;
 mod core;
 pub mod syntax;
 mod runtime;
 
-pub use syntax::Value;
-pub use core::{ Ctxt, Config, Scope, Item, DataMode, Fields, Field, PrimitiveDef, PrimitiveDefFields, Type, Shape, ShapeVariant };
-pub use runtime::{ Handle, Connection, PrimitiveProcess, run_tests_in_file, add_primitives };
+pub use crate::syntax::Value;
+pub use crate::core::{ Ctxt, Config, Scope, Item, DataMode, Fields, Field, PrimitiveDef, PrimitiveDefFields, Type, Shape, ShapeVariant };
+pub use crate::runtime::{ Handle, Connection, PrimitiveProcess, run_tests_in_file, add_primitives };

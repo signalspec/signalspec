@@ -14,7 +14,7 @@ macro_rules! primitive_args {
 mod file_io;
 mod binfile;
 
-use core::{ add_primitive_fns, Ctxt };
+use crate::core::{ add_primitive_fns, Ctxt };
 use super::Connection;
 
 pub fn add_primitives<'a>(loader: &'a Ctxt) {
@@ -45,7 +45,7 @@ impl<T: Sync + Send + Fn(&mut Connection, &mut Connection) -> bool> PrimitivePro
 }
 
 impl<T: Sync +Send + Fn(&mut Connection, &mut Connection) -> bool> Debug for FnProcess<T> {
-    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> Result<(), ::std::fmt::Error> {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> Result<(), ::std::fmt::Error> {
         write!(f, "{}", self.1)
     }
 }

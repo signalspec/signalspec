@@ -1,5 +1,5 @@
 use super::{ Ctxt, Scope, DataMode, Fields, Shape };
-use runtime::PrimitiveProcess;
+use crate::runtime::PrimitiveProcess;
 
 pub enum PrimitiveDefFields {
     Explicit(Fields),
@@ -10,7 +10,7 @@ pub struct PrimitiveDef {
     pub id: &'static str,
     pub fields_down: Fields,
     pub fields_up: PrimitiveDefFields,
-    pub instantiate: Box<Fn(&Scope) -> Result<Box<PrimitiveProcess>, ()>>,
+    pub instantiate: Box<dyn Fn(&Scope) -> Result<Box<dyn PrimitiveProcess>, ()>>,
 }
 
 pub fn call_primitive(_ctx: &Ctxt,
@@ -18,7 +18,7 @@ pub fn call_primitive(_ctx: &Ctxt,
                   fields_down: &Fields,
                   shape_up: &Shape,
                   primitive_impls: &[PrimitiveDef],
-                  name: &str) -> (Box<PrimitiveProcess>, Fields) {
+                  name: &str) -> (Box<dyn PrimitiveProcess>, Fields) {
     for def in primitive_impls {
         if fields_down == &def.fields_down {
             info!("Using {} for primitive at {}", def.id, name);

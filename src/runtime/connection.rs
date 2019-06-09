@@ -2,8 +2,8 @@ use std::sync::mpsc::{Receiver, Sender, channel};
 use std::io;
 use std::io::prelude::*;
 use num_complex::Complex;
-use syntax::Value;
-use core::Fields;
+use crate::syntax::Value;
+use crate::core::Fields;
 
 pub type ConnectionMessage = Vec<Option<Value>>;
 
@@ -91,19 +91,19 @@ impl Connection {
     pub fn can_tx(&self) -> bool { self.tx.is_some() }
     pub fn can_rx(&self) -> bool { self.rx.is_some() }
 
-    pub fn read_bytes(&mut self) -> ConnectionRead {
+    pub fn read_bytes(&mut self) -> ConnectionRead<'_> {
         ConnectionRead(self)
     }
 
-    pub fn write_bytes(&mut self) -> ConnectionWrite {
+    pub fn write_bytes(&mut self) -> ConnectionWrite<'_> {
         ConnectionWrite(self)
     }
 
-    pub fn iter_number(&mut self) -> ConnectionIterNumber {
+    pub fn iter_number(&mut self) -> ConnectionIterNumber<'_> {
         ConnectionIterNumber(self)
     }
 
-    pub fn iter_complex(&mut self) -> ConnectionIterComplex {
+    pub fn iter_complex(&mut self) -> ConnectionIterComplex<'_> {
         ConnectionIterComplex(self)
     }
 

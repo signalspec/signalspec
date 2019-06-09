@@ -3,6 +3,7 @@ name = "signalspec"
 version = "0.1.0"
 authors = [ "km@kevinmehall.net" ]
 build = "build.rs"
+edition = "2018"
 
 [workspace]
 members = ["cli", "plugins/starfish", "plugins/vcd"]

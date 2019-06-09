@@ -4,10 +4,10 @@ use std::io::prelude::*;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use num_complex::Complex;
 
-use syntax::Value;
-use core::{ DataMode, Fields, Ctxt, PrimitiveDef, PrimitiveDefFields };
-use runtime::Connection;
-use runtime::primitives::FnProcess;
+use crate::syntax::Value;
+use crate::core::{ DataMode, Fields, Ctxt, PrimitiveDef, PrimitiveDefFields };
+use crate::runtime::Connection;
+use crate::runtime::primitives::FnProcess;
 
 pub fn add_primitives<'a>(loader: &'a Ctxt) {
     loader.define_primitive("with Bytes() def f32le(): Seq(Float32)", vec![
@@ -77,8 +77,8 @@ fn cf32_le_down(downwards: &mut Connection, upwards: &mut Connection) -> bool {
 fn cf32_le_up(downwards: &mut Connection, upwards: &mut Connection) -> bool {
     let mut down = io::BufReader::new(downwards.read_bytes());
     fn read_complex<R: Read>(r: &mut R) -> io::Result<Complex<f64>> {
-        let re = try!(r.read_f32::<LittleEndian>()) as f64;
-        let im = try!(r.read_f32::<LittleEndian>()) as f64;
+        let re = r#try!(r.read_f32::<LittleEndian>()) as f64;
+        let im = r#try!(r.read_f32::<LittleEndian>()) as f64;
         Ok(Complex::new(re, im))
     }
 

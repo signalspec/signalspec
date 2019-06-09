@@ -1,4 +1,4 @@
-use syntax::ast;
+use crate::syntax::ast;
 use super::{ Item, Scope, Shape, ShapeVariant, Ctxt, PrimitiveDef };
 use super::{ lexpr, rexpr };
 

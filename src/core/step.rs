@@ -1,7 +1,7 @@
 use std::io::{Write, Result as IoResult};
 use std::iter::repeat;
 
-use syntax::ast;
+use crate::syntax::ast;
 use super::{ Scope, Item, Expr, Shape, Fields, ProtocolScope, ValueId,
     Ctxt, Process, ProcessInfo, ProcessChain, MatchSet, ResolveInfo, DataMode, Type };
 use super::{ on_expr_message, value, pattern_match, rexpr };
@@ -9,7 +9,7 @@ use super::{ on_expr_message, value, pattern_match, rexpr };
 use super::protocol::resolve_protocol_invoke;
 use super::process::resolve_process;
 use super::direction_infer::infer_top_fields;
-use runtime::{PrimitiveProcess, Connection};
+use crate::runtime::{PrimitiveProcess, Connection};
 
 pub type Message = Vec<Option<Expr>>;
 
@@ -44,7 +44,7 @@ pub enum Step {
 
 
 impl StepInfo {
-    pub fn write_tree(&self, f: &mut Write, indent: u32) -> IoResult<()> {
+    pub fn write_tree(&self, f: &mut dyn Write, indent: u32) -> IoResult<()> {
         let i: String = repeat(" ").take(indent as usize).collect();
         match self.step {
             Step::Nop => {},
@@ -62,30 +62,30 @@ impl StepInfo {
                 }
             }
             Step::TokenTop(ref message, ref body) => {
-                try!(writeln!(f, "{}Up: {:?}", i, message));
-                try!(body.write_tree(f, indent+1));
+                r#try!(writeln!(f, "{}Up: {:?}", i, message));
+                r#try!(body.write_tree(f, indent+1));
             }
             Step::Seq(ref steps) => {
-                try!(writeln!(f, "{}Seq", i));
+                r#try!(writeln!(f, "{}Seq", i));
                 for c in steps.iter() {
-                    try!(c.write_tree(f, indent+1));
+                    r#try!(c.write_tree(f, indent+1));
                 }
             }
             Step::Repeat(ref count, ref inner) => {
-                try!(writeln!(f, "{}Repeat: {:?}", i, count));
-                try!(inner.write_tree(f, indent + 1));
+                r#try!(writeln!(f, "{}Repeat: {:?}", i, count));
+                r#try!(inner.write_tree(f, indent + 1));
             }
             Step::Foreach(width, ref vars, ref inner) => {
-                try!(write!(f, "{}For: {} ", i, width));
-                for &(id, ref expr) in vars { try!(write!(f, "{}={:?}, ", id, expr)); }
-                try!(writeln!(f, ""));
-                try!(inner.write_tree(f, indent + 1));
+                r#try!(write!(f, "{}For: {} ", i, width));
+                for &(id, ref expr) in vars { r#try!(write!(f, "{}={:?}, ", id, expr)); }
+                r#try!(writeln!(f, ""));
+                r#try!(inner.write_tree(f, indent + 1));
             }
             Step::Alt(ref arms) => {
-                try!(writeln!(f, "{}Alt:", i));
+                r#try!(writeln!(f, "{}Alt:", i));
                 for &(ref cond, ref inner) in arms {
-                    try!(writeln!(f, "{} {:?} =>", i, cond));
-                    try!(inner.write_tree(f, indent + 2));
+                    r#try!(writeln!(f, "{} {:?} =>", i, cond));
+                    r#try!(inner.write_tree(f, indent + 2));
                 }
             }
         }
@@ -219,7 +219,7 @@ impl<'a> StepBuilder<'a> {
     }
 }
 
-fn resolve_action(sb: StepBuilder, action: &ast::Action) -> StepInfo {
+fn resolve_action(sb: StepBuilder<'_>, action: &ast::Action) -> StepInfo {
     match *action {
         ast::Action::Process(ref processes) => {
             sb.process(resolve_process(sb.ctx, sb.scope, sb.protocol_scope, sb.shape_down, sb.fields_down, &processes[..]))
@@ -284,7 +284,7 @@ fn resolve_action(sb: StepBuilder, action: &ast::Action) -> StepInfo {
     }
 }
 
-fn resolve_seq(sb: StepBuilder, block: &ast::Block) -> StepInfo {
+fn resolve_seq(sb: StepBuilder<'_>, block: &ast::Block) -> StepInfo {
     let mut scope = sb.scope.child();
 
     for ld in &block.lets {
@@ -305,7 +305,7 @@ pub fn resolve_letdef(ctx: &Ctxt, scope: &mut Scope, ld: &ast::LetDef) {
 }
 
 pub fn resolve_token(shape: &Shape, variant_name: &str, item: Item) -> Message {
-    fn inner(i: Item, shape: &Item, push: &mut FnMut(Expr)) {
+    fn inner(i: Item, shape: &Item, push: &mut dyn FnMut(Expr)) {
         match shape {
             &Item::Value(Expr::Const(_)) => (),
             &Item::Value(_) => {
@@ -410,6 +410,6 @@ pub struct ProgramFlip {
 
 impl PrimitiveProcess for ProgramFlip {
     fn run(&self, downwards: &mut Connection, upwards: &mut Connection) -> bool {
-        ::runtime::run(&self.inner_process, upwards, downwards)
+        crate::runtime::run(&self.inner_process, upwards, downwards)
     }
 }

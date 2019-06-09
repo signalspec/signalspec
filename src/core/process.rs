@@ -1,13 +1,13 @@
-use syntax::ast;
+use crate::syntax::ast;
 use super::{ Shape, Fields, Ctxt, Scope, ProtocolScope, StepInfo, Message, DefImpl };
 use super::{rexpr, resolve_token, resolve_protocol_invoke, call_primitive, compile_block, make_literal_process};
-use runtime::PrimitiveProcess;
+use crate::runtime::PrimitiveProcess;
 
 #[derive(Debug)]
 pub enum Process {
     Token(Message),
     Seq(StepInfo),
-    Primitive(Box<PrimitiveProcess + 'static>),
+    Primitive(Box<dyn PrimitiveProcess + 'static>),
 }
 
 #[derive(Debug)]

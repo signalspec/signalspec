@@ -1,5 +1,5 @@
 use bit_set::BitSet;
-use core::{ ValueId, Expr, Step, StepInfo, Message, Fields, DataMode };
+use crate::core::{ ValueId, Expr, Step, StepInfo, Message, Fields, DataMode };
 
 /// Summary of the usage of values within an block and its children
 #[derive(Clone, Eq, PartialEq, Debug)]
