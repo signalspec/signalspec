@@ -5,10 +5,10 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::path::PathBuf;
 use std::fs;
+use std::fmt::Debug;
 
-use crate::util::Index;
 use crate::syntax::{ ast, parse_module, parse_process_chain, ParseError};
-use super::{ Item, PrimitiveDef, Scope, FunctionDef, PrimitiveFn, ProcessChain, ProtocolScope, ProtocolId, Shape, Fields };
+use super::{ Item, PrimitiveDef, Scope, FunctionDef, PrimitiveFn, ProcessChain, ProtocolScope, Shape, Fields };
 use super::{ resolve_process };
 
 
@@ -17,24 +17,47 @@ pub struct Config {
     pub debug_dir: Option<PathBuf>
 }
 
+pub struct FileScope {
+    scope: Scope,
+    protocols: Vec<ast::Protocol>,
+    tests: Vec<ast::Test>,
+}
+
+#[derive(Clone)]
+pub struct ProtocolRef {
+    file: Arc<FileScope>,
+    index: usize,
+}
+
+impl ProtocolRef {
+    pub fn ast(&self) -> &ast::Protocol {
+        &self.file.protocols[self.index]
+    }
+
+    pub fn scope(&self) -> &Scope {
+        &self.file.scope
+    }
+}
+
+impl PartialEq<ProtocolRef> for ProtocolRef {
+    fn eq(&self, other: &ProtocolRef) -> bool {
+        Arc::ptr_eq(&self.file, &other.file) && self.index == other.index
+    }
+}
+
+impl Debug for ProtocolRef {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter) -> Result<(), std::fmt::Error> {
+        write!(fmt, "<protocol {}>", self.ast().name)
+    }
+}
+
 pub struct Ctxt {
     pub id_counter: AtomicUsize,
     pub debug_dir: Option<PathBuf>,
     pub prelude: RefCell<Scope>,
     pub protocol_scope: RefCell<ProtocolScope>, // TODO: should be scoped
-    pub protocols: Index<ProtocolDef, ProtocolId>,
-    pub protocols_by_name: RefCell<BTreeMap<String, ProtocolId>>,
+    pub protocols_by_name: RefCell<BTreeMap<String, ProtocolRef>>,
     pub codemap: RefCell<CodeMap>,
-}
-
-pub struct Module {
-    scope: Scope,
-    tests: Vec<ast::Test>,
-}
-
-pub struct ProtocolDef {
-    pub ast: ast::Protocol,
-    pub scope: Scope,
 }
 
 impl Ctxt {
@@ -49,7 +72,6 @@ impl Ctxt {
             debug_dir: config.debug_dir,
             prelude: RefCell::new(Scope::new()),
             protocol_scope: RefCell::new(ProtocolScope::new()),
-            protocols: Index::new(),
             protocols_by_name: RefCell::new(BTreeMap::new()),
             codemap: RefCell::new(CodeMap::new()),
         }
@@ -82,7 +104,7 @@ impl Ctxt {
     pub fn define_prelude(&self, source: &str) {
         let file = self.codemap.borrow_mut().add_file("<prelude>".into(), source.into());
         let module = self.parse_module(&file).expect("failed to parse prelude module");
-        *self.prelude.borrow_mut() = module.scope;
+        *self.prelude.borrow_mut() = module.scope.clone();
     }
 
     pub fn parse_process(&self, source: &str, shape_below: &Shape, fields_below: &Fields) -> Result<ProcessChain, ParseError> {
@@ -91,7 +113,7 @@ impl Ctxt {
         Ok(resolve_process(self, &*self.prelude.borrow(), &*self.protocol_scope.borrow(), shape_below, fields_below, &ast))
     }
 
-    pub fn parse_module(&self, file: &File) -> Result<Module, ParseError> {
+    pub fn parse_module(&self, file: &File) -> Result<Arc<FileScope>, ParseError> {
         let ast = parse_module(&file.source(), file.span)?;
 
         let mut scope = self.prelude.borrow().child();
@@ -111,9 +133,7 @@ impl Ctxt {
                     with_blocks.push(def);
                 }
                 ast::ModuleEntry::Protocol(d) => {
-                    let protocol_id = self.protocols.create();
-                    self.protocols_by_name.borrow_mut().insert(d.name.clone(), protocol_id);
-                    protocols.push((protocol_id, d));
+                    protocols.push(d);
                 }
                 ast::ModuleEntry::Test(t) => {
                     tests.push(t)
@@ -121,22 +141,22 @@ impl Ctxt {
             }
         }
 
-        let scope = scope; // No longer mutable
+        let file = Arc::new(FileScope { scope, protocols, tests });
 
-        for (id, protocol_ast) in protocols {
-            self.protocols.define(id, ProtocolDef{ ast: protocol_ast, scope: scope.clone() });
+        for (index, protocol_ast) in file.protocols.iter().enumerate() {
+            self.protocols_by_name.borrow_mut().insert(protocol_ast.name.clone(), ProtocolRef { file: file.clone(), index });
         }
 
         let mut protocol_scope = self.protocol_scope.borrow_mut();
         for def in with_blocks {
-            protocol_scope.add_def(scope.clone(), def);
+            protocol_scope.add_def(file.scope.clone(), def);
         }
 
-        Ok(Module { scope: scope, tests: tests  })
+        Ok(file)
     }
 }
 
-impl Module {
+impl FileScope {
     pub fn tests<'m>(&'m self) -> Vec<Test<'m>> {
         self.tests.iter().map(|test| {
             Test { ast: test, scope: &self.scope }

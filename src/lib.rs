@@ -1,6 +1,5 @@
 #[macro_use] extern crate log;
 
-mod util;
 mod core;
 pub mod syntax;
 mod runtime;

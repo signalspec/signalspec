@@ -2,29 +2,17 @@ use crate::syntax::ast;
 use super::{ Item, Scope, Shape, ShapeVariant, Ctxt, PrimitiveDef };
 use super::{ lexpr, rexpr };
 
-#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
-pub struct ProtocolId(pub usize);
-
-impl From<usize> for ProtocolId {
-    fn from(i: usize) -> ProtocolId { ProtocolId(i) }
-}
-
-impl From<ProtocolId> for usize {
-    fn from(i: ProtocolId) -> usize { i.0 }
-}
-
 pub fn resolve_protocol_invoke(ctx: &Ctxt, scope: &Scope, ast: &ast::ProtocolRef) -> Shape {
-    if let Some(protocol_id) = ctx.protocols_by_name.borrow_mut().get(&ast.name[..]).copied() {
-        let protocol = ctx.protocols.get(protocol_id);
+    if let Some(protocol) = ctx.protocols_by_name.borrow_mut().get(&ast.name[..]) {
         let param = rexpr(ctx, scope, &ast.param);
 
-        let mut protocol_def_scope = protocol.scope.child();
-        lexpr(ctx, &mut protocol_def_scope, &protocol.ast.param, param.clone())
+        let mut protocol_def_scope = protocol.scope().child();
+        lexpr(ctx, &mut protocol_def_scope, &protocol.ast().param, param.clone())
             .unwrap_or_else(|e| panic!("failed to match parameters for protocol `{}`: {:?}", ast.name, e));
 
         let mut messages = vec![];
 
-        for entry in &protocol.ast.entries {
+        for entry in &protocol.ast().entries {
             match *entry {
                 ast::ProtocolEntry::Message(ref name, ref e) => {
                     messages.push(ShapeVariant::new(name.clone(), rexpr(ctx, &protocol_def_scope, e)));
@@ -32,7 +20,7 @@ pub fn resolve_protocol_invoke(ctx: &Ctxt, scope: &Scope, ast: &ast::ProtocolRef
             }
         }
 
-        Shape::Seq { def: protocol_id, messages: messages, param }
+        Shape::Seq { def: protocol.clone(), messages: messages, param }
     } else {
         panic!("Protocol `{}` not found", ast.name);
     }
@@ -88,15 +76,15 @@ impl ProtocolScope {
 
             let mut scope = entry.scope.child();
 
-            let protocol = *ctx.protocols_by_name.borrow_mut().get(&entry.protocol.name[..]).unwrap_or_else(|| {
+            let protocol = ctx.protocols_by_name.borrow_mut().get(&entry.protocol.name[..]).cloned().unwrap_or_else(|| {
                 panic!("Failed to find protocol {:?}", entry.protocol.name);
             });
             
             debug!("Trying to match {:?} against {:?}", entry.protocol, shape);
-            match *shape {
+            match shape {
                 Shape::None => panic!("looking for methods of Shape::None"),
-                Shape::Seq { def: r_id, param: ref r_param, ..} => {
-                    if !(protocol == r_id && lexpr(ctx, &mut scope, &entry.protocol.param, r_param.clone()).is_ok()) {
+                Shape::Seq { def: r_proto, param: ref r_param, ..} => {
+                    if !(&protocol == r_proto && lexpr(ctx, &mut scope, &entry.protocol.param, r_param.clone()).is_ok()) {
                         debug!("Failed to match protocol for `{}`", name);
                         continue;
                     }

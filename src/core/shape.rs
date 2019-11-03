@@ -1,6 +1,6 @@
 use std::f64;
 use crate::syntax::Value;
-use super::{ Type, DataMode, Item, Expr, ProtocolId };
+use super::{ Type, DataMode, Item, Expr, ProtocolRef };
 
 fn count_item_fields(i: &Item) -> usize {
     match *i {
@@ -30,7 +30,7 @@ impl ShapeVariant {
 pub enum Shape {
     None,
     Seq {
-        def: ProtocolId,
+        def: ProtocolRef,
         param: Item,
         messages: Vec<ShapeVariant>,
     },

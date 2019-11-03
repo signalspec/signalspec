@@ -33,9 +33,9 @@ impl<'a> Handle<'a> {
     }
 
     pub fn base(loader: &'a Ctxt) -> Handle<'a> {
-        let base_id = loader.protocols_by_name.borrow_mut().get("Base").copied().expect("No `Base` protocol found in prelude");
+        let base = loader.protocols_by_name.borrow_mut().get("Base").cloned().expect("No `Base` protocol found in prelude");
         let base_shape = Shape::Seq {
-            def: base_id,
+            def: base,
             param: Item::Tuple(vec![]),
             messages: vec![],
         };
