@@ -38,22 +38,24 @@ fn main() {
         let success = signalspec::run_tests_in_file(&*path);
         process::exit( if success { 0 } else { 1 } );
     } else {
-        let loader = signalspec::Ctxt::new(signalspec::Config {
-            debug_dir: debug.map(PathBuf::from)
-        });
+        let mut index = signalspec::Index::new();
 
-        signalspec::add_primitives(&loader);
-        signalspec_vcd::add_primitives(&loader);
-        signalspec_starfish::add_primitives(&loader);
+        signalspec::add_primitives(&mut index);
+        signalspec_vcd::add_primitives(&mut index);
+        signalspec_starfish::add_primitives(&mut index);
 
         for source_fname in imports {
             let mut source = String::new();
             fs::File::open(&source_fname).unwrap().read_to_string(&mut source).unwrap();
             let file = signalspec::SourceFile::new(source_fname, source);
-            loader.parse_module(file).unwrap();
+            index.parse_module(file).unwrap();
         }
 
-        let mut stack = signalspec::Handle::base(&loader);
+        let ctx = signalspec::Ctxt::new(signalspec::Config {
+            debug_dir: debug.map(PathBuf::from)
+        }, &index);
+
+        let mut stack = signalspec::Handle::base(&ctx);
         for arg in cmds {
             stack = stack.parse_spawn(&arg).unwrap_or_else(|e| panic!("Error parsing argument: {}", e));
         }

@@ -3,7 +3,7 @@ use super::{ Item, Scope, Shape, ShapeVariant, Ctxt, PrimitiveDef };
 use super::{ lexpr, rexpr };
 
 pub fn resolve_protocol_invoke(ctx: &Ctxt, scope: &Scope, ast: &ast::ProtocolRef) -> Shape {
-    if let Some(protocol) = ctx.protocols_by_name.borrow_mut().get(&ast.name[..]) {
+    if let Some(protocol) = ctx.index.protocols_by_name.get(&ast.name[..]) {
         let param = rexpr(ctx, scope, &ast.param);
 
         let mut protocol_def_scope = protocol.scope().child();
@@ -76,7 +76,7 @@ impl ProtocolScope {
 
             let mut scope = entry.scope.child();
 
-            let protocol = ctx.protocols_by_name.borrow_mut().get(&entry.protocol.name[..]).cloned().unwrap_or_else(|| {
+            let protocol = ctx.index.protocols_by_name.get(&entry.protocol.name[..]).cloned().unwrap_or_else(|| {
                 panic!("Failed to find protocol {:?}", entry.protocol.name);
             });
             

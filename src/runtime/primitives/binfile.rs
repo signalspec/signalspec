@@ -5,12 +5,12 @@ use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use num_complex::Complex;
 
 use crate::syntax::Value;
-use crate::core::{ DataMode, Fields, Ctxt, PrimitiveDef, PrimitiveDefFields };
+use crate::core::{ DataMode, Fields, Index, PrimitiveDef, PrimitiveDefFields };
 use crate::runtime::Connection;
 use crate::runtime::primitives::FnProcess;
 
-pub fn add_primitives<'a>(loader: &'a Ctxt) {
-    loader.define_primitive("with Bytes() def f32le(): Seq(Float32)", vec![
+pub fn add_primitives(index: &mut Index) {
+    index.define_primitive("with Bytes() def f32le(): Seq(Float32)", vec![
         PrimitiveDef {
             id: "f32_le_up",
             fields_down: Fields::bytes(DataMode { up: true, down: false, }),
@@ -25,7 +25,7 @@ pub fn add_primitives<'a>(loader: &'a Ctxt) {
         }
     ]);
 
-    loader.define_primitive("with Bytes() def cf32le(): Seq(Float32)", vec![
+    index.define_primitive("with Bytes() def cf32le(): Seq(Float32)", vec![
         PrimitiveDef {
             id: "cf32_le_up",
             fields_down: Fields::bytes(DataMode { up: true, down: false, }),

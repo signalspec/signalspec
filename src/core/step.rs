@@ -95,7 +95,7 @@ impl StepInfo {
 
 #[derive(Clone, Copy)]
 struct StepBuilder<'a> {
-    ctx: &'a Ctxt,
+    ctx: &'a Ctxt<'a>,
     scope: &'a Scope,
     protocol_scope: &'a ProtocolScope,
     shape_down: &'a Shape,

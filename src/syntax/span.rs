@@ -6,6 +6,10 @@ pub struct SourceFile {
 }
 
 impl SourceFile {
+    pub fn new(name: String, source: String) -> SourceFile {
+        SourceFile { name, source }
+    }
+    
     pub fn span(&self) -> FileSpan {
         FileSpan::new(0, self.source.len())
     }

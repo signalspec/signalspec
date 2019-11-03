@@ -526,7 +526,7 @@ fn fn_complex(arg: Item) -> Result<Item, &'static str> {
     }
 }
 
-pub fn add_primitive_fns(loader: &super::Ctxt) {
+pub fn add_primitive_fns(loader: &mut super::Index) {
     loader.add_primitive_fn("int", fn_int);
     loader.add_primitive_fn("signed", fn_signed);
     loader.add_primitive_fn("unsigned", fn_unsigned);
@@ -537,12 +537,14 @@ pub fn add_primitive_fns(loader: &super::Ctxt) {
 #[test]
 fn exprs() {
     use crate::syntax::parse_valexpr;
-    use crate::core::{Ctxt, value};
+    use crate::core::{Index, Ctxt, value};
 
-    let ctxt = Ctxt::new(Default::default());
+    let mut index = Index::new();
 
-    ctxt.add_primitive_fn("complex", fn_complex);
-    let scope = ctxt.prelude.borrow().child();
+    index.add_primitive_fn("complex", fn_complex);
+    let scope = index.prelude.child();
+
+    let ctxt = Ctxt::new(Default::default(), &index);
 
     let expr = |e: &str| {
         let ast = parse_valexpr(e).unwrap();

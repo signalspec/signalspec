@@ -12,7 +12,7 @@ mod process;
 mod data;
 mod shape;
 
-pub use self::module_loader::{ Config, Ctxt, FileScope, ProtocolRef, Test };
+pub use self::module_loader::{ Index, Config, Ctxt, FileScope, ProtocolRef, Test };
 pub use self::scope::{ Item, Scope };
 pub use self::expr::{ Expr, ConcatElem, add_primitive_fns};
 pub use self::expr_resolve::{ rexpr, lexpr, on_expr_message, value, pattern_match };

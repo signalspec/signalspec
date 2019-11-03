@@ -14,7 +14,7 @@ pub use self::exec::run;
 use crate::core::{ Ctxt, Shape, Fields, Item, ProcessChain };
 
 pub struct Handle<'a> {
-    loader: &'a Ctxt,
+    loader: &'a Ctxt<'a>,
     top_shape: Shape,
     top_fields: Fields,
     connection: Arc<Mutex<Connection>>,
@@ -33,7 +33,7 @@ impl<'a> Handle<'a> {
     }
 
     pub fn base(loader: &'a Ctxt) -> Handle<'a> {
-        let base = loader.protocols_by_name.borrow_mut().get("Base").cloned().expect("No `Base` protocol found in prelude");
+        let base = loader.index.protocols_by_name.get("Base").cloned().expect("No `Base` protocol found in prelude");
         let base_shape = Shape::Seq {
             def: base,
             param: Item::Tuple(vec![]),

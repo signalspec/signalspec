@@ -14,11 +14,11 @@ macro_rules! primitive_args {
 mod file_io;
 mod binfile;
 
-use crate::core::{ add_primitive_fns, Ctxt };
+use crate::core::{ add_primitive_fns, Index };
 use super::Connection;
 
-pub fn add_primitives<'a>(loader: &'a Ctxt) {
-    loader.define_prelude(r#"
+pub fn add_primitives(index: &mut Index) {
+    index.define_prelude(r#"
     protocol Base() {}
     protocol Seq(T) { val(T) }
 
@@ -26,10 +26,10 @@ pub fn add_primitives<'a>(loader: &'a Ctxt) {
     let Float32 = -1.0..1.0
     "#);
 
-    add_primitive_fns(loader);
+    add_primitive_fns(index);
 
-    file_io::add_primitives(loader);
-    binfile::add_primitives(loader);
+    file_io::add_primitives(index);
+    binfile::add_primitives(index);
 }
 
 pub trait PrimitiveProcess: Debug + Send + Sync {

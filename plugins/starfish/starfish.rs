@@ -2,7 +2,7 @@
 #[macro_use] extern crate log;
 extern crate libusb;
 
-use signalspec::{ Ctxt, Fields, Field, Connection, PrimitiveProcess, PrimitiveDef, PrimitiveDefFields, Value, DataMode, Type };
+use signalspec::{ Index, Fields, Field, Connection, PrimitiveProcess, PrimitiveDef, PrimitiveDefFields, Value, DataMode, Type };
 
 mod starfish_usb;
 use starfish_usb::{ StarfishUsb, find_device };
@@ -90,8 +90,8 @@ impl PrimitiveProcess for StarfishProcess {
 }
 
 
-pub fn add_primitives(loader: &Ctxt) {
-    loader.define_prelude(r#"
+pub fn add_primitives(index: &mut Index) {
+    index.define_prelude(r#"
         protocol Starfish() {
             start(byte),
             r(byte),
@@ -102,7 +102,7 @@ pub fn add_primitives(loader: &Ctxt) {
 
     let bytes_ty = Type::Vector(8, Box::new(Type::Integer(0, 1)));
 
-    loader.define_primitive("with Base() def starfish(): Starfish()", vec![
+    index.define_primitive("with Base() def starfish(): Starfish()", vec![
         PrimitiveDef {
             id: "starfish_usb",
             fields_down: Fields::null(),

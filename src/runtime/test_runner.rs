@@ -3,7 +3,7 @@ use std::path::Path;
 use std::io::prelude::*;
 
 use crate::syntax::{ ast, SourceFile };
-use crate::core::{ Ctxt, Config, Scope, DataMode, ProtocolScope };
+use crate::core::{ Index, Ctxt, Config, Scope, DataMode, ProtocolScope };
 use crate::core::{resolve_protocol_invoke, make_literal_process, resolve_process };
 use crate::runtime::{ Handle, Connection };
 
@@ -32,9 +32,9 @@ pub fn run(fname: &str) -> bool {
 pub fn run_file(fname: &Path) -> bool {
     println!("Running tests for {}", fname.to_string_lossy());
 
-    let loader = Ctxt::new(Config::default());
-    super::primitives::add_primitives(&loader);
-
+    let mut index = Index::new();
+    super::primitives::add_primitives(&mut index);
+    
     let source = match fs::File::open(fname) {
         Ok(mut file) => {
             let mut source = String::new();
@@ -48,7 +48,7 @@ pub fn run_file(fname: &Path) -> bool {
     };
 
     let file = SourceFile { name: fname.to_string_lossy().into(), source };
-    let module = match loader.parse_module(file) {
+    let module = match index.parse_module(file) {
         Ok(m) => m,
         Err(e) => {
             println!("\tParse error: {}", e);
@@ -58,9 +58,11 @@ pub fn run_file(fname: &Path) -> bool {
 
     let mut success = true;
 
+    let ctx = Ctxt::new(Config::default(), &index);
+
     for (count, test) in module.tests().iter().enumerate() {
         print!("\tTest #{}:", count+1);
-        let res = run_test(&loader, &test.scope, &*loader.protocol_scope.borrow(), &test.ast);
+        let res = run_test(&ctx, &test.scope, &index.protocol_scope, &test.ast);
 
         if let Some(r) = res.down{
             print!(" down:{}", if r { "ok" } else { "FAIL" });

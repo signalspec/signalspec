@@ -6,7 +6,7 @@ extern crate ref_slice;
 use std::io;
 use ref_slice::ref_slice;
 
-use signalspec::{ Connection, PrimitiveProcess, Value, DataMode, Item, Ctxt, PrimitiveDef, PrimitiveDefFields, Fields };
+use signalspec::{ Connection, PrimitiveProcess, Value, DataMode, Item, Index, PrimitiveDef, PrimitiveDefFields, Fields };
 
 /// Represent a shape as a VCD scope declaration, creating mapping from message index to VCD idcode
 fn shape_to_scope(s: &Item) -> (vcd::Scope, Vec<vcd::IdCode>) {
@@ -182,8 +182,8 @@ impl PrimitiveProcess for VcdRead {
     }
 }
 
-pub fn add_primitives(loader: &Ctxt) {
-    loader.define_primitive("with Bytes() def vcd(shape): Seq(shape)", vec![
+pub fn add_primitives(index: &mut Index) {
+    index.define_primitive("with Bytes() def vcd(shape): Seq(shape)", vec![
         PrimitiveDef {
             id: "vcd_write",
             fields_down: Fields::bytes(DataMode { up: false, down: true, }),
