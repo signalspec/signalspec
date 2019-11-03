@@ -545,8 +545,7 @@ fn exprs() {
     let scope = ctxt.prelude.borrow().child();
 
     let expr = |e: &str| {
-        let file = ctxt.codemap.borrow_mut().add_file("<expr>".into(), e.into());
-        let ast = parse_valexpr(&file.source(), file.span).unwrap();
+        let ast = parse_valexpr(e).unwrap();
         value(&ctxt, &scope, &ast)
     };
 

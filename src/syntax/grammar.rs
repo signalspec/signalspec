@@ -1,13 +1,12 @@
-use super::{ ast, BinOp };
+use super::{ ast, BinOp, FileSpan, Spanned };
 use std::char;
-use codemap::{ Span, Spanned };
 
-peg::parser!(pub grammar signalspec(file_span: Span) for str {
+peg::parser!(pub grammar signalspec() for str {
   use peg::ParseLiteral;
 
   rule spanned<T>(inner: rule<T>) -> Spanned<T>
     = start:position!() node:inner() end:position!()
-    { Spanned { node, span: file_span.subspan(start as u64, end as u64) } }
+    { Spanned { node, span: FileSpan::new(start, end) } }
 
   pub rule module() -> ast::Module
       = _ entries:spanned(<module_entry()>)**__ _
@@ -69,7 +68,7 @@ peg::parser!(pub grammar signalspec(file_span: Span) for str {
       { if es.len() == 1 { es.node.into_iter().next().unwrap() } else { Spanned { node: ast::Expr::Tup(es.node), span: es.span } } }
 
   pub rule valexpr() -> ast::SpannedExpr = precedence! {
-    start:position!() node:@ end:position!() { Spanned { node, span: file_span.subspan(start as u64, end as u64) } }
+    start:position!() node:@ end:position!() { Spanned { node, span: FileSpan::new(start, end) } }
     --
     l:@ _ "=>" _ r:(@)  { ast::Expr::Func { args: Box::new(l), body: Box::new(r) } }
     --

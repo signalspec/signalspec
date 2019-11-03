@@ -2,7 +2,7 @@ use std::fs;
 use std::path::Path;
 use std::io::prelude::*;
 
-use crate::syntax::ast;
+use crate::syntax::{ ast, SourceFile };
 use crate::core::{ Ctxt, Config, Scope, DataMode, ProtocolScope };
 use crate::core::{resolve_protocol_invoke, make_literal_process, resolve_process };
 use crate::runtime::{ Handle, Connection };
@@ -47,8 +47,8 @@ pub fn run_file(fname: &Path) -> bool {
         }
     };
 
-    let file = loader.codemap.borrow_mut().add_file(fname.to_string_lossy().to_string(), source);
-    let module = match loader.parse_module(&file) {
+    let file = SourceFile { name: fname.to_string_lossy().into(), source };
+    let module = match loader.parse_module(file) {
         Ok(m) => m,
         Err(e) => {
             println!("\tParse error: {}", e);

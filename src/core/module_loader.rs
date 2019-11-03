@@ -1,5 +1,4 @@
 use std::cell::RefCell;
-use codemap::{ CodeMap, File };
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -7,7 +6,7 @@ use std::path::PathBuf;
 use std::fs;
 use std::fmt::Debug;
 
-use crate::syntax::{ ast, parse_module, parse_process_chain, ParseError};
+use crate::syntax::{ ast, parse_module, parse_process_chain, ParseError, SourceFile };
 use super::{ Item, PrimitiveDef, Scope, FunctionDef, PrimitiveFn, ProcessChain, ProtocolScope, Shape, Fields };
 use super::{ resolve_process };
 
@@ -18,6 +17,7 @@ pub struct Config {
 }
 
 pub struct FileScope {
+    file: SourceFile,
     scope: Scope,
     protocols: Vec<ast::Protocol>,
     tests: Vec<ast::Test>,
@@ -57,7 +57,6 @@ pub struct Ctxt {
     pub prelude: RefCell<Scope>,
     pub protocol_scope: RefCell<ProtocolScope>, // TODO: should be scoped
     pub protocols_by_name: RefCell<BTreeMap<String, ProtocolRef>>,
-    pub codemap: RefCell<CodeMap>,
 }
 
 impl Ctxt {
@@ -73,7 +72,6 @@ impl Ctxt {
             prelude: RefCell::new(Scope::new()),
             protocol_scope: RefCell::new(ProtocolScope::new()),
             protocols_by_name: RefCell::new(BTreeMap::new()),
-            codemap: RefCell::new(CodeMap::new()),
         }
     }
 
@@ -96,25 +94,25 @@ impl Ctxt {
     }
 
     pub fn define_primitive(&self, header_src: &str, implementations: Vec<PrimitiveDef>) {
-        let file = self.codemap.borrow_mut().add_file("<primitive>".into(), header_src.into());
-        let header = crate::syntax::parse_primitive_header(&file.source(), file.span).expect("failed to parse primitive header");
+        let file = SourceFile { name: "<primitive>".into(), source: header_src.into() };
+        let header = crate::syntax::parse_primitive_header(&file.source).expect("failed to parse primitive header");
         self.protocol_scope.borrow_mut().add_primitive(&*self.prelude.borrow(), header, implementations);
     }
 
     pub fn define_prelude(&self, source: &str) {
-        let file = self.codemap.borrow_mut().add_file("<prelude>".into(), source.into());
-        let module = self.parse_module(&file).expect("failed to parse prelude module");
+        let file = SourceFile { name: "<prelude>".into(), source: source.into() };
+        let module = self.parse_module(file).expect("failed to parse prelude module");
         *self.prelude.borrow_mut() = module.scope.clone();
     }
 
     pub fn parse_process(&self, source: &str, shape_below: &Shape, fields_below: &Fields) -> Result<ProcessChain, ParseError> {
-        let file = self.codemap.borrow_mut().add_file("<process>".into(), source.into());
-        let ast = parse_process_chain(&file.source(), file.span)?;
+        let file = SourceFile { name: "<process>".into(), source: source.into() };
+        let ast = parse_process_chain(&file.source)?;
         Ok(resolve_process(self, &*self.prelude.borrow(), &*self.protocol_scope.borrow(), shape_below, fields_below, &ast))
     }
 
-    pub fn parse_module(&self, file: &File) -> Result<Arc<FileScope>, ParseError> {
-        let ast = parse_module(&file.source(), file.span)?;
+    pub fn parse_module(&self, file: SourceFile) -> Result<Arc<FileScope>, ParseError> {
+        let ast = parse_module(&file.source)?;
 
         let mut scope = self.prelude.borrow().child();
         let mut with_blocks = vec![];
@@ -141,7 +139,7 @@ impl Ctxt {
             }
         }
 
-        let file = Arc::new(FileScope { scope, protocols, tests });
+        let file = Arc::new(FileScope { file, scope, protocols, tests });
 
         for (index, protocol_ast) in file.protocols.iter().enumerate() {
             self.protocols_by_name.borrow_mut().insert(protocol_ast.name.clone(), ProtocolRef { file: file.clone(), index });

@@ -1,5 +1,4 @@
-pub use super::{ BinOp, Value };
-pub use codemap::Spanned;
+pub use super::{ BinOp, Value, Spanned };
 
 pub struct Module {
     pub entries: Vec<Spanned<ModuleEntry>>,

@@ -49,8 +49,8 @@ fn main() {
         for source_fname in imports {
             let mut source = String::new();
             fs::File::open(&source_fname).unwrap().read_to_string(&mut source).unwrap();
-            let file = loader.codemap.borrow_mut().add_file(source_fname, source);
-            loader.parse_module(&file).unwrap();
+            let file = signalspec::SourceFile::new(source_fname, source);
+            loader.parse_module(file).unwrap();
         }
 
         let mut stack = signalspec::Handle::base(&loader);
