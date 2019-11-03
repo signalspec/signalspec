@@ -13,28 +13,6 @@ impl From<ProtocolId> for usize {
     fn from(i: ProtocolId) -> usize { i.0 }
 }
 
-/// A pattern to match a protocol. These are used in the predicate of `with` blocks.
-#[derive(Debug, Clone)]
-struct ProtocolMatch {
-    id: ProtocolId,
-    param: ast::Expr
-}
-
-impl ProtocolMatch {
-    /// Attempt to match the protocol pattern against the supplied shape, returning whether it
-    /// succeeded. Destructured variables are added to the scope. Even if it returns false,
-    /// the scope may have already been modified.
-    fn try_match(&self, ctx: &Ctxt, shape: &Shape, scope: &mut Scope) -> bool {
-        debug!("Trying to match {:?} against {:?}", self, shape);
-        match *shape {
-            Shape::None => false,
-            Shape::Seq { def: r_id, param: ref r_param, ..} => {
-                self.id == r_id && lexpr(ctx, scope, &self.param, r_param.clone()).is_ok()
-            }
-        }
-    }
-}
-
 pub fn resolve_protocol_invoke(ctx: &Ctxt, scope: &Scope, ast: &ast::ProtocolRef) -> Shape {
     if let Some(protocol_id) = ctx.protocols_by_name.borrow_mut().get(&ast.name[..]).copied() {
         let protocol = ctx.protocols.get(protocol_id);
@@ -60,16 +38,8 @@ pub fn resolve_protocol_invoke(ctx: &Ctxt, scope: &Scope, ast: &ast::ProtocolRef
     }
 }
 
-fn resolve_protocol_match(ctx: &Ctxt, ast: ast::ProtocolRef) -> ProtocolMatch {
-    if let Some(protocol_id) = ctx.protocols_by_name.borrow_mut().get(&ast.name[..]).copied() {
-        ProtocolMatch { id: protocol_id, param: ast.param.node }
-    } else {
-        panic!("Protocol `{}` not found", ast.name);
-    }
-}
-
 struct WithBlock {
-    protocol: ProtocolMatch,
+    protocol: ast::ProtocolRef,
     name: String,
     param: ast::Expr,
     scope: Scope,
@@ -91,9 +61,9 @@ impl ProtocolScope {
         ProtocolScope { entries: vec![] }
     }
 
-    pub fn add_def(&mut self, ctx: &Ctxt, scope: Scope, def: ast::Def) {
+    pub fn add_def(&mut self, scope: Scope, def: ast::Def) {
         self.entries.push(WithBlock {
-            protocol: resolve_protocol_match(ctx, def.bottom),
+            protocol: def.bottom,
             name: def.name.clone(),
             scope: scope,
             param: def.param.node,
@@ -101,9 +71,9 @@ impl ProtocolScope {
         });
     }
 
-    pub fn add_primitive(&mut self, ctx: &Ctxt, scope: &Scope, header: ast::PrimitiveHeader, defs: Vec<PrimitiveDef>) {
+    pub fn add_primitive(&mut self, scope: &Scope, header: ast::PrimitiveHeader, defs: Vec<PrimitiveDef>) {
         self.entries.push(WithBlock {
-            protocol: resolve_protocol_match(ctx, header.bottom),
+            protocol: header.bottom,
             name: header.name.clone(),
             scope: scope.child(),
             param: header.param.node,
@@ -118,9 +88,19 @@ impl ProtocolScope {
 
             let mut scope = entry.scope.child();
 
-            if !entry.protocol.try_match(ctx, shape, &mut scope) {
-                debug!("Failed to match protocol for `{}`", name);
-                continue
+            let protocol = *ctx.protocols_by_name.borrow_mut().get(&entry.protocol.name[..]).unwrap_or_else(|| {
+                panic!("Failed to find protocol {:?}", entry.protocol.name);
+            });
+            
+            debug!("Trying to match {:?} against {:?}", entry.protocol, shape);
+            match *shape {
+                Shape::None => panic!("looking for methods of Shape::None"),
+                Shape::Seq { def: r_id, param: ref r_param, ..} => {
+                    if !(protocol == r_id && lexpr(ctx, &mut scope, &entry.protocol.param, r_param.clone()).is_ok()) {
+                        debug!("Failed to match protocol for `{}`", name);
+                        continue;
+                    }
+                }
             }
 
             if let Err(err) = lexpr(ctx, &mut scope, &entry.param, param.clone()) {

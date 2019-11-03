@@ -76,7 +76,7 @@ impl Ctxt {
     pub fn define_primitive(&self, header_src: &str, implementations: Vec<PrimitiveDef>) {
         let file = self.codemap.borrow_mut().add_file("<primitive>".into(), header_src.into());
         let header = crate::syntax::parse_primitive_header(&file.source(), file.span).expect("failed to parse primitive header");
-        self.protocol_scope.borrow_mut().add_primitive(self, &*self.prelude.borrow(), header, implementations);
+        self.protocol_scope.borrow_mut().add_primitive(&*self.prelude.borrow(), header, implementations);
     }
 
     pub fn define_prelude(&self, source: &str) {
@@ -129,7 +129,7 @@ impl Ctxt {
 
         let mut protocol_scope = self.protocol_scope.borrow_mut();
         for def in with_blocks {
-            protocol_scope.add_def(self, scope.clone(), def);
+            protocol_scope.add_def(scope.clone(), def);
         }
 
         Ok(Module { scope: scope, tests: tests  })
