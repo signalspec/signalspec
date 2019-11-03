@@ -16,7 +16,7 @@ pub use self::module_loader::{ Config, Ctxt, Module, Test };
 pub use self::scope::{ Item, Scope };
 pub use self::expr::{ Expr, ConcatElem, add_primitive_fns};
 pub use self::expr_resolve::{ rexpr, lexpr, on_expr_message, value, pattern_match };
-pub use self::function::{ PrimitiveFn, FunctionDef, Func, FunctionId };
+pub use self::function::{ PrimitiveFn, FunctionDef, Func };
 pub use self::primitive::{ PrimitiveDef, PrimitiveDefFields, call_primitive };
 pub use self::process::{ Process, ProcessInfo, ProcessChain, resolve_process };
 pub use self::protocol::{ ProtocolScope, ProtocolId, DefImpl, resolve_protocol_invoke };

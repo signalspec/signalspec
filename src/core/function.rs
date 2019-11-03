@@ -1,17 +1,6 @@
 use crate::syntax::ast;
 use super::{ rexpr, lexpr, Item, Scope, Ctxt };
 
-#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
-pub struct FunctionId(pub usize);
-
-impl From<usize> for FunctionId {
-    fn from(i: usize) -> FunctionId { FunctionId(i) }
-}
-
-impl From<FunctionId> for usize {
-    fn from(i: FunctionId) -> usize { i.0 }
-}
-
 pub enum FunctionDef {
     /// Function literal
     Code(Func),

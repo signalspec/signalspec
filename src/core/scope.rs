@@ -1,9 +1,10 @@
 use std::fmt;
 use std::collections::HashMap;
 use std::default::Default;
+use std::sync::Arc;
 
 use crate::syntax::Value;
-use super::{ Type, ProtocolId, Ctxt, ValueId, Expr, FunctionId };
+use super::{ Type, ProtocolId, Ctxt, ValueId, Expr, FunctionDef };
 
 /// A collection of named Items.
 #[derive(Clone)]
@@ -53,13 +54,13 @@ impl Scope {
 }
 
 /// A thing associated with a name in a Scope
-#[derive(Clone, PartialEq)]
+#[derive(Clone)]
 pub enum Item {
     /// Expression for a (possibly runtime-variable) value
     Value(Expr),
 
     // Functionsession
-    Func(FunctionId),
+    Func(Arc<FunctionDef>),
 
     /// Interface definition - `interface` block AST and enclosing scope
     Protocol(ProtocolId),
@@ -104,7 +105,7 @@ impl fmt::Debug for Item {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
             Item::Value(ref v) => write!(f, "{:?}", v),
-            Item::Func(id) => write!(f, "<function {}>", id.0),
+            Item::Func(..) => write!(f, "<function>"),
             Item::Protocol(id) => write!(f, "<protocol {}>", id.0),
             Item::Tuple(ref v) => {
                 write!(f, "(")?;

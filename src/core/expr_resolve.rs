@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use crate::syntax::{ast, Value};
 use super::{ Ctxt, Expr, ConcatElem, Scope, Item , FunctionDef, Func, Shape };
 
@@ -110,7 +111,7 @@ pub fn rexpr<'s>(ctxt: &'s Ctxt, scope: &Scope, e: &ast::Expr) -> Item {
         ast::Expr::String(ref s) => Item::String(s.clone()),
 
         ast::Expr::Func{ ref body, ref args } => {
-            Item::Func(ctxt.create_function(FunctionDef::Code(Func{
+            Item::Func(Arc::new(FunctionDef::Code(Func{
                 args: args.node.clone(),
                 body: body.node.clone(),
                 scope: scope.clone(),
@@ -129,8 +130,8 @@ fn resolve_call<'s>(ctxt: &'s Ctxt, scope: &Scope, func: &ast::Expr, arg: &ast::
     let func = rexpr(ctxt, scope, func);
     let arg = rexpr(ctxt, scope, arg);
 
-    if let Item::Func(fnid) = func {
-        ctxt.look_up_function(fnid).apply(ctxt, arg)
+    if let Item::Func(func) = func {
+        func.apply(ctxt, arg)
     } else {
         panic!("{:?} is not a function", func)
     }
@@ -229,10 +230,12 @@ pub fn lexpr(ctx: &Ctxt, scope: &mut Scope, l: &ast::Expr, r: Item) -> Result<()
         }
 
         _ => {
-            let lv = Item::Value(value(ctx, scope, l));
-            debug!("{:?} == {:?} => {:?}", lv, r, lv == r);
-            if lv != r {
-                return Err(PatternError { expected: "tuple, variable, or ignore", found: r })
+            let lv = &value(ctx, scope, l);
+            if let Item::Value(rv) = &r {
+                debug!("{:?} == {:?} => {:?}", lv, rv, lv == rv);
+                if lv != rv {
+                    return Err(PatternError { expected: "tuple, variable, or ignore", found: r })
+                }
             }
         }
     })

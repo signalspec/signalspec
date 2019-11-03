@@ -1,12 +1,13 @@
 use std::cell::RefCell;
 use codemap::{ CodeMap, File };
+use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::path::PathBuf;
 use std::fs;
 
 use crate::util::Index;
 use crate::syntax::{ ast, parse_module, parse_process_chain, ParseError};
-use super::{ Item, PrimitiveDef, Scope, FunctionId, FunctionDef, PrimitiveFn, ProcessChain, ProtocolScope, ProtocolId, Shape, Fields };
+use super::{ Item, PrimitiveDef, Scope, FunctionDef, PrimitiveFn, ProcessChain, ProtocolScope, ProtocolId, Shape, Fields };
 use super::{ resolve_process };
 
 
@@ -21,7 +22,6 @@ pub struct Ctxt {
     pub prelude: RefCell<Scope>,
     pub protocol_scope: RefCell<ProtocolScope>, // TODO: should be scoped
     pub protocols: Index<ProtocolDef, ProtocolId>,
-    pub functions: Index<FunctionDef, FunctionId>,
     pub codemap: RefCell<CodeMap>,
 }
 
@@ -48,7 +48,6 @@ impl Ctxt {
             prelude: RefCell::new(Scope::new()),
             protocol_scope: RefCell::new(ProtocolScope::new()),
             protocols: Index::new(),
-            functions: Index::new(),
             codemap: RefCell::new(CodeMap::new()),
         }
     }
@@ -68,8 +67,7 @@ impl Ctxt {
     }
 
     pub fn add_primitive_fn(&self, name: &str, prim: PrimitiveFn) {
-        let fnid = self.create_function(FunctionDef::Primitive(prim));
-        self.prelude.borrow_mut().bind(name, Item::Func(fnid));
+        self.prelude.borrow_mut().bind(name, Item::Func(Arc::new(FunctionDef::Primitive(prim))));
     }
 
     pub fn define_primitive(&self, header_src: &str, implementations: Vec<PrimitiveDef>) {
@@ -82,16 +80,6 @@ impl Ctxt {
         let file = self.codemap.borrow_mut().add_file("<prelude>".into(), source.into());
         let module = self.parse_module(&file).expect("failed to parse prelude module");
         *self.prelude.borrow_mut() = module.scope;
-    }
-
-    pub fn create_function(&self, def: FunctionDef) -> FunctionId {
-        let fnid = self.functions.create();
-        self.functions.define(fnid, def);
-        fnid
-    }
-
-    pub fn look_up_function(&self, id: FunctionId) -> &FunctionDef {
-        self.functions.get(id)
     }
 
     pub fn parse_process(&self, source: &str, shape_below: &Shape, fields_below: &Fields) -> Result<ProcessChain, ParseError> {
