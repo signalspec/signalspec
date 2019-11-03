@@ -1,5 +1,6 @@
 use std::cell::RefCell;
 use codemap::{ CodeMap, File };
+use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::path::PathBuf;
@@ -22,6 +23,7 @@ pub struct Ctxt {
     pub prelude: RefCell<Scope>,
     pub protocol_scope: RefCell<ProtocolScope>, // TODO: should be scoped
     pub protocols: Index<ProtocolDef, ProtocolId>,
+    pub protocols_by_name: RefCell<BTreeMap<String, ProtocolId>>,
     pub codemap: RefCell<CodeMap>,
 }
 
@@ -48,6 +50,7 @@ impl Ctxt {
             prelude: RefCell::new(Scope::new()),
             protocol_scope: RefCell::new(ProtocolScope::new()),
             protocols: Index::new(),
+            protocols_by_name: RefCell::new(BTreeMap::new()),
             codemap: RefCell::new(CodeMap::new()),
         }
     }
@@ -109,7 +112,7 @@ impl Ctxt {
                 }
                 ast::ModuleEntry::Protocol(d) => {
                     let protocol_id = self.protocols.create();
-                    scope.names.insert(d.name.clone(), Item::Protocol(protocol_id));
+                    self.protocols_by_name.borrow_mut().insert(d.name.clone(), protocol_id);
                     protocols.push((protocol_id, d));
                 }
                 ast::ModuleEntry::Test(t) => {

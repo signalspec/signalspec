@@ -36,7 +36,7 @@ impl ProtocolMatch {
 }
 
 pub fn resolve_protocol_invoke(ctx: &Ctxt, scope: &Scope, ast: &ast::ProtocolRef) -> Shape {
-    if let Some(Item::Protocol(protocol_id)) = scope.get(&ast.name[..]) {
+    if let Some(protocol_id) = ctx.protocols_by_name.borrow_mut().get(&ast.name[..]).copied() {
         let protocol = ctx.protocols.get(protocol_id);
         let param = rexpr(ctx, scope, &ast.param);
 
@@ -60,8 +60,8 @@ pub fn resolve_protocol_invoke(ctx: &Ctxt, scope: &Scope, ast: &ast::ProtocolRef
     }
 }
 
-fn resolve_protocol_match(_ctx: &Ctxt, scope: &Scope, ast: ast::ProtocolRef) -> ProtocolMatch {
-    if let Some(Item::Protocol(protocol_id)) = scope.get(&ast.name[..]) {
+fn resolve_protocol_match(ctx: &Ctxt, ast: ast::ProtocolRef) -> ProtocolMatch {
+    if let Some(protocol_id) = ctx.protocols_by_name.borrow_mut().get(&ast.name[..]).copied() {
         ProtocolMatch { id: protocol_id, param: ast.param.node }
     } else {
         panic!("Protocol `{}` not found", ast.name);
@@ -93,7 +93,7 @@ impl ProtocolScope {
 
     pub fn add_def(&mut self, ctx: &Ctxt, scope: Scope, def: ast::Def) {
         self.entries.push(WithBlock {
-            protocol: resolve_protocol_match(ctx, &scope, def.bottom),
+            protocol: resolve_protocol_match(ctx, def.bottom),
             name: def.name.clone(),
             scope: scope,
             param: def.param.node,
@@ -103,7 +103,7 @@ impl ProtocolScope {
 
     pub fn add_primitive(&mut self, ctx: &Ctxt, scope: &Scope, header: ast::PrimitiveHeader, defs: Vec<PrimitiveDef>) {
         self.entries.push(WithBlock {
-            protocol: resolve_protocol_match(ctx, scope, header.bottom),
+            protocol: resolve_protocol_match(ctx, header.bottom),
             name: header.name.clone(),
             scope: scope.child(),
             param: header.param.node,

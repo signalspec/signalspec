@@ -4,7 +4,7 @@ use std::default::Default;
 use std::sync::Arc;
 
 use crate::syntax::Value;
-use super::{ Type, ProtocolId, Ctxt, ValueId, Expr, FunctionDef };
+use super::{ Type, Ctxt, ValueId, Expr, FunctionDef };
 
 /// A collection of named Items.
 #[derive(Clone)]
@@ -59,11 +59,8 @@ pub enum Item {
     /// Expression for a (possibly runtime-variable) value
     Value(Expr),
 
-    // Functionsession
+    // Function closure
     Func(Arc<FunctionDef>),
-
-    /// Interface definition - `interface` block AST and enclosing scope
-    Protocol(ProtocolId),
 
     /// Collection of `Item`s
     Tuple(Vec<Item>), // TODO: named components
@@ -106,7 +103,6 @@ impl fmt::Debug for Item {
         match *self {
             Item::Value(ref v) => write!(f, "{:?}", v),
             Item::Func(..) => write!(f, "<function>"),
-            Item::Protocol(id) => write!(f, "<protocol {}>", id.0),
             Item::Tuple(ref v) => {
                 write!(f, "(")?;
                 for i in v.iter() {
