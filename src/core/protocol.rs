@@ -4,10 +4,10 @@ use super::{ lexpr, rexpr };
 
 pub fn resolve_protocol_invoke(ctx: &Ctxt, scope: &Scope, ast: &ast::ProtocolRef) -> Shape {
     if let Some(protocol) = ctx.index.protocols_by_name.get(&ast.name[..]) {
-        let param = rexpr(ctx, scope, &ast.param);
+        let param = rexpr(scope, &ast.param);
 
         let mut protocol_def_scope = protocol.scope().child();
-        lexpr(ctx, &mut protocol_def_scope, &protocol.ast().param, param.clone())
+        lexpr(&mut protocol_def_scope, &protocol.ast().param, param.clone())
             .unwrap_or_else(|e| panic!("failed to match parameters for protocol `{}`: {:?}", ast.name, e));
 
         let mut messages = vec![];
@@ -15,7 +15,7 @@ pub fn resolve_protocol_invoke(ctx: &Ctxt, scope: &Scope, ast: &ast::ProtocolRef
         for entry in &protocol.ast().entries {
             match *entry {
                 ast::ProtocolEntry::Message(ref name, ref e) => {
-                    messages.push(ShapeVariant::new(name.clone(), rexpr(ctx, &protocol_def_scope, e)));
+                    messages.push(ShapeVariant::new(name.clone(), rexpr(&protocol_def_scope, e)));
                 }
             }
         }
@@ -84,14 +84,14 @@ impl ProtocolScope {
             match shape {
                 Shape::None => panic!("looking for methods of Shape::None"),
                 Shape::Seq { def: r_proto, param: ref r_param, ..} => {
-                    if !(&protocol == r_proto && lexpr(ctx, &mut scope, &entry.protocol.param, r_param.clone()).is_ok()) {
+                    if !(&protocol == r_proto && lexpr(&mut scope, &entry.protocol.param, r_param.clone()).is_ok()) {
                         debug!("Failed to match protocol for `{}`", name);
                         continue;
                     }
                 }
             }
 
-            if let Err(err) = lexpr(ctx, &mut scope, &entry.param, param.clone()) {
+            if let Err(err) = lexpr(&mut scope, &entry.param, param.clone()) {
                 debug!("Failed to match argument for `{}`: {:?}", name, err);
                 continue
             }

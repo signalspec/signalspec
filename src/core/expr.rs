@@ -537,18 +537,16 @@ pub fn add_primitive_fns(loader: &mut super::Index) {
 #[test]
 fn exprs() {
     use crate::syntax::parse_valexpr;
-    use crate::core::{Index, Ctxt, value};
+    use crate::core::{Index, value};
 
     let mut index = Index::new();
 
     index.add_primitive_fn("complex", fn_complex);
     let scope = index.prelude.child();
 
-    let ctxt = Ctxt::new(Default::default(), &index);
-
     let expr = |e: &str| {
         let ast = parse_valexpr(e).unwrap();
-        value(&ctxt, &scope, &ast)
+        value(&scope, &ast)
     };
 
     let two = expr("2.");

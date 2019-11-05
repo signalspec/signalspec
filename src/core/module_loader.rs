@@ -109,8 +109,7 @@ impl Index {
         for entry in ast.entries {
             match entry.node {
                 ast::ModuleEntry::Let(letdef) => {
-                    let ctx = Ctxt::new(Config::default(), &self);
-                    super::step::resolve_letdef(&ctx, &mut scope, &letdef);
+                    super::step::resolve_letdef(&mut scope, &letdef);
                 }
                 ast::ModuleEntry::Use(_) => {
                     panic!("`use` unimplemented");

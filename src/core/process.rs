@@ -46,7 +46,7 @@ pub fn resolve_process(ctx: &Ctxt,
 
         match *process_ast {
             ast::Process::Call(ref name, ref param_ast) => {
-                let param = rexpr(ctx, scope, param_ast);
+                let param = rexpr(scope, param_ast);
 
                 if shape_down.has_variant_named(name) {
                     let token_proc = resolve_token(shape_down, name, param);

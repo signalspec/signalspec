@@ -241,7 +241,7 @@ fn resolve_action(sb: StepBuilder<'_>, action: &ast::Action) -> StepInfo {
             sb.token_top(msg, step)
         }
         ast::Action::Repeat(ref count_ast, ref block) => {
-            let count = value(sb.ctx, sb.scope, count_ast.as_ref().map_or(&ast::Expr::Ignore, |s| &s.node));
+            let count = value(sb.scope, count_ast.as_ref().map_or(&ast::Expr::Ignore, |s| &s.node));
             sb.repeat(count, resolve_seq(sb, block))
         }
         ast::Action::For(ref pairs, ref block) => {
@@ -250,7 +250,7 @@ fn resolve_action(sb: StepBuilder<'_>, action: &ast::Action) -> StepInfo {
             let mut inner_vars = Vec::with_capacity(pairs.len());
 
             for &(ref name, ref expr) in pairs {
-                let e = value(sb.ctx, sb.scope, expr);
+                let e = value(sb.scope, expr);
                 let t = e.get_type();
                 if let Type::Vector(c, ty) = t {
                     match count {
@@ -269,7 +269,7 @@ fn resolve_action(sb: StepBuilder<'_>, action: &ast::Action) -> StepInfo {
             sb.foreach(count.unwrap_or(0) as u32, inner_vars, step)
         }
         ast::Action::Alt(ref expr, ref arms) => {
-            let r = rexpr(sb.ctx, sb.scope, expr);
+            let r = rexpr(sb.scope, expr);
 
             let v = arms.iter().map(|arm| {
                 let mut body_scope = sb.scope.child();
@@ -288,7 +288,7 @@ fn resolve_seq(sb: StepBuilder<'_>, block: &ast::Block) -> StepInfo {
     let mut scope = sb.scope.child();
 
     for ld in &block.lets {
-        resolve_letdef(sb.ctx, &mut scope, ld);
+        resolve_letdef(&mut scope, ld);
     }
 
     let steps = block.actions.iter().map(|action| {
@@ -298,9 +298,9 @@ fn resolve_seq(sb: StepBuilder<'_>, block: &ast::Block) -> StepInfo {
     sb.seq(steps)
 }
 
-pub fn resolve_letdef(ctx: &Ctxt, scope: &mut Scope, ld: &ast::LetDef) {
+pub fn resolve_letdef(scope: &mut Scope, ld: &ast::LetDef) {
     let &ast::LetDef(ref name, ref expr) = ld;
-    let item = rexpr(ctx, scope, expr);
+    let item = rexpr(scope, expr);
     scope.bind(&name, item);
 }
 

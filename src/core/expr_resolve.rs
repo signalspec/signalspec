@@ -2,21 +2,21 @@ use std::sync::Arc;
 use crate::syntax::{ast, Value};
 use super::{ Ctxt, Expr, ConcatElem, Scope, Item , FunctionDef, Func, Shape };
 
-fn resolve(ctx: &Ctxt, scope: Option<&Scope>, var_handler: &mut dyn FnMut(&str) -> Expr, e: &ast::Expr) -> Expr {
+fn resolve(scope: Option<&Scope>, var_handler: &mut dyn FnMut(&str) -> Expr, e: &ast::Expr) -> Expr {
     match *e {
         ast::Expr::Ignore => Expr::Ignored,
         ast::Expr::Value(ref val) => Expr::Const(val.clone()),
 
         ast::Expr::Flip(ref down, ref up) => {
             Expr::Flip(
-                Box::new(resolve(ctx, scope, var_handler, down.as_ref().map_or(&ast::Expr::Ignore, |s| &s.node))),
-                Box::new(resolve(ctx, scope, var_handler, up.as_ref().map_or(&ast::Expr::Ignore, |s| &s.node))),
+                Box::new(resolve(scope, var_handler, down.as_ref().map_or(&ast::Expr::Ignore, |s| &s.node))),
+                Box::new(resolve(scope, var_handler, up.as_ref().map_or(&ast::Expr::Ignore, |s| &s.node))),
             )
         }
 
         ast::Expr::Range(ref min_expr, ref max_expr) => {
-            let min = resolve(ctx, scope, var_handler, min_expr);
-            let max = resolve(ctx, scope, var_handler, max_expr);
+            let min = resolve(scope, var_handler, min_expr);
+            let max = resolve(scope, var_handler, max_expr);
 
             match (min, max) {
                 (Expr::Const(Value::Number(l)), Expr::Const(Value::Number(h))) => Expr::Range(l, h),
@@ -26,13 +26,13 @@ fn resolve(ctx: &Ctxt, scope: Option<&Scope>, var_handler: &mut dyn FnMut(&str) 
         }
 
         ast::Expr::Union(ref u) => {
-            Expr::Union(u.iter().map(|i| resolve(ctx, scope, var_handler, i)).collect())
+            Expr::Union(u.iter().map(|i| resolve(scope, var_handler, i)).collect())
         }
 
         ast::Expr::Choose(ref e, ref c) => {
             let pairs: Vec<(Value, Value)> = c.iter().map(|&(ref le, ref re)| {
-                let l = resolve(ctx, scope, var_handler, le);
-                let r = resolve(ctx, scope, var_handler, re);
+                let l = resolve(scope, var_handler, le);
+                let r = resolve(scope, var_handler, re);
 
                 match (l, r) {
                     (Expr::Const(lv), Expr::Const(rv)) => (lv, rv),
@@ -40,13 +40,13 @@ fn resolve(ctx: &Ctxt, scope: Option<&Scope>, var_handler: &mut dyn FnMut(&str) 
                 }
             }).collect();
 
-            let head = resolve(ctx, scope, var_handler, e);
+            let head = resolve(scope, var_handler, e);
             Expr::Choose(Box::new(head), pairs)
         }
 
         ast::Expr::Concat(ref v) =>  {
             let elems = v.iter().map(|&(slice_width, ref e)| {
-                let expr = resolve(ctx, scope, var_handler, e);
+                let expr = resolve(scope, var_handler, e);
                 match slice_width {
                     None => ConcatElem::Elem(expr),
                     Some(w) => ConcatElem::Slice(expr, w)
@@ -58,8 +58,8 @@ fn resolve(ctx: &Ctxt, scope: Option<&Scope>, var_handler: &mut dyn FnMut(&str) 
 
         ast::Expr::Bin(ref a, op, ref b) => {
             use self::Expr::Const;
-            let lhs = resolve(ctx, scope, var_handler, a);
-            let rhs = resolve(ctx, scope, var_handler, b);
+            let lhs = resolve(scope, var_handler, a);
+            let rhs = resolve(scope, var_handler, b);
             match (lhs, rhs) {
                 (Const(Value::Number(a)),  Const(Value::Number(b))) => Const(Value::Number(op.eval(a, b))),
                 (Const(Value::Integer(a)), Const(Value::Integer(b))) => Const(Value::Integer(op.eval(a, b))),
@@ -75,7 +75,7 @@ fn resolve(ctx: &Ctxt, scope: Option<&Scope>, var_handler: &mut dyn FnMut(&str) 
         ast::Expr::Var(ref name) => var_handler(name),
         ast::Expr::Call(ref func, ref arg) => {
             let scope = scope.expect("Function call not allowed here");
-            match resolve_call(ctx, scope, func, arg) {
+            match resolve_call(scope, func, arg) {
                 Item::Value(v) => v,
                 other => panic!("Expcted value item, but function evaluated to {:?}", other),
             }
@@ -87,8 +87,8 @@ fn resolve(ctx: &Ctxt, scope: Option<&Scope>, var_handler: &mut dyn FnMut(&str) 
     }
 }
 
-pub fn value(ctx: &Ctxt, scope: &Scope, e: &ast::Expr) -> Expr {
-    resolve(ctx, Some(scope), &mut |name| {
+pub fn value(scope: &Scope, e: &ast::Expr) -> Expr {
+    resolve(Some(scope), &mut |name| {
         match scope.get(name) {
             Some(Item::Value(v)) => v,
             Some(..) => panic!("Variable {} is not a value expression", name),
@@ -98,14 +98,14 @@ pub fn value(ctx: &Ctxt, scope: &Scope, e: &ast::Expr) -> Expr {
 }
 
 /// Resolve an expression as used in an argument or right hand side of an assignment
-pub fn rexpr<'s>(ctxt: &'s Ctxt, scope: &Scope, e: &ast::Expr) -> Item {
+pub fn rexpr(scope: &Scope, e: &ast::Expr) -> Item {
     match *e {
         ast::Expr::Var(ref name) => {
             if let Some(s) = scope.get(name) { s } else { panic!("Undefined variable `{}`", name); }
         }
 
         ast::Expr::Tup(ref items) => {
-            Item::Tuple(items.iter().map(|i| rexpr(ctxt, scope, i)).collect())
+            Item::Tuple(items.iter().map(|i| rexpr(scope, i)).collect())
         }
 
         ast::Expr::String(ref s) => Item::String(s.clone()),
@@ -119,19 +119,19 @@ pub fn rexpr<'s>(ctxt: &'s Ctxt, scope: &Scope, e: &ast::Expr) -> Item {
         }
 
         ast::Expr::Call(ref func, ref arg) => {
-            resolve_call(ctxt, scope, func, arg)
+            resolve_call(scope, func, arg)
         }
 
-        ref other => Item::Value(value(ctxt, scope, other))
+        ref other => Item::Value(value(scope, other))
     }
 }
 
-fn resolve_call<'s>(ctxt: &'s Ctxt, scope: &Scope, func: &ast::Expr, arg: &ast::Expr) -> Item {
-    let func = rexpr(ctxt, scope, func);
-    let arg = rexpr(ctxt, scope, arg);
+fn resolve_call(scope: &Scope, func: &ast::Expr, arg: &ast::Expr) -> Item {
+    let func = rexpr(scope, func);
+    let arg = rexpr(scope, arg);
 
     if let Item::Func(func) = func {
-        func.apply(ctxt, arg)
+        func.apply(arg)
     } else {
         panic!("{:?} is not a function", func)
     }
@@ -173,7 +173,7 @@ pub fn on_expr_message(ctx: &Ctxt, scope: &mut Scope, shape: &Shape, variant: &s
             }
 
             (&Item::Value(_), expr) => { // A match against a refutable pattern
-                push(resolve(ctx, None, &mut |_| { panic!("Variable binding not allowed here") }, expr));
+                push(resolve(None, &mut |_| { panic!("Variable binding not allowed here") }, expr));
             }
 
             (&Item::Tuple(ref ss), &ast::Expr::Tup(ref se)) => {
@@ -199,7 +199,7 @@ pub struct PatternError {
 
 /// Destructures an item into left-hand-side binding, such as a function argument, returning
 /// whether the pattern matched. No runtime evaluation is allowed.
-pub fn lexpr(ctx: &Ctxt, scope: &mut Scope, l: &ast::Expr, r: Item) -> Result<(), PatternError> {
+pub fn lexpr(scope: &mut Scope, l: &ast::Expr, r: Item) -> Result<(), PatternError> {
     Ok(match *l {
         ast::Expr::Ignore => (),
 
@@ -215,7 +215,7 @@ pub fn lexpr(ctx: &Ctxt, scope: &mut Scope, l: &ast::Expr, r: Item) -> Result<()
                         return Err(PatternError { expected: "tuple with a different length", found: Item::Tuple(v) });
                     }
                     for (expr, item) in exprs.iter().zip(v.into_iter()) {
-                        lexpr(ctx, scope, expr, item)?
+                        lexpr(scope, expr, item)?
                     }
                 }
                 r => return Err(PatternError { expected: "tuple", found: r })
@@ -230,7 +230,7 @@ pub fn lexpr(ctx: &Ctxt, scope: &mut Scope, l: &ast::Expr, r: Item) -> Result<()
         }
 
         _ => {
-            let lv = &value(ctx, scope, l);
+            let lv = &value(scope, l);
             if let Item::Value(rv) = &r {
                 debug!("{:?} == {:?} => {:?}", lv, rv, lv == rv);
                 if lv != rv {
@@ -261,7 +261,7 @@ pub fn pattern_match(ctx: &Ctxt, scope: &mut Scope, pat: &ast::Expr, r: &Item, c
             }
 
             (ref other, &Item::Value(ref re)) => {
-                let le = resolve(ctx, None, &mut |_| { panic!("Variable binding not allowed here")}, other);
+                let le = resolve(None, &mut |_| { panic!("Variable binding not allowed here")}, other);
                 checks.push((le, re.clone()));
             }
 
