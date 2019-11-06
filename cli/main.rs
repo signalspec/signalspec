@@ -51,11 +51,11 @@ fn main() {
             index.parse_module(file).unwrap();
         }
 
-        let ctx = signalspec::Ctxt::new(signalspec::Config {
+        let config = signalspec::Config {
             debug_dir: debug.map(PathBuf::from)
-        }, &index);
+        };
 
-        let mut stack = signalspec::Handle::base(&ctx);
+        let mut stack = signalspec::Handle::base(config, &index);
         for arg in cmds {
             stack = stack.parse_spawn(&arg).unwrap_or_else(|e| panic!("Error parsing argument: {}", e));
         }

@@ -1,5 +1,9 @@
-use crate::syntax::ast;
-use super::{ Shape, Fields, Ctxt, Scope, ProtocolScope, StepInfo, Message, DefImpl };
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::path::PathBuf;
+use std::fs;
+
+use crate::syntax::{ ast, SourceFile, parse_process_chain, ParseError };
+use super::{ Index, Shape, Fields, Scope, StepInfo, Message, DefImpl };
 use super::{rexpr, resolve_token, resolve_protocol_invoke, call_primitive, compile_block, make_literal_process};
 use crate::runtime::PrimitiveProcess;
 
@@ -34,7 +38,6 @@ impl ProcessChain {
 
 pub fn resolve_process(ctx: &Ctxt,
                        scope: &Scope,
-                       protocol_scope: &ProtocolScope,
                        shape_down: &Shape,
                        fields_down: &Fields,
                        processes_ast: &[ast::Process]) -> ProcessChain {
@@ -56,10 +59,10 @@ pub fn resolve_process(ctx: &Ctxt,
                         fields_up: Fields::null()
                     })
                 } else {
-                    let (scope, imp) = protocol_scope.find(ctx, shape_down, name, param);
+                    let (scope, imp) = ctx.index.find_def(shape_down, name, param);
                     match *imp {
                         DefImpl::Code(ref callee_ast) => {
-                            let chain = resolve_process(ctx, &scope, protocol_scope, shape_down, fields_down, callee_ast);
+                            let chain = resolve_process(ctx, &scope, shape_down, fields_down, callee_ast);
                             processes.extend(chain.processes);
                         }
                         DefImpl::Primitive(ref primitive, ref shape_up_ast) => {
@@ -77,12 +80,12 @@ pub fn resolve_process(ctx: &Ctxt,
 
             ast::Process::Seq(ref top_shape, ref block) => {
                 let top_shape = resolve_protocol_invoke(ctx, &scope, top_shape);
-                let block = compile_block(ctx, scope, protocol_scope, shape_down, fields_down, top_shape, block, "anon_block");
+                let block = compile_block(ctx, scope, shape_down, fields_down, top_shape, block, "anon_block");
                 processes.push(block);
             }
 
             ast::Process::InferSeq(ref block) => {
-                let block = compile_block(ctx, scope, protocol_scope, shape_down, fields_down, Shape::None, block, "anon_block");
+                let block = compile_block(ctx, scope, shape_down, fields_down, Shape::None, block, "anon_block");
                 processes.push(block);
             }
 
@@ -94,10 +97,58 @@ pub fn resolve_process(ctx: &Ctxt,
                     ast::ProcessLiteralDirection::RoundTrip => panic!("@roundtrip is only usable in tests"),
                 };
 
-                processes.extend(make_literal_process(ctx, scope, protocol_scope, is_up, shape_up_expr, block).processes);
+                processes.extend(make_literal_process(ctx, scope, is_up, shape_up_expr, block).processes);
             }
         };
     }
 
     ProcessChain { processes }
 }
+
+
+#[derive(Clone, Default, Debug)]
+pub struct Config {
+    pub debug_dir: Option<PathBuf>
+}
+
+pub struct Ctxt<'a> {
+    pub id_counter: AtomicUsize,
+    pub debug_dir: Option<PathBuf>,
+    pub index: &'a Index,
+}
+
+impl Ctxt<'_> {
+    pub fn new<'a>(config: Config, index: &'a Index) -> Ctxt<'a> {
+        if let Some(ref p) = config.debug_dir {
+            fs::create_dir_all(p)
+                .unwrap_or_else(|e| error!("Failed to create debug directory `{}`: {}", p.display(), e));
+        }
+
+        Ctxt {
+            id_counter: AtomicUsize::new(1),
+            debug_dir: config.debug_dir,
+            index: index,
+        }
+    }
+
+    pub fn make_id(&self) -> usize {
+        self.id_counter.fetch_add(1, Ordering::Relaxed)
+    }
+
+    pub fn debug_file<T: FnOnce() -> String>(&self, name: T) -> Option<fs::File> {
+        self.debug_dir.as_ref().and_then(|path| {
+            let mut p = path.to_owned();
+            p.push(name());
+            fs::File::create(&p)
+                .map_err(|e| error!("Failed to open debug file `{}`: {}", p.display(), e))
+                .ok()
+        })
+    }
+
+    pub fn parse_process(&self, source: &str, shape_below: &Shape, fields_below: &Fields) -> Result<ProcessChain, ParseError> {
+        let file = SourceFile { name: "<process>".into(), source: source.into() };
+        let ast = parse_process_chain(&file.source)?;
+        Ok(resolve_process(self, &self.index.prelude, shape_below, fields_below, &ast))
+    }
+}
+

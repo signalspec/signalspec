@@ -2,7 +2,7 @@ use std::io::{Write, Result as IoResult};
 use std::iter::repeat;
 
 use crate::syntax::ast;
-use super::{ Scope, Item, Expr, Shape, Fields, ProtocolScope, ValueId,
+use super::{ Scope, Item, Expr, Shape, Fields, ValueId,
     Ctxt, Process, ProcessInfo, ProcessChain, MatchSet, ResolveInfo, DataMode, Type };
 use super::{ on_expr_message, value, pattern_match, rexpr };
 
@@ -97,7 +97,6 @@ impl StepInfo {
 struct StepBuilder<'a> {
     ctx: &'a Ctxt<'a>,
     scope: &'a Scope,
-    protocol_scope: &'a ProtocolScope,
     shape_down: &'a Shape,
     shape_up: &'a Shape,
     fields_down: &'a Fields,
@@ -222,7 +221,7 @@ impl<'a> StepBuilder<'a> {
 fn resolve_action(sb: StepBuilder<'_>, action: &ast::Action) -> StepInfo {
     match *action {
         ast::Action::Process(ref processes) => {
-            sb.process(resolve_process(sb.ctx, sb.scope, sb.protocol_scope, sb.shape_down, sb.fields_down, &processes[..]))
+            sb.process(resolve_process(sb.ctx, sb.scope, sb.shape_down, sb.fields_down, &processes[..]))
         }
         ast::Action::On(ref name, ref expr, ref body) => {
             let mut body_scope = sb.scope.child();
@@ -339,7 +338,6 @@ pub fn resolve_token(shape: &Shape, variant_name: &str, item: Item) -> Message {
 
 pub fn compile_block(ctx: &Ctxt,
                      scope: &Scope,
-                     protocol_scope: &ProtocolScope,
                      shape_down: &Shape,
                      fields_down: &Fields,
                      shape_up: Shape,
@@ -349,7 +347,7 @@ pub fn compile_block(ctx: &Ctxt,
     let mut fields_up = shape_up.fields(DataMode { down: false, up: true });
 
     let step = {
-        let sb = StepBuilder { ctx, scope, protocol_scope,
+        let sb = StepBuilder { ctx, scope,
             shape_up: &shape_up, shape_down: &shape_down,
             fields_down
         };
@@ -368,7 +366,6 @@ pub fn compile_block(ctx: &Ctxt,
 
 pub fn make_literal_process(ctx: &Ctxt,
                         scope: &Scope,
-                        protocol_scope: &ProtocolScope,
                         is_up: bool,
                         shape_up_expr: &ast::ProtocolRef,
                         block: &ast::Block) -> ProcessChain {
@@ -380,7 +377,7 @@ pub fn make_literal_process(ctx: &Ctxt,
     let fields_flip = shape_up.fields(DataMode { down: is_up, up: !is_up });
 
     let step = {
-        let sb = StepBuilder { ctx, scope, protocol_scope,
+        let sb = StepBuilder { ctx, scope,
             shape_down: &shape_up, shape_up: &shape_down,
             fields_down: &fields_flip
         };

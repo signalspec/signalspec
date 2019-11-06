@@ -1,3 +1,4 @@
+use std::{io, fs, path::Path};
 use std::ops::Deref;
 
 pub struct SourceFile {
@@ -8,6 +9,11 @@ pub struct SourceFile {
 impl SourceFile {
     pub fn new(name: String, source: String) -> SourceFile {
         SourceFile { name, source }
+    }
+
+    pub fn load(fname: &Path) -> Result<SourceFile, io::Error> {
+        let source = fs::read_to_string(fname)?;
+        Ok(SourceFile { name: fname.to_string_lossy().into(), source })
     }
     
     pub fn span(&self) -> FileSpan {
