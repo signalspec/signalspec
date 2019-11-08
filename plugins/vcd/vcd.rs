@@ -1,10 +1,9 @@
 #[macro_use]
 extern crate signalspec;
 extern crate vcd;
-extern crate ref_slice;
 
 use std::io;
-use ref_slice::ref_slice;
+use std::slice;
 
 use signalspec::{ Connection, PrimitiveProcess, Value, DataMode, Item, Index, PrimitiveDef, PrimitiveDefFields, Fields };
 
@@ -42,7 +41,7 @@ fn shape_to_scope(s: &Item) -> (vcd::Scope, Vec<vcd::IdCode>) {
     let top = if let &Item::Tuple(ref l) = s {
         scope(&mut ids, l, "top".to_owned())
     } else {
-        scope(&mut ids, ref_slice(s), "top".to_owned())
+        scope(&mut ids, slice::from_ref(s), "top".to_owned())
     };
     (top, ids)
 }
