@@ -1,7 +1,7 @@
 let x = #x
 
-with Seq(#x|#y|#z)
-def main(a) = {
+with Seq(#x|#y|#z, dir)
+def main(var(dir) a) = {
     let y = a
     let z = #z
     val(x)
@@ -9,5 +9,5 @@ def main(a) = {
     val(z)
 }
 
-test @both(Seq(#x|#y|#z)) { val(#x); val(#y); val(#z) } | main(#y);
-test fail @up(Seq(#x|#y|#z)) { val(#x); val(#y); val(#z) } | main(#z);
+test @both(Seq(#x|#y|#z, _)) { val(#x); val(#y); val(#z) } | main(#y);
+test fail @up(Seq(#x|#y|#z, _)) { val(#x); val(#y); val(#z) } | main(#z);

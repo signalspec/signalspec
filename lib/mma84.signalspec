@@ -9,24 +9,25 @@ let CTRL_REG4 = 'h2D
 
 //let I2C = Starfish
 
-protocol I2C() {
-    start(byte),
-    data(#r|#w, byte),
+protocol I2C(role) {
+    start(var(role[#master=#dn,#sniff=#up]) byte),
+    read(var(role[#master=#up,#sniff=#up]) byte),
+    write(var(role[#master=#dn,#sniff=#up]) byte),
     stop(),
 }
 
-with I2C()
-def read_reg(reg, val) = {
-    start(ADDR_WR); data(#w, reg); start(ADDR_RD); data(#r, val); stop()
+with I2C(role)
+def read_reg(var(role[#master=#dn,#sniff=#up]) reg, var(#up) val) = {
+    start(ADDR_WR); write(reg); start(ADDR_RD); read(val); stop()
 }
 
-with I2C()
-def write_reg(reg, val) = {
-    start(ADDR_WR); data(#w, reg); data(#w, val); stop()
+with I2C(role)
+def write_reg(var(role[#master=#dn,#sniff=#up]) reg, var(role[#master=#dn,#sniff=#up]) val) = {
+    start(ADDR_WR); write(reg); write(val); stop()
 }
 
-with I2C()
-def mma84() = Seq(-4.0..4.0, -4.0..4.0, -4.0..4.0) {
+with I2C(role)
+def mma84() = Seq((-4.0..4.0, -4.0..4.0, -4.0..4.0), #up) {
     read_reg(WHO_AM_I, 'h2a);
     write_reg(CTRL_REG1, 'h31);
     write_reg(XYZ_DATA_CFG, 'h00);

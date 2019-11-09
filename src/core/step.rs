@@ -223,11 +223,11 @@ fn resolve_action(sb: StepBuilder<'_>, action: &ast::Action) -> StepInfo {
         ast::Action::Process(ref processes) => {
             sb.process(resolve_process(sb.ctx, sb.scope, sb.shape_down, sb.fields_down, &processes[..]))
         }
-        ast::Action::On(ref name, ref expr, ref body) => {
+        ast::Action::On(ref name, ref exprs, ref body) => {
             let mut body_scope = sb.scope.child();
 
             debug!("Upper message, shape: {:?}", sb.shape_up);
-            let msginfo = on_expr_message(sb.ctx, &mut body_scope, sb.shape_up, name, expr);
+            let msginfo = on_expr_message(sb.ctx, &mut body_scope, sb.shape_up, name, &exprs[..]);
 
             let step = if let &Some(ref body) = body {
                 resolve_seq(sb.with_upper(&body_scope, &Shape::None), body)
@@ -303,7 +303,7 @@ pub fn resolve_letdef(scope: &mut Scope, ld: &ast::LetDef) {
     scope.bind(&name, item);
 }
 
-pub fn resolve_token(shape: &Shape, variant_name: &str, item: Item) -> Message {
+pub fn resolve_token(shape: &Shape, variant_name: &str, args: Vec<Item>) -> Message {
     fn inner(i: Item, shape: &Item, push: &mut dyn FnMut(Expr)) {
         match shape {
             &Item::Value(Expr::Const(_)) => (),
@@ -331,8 +331,12 @@ pub fn resolve_token(shape: &Shape, variant_name: &str, item: Item) -> Message {
         }
     }
 
-    shape.build_variant_fields(variant_name, |variant_shape, push| {
-        inner(item, variant_shape, push)
+    shape.build_variant_fields(variant_name, |msg_params, push| {
+        assert_eq!(args.len(), msg_params.len(), "wrong number of arguments to message {:?} {:?} {:?}", variant_name, msg_params, args);
+
+        for (param, arg) in msg_params.iter().zip(args) {
+            inner(arg, &param.item, push)
+        }
     })
 }
 

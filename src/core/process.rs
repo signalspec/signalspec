@@ -48,18 +48,18 @@ pub fn resolve_process(ctx: &Ctxt,
         let (shape_down, fields_down) = processes.last().map_or((shape_down, fields_down), |p|(&p.shape_up, &p.fields_up));
 
         match *process_ast {
-            ast::Process::Call(ref name, ref param_ast) => {
-                let param = rexpr(scope, param_ast);
+            ast::Process::Call(ref name, ref args_ast) => {
+                let args = args_ast.iter().map(|a| rexpr(scope, a)).collect();
 
                 if shape_down.has_variant_named(name) {
-                    let token_proc = resolve_token(shape_down, name, param);
+                    let token_proc = resolve_token(shape_down, name, args);
                     processes.push(ProcessInfo {
                         process: Process::Token(token_proc),
                         shape_up: Shape::None,
                         fields_up: Fields::null()
                     })
                 } else {
-                    let (scope, imp) = ctx.index.find_def(shape_down, name, param);
+                    let (scope, imp) = ctx.index.find_def(shape_down, name, args);
                     match *imp {
                         DefImpl::Code(ref callee_ast) => {
                             let chain = resolve_process(ctx, &scope, shape_down, fields_down, callee_ast);

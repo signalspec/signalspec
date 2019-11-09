@@ -1,4 +1,4 @@
-with Seq(#a|#b) def main() = {
+with Seq(#a|#b, _) def main() = {
     inner() | {
         val(#x)
         val(#y)
@@ -6,7 +6,7 @@ with Seq(#a|#b) def main() = {
     }
 }
 
-with Seq(#a|#b) def inner() = Seq(#x|#y) {
+with Seq(#a|#b, dir) def inner() = Seq(#x|#y, dir) {
     repeat {
         on val(i) {
             val(i[#x=#a, #y=#b])
@@ -14,4 +14,4 @@ with Seq(#a|#b) def inner() = Seq(#x|#y) {
     }
 }
 
-test @both(Seq(#a|#b)) { val(#a); val(#b); val(#b) } | main();
+test @both(Seq(#a|#b, _)) { val(#a); val(#b); val(#b) } | main();

@@ -20,18 +20,25 @@ peg::parser!(pub grammar signalspec() for str {
       = l:letstmt() { ast::ModuleEntry::Let(l) }
       / KW("use") _ name:IDENTIFIER() { ast::ModuleEntry::Use(name) }
       / KW("with") _ bottom:protocol_ref() _
-        KW("def") _ name:IDENTIFIER() _ param:expr_tup() _ "=" _ processes:process_chain()
-        { ast::ModuleEntry::WithDef(ast::Def { bottom, name, param, processes }) }
+        KW("def") _ name:IDENTIFIER() _  params:def_params() _ "=" _ processes:process_chain()
+        { ast::ModuleEntry::WithDef(ast::Def { bottom, name, params, processes }) }
       / KW("protocol") _ name:IDENTIFIER() _ param:expr_tup() _ entries:protocol_block()
         { ast::ModuleEntry::Protocol(ast::Protocol { name, param, entries }) }
       / t:test_block() { ast::ModuleEntry::Test(t) }
 
   pub rule primitive_header() -> ast::PrimitiveHeader
-    = KW("with") _ down_protocol:protocol_ref() _ KW("def") _ name:IDENTIFIER() _ param:expr_tup() _ up_protocol:(":" _ p:protocol_ref() {p})?
-      { ast::PrimitiveHeader { bottom:down_protocol, name:name, param:param, top:up_protocol } }
+    = KW("with") _ bottom:protocol_ref() _ KW("def") _ name:IDENTIFIER() _ params:def_params()  _ top:(":" _ p:protocol_ref() {p})?
+      { ast::PrimitiveHeader { bottom, name, params, top } }
 
   rule protocol_ref() -> ast::ProtocolRef
     = name:IDENTIFIER() _ param:expr_tup() { ast::ProtocolRef { name: name, param: param } }
+    
+  rule def_params() -> Vec<Spanned<ast::DefParam>>
+    = "(" _ params:COMMASEP(<spanned(<def_param()>)>) _ ")" { params }
+
+    rule def_param() -> ast::DefParam
+      = "const" _ e:expr() { ast::DefParam::Const(e) }
+      / "var" _ "(" _ dir:expr() _ ")" _ value:expr() { ast::DefParam::Var{ dir, value} }
 
   rule block() -> ast::Block
       = "{" _ lets:spanned(<letstmt()>)**_ _ actions:spanned(<action()>)**(_ (";" _)?) _ "}"
@@ -40,7 +47,7 @@ peg::parser!(pub grammar signalspec() for str {
       rule action() -> ast::Action
           = KW("repeat") _ count:expr()? _ block:block()
               { ast::Action::Repeat(count, block) }
-          / KW("on") _ name:IDENTIFIER() _ expr:expr_tup() _ body:block()?
+          / KW("on") _ name:IDENTIFIER() _ expr:expr_list() _ body:block()?
               { ast::Action::On(name, expr, body) }
           / KW("for") _ items:(l:IDENTIFIER() _ "=" _ r:expr() { (l,r) })**__ _ body:block()
               { ast::Action::For(items, body) }
@@ -56,7 +63,7 @@ peg::parser!(pub grammar signalspec() for str {
   rule protocol_block() -> Vec<ast::ProtocolEntry> = "{" _ e:protocol_entry() ** (_ "," _) _ ","? _ "}" { e }
 
     rule protocol_entry() -> ast::ProtocolEntry
-      = n:IDENTIFIER() _ e:expr_tup() { ast::ProtocolEntry::Message(n, e) }
+      = name:IDENTIFIER() _ params:def_params() { ast::ProtocolEntry::Message(name, params) }
 
   // Expressions
   rule expr() -> ast::SpannedExpr
@@ -64,8 +71,11 @@ peg::parser!(pub grammar signalspec() for str {
       / valexpr()
 
   rule expr_tup() -> ast::SpannedExpr
-      = es:spanned(<"(" e:COMMASEP(<expr()>) ")" {e}>)
+      = es:spanned(<es:expr_list()>)
       { if es.len() == 1 { es.node.into_iter().next().unwrap() } else { Spanned { node: ast::Expr::Tup(es.node), span: es.span } } }
+      
+  rule expr_list() -> Vec<ast::SpannedExpr>
+      = "(" e:COMMASEP(<valexpr()>) ")" { e }
 
   pub rule valexpr() -> ast::SpannedExpr = precedence! {
     start:position!() node:@ end:position!() { Spanned { node, span: FileSpan::new(start, end) } }
@@ -94,7 +104,7 @@ peg::parser!(pub grammar signalspec() for str {
     "_" { ast::Expr::Ignore }
     "[" vs:COMMASEP(<concat_elem()>) "]" { ast::Expr::Concat(vs) }
     i:IDENTIFIER() { ast::Expr::Var(i) }
-    "(" e:valexpr() ")" { e.node }
+    e:expr_tup() { e.node }
   }
 
   rule concat_elem() -> (Option<usize>, ast::SpannedExpr) = w:(w:INTEGER() ":" {w as usize})? e:valexpr() { (w, e) }
@@ -131,7 +141,7 @@ peg::parser!(pub grammar signalspec() for str {
 
     rule process() -> ast::Process
       = proto:protocol_ref() _ block:block() { ast::Process::Seq(proto, block) }
-      / name:IDENTIFIER() _ param:expr_tup() { ast::Process::Call(name, param) }
+      / name:IDENTIFIER() _ args:expr_list() { ast::Process::Call(name, args) }
       / block:block() { ast::Process::InferSeq(block) }
       / dir:literal_direction() _ "(" t:protocol_ref() ")" _ b:block()
           { ast::Process::Literal(dir, t, b) }

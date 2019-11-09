@@ -12,16 +12,21 @@ fn count_item_fields(i: &Item) -> usize {
 }
 
 #[derive(Clone, Debug)]
-pub struct ShapeVariant {
+pub struct ShapeMsg {
     pub name: String,
-    pub shape: Item,
+    pub params: Vec<ShapeMsgParam>,
     pub num_fields: usize,
 }
 
-impl ShapeVariant {
-    pub fn new(name: String, shape: Item) -> ShapeVariant {
-        let num_fields = count_item_fields(&shape);
-        ShapeVariant { name, shape, num_fields }
+#[derive(Clone, Debug)]
+pub struct ShapeMsgParam {
+    pub item: Item,
+}
+
+impl ShapeMsg {
+    pub fn new(name: String, params: Vec<ShapeMsgParam>) -> ShapeMsg {
+        let num_fields = params.iter().map(|x| count_item_fields(&x.item)).sum();
+        ShapeMsg { name, params, num_fields }
     }
 }
 
@@ -32,7 +37,7 @@ pub enum Shape {
     Seq {
         def: ProtocolRef,
         param: Item,
-        messages: Vec<ShapeVariant>,
+        messages: Vec<ShapeMsg>,
     },
 }
 
@@ -75,8 +80,10 @@ impl Shape {
                     }
                 }
 
-                for variant in messages {
-                    item_fields(&mut fields, &variant.shape, dir);
+                for msg in messages {
+                    for param in &msg.params {
+                        item_fields(&mut fields, &param.item, dir);
+                    }
                 }
 
                 Fields::new(fields)
@@ -91,7 +98,7 @@ impl Shape {
         }
     }
 
-    pub fn build_variant_fields<F>(&self, name: &str, with_variant: F) -> Vec<Option<Expr>> where F: FnOnce(&Item, &mut dyn FnMut(Expr)) {
+    pub fn build_variant_fields<F>(&self, name: &str, with_variant: F) -> Vec<Option<Expr>> where F: FnOnce(&[ShapeMsgParam], &mut dyn FnMut(Expr)) {
         match *self {
             Shape::Seq { ref messages, .. } => {
                 messages.iter().position(|m| m.name == name).map(|variant_idx| {
@@ -107,7 +114,7 @@ impl Shape {
 
                     let mut remaining_fields = variant.num_fields;
 
-                    with_variant(&variant.shape, &mut |e| {
+                    with_variant(&variant.params[..], &mut |e| {
                         assert!(remaining_fields > 0);
                         v[offset] = Some(e);
                         offset += 1;

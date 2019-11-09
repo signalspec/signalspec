@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use crate::syntax::{ ast, ParseError, SourceFile };
-use super::{ ProtocolRef, Item, PrimitiveDef, Scope, FunctionDef, PrimitiveFn, FileScope, Shape, lexpr };
+use super::{ ProtocolRef, Item, PrimitiveDef, Scope, FunctionDef, PrimitiveFn, FileScope, Shape };
 
 pub struct Index {
     pub prelude: Scope,
@@ -12,12 +12,12 @@ pub struct Index {
 struct Def {
     protocol: ast::ProtocolRef,
     name: String,
-    param: ast::Expr,
+    params: Vec<ast::DefParam>,
     scope: Scope,
     implementation: DefImpl
 }
 
-pub enum DefImpl {
+pub (crate) enum DefImpl {
     Code(Vec<ast::Process>),
     Primitive(Vec<PrimitiveDef>, Option<ast::ProtocolRef>)
  }
@@ -48,7 +48,7 @@ impl Index {
             protocol: header.bottom,
             name: header.name.clone(),
             scope: self.prelude.child(),
-            param: header.param.node,
+            params: header.params.iter().map(|x| x.node.clone()).collect(),
             implementation: DefImpl::Primitive(implementations, header.top),
         });
     }
@@ -57,37 +57,15 @@ impl Index {
         self.protocols_by_name.get(name)
     }
 
-    pub fn find_def(&self, shape: &Shape, name: &str, param: Item) -> (Scope, &DefImpl) {
+    pub(crate) fn find_def(&self, shape: &Shape, name: &str, args: Vec<Item>) -> (Scope, &DefImpl) {
         let mut found = None;
         for entry in &self.defs {
-            if entry.name != name { continue }
-
-            let mut scope = entry.scope.child();
-
-            let protocol = self.protocols_by_name.get(&entry.protocol.name[..]).cloned().unwrap_or_else(|| {
-                panic!("Failed to find protocol {:?}", entry.protocol.name);
-            });
-            
-            debug!("Trying to match {:?} against {:?}", entry.protocol, shape);
-            match shape {
-                Shape::None => panic!("looking for methods of Shape::None"),
-                Shape::Seq { def: r_proto, param: ref r_param, ..} => {
-                    if !(&protocol == r_proto && lexpr(&mut scope, &entry.protocol.param, r_param.clone()).is_ok()) {
-                        debug!("Failed to match protocol for `{}`", name);
-                        continue;
-                    }
+            if let Some(scope) = match_def(entry, shape, name, &args) {
+                if found.is_none() {
+                    found = Some((scope, &entry.implementation));
+                } else {
+                    panic!("Multiple definition of `{}`", name);
                 }
-            }
-
-            if let Err(err) = lexpr(&mut scope, &entry.param, param.clone()) {
-                debug!("Failed to match argument for `{}`: {:?}", name, err);
-                continue
-            }
-
-            if found.is_none() {
-                found = Some((scope, &entry.implementation));
-            } else {
-                panic!("Multiple definition of `{}`", name);
             }
         }
         found.unwrap_or_else(|| panic!("No definition found for `{}`", name))
@@ -103,7 +81,7 @@ impl Index {
                 protocol: def.bottom.clone(),
                 name: def.name.clone(),
                 scope: file.scope.clone(),
-                param: def.param.node.clone(),
+                params: def.params.iter().map(|x| x.node.clone()).collect(),
                 implementation: DefImpl::Code(def.processes.clone())
             });
         }
@@ -114,4 +92,24 @@ impl Index {
         self.add_file(file.clone());
         Ok(file)
     }
+}
+
+/// Match a shape, name, and argument against a candidate with-def block. If
+/// matched, returns a scope for the inside of the block.
+fn match_def(def: &Def, shape: &Shape, name: &str, args: &[Item]) -> Option<Scope> {
+    if def.name != name {
+        return None;
+    }
+
+    let mut scope = def.scope.child();
+
+    if !crate::core::protocol::match_protocol(&mut scope, &def.protocol, &shape) {
+        return None;
+    }
+
+    if !crate::core::protocol::match_def_params(&mut scope, &def.params, args) {
+        return None;
+    }
+
+    Some(scope)
 }

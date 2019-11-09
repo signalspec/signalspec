@@ -137,8 +137,8 @@ fn resolve_call(scope: &Scope, func: &ast::Expr, arg: &ast::Expr) -> Item {
     }
 }
 
-/// Resolve an expression as used in the argument of an `on` block, defining variables
-pub fn on_expr_message(ctx: &Ctxt, scope: &mut Scope, shape: &Shape, variant: &str, expr: &ast::Expr) -> Vec<Option<Expr>> {
+/// Resolve expressions as used in the arguments of an `on` block, defining variables
+pub fn on_expr_message(ctx: &Ctxt, scope: &mut Scope, shape: &Shape, variant: &str, exprs: &[ast::SpannedExpr]) -> Vec<Option<Expr>> {
     fn perform_match(ctx: &Ctxt, scope: &mut Scope, shape: &Item, expr: &ast::Expr, push: &mut dyn FnMut(Expr)) {
         match (shape, expr) {
             (&Item::Value(Expr::Const(ref c)), &ast::Expr::Value(ref val)) if c == val => (),
@@ -186,8 +186,10 @@ pub fn on_expr_message(ctx: &Ctxt, scope: &mut Scope, shape: &Shape, variant: &s
         }
     }
 
-    shape.build_variant_fields(variant, |variant_shape, push| {
-        perform_match(ctx, scope, variant_shape, expr, push);
+    shape.build_variant_fields(variant, |msg_params, push| {
+        for (param, expr) in msg_params.iter().zip(exprs) {
+            perform_match(ctx, scope, &param.item, expr, push);
+        }
     })
 }
 

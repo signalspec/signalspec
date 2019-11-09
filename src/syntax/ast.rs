@@ -14,14 +14,14 @@ pub struct Block {
 pub enum Action {
     Process(Vec<Process>),
     Repeat(Option<SpannedExpr>, Block),
-    On(String, SpannedExpr, Option<Block>),
+    On(String, Vec<SpannedExpr>, Option<Block>),
     For(Vec<(String, SpannedExpr)>, Block),
     Alt(SpannedExpr, Vec<AltArm>),
 }
 
 #[derive(Debug, Clone)]
 pub enum Process {
-    Call(String, SpannedExpr),
+    Call(String, Vec<SpannedExpr>),
     Seq(ProtocolRef, Block),
     InferSeq(Block),
     Literal(ProcessLiteralDirection, ProtocolRef, Block),
@@ -43,14 +43,20 @@ pub enum ModuleEntry {
 
 pub struct Def {
     pub name: String,
-    pub param: SpannedExpr,
+    pub params: Vec<Spanned<DefParam>>,
     pub bottom: ProtocolRef,
     pub processes: Vec<Process>,
 }
 
+#[derive(Debug, Clone)]
+pub enum DefParam {
+    Const(SpannedExpr),
+    Var { dir: SpannedExpr, value: SpannedExpr },
+}
+
 pub struct PrimitiveHeader {
     pub name: String,
-    pub param: SpannedExpr,
+    pub params: Vec<Spanned<DefParam>>,
     pub top: Option<ProtocolRef>,
     pub bottom: ProtocolRef,
 }
@@ -62,7 +68,7 @@ pub struct Protocol {
 }
 
 pub enum ProtocolEntry {
-    Message(String, SpannedExpr),
+    Message(String, Vec<Spanned<DefParam>>),
 }
 
 #[derive(Debug, Clone)]

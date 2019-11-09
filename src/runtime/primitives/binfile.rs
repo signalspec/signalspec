@@ -10,7 +10,7 @@ use crate::runtime::Connection;
 use crate::runtime::primitives::FnProcess;
 
 pub fn add_primitives(index: &mut Index) {
-    index.define_primitive("with Bytes() def f32le(): Seq(Float32)", vec![
+    index.define_primitive("with Bytes(dir) def f32le(): Seq(Float32)", vec![
         PrimitiveDef {
             id: "f32_le_up",
             fields_down: Fields::bytes(DataMode { up: true, down: false, }),
@@ -25,7 +25,7 @@ pub fn add_primitives(index: &mut Index) {
         }
     ]);
 
-    index.define_primitive("with Bytes() def cf32le(): Seq(Float32)", vec![
+    index.define_primitive("with Bytes(dir) def cf32le(): Seq(Float32)", vec![
         PrimitiveDef {
             id: "cf32_le_up",
             fields_down: Fields::bytes(DataMode { up: true, down: false, }),

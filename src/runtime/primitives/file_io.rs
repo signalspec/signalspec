@@ -6,7 +6,7 @@ use crate::core::{ DataMode, Fields, Index, PrimitiveDef, PrimitiveDefFields };
 use crate::runtime::{ Connection, PrimitiveProcess };
 
 pub fn add_primitives(index: &mut Index) {
-    index.define_primitive("with Base() def file(#r, name): Bytes()", vec![
+    index.define_primitive("with Base() def file(const #r, const name): Bytes(#up)", vec![
         PrimitiveDef {
             id: "file_read",
             fields_down: Fields::null(),
@@ -17,7 +17,7 @@ pub fn add_primitives(index: &mut Index) {
         }
     ]);
 
-    index.define_primitive("with Base() def file(#w, name): Bytes()", vec![
+    index.define_primitive("with Base() def file(const #w, const name): Bytes(#dn)", vec![
         PrimitiveDef {
             id: "file_write",
             fields_down: Fields::null(),

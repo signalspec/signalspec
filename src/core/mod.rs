@@ -14,9 +14,10 @@ mod data;
 mod shape;
 
 use self::file::ProtocolRef;
+use self::index::DefImpl;
 
 pub use self::file::FileScope;
-pub use self::index::{ Index, DefImpl };
+pub use self::index::{ Index };
 pub use self::scope::{ Item, Scope };
 pub use self::expr::{ Expr, ConcatElem, add_primitive_fns};
 pub use self::expr_resolve::{ rexpr, lexpr, on_expr_message, value, pattern_match };
@@ -26,7 +27,7 @@ pub use self::process::{ Process, ProcessInfo, ProcessChain, Ctxt, Config, resol
 pub use self::protocol::resolve_protocol_invoke;
 pub use self::step::{ Step, StepInfo, Message, make_literal_process, resolve_token, compile_block };
 pub use self::data::{ Type, DataMode };
-pub use self::shape::{ Shape, ShapeVariant, Fields, Field };
+pub use self::shape::{ Shape, ShapeMsg, ShapeMsgParam, Fields, Field };
 pub use self::direction_infer::ResolveInfo;
 pub use self::matchset::MatchSet;
 
