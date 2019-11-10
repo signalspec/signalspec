@@ -22,7 +22,7 @@ pub use self::scope::{ Item, Scope };
 pub use self::expr::{ Expr, ConcatElem, add_primitive_fns};
 pub use self::expr_resolve::{ rexpr, lexpr, on_expr_message, value, pattern_match };
 pub use self::function::{ PrimitiveFn, FunctionDef, Func };
-pub use self::primitive::{ PrimitiveDef, PrimitiveDefFields, call_primitive };
+pub use self::primitive::{ PrimitiveDef };
 pub use self::process::{ Process, ProcessInfo, ProcessChain, Ctxt, Config, resolve_process };
 pub use self::protocol::resolve_protocol_invoke;
 pub use self::step::{ Step, StepInfo, Message, resolve_token, compile_block };

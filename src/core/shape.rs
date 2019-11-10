@@ -1,4 +1,3 @@
-use std::f64;
 use crate::syntax::Value;
 use super::{ Type, DataMode, Item, Expr, ProtocolRef };
 
@@ -21,11 +20,20 @@ pub struct ShapeMsg {
 #[derive(Clone, Debug)]
 pub struct ShapeMsgParam {
     pub item: Item,
+    pub direction: DataMode,
+}
+
+impl ShapeMsgParam {
+    fn count_fields(&self) -> usize {
+        if self.direction.down || self.direction.up {
+            count_item_fields(&self.item)
+        } else { 0 }
+    }
 }
 
 impl ShapeMsg {
     pub fn new(name: String, params: Vec<ShapeMsgParam>) -> ShapeMsg {
-        let num_fields = params.iter().map(|x| count_item_fields(&x.item)).sum();
+        let num_fields = params.iter().map(|x| x.count_fields()).sum();
         ShapeMsg { name, params, num_fields }
     }
 }
@@ -54,7 +62,7 @@ impl Shape {
         }
     }
 
-    pub fn fields(&self, dir: DataMode) -> Fields {
+    pub fn fields(&self) -> Fields {
         match *self {
             Shape::None => Fields::null(),
             Shape::Seq { ref messages, .. } => {
@@ -82,7 +90,9 @@ impl Shape {
 
                 for msg in messages {
                     for param in &msg.params {
-                        item_fields(&mut fields, &param.item, dir);
+                        if param.direction.down || param.direction.up {
+                            item_fields(&mut fields, &param.item, param.direction);
+                        }
                     }
                 }
 
@@ -143,31 +153,10 @@ pub struct Fields {
     fields: Vec<Field>
 }
 
-impl IntoIterator for Fields {
-    type Item = Field;
-    type IntoIter = ::std::vec::IntoIter<Field>;
-    fn into_iter(self) -> Self::IntoIter { self.fields.into_iter() }
-}
-
 impl Fields {
     pub fn new(fields: Vec<Field>) -> Fields { Fields { fields } }
 
     pub fn null() -> Fields { Fields { fields: Vec::new() }}
-    pub fn bytes(dir: DataMode) -> Fields {
-        Fields {
-            fields: vec![Field { ty: Type::Integer(0, 255), is_tag: false, dir }]
-        }
-    }
-    pub fn f32(dir: DataMode) -> Fields {
-        Fields {
-            fields: vec![Field { ty: Type::Number(-f64::INFINITY, f64::INFINITY), is_tag: false, dir }]
-        }
-    }
-    pub fn cf32(dir: DataMode) -> Fields {
-        Fields {
-            fields: vec![Field { ty: Type::Complex, is_tag: false, dir }]
-        }
-    }
 
     pub fn len(&self) -> usize { self.fields.len() }
     pub fn iter(&self) -> ::std::slice::Iter<'_, Field> { self.fields.iter() }

@@ -19,7 +19,7 @@ struct Def {
 
 pub (crate) enum DefImpl {
     Code(Vec<ast::Process>),
-    Primitive(Vec<PrimitiveDef>, Option<ast::ProtocolRef>)
+    Primitive(PrimitiveDef, Option<ast::ProtocolRef>)
  }
 
 impl Index {
@@ -41,7 +41,7 @@ impl Index {
         self.prelude = module.scope.clone();
     }
 
-    pub fn define_primitive(&mut self, header_src: &str, implementations: Vec<PrimitiveDef>) {
+    pub fn define_primitive(&mut self, header_src: &str, implementation: PrimitiveDef) {
         let file = SourceFile { name: "<primitive>".into(), source: header_src.into() };
         let header = crate::syntax::parse_primitive_header(&file.source).expect("failed to parse primitive header");
         self.defs.push(Def {
@@ -49,7 +49,7 @@ impl Index {
             name: header.name.clone(),
             scope: self.prelude.child(),
             params: header.params.iter().map(|x| x.node.clone()).collect(),
-            implementation: DefImpl::Primitive(implementations, header.top),
+            implementation: DefImpl::Primitive(implementation, header.top),
         });
     }
 

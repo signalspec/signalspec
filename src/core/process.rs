@@ -4,7 +4,7 @@ use std::fs;
 
 use crate::syntax::{ ast, SourceFile, parse_process_chain, ParseError };
 use super::{ Index, Shape, Fields, Scope, StepInfo, Message, DefImpl };
-use super::{rexpr, resolve_token, resolve_protocol_invoke, call_primitive, compile_block };
+use super::{rexpr, resolve_token, resolve_protocol_invoke, compile_block };
 use crate::runtime::PrimitiveProcess;
 
 #[derive(Debug)]
@@ -71,7 +71,8 @@ pub fn resolve_process(ctx: &Ctxt,
                             } else {
                                 Shape::None
                             };
-                            let (prim, fields_up) = call_primitive(ctx, &scope, fields_down, &shape_up, primitive, &name);
+                            let prim = primitive.instantiate(&scope);
+                            let fields_up = shape_up.fields();
                             processes.push(ProcessInfo { process: Process::Primitive(prim), fields_up, shape_up });
                         }
                     }

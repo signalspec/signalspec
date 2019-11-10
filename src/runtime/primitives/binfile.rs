@@ -5,40 +5,30 @@ use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use num_complex::Complex;
 
 use crate::syntax::Value;
-use crate::core::{ DataMode, Fields, Index, PrimitiveDef, PrimitiveDefFields };
+use crate::core::{Index, PrimitiveDef };
 use crate::runtime::Connection;
 use crate::runtime::primitives::FnProcess;
 
 pub fn add_primitives(index: &mut Index) {
-    index.define_primitive("with Bytes(dir) def f32le(): Seq(Float32)", vec![
-        PrimitiveDef {
-            id: "f32_le_up",
-            fields_down: Fields::bytes(DataMode { up: true, down: false, }),
-            fields_up: PrimitiveDefFields::Explicit(Fields::f32(DataMode { up: true, down: false, })),
-            instantiate: primitive_args!(|| { Ok(Box::new(FnProcess(f32_le_up, "f32_le_up"))) })
-        },
-        PrimitiveDef {
-            id: "f32_le_down",
-            fields_down: Fields::bytes(DataMode { up: false, down: true, }),
-            fields_up: PrimitiveDefFields::Explicit(Fields::f32(DataMode { up: false, down: true, })),
-            instantiate: primitive_args!(|| { Ok(Box::new(FnProcess(f32_le_down, "f32_le_down"))) })
-        }
-    ]);
+    index.define_primitive("with Bytes(#up) def f32le(): Seq(Float32, #up)", PrimitiveDef {
+        id: "f32_le_up",
+        instantiate: primitive_args!(|| { Ok(Box::new(FnProcess(f32_le_up, "f32_le_up"))) })
+    });
 
-    index.define_primitive("with Bytes(dir) def cf32le(): Seq(Float32)", vec![
-        PrimitiveDef {
-            id: "cf32_le_up",
-            fields_down: Fields::bytes(DataMode { up: true, down: false, }),
-            fields_up: PrimitiveDefFields::Explicit(Fields::cf32(DataMode { up: true, down: false, })),
-            instantiate: primitive_args!(|| { Ok(Box::new(FnProcess(cf32_le_up, "cf32_le_up"))) })
-        },
-        PrimitiveDef {
-            id: "cf32_le_down",
-            fields_down: Fields::bytes(DataMode { up: false, down: true, }),
-            fields_up: PrimitiveDefFields::Explicit(Fields::cf32(DataMode { up: false, down: true, })),
-            instantiate: primitive_args!(|| { Ok(Box::new(FnProcess(cf32_le_down, "cf32_le_down"))) })
-        }
-    ]);
+    index.define_primitive("with Bytes(#dn) def f32le(): Seq(Float32, #dn)", PrimitiveDef {
+        id: "f32_le_down",
+        instantiate: primitive_args!(|| { Ok(Box::new(FnProcess(f32_le_down, "f32_le_down"))) })
+    });
+
+    index.define_primitive("with Bytes(#up) def cf32le(): Seq(Float32, #up)", PrimitiveDef {
+        id: "cf32_le_up",
+        instantiate: primitive_args!(|| { Ok(Box::new(FnProcess(cf32_le_up, "cf32_le_up"))) })
+    });
+
+    index.define_primitive("with Bytes(#dn) def cf32le(): Seq(Float32, #dn)", PrimitiveDef {
+        id: "cf32_le_down",
+        instantiate: primitive_args!(|| { Ok(Box::new(FnProcess(cf32_le_down, "cf32_le_down"))) })
+    });
 }
 
 fn f32_le_down(downwards: &mut Connection, upwards: &mut Connection) -> bool {

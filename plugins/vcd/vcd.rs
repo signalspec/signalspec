@@ -5,7 +5,7 @@ extern crate vcd;
 use std::io;
 use std::slice;
 
-use signalspec::{ Connection, PrimitiveProcess, Value, DataMode, Item, Index, PrimitiveDef, PrimitiveDefFields, Fields };
+use signalspec::{ Connection, PrimitiveProcess, Value, Item, Index, PrimitiveDef };
 
 /// Represent a shape as a VCD scope declaration, creating mapping from message index to VCD idcode
 fn shape_to_scope(s: &Item) -> (vcd::Scope, Vec<vcd::IdCode>) {
@@ -182,18 +182,13 @@ impl PrimitiveProcess for VcdRead {
 }
 
 pub fn add_primitives(index: &mut Index) {
-    index.define_primitive("with Bytes() def vcd(shape): Seq(shape)", vec![
-        PrimitiveDef {
-            id: "vcd_write",
-            fields_down: Fields::bytes(DataMode { up: false, down: true, }),
-            fields_up: PrimitiveDefFields::Auto(DataMode { up: false, down: true, }),
-            instantiate: primitive_args!(|shape: &Item| { Ok(Box::new(VcdWrite(shape.clone()))) })
-        },
-        PrimitiveDef {
-            id: "vcd_read",
-            fields_down: Fields::bytes(DataMode { up: true, down: false, }),
-            fields_up: PrimitiveDefFields::Auto(DataMode { up: true, down: false, }),
-            instantiate: primitive_args!(|shape: &Item| { Ok(Box::new(VcdRead(shape.clone()))) })
-        }
-    ]);
+    index.define_primitive("with Bytes(#dn) def vcd(shape): Seq(shape, #dn)", PrimitiveDef {
+        id: "vcd_write",
+        instantiate: primitive_args!(|shape: &Item| { Ok(Box::new(VcdWrite(shape.clone()))) })
+    });
+
+    index.define_primitive("with Bytes(#up) def vcd(shape): Seq(shape, #up)", PrimitiveDef {
+        id: "vcd_read",
+        instantiate: primitive_args!(|shape: &Item| { Ok(Box::new(VcdRead(shape.clone()))) })
+    });
 }

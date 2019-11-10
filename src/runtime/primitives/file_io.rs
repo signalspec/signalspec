@@ -2,31 +2,23 @@ use std::io;
 use std::path::PathBuf;
 use std::fs::File;
 
-use crate::core::{ DataMode, Fields, Index, PrimitiveDef, PrimitiveDefFields };
+use crate::core::{ Index, PrimitiveDef };
 use crate::runtime::{ Connection, PrimitiveProcess };
 
 pub fn add_primitives(index: &mut Index) {
-    index.define_primitive("with Base() def file(const #r, const name): Bytes(#up)", vec![
-        PrimitiveDef {
-            id: "file_read",
-            fields_down: Fields::null(),
-            fields_up: PrimitiveDefFields::Explicit(Fields::bytes(DataMode { up: true, down: false, })),
-            instantiate: primitive_args!(|name: &str| {
-                Ok(Box::new(ReaderProcess(PathBuf::from(name))))
-            })
-        }
-    ]);
+    index.define_primitive("with Base() def file(const #r, const name): Bytes(#up)", PrimitiveDef {
+        id: "file_read",
+        instantiate: primitive_args!(|name: &str| {
+            Ok(Box::new(ReaderProcess(PathBuf::from(name))))
+        })
+    });
 
-    index.define_primitive("with Base() def file(const #w, const name): Bytes(#dn)", vec![
-        PrimitiveDef {
-            id: "file_write",
-            fields_down: Fields::null(),
-            fields_up: PrimitiveDefFields::Explicit(Fields::bytes(DataMode { up: false, down: true, })),
-            instantiate: primitive_args!(|name: &str| {
-                Ok(Box::new(WriterProcess(PathBuf::from(name))))
-            })
-        }
-    ]);
+    index.define_primitive("with Base() def file(const #w, const name): Bytes(#dn)", PrimitiveDef {
+        id: "file_write",
+        instantiate: primitive_args!(|name: &str| {
+            Ok(Box::new(WriterProcess(PathBuf::from(name))))
+        })
+    });
 }
 
 

@@ -1,5 +1,5 @@
 use bit_set::BitSet;
-use crate::core::{ ValueId, Expr, Step, StepInfo, Message, Fields, DataMode };
+use crate::core::{ ValueId, Expr, StepInfo, Message, Fields, DataMode };
 
 /// Summary of the usage of values within an block and its children
 #[derive(Clone, Eq, PartialEq, Debug)]
@@ -101,50 +101,5 @@ impl ResolveInfo {
 
         assert_eq!(up, ri.repeat_up_heuristic);
         ri
-    }
-}
-
-pub fn infer_top_fields(step: &StepInfo, top_fields: &mut Fields) {
-    use self::Step::*;
-    match step.step {
-        Nop => (),
-
-        Process(ref processes) => {
-            if let Some(ref last) = processes.processes.last() {
-                if last.fields_up.len() > 0 {
-                    unimplemented!();
-                }
-            }
-        }
-
-        TokenTop(ref msg, ref body) => {
-
-            // Update the upward shape's direction with results of analyzing the usage of
-            // its data in the `on x { ... }` body.
-            for (m, f) in msg.iter().zip(top_fields.iter_mut()) {
-                if !f.is_tag {
-                    if let &Some(ref expr) = m {
-                        let constraint = match *expr {
-                            Expr::Variable(id, _) => body.dir.mode_of(id),
-
-                            //TODO: is the down value right?
-                            ref e => DataMode { up: e.down_evaluable(), down: false }
-                        };
-                        f.dir.constrain(constraint);
-                    }
-                }
-            }
-        }
-        Seq(ref steps) => {
-            for step in steps {
-                infer_top_fields(step, top_fields);
-            }
-        }
-        Repeat(_, ref body) | Foreach(_, _, ref body) => infer_top_fields(body, top_fields),
-        Alt(ref arms) => {
-            for &(_, ref body) in arms {
-                infer_top_fields(body, top_fields);
-            }
-        }
     }
 }

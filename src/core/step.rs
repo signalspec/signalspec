@@ -3,10 +3,9 @@ use std::iter::repeat;
 
 use crate::syntax::ast;
 use super::{ Scope, Item, Expr, Shape, Fields, ValueId,
-    Ctxt, Process, ProcessInfo, ProcessChain, MatchSet, ResolveInfo, DataMode, Type };
+    Ctxt, Process, ProcessInfo, ProcessChain, MatchSet, ResolveInfo, Type };
 use super::{ on_expr_message, value, pattern_match, rexpr };
 use super::process::resolve_process;
-use super::direction_infer::infer_top_fields;
 
 pub type Message = Vec<Option<Expr>>;
 
@@ -332,7 +331,9 @@ pub fn resolve_token(shape: &Shape, variant_name: &str, args: Vec<Item>) -> Mess
         assert_eq!(args.len(), msg_params.len(), "wrong number of arguments to message {:?} {:?} {:?}", variant_name, msg_params, args);
 
         for (param, arg) in msg_params.iter().zip(args) {
-            inner(arg, &param.item, push)
+            if param.direction.up || param.direction.down {
+                inner(arg, &param.item, push)
+            }
         }
     })
 }
@@ -345,7 +346,7 @@ pub fn compile_block(ctx: &Ctxt,
                      seq: &ast::Block,
                      name: &str) -> ProcessInfo {
 
-    let mut fields_up = shape_up.fields(DataMode { down: false, up: true });
+    let fields_up = shape_up.fields();
 
     let step = {
         let sb = StepBuilder { ctx, scope,
@@ -355,8 +356,6 @@ pub fn compile_block(ctx: &Ctxt,
 
         resolve_seq(sb, seq)
     };
-
-    infer_top_fields(&step, &mut fields_up);
 
     if let Some(mut f) = ctx.debug_file(|| format!("{}.steps", name)) {
         step.write_tree(&mut f, 0).unwrap_or_else(|e| error!("{}", e));

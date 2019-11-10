@@ -50,7 +50,7 @@ pub struct Def {
 #[derive(Debug, Clone)]
 pub enum DefParam {
     Const(SpannedExpr),
-    Var { dir: SpannedExpr, value: SpannedExpr },
+    Var { direction: SpannedExpr, value: SpannedExpr },
 }
 
 pub struct PrimitiveHeader {

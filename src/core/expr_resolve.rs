@@ -188,7 +188,9 @@ pub fn on_expr_message(ctx: &Ctxt, scope: &mut Scope, shape: &Shape, variant: &s
 
     shape.build_variant_fields(variant, |msg_params, push| {
         for (param, expr) in msg_params.iter().zip(exprs) {
-            perform_match(ctx, scope, &param.item, expr, push);
+            if param.direction.up || param.direction.down {
+                perform_match(ctx, scope, &param.item, expr, push);
+            }
         }
     })
 }

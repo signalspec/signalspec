@@ -1,5 +1,6 @@
 use crate::syntax::ast;
-use super::{ Scope, Shape, ShapeMsg, ShapeMsgParam, Ctxt };
+use crate::Value;
+use super::{ Scope, Shape, ShapeMsg, ShapeMsgParam, Ctxt, DataMode };
 use super::{ lexpr, rexpr, Item };
 
 /// Instantiates a protocol with passed arguments, creating a Shape.
@@ -17,11 +18,21 @@ pub fn resolve_protocol_invoke(ctx: &Ctxt, scope: &Scope, ast: &ast::ProtocolRef
             match *entry {
                 ast::ProtocolEntry::Message(ref name, ref es) => {
                     let params = es.iter().map(|p| {
-                        let item = match &p.node {
-                            ast::DefParam::Const(e) | ast::DefParam::Var{ value: e, .. } => rexpr(&protocol_def_scope, e),
-                        };
-
-                        ShapeMsgParam { item }
+                         match &p.node {
+                            ast::DefParam::Const(e) => {
+                                let item = rexpr(&protocol_def_scope, e);
+                                ShapeMsgParam { item, direction: DataMode { up: false, down: false} }
+                            }
+                            ast::DefParam::Var{ value, direction } => {
+                                let item = rexpr(&protocol_def_scope, value);
+                                let direction = match super::expr_resolve::value(&protocol_def_scope, direction).eval_const() {
+                                    Value::Symbol(s) if s == "up" => DataMode { up: true, down: false },
+                                    Value::Symbol(s) if s == "dn" => DataMode { up: false, down: true },
+                                    other => panic!("Invalid direction {:?}, expected `#up` or `#dn`", other)
+                                };
+                                ShapeMsgParam { item, direction }
+                            }
+                        }
                     }).collect();
                     messages.push(ShapeMsg::new(name.clone(), params));
                 }

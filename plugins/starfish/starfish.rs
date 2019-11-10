@@ -2,7 +2,7 @@
 #[macro_use] extern crate log;
 extern crate libusb;
 
-use signalspec::{ Index, Fields, Field, Connection, PrimitiveProcess, PrimitiveDef, PrimitiveDefFields, Value, DataMode, Type };
+use signalspec::{ Index, Connection, PrimitiveProcess, PrimitiveDef, Value };
 
 mod starfish_usb;
 use starfish_usb::{ StarfishUsb, find_device };
@@ -93,26 +93,15 @@ impl PrimitiveProcess for StarfishProcess {
 pub fn add_primitives(index: &mut Index) {
     index.define_prelude(r#"
         protocol Starfish() {
-            start(byte),
-            r(byte),
-            w(byte),
+            start(var(#dn) byte),
+            r(var(#up) byte),
+            w(var(#dn) byte),
             stop(),
         }
     "#);
 
-    let bytes_ty = Type::Vector(8, Box::new(Type::Integer(0, 1)));
-
-    index.define_primitive("with Base() def starfish(): Starfish()", vec![
-        PrimitiveDef {
-            id: "starfish_usb",
-            fields_down: Fields::null(),
-            fields_up: PrimitiveDefFields::Explicit(Fields::new(vec![
-                Field { ty: Type::Integer(0, 3), is_tag: true, dir: DataMode { up: true, down: true } }, /* variant */
-                Field { ty: bytes_ty.clone(), is_tag: false, dir: DataMode { up: false, down: true } }, /* start */
-                Field { ty: bytes_ty.clone(), is_tag: false, dir: DataMode { up: true, down: false } }, /* r */
-                Field { ty: bytes_ty.clone(), is_tag: false, dir: DataMode { up: false, down: true } }, /* w */
-            ])),
-            instantiate: primitive_args!(|| { Ok(Box::new(StarfishProcess)) })
-        },
-    ]);
+    index.define_primitive("with Base() def starfish(): Starfish()", PrimitiveDef {
+        id: "starfish_usb",
+        instantiate: primitive_args!(|| { Ok(Box::new(StarfishProcess)) })
+    });
 }

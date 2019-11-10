@@ -300,6 +300,10 @@ impl Expr {
         }
     }
 
+    pub fn eval_const(&self) -> Value {
+        self.eval_down(&|_| panic!("Runtime variable not expected here"))
+    }
+
     /// Up-evaluate a value. This accepts a value and may write variables
     /// via the passed function. It returns whether the expression matched the value.
     pub fn eval_up(&self, state: &mut dyn FnMut(ValueId, Value) -> bool, v: Value) -> bool {

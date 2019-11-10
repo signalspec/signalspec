@@ -38,7 +38,7 @@ peg::parser!(pub grammar signalspec() for str {
 
     rule def_param() -> ast::DefParam
       = "const" _ e:expr() { ast::DefParam::Const(e) }
-      / "var" _ "(" _ dir:expr() _ ")" _ value:expr() { ast::DefParam::Var{ dir, value} }
+      / "var" _ "(" _ direction:expr() _ ")" _ value:expr() { ast::DefParam::Var{ direction, value} }
 
   rule block() -> ast::Block
       = "{" _ lets:spanned(<letstmt()>)**_ _ actions:spanned(<action()>)**(_ (";" _)?) _ "}"

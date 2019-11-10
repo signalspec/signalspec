@@ -2,7 +2,7 @@ use std::fs;
 use std::path::Path;
 
 use crate::syntax::{ ast, SourceFile };
-use crate::core::{ Index, FileScope, Ctxt, DataMode };
+use crate::core::{ Index, FileScope, Ctxt };
 use crate::core::{resolve_protocol_invoke, resolve_process };
 use crate::runtime::{ Handle, Connection };
 
@@ -120,10 +120,10 @@ pub fn run_test(index: &Index, file: &FileScope, test: &ast::Test) -> TestResult
             };
 
             let shape_dn = make_seq_shape(args[0].clone(), "dn");
-            let fields_dn = shape_dn.fields(DataMode { down: true, up: false });
+            let fields_dn = shape_dn.fields();
             
             let shape_up = make_seq_shape(args[0].clone(), "dn");
-            let fields_up = shape_up.fields(DataMode { down: false, up: true });
+            let fields_up = shape_up.fields();
 
             let (c1, c2) = Connection::new(&fields_dn);
 
