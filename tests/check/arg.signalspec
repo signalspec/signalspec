@@ -4,5 +4,5 @@ def main(var(dir) a, var(dir) b) = {
     val(b)
 }
 
-test @both(Seq(#a|#b, _)){ val(#a); val(#b) } | main(#a, #b);
-test fail @up(Seq(#a|#b, _)){ val(#a); val(#a) } | main(#a, #b);
+test seq_both(#a|#b, (#a, #b)) | main(#a, #b);
+test fail seq(#a|#b, #up, (#a, #a)) | main(#a, #b);

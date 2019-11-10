@@ -11,5 +11,5 @@ def other(var(dir) x, var(dir) y) = {
     val(y)
 }
 
-test @both(Seq(#a|#b, _)){ val(#a); val(#a); val(#b); val(#b) } | main(#a, #b);
-test fail @up(Seq(#a|#b, _)){ val(#a); val(#a) } | main(#a, #b);
+test seq_both(#a|#b, (#a, #a, #b, #b)) | main(#a, #b);
+test fail seq(#a|#b, #up, (#a, #a)) | main(#a, #b);

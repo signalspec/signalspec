@@ -9,5 +9,5 @@ def main(var(dir) a) = {
     val(z)
 }
 
-test @both(Seq(#x|#y|#z, _)) { val(#x); val(#y); val(#z) } | main(#y);
-test fail @up(Seq(#x|#y|#z, _)) { val(#x); val(#y); val(#z) } | main(#z);
+test seq_both(#x|#y|#z, (#x, #y, #z)) | main(#y);
+test fail seq(#x|#y|#z, #up, (#x, #y, #z)) | main(#z);

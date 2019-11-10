@@ -143,14 +143,6 @@ peg::parser!(pub grammar signalspec() for str {
       = proto:protocol_ref() _ block:block() { ast::Process::Seq(proto, block) }
       / name:IDENTIFIER() _ args:expr_list() { ast::Process::Call(name, args) }
       / block:block() { ast::Process::InferSeq(block) }
-      / dir:literal_direction() _ "(" t:protocol_ref() ")" _ b:block()
-          { ast::Process::Literal(dir, t, b) }
-
-      rule literal_direction() -> ast::ProcessLiteralDirection
-        = "@up"   { ast::ProcessLiteralDirection::Up }
-        / "@dn"   { ast::ProcessLiteralDirection::Down }
-        / "@both" { ast::ProcessLiteralDirection::Both }
-        / "@roundtrip" { ast::ProcessLiteralDirection::RoundTrip }
 
   rule test_block() -> ast::Test
     = KW("test") _ fails:(KW("fail") __)? processes:process_chain() _ ";"

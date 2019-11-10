@@ -14,4 +14,4 @@ with Seq(#a|#b, dir) def inner() = Seq(#x|#y, dir) {
     }
 }
 
-test @both(Seq(#a|#b, _)) { val(#a); val(#b); val(#b) } | main();
+test seq_both(#a|#b, (#a, #b, #b)) | main();

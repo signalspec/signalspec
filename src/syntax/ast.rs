@@ -24,7 +24,6 @@ pub enum Process {
     Call(String, Vec<SpannedExpr>),
     Seq(ProtocolRef, Block),
     InferSeq(Block),
-    Literal(ProcessLiteralDirection, ProtocolRef, Block),
 }
 
 #[derive(Debug, Clone)]
@@ -100,14 +99,6 @@ pub enum Expr {
 
     Call(Box<SpannedExpr>, Box<SpannedExpr>),
     Var(String),
-}
-
-#[derive(Debug, Copy, Clone)]
-pub enum ProcessLiteralDirection {
-    Up,
-    Down,
-    Both,
-    RoundTrip,
 }
 
 #[derive(Debug)]

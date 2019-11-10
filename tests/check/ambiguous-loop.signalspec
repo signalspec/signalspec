@@ -4,8 +4,8 @@ def main2() = {
     repeat _ { val(#x) }
 }
 
-test @up(Seq(#x|#y, _)) { val(#x); val(#x); val(#x); val(#x) } | main2();
-test fail @up(Seq(#x|#y, _)) { val(#y); val(#x); val(#x); val(#x) } | main2();
+test seq(#x|#y, #up, (#x, #x, #x, #x)) | main2();
+test fail seq(#x|#y, #up, (#y, #x, #x, #x)) | main2();
 
 with Seq(#x|#y, _)
 def main3() = {
@@ -14,5 +14,5 @@ def main3() = {
     val(#y)
 }
 
-test @up(Seq(#x|#y, _)) { val(#x); val(#x); val(#x); val(#x); val(#y) } | main3();
-test fail @up(Seq(#x|#y, _)) { val(#x); val(#x); val(#x); val(#y) } | main3();
+test seq(#x|#y, #up, (#x, #x, #x, #x, #y)) | main3();
+test fail seq(#x|#y, #up, (#x, #x, #x, #y)) | main3();

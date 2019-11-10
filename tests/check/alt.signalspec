@@ -10,7 +10,7 @@ def bare() = {
     }
 }
 
-test @up(Seq(#a|#b, #x)) { val(#a) } | bare();
+test seq(#a|#b, #up, (#a)) | bare();
 
 with Seq(#a|#b, dir)
 def simple() = Seq(#a | #b, dir) {
@@ -28,8 +28,8 @@ def simple() = Seq(#a | #b, dir) {
     }
 }
 
-test @both(Seq(#a|#b, #x)) { val(#b); val(#a) } | simple() | { val(#b) };
-test @both(Seq(#a|#b, #x)) { val(#a); val(#b) } | simple() | { val(#a) };
+test seq_both(#a|#b, (#b, #a)) | simple() | { val(#b) };
+test seq_both(#a|#b, (#a, #b)) | simple() | { val(#a) };
 
 with Seq(#a|#b|#x|#y, dir)
 def tuple() = Seq((#a|#b, #a|#b|#x|#y), dir) {
@@ -47,7 +47,7 @@ def tuple() = Seq((#a|#b, #a|#b|#x|#y), dir) {
     }
 }
 
-test @both(Seq(#a|#b|#x|#y, #x)) { val(#b); val(#x) } | tuple() | { val((#b, #x)) };
+test seq_both(#a|#b|#x|#y, (#b, #x)) | tuple() | { val((#b, #x)) };
 
 with Seq(#a|#b, dir)
 def ambiguous() = Seq(#a | #b, dir) {
@@ -67,6 +67,6 @@ def ambiguous() = Seq(#a | #b, dir) {
     }
 }
 
-// test @both(Seq(#a|#b)) { val(#a); val(#b); val(#a) } ambiguous() { val(#b) };
-// test @both(Seq(#a|#b)) { val(#a); val(#a); val(#b) } ambiguous() { val(#a) };
-// test fail @both(Seq(#a|#b)) { val(#a); val(#a); val(#a) } ambiguous() { val(#a) };
+// test seq_both(#a|#b, (#a, #b, #a)) | ambiguous() | { val(#b) };
+// test seq_both(#a|#b, (#a, #a, #b)) | ambiguous() | { val(#a) };
+// test fail seq_both(#a|#b, (#a, #b, #a)) | ambiguous() | { val(#a) };

@@ -15,7 +15,7 @@ def main() = {
     val(#e)
 }
 
-test @up(Seq(t, _)) { val(#a) ; val(#e) } | main();
-test @up(Seq(t, _)) { val(#a) ; val(#b) ; val(#c) ; val(#d) ; val(#e) } | main();
-test @up(Seq(t, _)) { val(#a) ; val(#b) ; val(#b) ; val(#c) ; val(#c) ; val(#c) ; val(#d) ; val(#b) ; val(#d) ; val(#e) } | main();
-test fail @up(Seq(t, _)){ val(#a) ; val(#b) ; val(#c) } | main();
+test seq(t, #up, (#a, #e)) | main();
+test seq(t, #up, (#a, #b, #c, #d, #e)) | main();
+test seq(t, #up, (#a, #b, #b, #c, #c, #c, #d, #b, #d, #e)) | main();
+test fail seq(t, #up, (#a, #b, #c)) | main();

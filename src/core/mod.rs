@@ -25,7 +25,7 @@ pub use self::function::{ PrimitiveFn, FunctionDef, Func };
 pub use self::primitive::{ PrimitiveDef, PrimitiveDefFields, call_primitive };
 pub use self::process::{ Process, ProcessInfo, ProcessChain, Ctxt, Config, resolve_process };
 pub use self::protocol::resolve_protocol_invoke;
-pub use self::step::{ Step, StepInfo, Message, make_literal_process, resolve_token, compile_block };
+pub use self::step::{ Step, StepInfo, Message, resolve_token, compile_block };
 pub use self::data::{ Type, DataMode };
 pub use self::shape::{ Shape, ShapeMsg, ShapeMsgParam, Fields, Field };
 pub use self::direction_infer::ResolveInfo;

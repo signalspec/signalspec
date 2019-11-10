@@ -6,6 +6,6 @@ def main() = {
     val(#c)
 }
 
-test @both(Seq(#a|#b|#c, _)) { val(#a); val(#b); val(#c) } | main();
-test fail @up(Seq(#a|#b|#c, _)) { val(#a); val(#b); val(#a) } | main();
-test fail @up(Seq(#a|#b|#c, _)) { val(#c); val(#c); val(#c) } | main();
+test seq_both(#a|#b|#c, (#a, #b, #c)) | main();
+test fail seq(#a|#b|#c, #up, (#a, #b, #a)) | main();
+test fail seq(#a|#b|#c, #up, (#c, #c, #c)) | main();

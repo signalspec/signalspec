@@ -9,14 +9,4 @@ def main() = Seq(0..3, d) {
   }
 }
 
-test @up(Seq(#h|#l, _)) {
-  val(#h);
-  val(#l);
-  val(#h);
-  val(#h);
-  val(#l);
-  val(#h);
-  val(#h);
-  val(#h);
-  val(#l)
-} | main() | { val(0); val(1); val(2) };
+test seq(#h|#l, #up, (#h, #l, #h, #h, #l, #h, #h, #h, #l)) | main() | { val(0); val(1); val(2) };

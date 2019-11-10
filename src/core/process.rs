@@ -4,7 +4,7 @@ use std::fs;
 
 use crate::syntax::{ ast, SourceFile, parse_process_chain, ParseError };
 use super::{ Index, Shape, Fields, Scope, StepInfo, Message, DefImpl };
-use super::{rexpr, resolve_token, resolve_protocol_invoke, call_primitive, compile_block, make_literal_process};
+use super::{rexpr, resolve_token, resolve_protocol_invoke, call_primitive, compile_block };
 use crate::runtime::PrimitiveProcess;
 
 #[derive(Debug)]
@@ -87,17 +87,6 @@ pub fn resolve_process(ctx: &Ctxt,
             ast::Process::InferSeq(ref block) => {
                 let block = compile_block(ctx, scope, shape_down, fields_down, Shape::None, block, "anon_block");
                 processes.push(block);
-            }
-
-            ast::Process::Literal(dir, ref shape_up_expr, ref block) => {
-                let is_up = match dir {
-                    ast::ProcessLiteralDirection::Up => true,
-                    ast::ProcessLiteralDirection::Down => false,
-                    ast::ProcessLiteralDirection::Both => panic!("@both is only usable in tests"),
-                    ast::ProcessLiteralDirection::RoundTrip => panic!("@roundtrip is only usable in tests"),
-                };
-
-                processes.extend(make_literal_process(ctx, scope, is_up, shape_up_expr, block).processes);
             }
         };
     }

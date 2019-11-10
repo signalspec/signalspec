@@ -3,7 +3,7 @@ use std::path::Path;
 
 use crate::syntax::{ ast, SourceFile };
 use crate::core::{ Index, FileScope, Ctxt, DataMode };
-use crate::core::{resolve_protocol_invoke, make_literal_process, resolve_process };
+use crate::core::{resolve_protocol_invoke, resolve_process };
 use crate::runtime::{ Handle, Connection };
 
 
@@ -84,17 +84,27 @@ pub fn run_test(index: &Index, file: &FileScope, test: &ast::Test) -> TestResult
         handle.spawn(p).join()
     };
 
-    // If the test uses `@both`, generate `@up` and `@dn` versions and run them
+    fn symbol_expr(dir: &str) -> ast::SpannedExpr {
+        let span = crate::syntax::FileSpan::new(0, 0);
+        let node = ast::Expr::Value(ast::Value::Symbol(dir.into()));
+        ast::Spanned { node, span }
+    }
+
+    // If the test uses `seq_both`, or `roundtrip`, generate `up` and `dn` versions and run them
     match test.processes.split_first() {
-        Some((&ast::Process::Literal(ast::ProcessLiteralDirection::Both, ref shape_expr, ref block), rest)) => {
-            let dn_base = make_literal_process(&ctx, &file.scope, false, shape_expr, block);
-            let up_base = make_literal_process(&ctx, &file.scope, true, shape_expr, block);
+        Some((&ast::Process::Call(ref name, ref args), rest)) if name == "seq_both" => {
+            // Turn seq_both into seq(_, dir, ...) and run it
+            let run = |dir: &str| -> bool {
+                let mut args = args.clone();
+                args.insert(1, symbol_expr(dir));
+                let process = ast::Process::Call("seq".into(), args);
 
-            let dn_handle = Handle::base(Default::default(), index).spawn(dn_base);
-            let down_res = run_stack(dn_handle, rest);
+                let processes: Vec<ast::Process> = Some(process).into_iter().chain(rest.iter().cloned()).collect();
+                run_stack(Handle::base(Default::default(), index), &processes)
+            };
 
-            let up_handle = Handle::base(Default::default(), index).spawn(up_base);
-            let up_res = run_stack(up_handle, rest);
+            let down_res = run("dn");
+            let up_res = run("up");
 
             TestResult {
                 down: Some(down_res ^ test.should_fail),
@@ -102,15 +112,23 @@ pub fn run_test(index: &Index, file: &FileScope, test: &ast::Test) -> TestResult
             }
         }
 
-        Some((&ast::Process::Literal(ast::ProcessLiteralDirection::RoundTrip, ref ty, _), rest)) => {
-            let shape = resolve_protocol_invoke(&ctx, &file.scope, ty);
-            let fields_dn = shape.fields(DataMode { down: true, up: false });
-            let fields_up = shape.fields(DataMode { down: false, up: true });
+        Some((&ast::Process::Call(ref name, ref args), rest)) if name == "roundtrip" => {
+            let make_seq_shape = |ty: ast::SpannedExpr, dir: &str| {
+                let seq_args = ast::Spanned { span: ty.span, node: ast::Expr::Tup(vec![ty, symbol_expr(dir)]) };
+                let seq = ast::ProtocolRef { name: "Seq".into(), param: seq_args };
+                resolve_protocol_invoke(&ctx, &file.scope, &seq)
+            };
+
+            let shape_dn = make_seq_shape(args[0].clone(), "dn");
+            let fields_dn = shape_dn.fields(DataMode { down: true, up: false });
+            
+            let shape_up = make_seq_shape(args[0].clone(), "dn");
+            let fields_up = shape_up.fields(DataMode { down: false, up: true });
 
             let (c1, c2) = Connection::new(&fields_dn);
 
-            let h1 = Handle::new(Default::default(), index, shape.clone(), fields_dn, c1, None);
-            let h2 = Handle::new(Default::default(), index, shape, fields_up, c2, None);
+            let h1 = Handle::new(Default::default(), index, shape_dn, fields_dn, c1, None);
+            let h2 = Handle::new(Default::default(), index, shape_up, fields_up, c2, None);
 
             TestResult {
                 down: Some(run_stack(h1, rest) ^ test.should_fail),

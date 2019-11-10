@@ -29,4 +29,4 @@ def spi() = SPI(dir) {
   }
 }
 
-test @roundtrip(Seq((#l|#h, #l|#h, #l|#h), _)) {} | spi() | { start(); data('01011101); data('11110000); end(); start(); data('00001000); end() };
+test roundtrip((#l|#h, #l|#h, #l|#h)) | spi() | { start(); data('01011101); data('11110000); end(); start(); data('00001000); end() };

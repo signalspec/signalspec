@@ -5,11 +5,8 @@ use crate::syntax::ast;
 use super::{ Scope, Item, Expr, Shape, Fields, ValueId,
     Ctxt, Process, ProcessInfo, ProcessChain, MatchSet, ResolveInfo, DataMode, Type };
 use super::{ on_expr_message, value, pattern_match, rexpr };
-
-use super::protocol::resolve_protocol_invoke;
 use super::process::resolve_process;
 use super::direction_infer::infer_top_fields;
-use crate::runtime::{PrimitiveProcess, Connection};
 
 pub type Message = Vec<Option<Expr>>;
 
@@ -368,49 +365,3 @@ pub fn compile_block(ctx: &Ctxt,
     ProcessInfo { fields_up: fields_up.clone(), shape_up, process: Process::Seq(step) }
 }
 
-pub fn make_literal_process(ctx: &Ctxt,
-                        scope: &Scope,
-                        is_up: bool,
-                        shape_up_expr: &ast::ProtocolRef,
-                        block: &ast::Block) -> ProcessChain {
-
-    let shape_up = resolve_protocol_invoke(ctx, scope, shape_up_expr);
-    let shape_down = Shape::None;
-
-    let fields_up = shape_up.fields(DataMode { down: !is_up, up: is_up });
-    let fields_flip = shape_up.fields(DataMode { down: is_up, up: !is_up });
-
-    let step = {
-        let sb = StepBuilder { ctx, scope,
-            shape_down: &shape_up, shape_up: &shape_down,
-            fields_down: &fields_flip
-        };
-
-        super::step::resolve_seq(sb, block)
-    };
-
-    let inner_process =  ProcessChain {
-        processes: vec![ProcessInfo {
-            shape_up: Shape::None,
-            fields_up: Fields::null(),
-            process: Process::Seq(step)
-        }]
-    };
-
-    ProcessChain {
-        processes: vec![ProcessInfo { fields_up, shape_up,
-            process: Process::Primitive(Box::new(ProgramFlip { inner_process }))
-        }]
-    }
-}
-
-#[derive(Debug)]
-pub struct ProgramFlip {
-    pub inner_process: ProcessChain
-}
-
-impl PrimitiveProcess for ProgramFlip {
-    fn run(&self, downwards: &mut Connection, upwards: &mut Connection) -> bool {
-        crate::runtime::run(&self.inner_process, upwards, downwards)
-    }
-}

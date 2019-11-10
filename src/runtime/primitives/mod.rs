@@ -13,6 +13,7 @@ macro_rules! primitive_args {
 
 mod file_io;
 mod binfile;
+mod seq;
 
 use crate::core::{ add_primitive_fns, Index };
 use super::Connection;
@@ -30,6 +31,7 @@ pub fn add_primitives(index: &mut Index) {
 
     add_primitive_fns(index);
 
+    seq::add_primitives(index);
     file_io::add_primitives(index);
     binfile::add_primitives(index);
 }
