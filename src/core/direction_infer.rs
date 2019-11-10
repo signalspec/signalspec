@@ -3,7 +3,7 @@ use crate::core::{ ValueId, Expr, StepInfo, Message, Fields, DataMode };
 
 /// Summary of the usage of values within an block and its children
 #[derive(Clone, Eq, PartialEq, Debug)]
-pub struct ResolveInfo {
+pub(crate) struct ResolveInfo {
     /// The set of variable IDs that will be down-evaluated to produce a value used by the
     /// block. The enclosing expression must set these variables.
     pub vars_down: BitSet,

@@ -62,7 +62,7 @@ impl Shape {
         }
     }
 
-    pub fn fields(&self) -> Fields {
+    pub(crate) fn fields(&self) -> Fields {
         match *self {
             Shape::None => Fields::null(),
             Shape::Seq { ref messages, .. } => {
@@ -139,17 +139,29 @@ impl Shape {
             _ => panic!("Invalid shape for build_variant_fields: {:?}", self),
         }
     }
+
+    pub fn direction(&self) -> DataMode {
+        match self {
+            Shape::None => DataMode { down: false, up: false },
+            Shape::Seq { messages, .. } => {
+                DataMode {
+                    up: messages.iter().flat_map(|m| m.params.iter()).any(|f| f.direction.up),
+                    down: messages.iter().flat_map(|m| m.params.iter()).any(|f| f.direction.down)
+                }
+            }
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct Field {
+pub(crate) struct Field {
     pub ty: Type,
     pub is_tag: bool,
     pub dir: DataMode
 }
 
 #[derive(Clone, PartialEq, Debug)]
-pub struct Fields {
+pub(crate) struct Fields {
     fields: Vec<Field>
 }
 
@@ -160,7 +172,6 @@ impl Fields {
 
     pub fn len(&self) -> usize { self.fields.len() }
     pub fn iter(&self) -> ::std::slice::Iter<'_, Field> { self.fields.iter() }
-    pub fn iter_mut(&mut self) -> ::std::slice::IterMut<'_, Field> { self.fields.iter_mut() }
     pub fn direction(&self) -> DataMode {
         DataMode {
             up: self.iter().any(|f| f.dir.up && !f.is_tag),

@@ -145,7 +145,7 @@ fn run_processes(processes: &[ProcessInfo], cx: &mut RunCx<'_>) -> bool {
     if chain.len() == 0 {
         run_process(child, cx)
     } else {
-        let (mut conn_u, mut conn_l) = Connection::new(&child.fields_up);
+        let (mut conn_u, mut conn_l) = Connection::new(&child.shape_up.fields());
         let mut upper_cx = RunCx {
             downwards: &mut conn_u,
             upwards: cx.upwards,

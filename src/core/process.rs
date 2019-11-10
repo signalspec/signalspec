@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::fs;
 
 use crate::syntax::{ ast, SourceFile, parse_process_chain, ParseError };
-use super::{ Index, Shape, Fields, Scope, StepInfo, Message, DefImpl };
+use super::{ Index, Shape, Scope, StepInfo, Message, DefImpl };
 use super::{rexpr, resolve_token, resolve_protocol_invoke, compile_block };
 use crate::runtime::PrimitiveProcess;
 
@@ -18,7 +18,6 @@ pub enum Process {
 pub struct ProcessInfo {
     pub process: Process,
     pub shape_up: Shape,
-    pub fields_up: Fields,
 }
 
 #[derive(Debug)]
@@ -27,10 +26,6 @@ pub struct ProcessChain {
 }
 
 impl ProcessChain {
-    pub fn fields_up(&self) -> &Fields {
-        &self.processes.last().unwrap().fields_up
-    }
-
     pub fn shape_up(&self) -> &Shape {
         &self.processes.last().unwrap().shape_up
     }
@@ -39,13 +34,12 @@ impl ProcessChain {
 pub fn resolve_process(ctx: &Ctxt,
                        scope: &Scope,
                        shape_down: &Shape,
-                       fields_down: &Fields,
                        processes_ast: &[ast::Process]) -> ProcessChain {
 
     let mut processes: Vec<ProcessInfo> = vec![];
 
     for process_ast in processes_ast {
-        let (shape_down, fields_down) = processes.last().map_or((shape_down, fields_down), |p|(&p.shape_up, &p.fields_up));
+        let shape_down = processes.last().map_or(shape_down, |p|(&p.shape_up));
 
         match *process_ast {
             ast::Process::Call(ref name, ref args_ast) => {
@@ -55,14 +49,13 @@ pub fn resolve_process(ctx: &Ctxt,
                     let token_proc = resolve_token(shape_down, name, args);
                     processes.push(ProcessInfo {
                         process: Process::Token(token_proc),
-                        shape_up: Shape::None,
-                        fields_up: Fields::null()
+                        shape_up: Shape::None
                     })
                 } else {
                     let (scope, imp) = ctx.index.find_def(shape_down, name, args);
                     match *imp {
                         DefImpl::Code(ref callee_ast) => {
-                            let chain = resolve_process(ctx, &scope, shape_down, fields_down, callee_ast);
+                            let chain = resolve_process(ctx, &scope, shape_down, callee_ast);
                             processes.extend(chain.processes);
                         }
                         DefImpl::Primitive(ref primitive, ref shape_up_ast) => {
@@ -72,8 +65,7 @@ pub fn resolve_process(ctx: &Ctxt,
                                 Shape::None
                             };
                             let prim = primitive.instantiate(&scope);
-                            let fields_up = shape_up.fields();
-                            processes.push(ProcessInfo { process: Process::Primitive(prim), fields_up, shape_up });
+                            processes.push(ProcessInfo { process: Process::Primitive(prim), shape_up });
                         }
                     }
                 }
@@ -81,12 +73,12 @@ pub fn resolve_process(ctx: &Ctxt,
 
             ast::Process::Seq(ref top_shape, ref block) => {
                 let top_shape = resolve_protocol_invoke(ctx, &scope, top_shape);
-                let block = compile_block(ctx, scope, shape_down, fields_down, top_shape, block, "anon_block");
+                let block = compile_block(ctx, scope, shape_down, top_shape, block, "anon_block");
                 processes.push(block);
             }
 
             ast::Process::InferSeq(ref block) => {
-                let block = compile_block(ctx, scope, shape_down, fields_down, Shape::None, block, "anon_block");
+                let block = compile_block(ctx, scope, shape_down, Shape::None, block, "anon_block");
                 processes.push(block);
             }
         };
@@ -135,10 +127,10 @@ impl Ctxt<'_> {
         })
     }
 
-    pub fn parse_process(&self, source: &str, shape_below: &Shape, fields_below: &Fields) -> Result<ProcessChain, ParseError> {
+    pub fn parse_process(&self, source: &str, shape_below: &Shape) -> Result<ProcessChain, ParseError> {
         let file = SourceFile { name: "<process>".into(), source: source.into() };
         let ast = parse_process_chain(&file.source)?;
-        Ok(resolve_process(self, &self.index.prelude, shape_below, fields_below, &ast))
+        Ok(resolve_process(self, &self.index.prelude, shape_below, &ast))
     }
 }
 

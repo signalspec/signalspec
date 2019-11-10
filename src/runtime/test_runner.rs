@@ -80,7 +80,7 @@ pub fn run_test(index: &Index, file: &FileScope, test: &ast::Test) -> TestResult
     let ctx = Ctxt::new(Default::default(), index);
 
     let run_stack = |mut handle: Handle<'_>,  ast: &[ast::Process]| {
-        let p = resolve_process(&ctx, &file.scope, handle.top_shape(), handle.top_fields(), ast);
+        let p = resolve_process(&ctx, &file.scope, handle.top_shape(), ast);
         handle.spawn(p).join()
     };
 
@@ -120,15 +120,13 @@ pub fn run_test(index: &Index, file: &FileScope, test: &ast::Test) -> TestResult
             };
 
             let shape_dn = make_seq_shape(args[0].clone(), "dn");
-            let fields_dn = shape_dn.fields();
-            
-            let shape_up = make_seq_shape(args[0].clone(), "dn");
-            let fields_up = shape_up.fields();
+            let shape_up = make_seq_shape(args[0].clone(), "up");
 
+            let fields_dn = shape_dn.fields();
             let (c1, c2) = Connection::new(&fields_dn);
 
-            let h1 = Handle::new(Default::default(), index, shape_dn, fields_dn, c1, None);
-            let h2 = Handle::new(Default::default(), index, shape_up, fields_up, c2, None);
+            let h1 = Handle::new(Default::default(), index, shape_dn, c1, None);
+            let h2 = Handle::new(Default::default(), index, shape_up, c2, None);
 
             TestResult {
                 down: Some(run_stack(h1, rest) ^ test.should_fail),
@@ -138,8 +136,8 @@ pub fn run_test(index: &Index, file: &FileScope, test: &ast::Test) -> TestResult
 
         Some(_) => {
             let mut handle = Handle::base(Default::default(), index);
-            let p = resolve_process(&ctx, &file.scope, handle.top_shape(), handle.top_fields(), &test.processes);
-            let is_up = p.processes[0].fields_up.direction().up;
+            let p = resolve_process(&ctx, &file.scope, handle.top_shape(), &test.processes);
+            let is_up = p.processes[0].shape_up.direction().up;
 
             let r = handle.spawn(p).join() ^ test.should_fail;
 

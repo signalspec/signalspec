@@ -11,24 +11,22 @@ pub use self::test_runner::run as run_tests_in_file;
 pub use self::primitives::{ PrimitiveProcess, add_primitives };
 pub use self::exec::run;
 
-use crate::core::{ Ctxt, Config, Index, Shape, Fields, Item, ProcessChain };
+use crate::core::{ Ctxt, Config, Index, Shape, Item, ProcessChain };
 
 pub struct Handle<'a> {
     index: &'a Index,
     config: Config,
     top_shape: Shape,
-    top_fields: Fields,
     connection: Arc<Mutex<Connection>>,
     thread: Option<thread::JoinHandle<bool>>,
 }
 
 impl<'a> Handle<'a> {
-    pub fn new(config: Config, index: &'a Index, shape: Shape, fields: Fields, connection: Connection, thread: Option<thread::JoinHandle<bool>>) -> Handle<'a> {
+    pub fn new(config: Config, index: &'a Index, shape: Shape, connection: Connection, thread: Option<thread::JoinHandle<bool>>) -> Handle<'a> {
         Handle {
             index,
             config,
             top_shape: shape,
-            top_fields: fields,
             connection: Arc::new(Mutex::new(connection)),
             thread,
         }
@@ -42,15 +40,14 @@ impl<'a> Handle<'a> {
             messages: vec![],
         };
 
-        Handle::new(config, index, base_shape, Fields::null(), Connection::null(), None)
+        Handle::new(config, index, base_shape, Connection::null(), None)
     }
 
     pub fn top_shape(&self) -> &Shape { &self.top_shape }
-    pub fn top_fields(&self) -> &Fields { &self.top_fields }
 
     pub fn spawn(&mut self, processes: ProcessChain) -> Handle<'a> {
         let shape_up = processes.shape_up().clone();
-        let fields_up = processes.fields_up().clone();
+        let fields_up = shape_up.fields();
 
         let (c2, mut c1) = Connection::new(&fields_up);
         let conn = self.connection.clone();
@@ -60,16 +57,15 @@ impl<'a> Handle<'a> {
             exec::run(&processes, &mut conn, &mut c1)
         });
 
-        Handle::new(self.config.clone(), self.index, shape_up, fields_up, c2, Some(thread))
+        Handle::new(self.config.clone(), self.index, shape_up, c2, Some(thread))
     }
 
     pub fn parse_spawn(&mut self, call: &str) -> Result<Handle<'a>, String> {
         info!("parse_spawn `{}` on {:?}", call, self.top_shape());
 
         let ctx = Ctxt::new(self.config.clone(), &self.index);
-        let process = ctx.parse_process(call, self.top_shape(), self.top_fields())
+        let process = ctx.parse_process(call, self.top_shape())
             .map_err(|e| e.to_string())?;
-        info!("parse_spawn starting {:?} {:?}", process.shape_up(), process.fields_up());
         Ok(self.spawn(process))
     }
 

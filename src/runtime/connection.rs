@@ -19,7 +19,7 @@ pub struct Connection {
 
 /// Transfers data between two stacked abstractions
 impl Connection {
-    pub fn new(fields: &Fields) -> (Connection, Connection) {
+    pub(crate) fn new(fields: &Fields) -> (Connection, Connection) {
         let direction = fields.direction();
         debug!("New connection: {:?} {:?}", fields, direction);
 

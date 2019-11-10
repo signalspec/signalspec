@@ -60,7 +60,7 @@ fn main() {
             stack = stack.parse_spawn(&arg).unwrap_or_else(|e| panic!("Error parsing argument: {}", e));
         }
 
-        if stack.top_fields().direction().up {
+        if stack.top_shape().direction().up {
             console::run(stack.top_shape(), &mut stack.connection());
         }
 

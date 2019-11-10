@@ -2,7 +2,7 @@ use std::io::{Write, Result as IoResult};
 use std::iter::repeat;
 
 use crate::syntax::ast;
-use super::{ Scope, Item, Expr, Shape, Fields, ValueId,
+use super::{ Scope, Item, Expr, Shape, ValueId,
     Ctxt, Process, ProcessInfo, ProcessChain, MatchSet, ResolveInfo, Type };
 use super::{ on_expr_message, value, pattern_match, rexpr };
 use super::process::resolve_process;
@@ -11,9 +11,9 @@ pub type Message = Vec<Option<Expr>>;
 
 #[derive(Debug)]
 pub struct StepInfo {
-    pub step: Step,
-    pub dir: ResolveInfo,
-    pub first: MatchSet,
+    pub(crate) step: Step,
+    pub(crate) dir: ResolveInfo,
+    pub(crate) first: MatchSet,
 }
 
 impl StepInfo {
@@ -95,7 +95,6 @@ struct StepBuilder<'a> {
     scope: &'a Scope,
     shape_down: &'a Shape,
     shape_up: &'a Shape,
-    fields_down: &'a Fields,
 }
 
 impl<'a> StepBuilder<'a> {
@@ -129,14 +128,15 @@ impl<'a> StepBuilder<'a> {
         let top_first = process_first(p.processes.last().unwrap());
 
         let mut dir = ResolveInfo::new();
-        let mut fields_down = self.fields_down;
         for process in &p.processes {
             match process.process {
-                Process::Token(ref msg) => dir = dir.merge_seq(&ResolveInfo::from_message(&msg, fields_down)),
+                Process::Token(ref msg) => {
+                    let fields_down = self.shape_down.fields();
+                    dir = dir.merge_seq(&ResolveInfo::from_message(&msg, &fields_down));
+                }
                 Process::Seq(ref s) => dir = dir.merge_seq(&s.dir),
                 Process::Primitive(_) => unimplemented!(),
             }
-            fields_down = &process.fields_up;
         }
 
         StepInfo {
@@ -217,7 +217,7 @@ impl<'a> StepBuilder<'a> {
 fn resolve_action(sb: StepBuilder<'_>, action: &ast::Action) -> StepInfo {
     match *action {
         ast::Action::Process(ref processes) => {
-            sb.process(resolve_process(sb.ctx, sb.scope, sb.shape_down, sb.fields_down, &processes[..]))
+            sb.process(resolve_process(sb.ctx, sb.scope, sb.shape_down, &processes[..]))
         }
         ast::Action::On(ref name, ref exprs, ref body) => {
             let mut body_scope = sb.scope.child();
@@ -341,17 +341,12 @@ pub fn resolve_token(shape: &Shape, variant_name: &str, args: Vec<Item>) -> Mess
 pub fn compile_block(ctx: &Ctxt,
                      scope: &Scope,
                      shape_down: &Shape,
-                     fields_down: &Fields,
                      shape_up: Shape,
                      seq: &ast::Block,
                      name: &str) -> ProcessInfo {
-
-    let fields_up = shape_up.fields();
-
     let step = {
         let sb = StepBuilder { ctx, scope,
             shape_up: &shape_up, shape_down: &shape_down,
-            fields_down
         };
 
         resolve_seq(sb, seq)
@@ -361,6 +356,6 @@ pub fn compile_block(ctx: &Ctxt,
         step.write_tree(&mut f, 0).unwrap_or_else(|e| error!("{}", e));
     }
 
-    ProcessInfo { fields_up: fields_up.clone(), shape_up, process: Process::Seq(step) }
+    ProcessInfo { shape_up, process: Process::Seq(step) }
 }
 
