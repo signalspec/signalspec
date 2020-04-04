@@ -5,7 +5,7 @@ use std::time::Duration;
 use std::cmp::min;
 
 pub fn find_device<'a>(context: &'a libusb::Context, vid: u16, pid: u16) -> Result<libusb::DeviceHandle<'a>, libusb::Error> {
-    let devices = try!(context.devices());
+    let devices = context.devices()?;
     devices.iter().find(|device| {
         device.device_descriptor().ok().map_or(false, |desc| desc.vendor_id() == vid && desc.product_id() == pid)
     }).map_or(Err(libusb::Error::NotFound), |device| device.open())
@@ -20,8 +20,8 @@ pub struct StarfishUsb<'c> {
 
 impl<'c> StarfishUsb<'c> {
     pub fn new(mut handle: libusb::DeviceHandle) -> Result<StarfishUsb, libusb::Error> {
-        try!(handle.claim_interface(0));
-        try!(handle.set_alternate_setting(0, 1));
+        handle.claim_interface(0)?;
+        handle.set_alternate_setting(0, 1)?;
         Ok(StarfishUsb {
             handle: handle,
             read_buf: [0; 64],
@@ -44,7 +44,7 @@ fn libusb_err_to_io(e: libusb::Error) -> io::Error {
 impl<'c> Read for StarfishUsb<'c> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         if self.read_pos >= self.read_size {
-            let count = try!(self.handle.read_bulk(0x81, &mut self.read_buf, Duration::from_secs(10)).map_err(libusb_err_to_io));
+            let count = self.handle.read_bulk(0x81, &mut self.read_buf, Duration::from_secs(10)).map_err(libusb_err_to_io)?;
             self.read_pos = 0;
             self.read_size = count;
         }

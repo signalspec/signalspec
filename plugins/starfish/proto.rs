@@ -48,19 +48,19 @@ pub enum Reply {
 
 impl<T: Read> StarfishProto<T> {
     pub fn recv(&mut self) -> io::Result<Reply> {
-        match try!(self.read_byte()) {
+        match self.read_byte()? {
             0x80 => Ok(Reply::Ack),
             0x81 => Ok(Reply::Nack),
             0x82 => Ok(Reply::High),
             0x83 => Ok(Reply::Low),
-            0x84 => Ok(Reply::Data(try!(self.read_byte()))),
+            0x84 => Ok(Reply::Data(self.read_byte()?)),
             _ => Err(io::Error::new(io::ErrorKind::InvalidData, "unexpected byte"))
         }
     }
 
     fn read_byte(&mut self) -> io::Result<u8> {
         let mut buf = [0u8];
-        try!(self.rw.read_exact(&mut buf[..]));
+        self.rw.read_exact(&mut buf[..])?;
         debug!("read_byte {}", buf[0]);
         Ok(buf[0])
     }
