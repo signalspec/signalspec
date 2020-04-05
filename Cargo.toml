@@ -10,7 +10,7 @@ members = ["cli", "plugins/starfish", "plugins/vcd"]
 [dependencies]
 log = "0.3.2"
 bit-set = "0.4.0"
-num-complex = "0.1.35"
+num-complex = "0.2"
 byteorder = "1.0.0"
 peg = "0.6"
 vec_map = "0.8.0"
