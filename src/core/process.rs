@@ -17,7 +17,7 @@ pub enum Process {
 #[derive(Debug)]
 pub struct ProcessInfo {
     pub process: Process,
-    pub shape_up: Shape,
+    pub shape_up: Option<Shape>,
 }
 
 #[derive(Debug)]
@@ -26,8 +26,8 @@ pub struct ProcessChain {
 }
 
 impl ProcessChain {
-    pub fn shape_up(&self) -> &Shape {
-        &self.processes.last().unwrap().shape_up
+    pub fn shape_up(&self) -> Option<&Shape> {
+        self.processes.last().and_then(|x| x.shape_up.as_ref())
     }
 }
 
@@ -39,7 +39,9 @@ pub fn resolve_process(ctx: &Ctxt,
     let mut processes: Vec<ProcessInfo> = vec![];
 
     for process_ast in processes_ast {
-        let shape_down = processes.last().map_or(shape_down, |p|(&p.shape_up));
+        let shape_down = processes.last().map_or(Some(shape_down), |p|(p.shape_up.as_ref()));
+
+        let shape_down = shape_down.expect("No base shape");
 
         match *process_ast {
             ast::Process::Call(ref name, ref args_ast) => {
@@ -49,7 +51,7 @@ pub fn resolve_process(ctx: &Ctxt,
                     let token_proc = resolve_token(shape_down, name, args);
                     processes.push(ProcessInfo {
                         process: Process::Token(token_proc),
-                        shape_up: Shape::None
+                        shape_up: None
                     })
                 } else {
                     let (scope, imp) = ctx.index.find_def(shape_down, name, args);
@@ -59,11 +61,8 @@ pub fn resolve_process(ctx: &Ctxt,
                             processes.extend(chain.processes);
                         }
                         DefImpl::Primitive(ref primitive, ref shape_up_ast) => {
-                            let shape_up = if let Some(ref x) = shape_up_ast {
-                                resolve_protocol_invoke(ctx, &scope, x)
-                            } else {
-                                Shape::None
-                            };
+                            let shape_up = shape_up_ast.as_ref().map(|s| resolve_protocol_invoke(ctx, &scope, s));
+
                             let prim = primitive.instantiate(&scope);
                             processes.push(ProcessInfo { process: Process::Primitive(prim), shape_up });
                         }
@@ -73,12 +72,12 @@ pub fn resolve_process(ctx: &Ctxt,
 
             ast::Process::Seq(ref top_shape, ref block) => {
                 let top_shape = resolve_protocol_invoke(ctx, &scope, top_shape);
-                let block = compile_block(ctx, scope, shape_down, top_shape, block, "anon_block");
+                let block = compile_block(ctx, scope, shape_down, Some(top_shape), block, "anon_block");
                 processes.push(block);
             }
 
             ast::Process::InferSeq(ref block) => {
-                let block = compile_block(ctx, scope, shape_down, Shape::None, block, "anon_block");
+                let block = compile_block(ctx, scope, shape_down, None, block, "anon_block");
                 processes.push(block);
             }
         };

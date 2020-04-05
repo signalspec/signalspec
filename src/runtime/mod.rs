@@ -11,18 +11,18 @@ pub use self::test_runner::run as run_tests_in_file;
 pub use self::primitives::{ PrimitiveProcess, add_primitives };
 pub use self::exec::run;
 
-use crate::core::{ Ctxt, Config, Index, Shape, Item, ProcessChain };
+use crate::core::{ Ctxt, Config, Index, Shape, Fields, Item, ProcessChain };
 
 pub struct Handle<'a> {
     index: &'a Index,
     config: Config,
-    top_shape: Shape,
+    top_shape: Option<Shape>,
     connection: Arc<Mutex<Connection>>,
     thread: Option<thread::JoinHandle<bool>>,
 }
 
 impl<'a> Handle<'a> {
-    pub fn new(config: Config, index: &'a Index, shape: Shape, connection: Connection, thread: Option<thread::JoinHandle<bool>>) -> Handle<'a> {
+    pub fn new(config: Config, index: &'a Index, shape: Option<Shape>, connection: Connection, thread: Option<thread::JoinHandle<bool>>) -> Handle<'a> {
         Handle {
             index,
             config,
@@ -34,20 +34,23 @@ impl<'a> Handle<'a> {
 
     pub fn base(config: Config, index: &'a Index) -> Handle<'a> {
         let base = index.find_protocol("Base").cloned().expect("No `Base` protocol found in prelude");
-        let base_shape = Shape::Seq {
+        let base_shape = Shape {
             def: base,
             param: Item::Tuple(vec![]),
             messages: vec![],
         };
 
-        Handle::new(config, index, base_shape, Connection::null(), None)
+        Handle::new(config, index, Some(base_shape), Connection::null(), None)
     }
 
-    pub fn top_shape(&self) -> &Shape { &self.top_shape }
+    pub fn top_shape(&self) -> Option<&Shape> { self.top_shape.as_ref() }
 
     pub fn spawn(&mut self, processes: ProcessChain) -> Handle<'a> {
-        let shape_up = processes.shape_up().clone();
-        let fields_up = shape_up.fields();
+        let shape_up = processes.shape_up().cloned();
+        let fields_up = match &shape_up {
+            Some(s) => s.fields(),
+            None => Fields::null(),
+        };
 
         let (c2, mut c1) = Connection::new(&fields_up);
         let conn = self.connection.clone();
@@ -64,7 +67,7 @@ impl<'a> Handle<'a> {
         info!("parse_spawn `{}` on {:?}", call, self.top_shape());
 
         let ctx = Ctxt::new(self.config.clone(), &self.index);
-        let process = ctx.parse_process(call, self.top_shape())
+        let process = ctx.parse_process(call, self.top_shape().expect("no top shape"))
             .map_err(|e| e.to_string())?;
         Ok(self.spawn(process))
     }

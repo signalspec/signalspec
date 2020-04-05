@@ -40,115 +40,89 @@ impl ShapeMsg {
 
 /// Representation of token alphabet between state machine layers of abstraction.
 #[derive(Clone, Debug)]
-pub enum Shape {
-    None,
-    Seq {
-        def: ProtocolRef,
-        param: Item,
-        messages: Vec<ShapeMsg>,
-    },
+pub struct Shape {
+    pub def: ProtocolRef,
+    pub param: Item,
+    pub messages: Vec<ShapeMsg>,
 }
 
 
 impl Shape {
     pub fn count_fields(&self) -> usize {
-        match *self {
-            Shape::None => 0,
-            Shape::Seq { ref messages, .. } => {
-                let tag = if messages.len() <= 1 { 0usize } else { 1usize };
-                let inner: usize = messages.iter().map(|m| m.num_fields).sum();
-                tag + inner
-            }
-        }
+        let tag = if self.messages.len() <= 1 { 0usize } else { 1usize };
+        let inner: usize = self.messages.iter().map(|m| m.num_fields).sum();
+        tag + inner
     }
 
     pub(crate) fn fields(&self) -> Fields {
-        match *self {
-            Shape::None => Fields::null(),
-            Shape::Seq { ref messages, .. } => {
-                let mut fields = vec![];
-                if messages.len() > 1 {
-                    fields.push(Field {
-                        ty: Type::Integer(0, messages.len() as i64),
-                        is_tag: true,
-                        dir: DataMode{ up: true, down: true }
-                    });
-                }
+        let mut fields = vec![];
+        if self.messages.len() > 1 {
+            fields.push(Field {
+                ty: Type::Integer(0, self.messages.len() as i64),
+                is_tag: true,
+                dir: DataMode{ up: true, down: true }
+            });
+        }
 
-                fn item_fields(fields: &mut Vec<Field>, i: &Item, dir: DataMode) {
-                    match *i {
-                        Item::Value(Expr::Const(_)) => (),
-                        Item::Value(ref e) => fields.push(Field {
-                            ty: e.get_type(),
-                            is_tag: false,
-                            dir: dir
-                        }),
-                        Item::Tuple(ref t) => for x in t { item_fields(fields, x, dir) },
-                        _ => panic!("Item {:?} not allowed in shape", i),
-                    }
-                }
-
-                for msg in messages {
-                    for param in &msg.params {
-                        if param.direction.down || param.direction.up {
-                            item_fields(&mut fields, &param.item, param.direction);
-                        }
-                    }
-                }
-
-                Fields::new(fields)
+        fn item_fields(fields: &mut Vec<Field>, i: &Item, dir: DataMode) {
+            match *i {
+                Item::Value(Expr::Const(_)) => (),
+                Item::Value(ref e) => fields.push(Field {
+                    ty: e.get_type(),
+                    is_tag: false,
+                    dir: dir
+                }),
+                Item::Tuple(ref t) => for x in t { item_fields(fields, x, dir) },
+                _ => panic!("Item {:?} not allowed in shape", i),
             }
         }
+
+        for msg in &self.messages {
+            for param in &msg.params {
+                if param.direction.down || param.direction.up {
+                    item_fields(&mut fields, &param.item, param.direction);
+                }
+            }
+        }
+
+        Fields::new(fields)
     }
 
     pub fn has_variant_named(&self, name: &str) -> bool {
-        match *self {
-            Shape::Seq { ref messages, .. } => messages.iter().any(|m| m.name == name),
-            _ => false
-        }
+        self.messages.iter().any(|m| m.name == name)
     }
 
     pub fn build_variant_fields<F>(&self, name: &str, with_variant: F) -> Vec<Option<Expr>> where F: FnOnce(&[ShapeMsgParam], &mut dyn FnMut(Expr)) {
-        match *self {
-            Shape::Seq { ref messages, .. } => {
-                messages.iter().position(|m| m.name == name).map(|variant_idx| {
-                    let variant = &messages[variant_idx];
-                    let mut v = vec![None; self.count_fields()];
+        self.messages.iter().position(|m| m.name == name).map(|variant_idx| {
+            let variant = &self.messages[variant_idx];
+            let mut v = vec![None; self.count_fields()];
 
-                    let mut offset: usize = messages[..variant_idx].iter().map(|m| m.num_fields).sum();
+            let mut offset: usize = self.messages[..variant_idx].iter().map(|m| m.num_fields).sum();
 
-                    if messages.len() > 1 {
-                        v[0] = Some(Expr::Const(Value::Integer(variant_idx as i64)));
-                        offset += 1;
-                    }
-
-                    let mut remaining_fields = variant.num_fields;
-
-                    with_variant(&variant.params[..], &mut |e| {
-                        assert!(remaining_fields > 0);
-                        v[offset] = Some(e);
-                        offset += 1;
-                        remaining_fields -= 1;
-                    });
-
-                    assert_eq!(remaining_fields, 0);
-
-                    v
-                }).unwrap_or_else(|| panic!("Field {:?} not found on shape {:?}", name, self))
+            if self.messages.len() > 1 {
+                v[0] = Some(Expr::Const(Value::Integer(variant_idx as i64)));
+                offset += 1;
             }
-            _ => panic!("Invalid shape for build_variant_fields: {:?}", self),
-        }
+
+            let mut remaining_fields = variant.num_fields;
+
+            with_variant(&variant.params[..], &mut |e| {
+                assert!(remaining_fields > 0);
+                v[offset] = Some(e);
+                offset += 1;
+                remaining_fields -= 1;
+            });
+
+            assert_eq!(remaining_fields, 0);
+
+            v
+        }).unwrap_or_else(|| panic!("Field {:?} not found on shape {:?}", name, self))
     }
 
     pub fn direction(&self) -> DataMode {
-        match self {
-            Shape::None => DataMode { down: false, up: false },
-            Shape::Seq { messages, .. } => {
-                DataMode {
-                    up: messages.iter().flat_map(|m| m.params.iter()).any(|f| f.direction.up),
-                    down: messages.iter().flat_map(|m| m.params.iter()).any(|f| f.direction.down)
-                }
-            }
+        DataMode {
+            up: self.messages.iter().flat_map(|m| m.params.iter()).any(|f| f.direction.up),
+            down: self.messages.iter().flat_map(|m| m.params.iter()).any(|f| f.direction.down)
         }
     }
 }

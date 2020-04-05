@@ -1,5 +1,5 @@
 use bit_set::BitSet;
-use crate::core::{ ValueId, Expr, StepInfo, Message, Fields, DataMode };
+use crate::core::{ ValueId, Expr, StepInfo, Message, Shape, DataMode };
 
 /// Summary of the usage of values within an block and its children
 #[derive(Clone, Eq, PartialEq, Debug)]
@@ -25,7 +25,8 @@ impl ResolveInfo {
         }
     }
 
-    pub fn from_message(msg: &Message, bottom_fields: &Fields) -> ResolveInfo {
+    pub fn from_message(msg: &Message, bottom_shape: &Shape) -> ResolveInfo {
+        let bottom_fields = bottom_shape.fields();
         assert_eq!(msg.len(), bottom_fields.len());
         let mut ri = ResolveInfo::new();
         for (m, f) in msg.iter().zip(bottom_fields.iter()) {

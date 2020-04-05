@@ -3,7 +3,7 @@ use scoped_pool::Pool;
 use vec_map::VecMap;
 
 use crate::syntax::Value;
-use crate::core::{ Step, StepInfo, Message, ProcessInfo, ProcessChain, Process, Type, ValueId, MatchSet };
+use crate::core::{ Step, StepInfo, Message, ProcessInfo, ProcessChain, Process, Type, ValueId, MatchSet, Fields };
 
 use crate::runtime::{ Connection, ConnectionMessage };
 
@@ -18,9 +18,7 @@ pub fn run(processes: &ProcessChain, downwards: &mut Connection, upwards: &mut C
 
 
 struct RunCx<'a> {
-//    fields_below: &'a Fields,
     downwards: &'a mut Connection,
-//    fields_above: &'a Fields,
     upwards: &'a mut Connection,
 
     vars_down: State,
@@ -145,7 +143,10 @@ fn run_processes(processes: &[ProcessInfo], cx: &mut RunCx<'_>) -> bool {
     if chain.len() == 0 {
         run_process(child, cx)
     } else {
-        let (mut conn_u, mut conn_l) = Connection::new(&child.shape_up.fields());
+        let (mut conn_u, mut conn_l) = Connection::new(&match &child.shape_up {
+            Some(s) => s.fields(),
+            None => Fields::null()
+        });
         let mut upper_cx = RunCx {
             downwards: &mut conn_u,
             upwards: cx.upwards,

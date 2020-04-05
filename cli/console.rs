@@ -2,12 +2,12 @@ use std::io::prelude::*;
 use std::io;
 use signalspec::{ Shape, ShapeMsg, Connection, Value, Item };
 
-pub fn run(shape: &Shape, downwards: &mut Connection) -> bool {
+pub fn run(shape: Option<&Shape>, downwards: &mut Connection) -> bool {
     let stdout = ::std::io::stdout();
     if downwards.send(Vec::new()).is_err() { return false; }
     let shape_msg = match shape {
-        &Shape::None => return true,
-        &Shape::Seq { ref messages, .. } => &messages[..],
+        None => return true,
+        Some(s) => &s.messages[..],
     };
 
     loop {

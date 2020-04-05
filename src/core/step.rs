@@ -94,7 +94,7 @@ struct StepBuilder<'a> {
     ctx: &'a Ctxt<'a>,
     scope: &'a Scope,
     shape_down: &'a Shape,
-    shape_up: &'a Shape,
+    shape_up: Option<&'a Shape>,
 }
 
 impl<'a> StepBuilder<'a> {
@@ -131,8 +131,7 @@ impl<'a> StepBuilder<'a> {
         for process in &p.processes {
             match process.process {
                 Process::Token(ref msg) => {
-                    let fields_down = self.shape_down.fields();
-                    dir = dir.merge_seq(&ResolveInfo::from_message(&msg, &fields_down));
+                    dir = dir.merge_seq(&ResolveInfo::from_message(&msg, &self.shape_down));
                 }
                 Process::Seq(ref s) => dir = dir.merge_seq(&s.dir),
                 Process::Primitive(_) => unimplemented!(),
@@ -205,7 +204,7 @@ impl<'a> StepBuilder<'a> {
         }
     }
 
-    fn with_upper<'b>(&'b self, scope: &'b Scope, shape_up: &'b Shape) -> StepBuilder<'b> {
+    fn with_upper<'b>(&'b self, scope: &'b Scope, shape_up: Option<&'b Shape>) -> StepBuilder<'b> {
         StepBuilder { scope, shape_up, ..*self }
     }
 
@@ -223,10 +222,13 @@ fn resolve_action(sb: StepBuilder<'_>, action: &ast::Action) -> StepInfo {
             let mut body_scope = sb.scope.child();
 
             debug!("Upper message, shape: {:?}", sb.shape_up);
-            let msginfo = on_expr_message(sb.ctx, &mut body_scope, sb.shape_up, name, &exprs[..]);
+
+            let shape_up = sb.shape_up.expect("`on` block with no upper shape");
+
+            let msginfo = on_expr_message(sb.ctx, &mut body_scope, shape_up, name, &exprs[..]);
 
             let step = if let &Some(ref body) = body {
-                resolve_seq(sb.with_upper(&body_scope, &Shape::None), body)
+                resolve_seq(sb.with_upper(&body_scope, None), body)
             } else {
                 sb.nop()
             };
@@ -341,12 +343,12 @@ pub fn resolve_token(shape: &Shape, variant_name: &str, args: Vec<Item>) -> Mess
 pub fn compile_block(ctx: &Ctxt,
                      scope: &Scope,
                      shape_down: &Shape,
-                     shape_up: Shape,
+                     shape_up: Option<Shape>,
                      seq: &ast::Block,
                      name: &str) -> ProcessInfo {
     let step = {
         let sb = StepBuilder { ctx, scope,
-            shape_up: &shape_up, shape_down: &shape_down,
+            shape_up: shape_up.as_ref(), shape_down: shape_down,
         };
 
         resolve_seq(sb, seq)

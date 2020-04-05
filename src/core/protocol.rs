@@ -39,7 +39,7 @@ pub fn resolve_protocol_invoke(ctx: &Ctxt, scope: &Scope, ast: &ast::ProtocolRef
             }
         }
 
-        Shape::Seq { def: protocol.clone(), messages: messages, param }
+        Shape { def: protocol.clone(), messages: messages, param }
     } else {
         panic!("Protocol `{}` not found", ast.name);
     }
@@ -50,19 +50,15 @@ pub fn resolve_protocol_invoke(ctx: &Ctxt, scope: &Scope, ast: &ast::ProtocolRef
 /// scope may have already been modified.
 pub(crate) fn match_protocol(scope: &mut Scope, protocol: &ast::ProtocolRef, shape: &Shape) -> bool {
     debug!("Trying to match {:?} against {:?}", protocol, shape);
-    match shape {
-        Shape::None => panic!("looking for defs on Shape::None"),
-        Shape::Seq { def: r_proto, param: ref r_param, ..} => {
-            // TODO: resolve protocol.name in its file and make sure they refer to the same protocol
-            if protocol.name != r_proto.ast().name {
-                return false;
-            }
 
-            if let Err(e) = lexpr(scope, &protocol.param, r_param.clone()) {
-                debug!("Failed to match protocol argument for `{}`: {:?}", protocol.name, e);
-                return false;
-            }
-        }
+    // TODO: resolve protocol.name in its file and make sure they refer to the same protocol
+    if protocol.name != shape.def.ast().name {
+        return false;
+    }
+
+    if let Err(e) = lexpr(scope, &protocol.param, shape.param.clone()) {
+        debug!("Failed to match protocol argument for `{}`: {:?}", protocol.name, e);
+        return false;
     }
 
     return true;
