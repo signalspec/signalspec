@@ -220,7 +220,7 @@ fn run_step(step: &StepInfo, cx: &mut RunCx<'_>) -> bool {
             true
         }
         Repeat(ref count, ref inner) => {
-            if step.dir.repeat_up_heuristic {
+            if !count.dir().down {
                 debug!("repeat up");
                 let mut c = 0;
 
@@ -252,7 +252,7 @@ fn run_step(step: &StepInfo, cx: &mut RunCx<'_>) -> bool {
         }
         Foreach(count, ref assigns, ref inner) => {
             let mut lstate = assigns.iter().map(|&(id, ref expr)| {
-                let dir = step.dir.mode_of(id);
+                let dir = expr.dir();
                 let d = if dir.down {
                     match expr.eval_down(&mut |var| cx.vars_down.get(var).clone()) {
                         Value::Vector(v) => Some(v.into_iter()),
@@ -291,7 +291,11 @@ fn run_step(step: &StepInfo, cx: &mut RunCx<'_>) -> bool {
             true
         }
         Alt(ref opts) => {
-            if step.dir.repeat_up_heuristic {
+            let up = opts.iter().any(|arm| {
+                arm.0.is_empty() || arm.0.iter().any(|&(_, ref e)| !e.dir().down)
+            });
+            
+            if up {
                 for &(ref vals, ref inner) in opts {
                     if cx.test(&inner.first) {
                         for &(ref l, ref r) in vals {

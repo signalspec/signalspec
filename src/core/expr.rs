@@ -1,7 +1,7 @@
 use std::fmt;
 use num_complex::Complex;
 use crate::syntax::{ Value, BinOp };
-use super::{ Item, Type, ValueId };
+use super::{ Item, Type, ValueId, DataMode };
 
 /// Element of Expr::Concat
 #[derive(PartialEq, Debug, Clone)]
@@ -47,7 +47,7 @@ pub enum SignMode {
 pub enum Expr {
     Ignored,
     Const(Value),
-    Variable(ValueId, Type),
+    Variable(ValueId, Type, DataMode),
 
     Range(f64, f64),
     RangeInt(i64, i64),
@@ -68,7 +68,7 @@ impl Expr {
     pub fn each_var(&self, f: &mut dyn FnMut(ValueId)) {
         use self::Expr::*;
         match *self {
-            Variable(id, _) => f(id),
+            Variable(id, ..) => f(id),
             Ignored | Const(..) | Range(..) | RangeInt(..) => (),
             Flip(ref a, ref b) => {
                 a.each_var(f);
@@ -168,6 +168,31 @@ impl Expr {
         }
     }
 
+    pub fn dir(&self) -> DataMode {
+        use self::Expr::*;
+        match *self {
+            Ignored => DataMode { down: false, up: true },
+            Range(..) | RangeInt(..) => DataMode { down: false, up: true },
+            Union(..) => DataMode { down: false, up: true },
+            Variable(_, _, dir) => dir,
+            Const(..) => DataMode { down: true, up: true },
+            Flip(ref d, ref u) => DataMode{ down: d.dir().down, up: u.dir().up },
+            Concat(ref e) => e.iter().fold(DataMode { down: true, up: true }, |d, x| {
+                match *x {
+                    ConcatElem::Elem(ref e) | ConcatElem::Slice(ref e, _) => {
+                        let dir = e.dir();
+                        DataMode { down: dir.down && d.down, up: dir.up && d.up}
+                    },
+                }
+            }),
+            Choose(ref expr, _)
+            | BinaryConst(ref expr, _, _)
+            | FloatToInt(ref expr)
+            | IntToBits { ref expr, .. }
+            | Chunks { ref expr, .. } => expr.dir(),
+        }
+    }
+
     /// Return the `Type` for the set of possible values this expression may down-evaluate to or
     /// match on up-evaluation.
     pub fn get_type(&self) -> Type {
@@ -176,7 +201,7 @@ impl Expr {
             Expr::Range(lo, hi) => Type::Number(lo, hi),
             Expr::RangeInt(lo, hi) => Type::Integer(lo, hi),
             Expr::Union(ref u) => Type::union_iter(u.iter().map(Expr::get_type)),
-            Expr::Variable(_, ref ty) => ty.clone(),
+            Expr::Variable(_, ref ty, _) => ty.clone(),
             Expr::Const(ref v) => v.get_type(),
             Expr::Flip(ref d, ref u) => Type::union(d.get_type(), u.get_type()),
             Expr::Choose(_, ref choices) => {
@@ -243,7 +268,7 @@ impl Expr {
             Expr::Ignored | Expr::Range(..) | Expr::RangeInt(..) | Expr::Union(..) => {
                 panic!("{:?} can't be down-evaluated", self)
             }
-            Expr::Variable(id, _) => state(id),
+            Expr::Variable(id, _, _) => state(id),
             Expr::Const(ref v) => v.clone(),
 
             Expr::Flip(ref d, _) => d.eval_down(state),
@@ -320,7 +345,7 @@ impl Expr {
             Expr::Union(ref u) => {
                 u.iter().any(|i| i.eval_up(state, v.clone()))
             }
-            Expr::Variable(id, _) => state(id, v),
+            Expr::Variable(id, _, _) => state(id, v),
             Expr::Const(ref p) => &v == p,
 
             Expr::Flip(_, ref u) => u.eval_up(state, v),
@@ -418,7 +443,7 @@ impl fmt::Display for Expr {
             Expr::Ignored => write!(f, "_"),
             Expr::Range(a, b) => write!(f, "{}..{}", a, b),
             Expr::RangeInt(a, b) => write!(f, "#{}..#{}", a, b),
-            Expr::Variable(id, _) => write!(f, "${}", id),
+            Expr::Variable(id, _, _) => write!(f, "${}", id),
             Expr::Const(ref p) => write!(f, "{}", p),
             Expr::Flip(ref d, ref u) if **d == Expr::Ignored => write!(f, ":> {}", u),
             Expr::Flip(ref d, ref u) if **u == Expr::Ignored => write!(f, "<: {}", d),

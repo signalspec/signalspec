@@ -3,7 +3,7 @@ use std::iter::repeat;
 
 use crate::syntax::ast;
 use super::{ Scope, Item, Expr, Shape, ValueId,
-    Ctxt, Process, ProcessInfo, ProcessChain, MatchSet, ResolveInfo, Type };
+    Ctxt, Process, ProcessInfo, ProcessChain, MatchSet, Type };
 use super::{ on_expr_message, value, pattern_match, rexpr };
 use super::process::resolve_process;
 
@@ -12,7 +12,6 @@ pub type Message = Vec<Option<Expr>>;
 #[derive(Debug)]
 pub struct StepInfo {
     pub(crate) step: Step,
-    pub(crate) dir: ResolveInfo,
     pub(crate) first: MatchSet,
 }
 
@@ -20,7 +19,6 @@ impl StepInfo {
     pub fn fake(step: Step) -> StepInfo {
         StepInfo {
             step,
-            dir: ResolveInfo::new(),
             first: MatchSet::null()
         }
     }
@@ -101,7 +99,6 @@ impl<'a> StepBuilder<'a> {
     fn nop(&self) -> StepInfo {
         StepInfo {
             first: MatchSet::epsilon(),
-            dir: ResolveInfo::new(),
             step: Step::Nop
         }
     }
@@ -127,20 +124,8 @@ impl<'a> StepBuilder<'a> {
         let bottom_first = process_first(p.processes.first().unwrap());
         let top_first = process_first(p.processes.last().unwrap());
 
-        let mut dir = ResolveInfo::new();
-        for process in &p.processes {
-            match process.process {
-                Process::Token(ref msg) => {
-                    dir = dir.merge_seq(&ResolveInfo::from_message(&msg, &self.shape_down));
-                }
-                Process::Seq(ref s) => dir = dir.merge_seq(&s.dir),
-                Process::Primitive(_) => unimplemented!(),
-            }
-        }
-
         StepInfo {
             first: MatchSet::join(&bottom_first, &top_first),
-            dir,
             step: Step::Process(p)
         }
     }
@@ -148,7 +133,6 @@ impl<'a> StepBuilder<'a> {
     fn token_top(&self, message: Message, inner: StepInfo) -> StepInfo {
         StepInfo {
             first: MatchSet::upper(message.clone()).followed_by(inner.first.clone()),
-            dir: inner.dir.with_up(),
             step: Step::TokenTop(message, Box::new(inner))
         }
     }
@@ -157,7 +141,6 @@ impl<'a> StepBuilder<'a> {
         //TODO: check that each adjacent followlast and first are non-overlapping
         StepInfo {
             first: steps.iter().fold(MatchSet::epsilon(), |a, s| a.followed_by(s.first.clone())),
-            dir: ResolveInfo::steps(&steps),
             step: Step::Seq(steps)
         }
     }
@@ -180,7 +163,6 @@ impl<'a> StepBuilder<'a> {
             } else {
                 inner.first.clone()
             },
-            dir: inner.dir.repeat(&count),
             step: Step::Repeat(count, Box::new(inner))
         }
     }
@@ -190,7 +172,6 @@ impl<'a> StepBuilder<'a> {
 
         StepInfo {
             first: inner.first.clone(),
-            dir: inner.dir.foreach(&vars),
             step: Step::Foreach(length, vars, Box::new(inner))
         }
     }
@@ -199,7 +180,6 @@ impl<'a> StepBuilder<'a> {
         // TODO: check that first is nonoverlapping
         StepInfo {
             first: opts.iter().fold(MatchSet::null(), |a, &(_, ref inner)| a.alternative(inner.first.clone())),
-            dir: ResolveInfo::alt(&opts),
             step: Step::Alt(opts)
         }
     }
@@ -249,12 +229,13 @@ fn resolve_action(sb: StepBuilder<'_>, action: &ast::Action) -> StepInfo {
             for &(ref name, ref expr) in pairs {
                 let e = value(sb.scope, expr);
                 let t = e.get_type();
+                let dir = e.dir();
                 if let Type::Vector(c, ty) = t {
                     match count {
                         Some(count) => assert_eq!(count, c),
                         None => count = Some(c),
                     }
-                    let id = body_scope.new_variable(sb.ctx, name, *ty);
+                    let id = body_scope.new_variable(sb.ctx, name, *ty, dir);
                     inner_vars.push((id, e));
                 } else {
                     panic!("Foreach must loop over vector type, not {:?}", t)

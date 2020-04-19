@@ -144,7 +144,6 @@ impl Fields {
 
     pub fn null() -> Fields { Fields { fields: Vec::new() }}
 
-    pub fn len(&self) -> usize { self.fields.len() }
     pub fn iter(&self) -> ::std::slice::Iter<'_, Field> { self.fields.iter() }
     pub fn direction(&self) -> DataMode {
         DataMode {

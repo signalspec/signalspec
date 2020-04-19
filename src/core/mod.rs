@@ -2,7 +2,6 @@ mod scope;
 mod expr;
 mod expr_resolve;
 mod step;
-mod direction_infer;
 mod file;
 mod index;
 mod protocol;
@@ -16,7 +15,6 @@ mod shape;
 use self::file::ProtocolRef;
 use self::index::DefImpl;
 pub(crate) use self::shape::Fields;
-pub(crate) use self::direction_infer::ResolveInfo;
 pub(crate) use self::step::StepInfo;
 
 pub use self::file::FileScope;

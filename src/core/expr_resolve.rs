@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use crate::syntax::{ast, Value};
-use super::{ Ctxt, Expr, ConcatElem, Scope, Item , FunctionDef, Func, Shape };
+use super::{ Ctxt, Expr, ConcatElem, Scope, Item , FunctionDef, Func, Shape, DataMode };
 
 fn resolve(scope: Option<&Scope>, var_handler: &mut dyn FnMut(&str) -> Expr, e: &ast::Expr) -> Expr {
     match *e {
@@ -139,29 +139,29 @@ fn resolve_call(scope: &Scope, func: &ast::Expr, arg: &ast::Expr) -> Item {
 
 /// Resolve expressions as used in the arguments of an `on` block, defining variables
 pub fn on_expr_message(ctx: &Ctxt, scope: &mut Scope, shape: &Shape, variant: &str, exprs: &[ast::SpannedExpr]) -> Vec<Option<Expr>> {
-    fn perform_match(ctx: &Ctxt, scope: &mut Scope, shape: &Item, expr: &ast::Expr, push: &mut dyn FnMut(Expr)) {
+    fn perform_match(ctx: &Ctxt, scope: &mut Scope, shape: &Item, expr: &ast::Expr, dir: DataMode, push: &mut dyn FnMut(Expr)) {
         match (shape, expr) {
             (&Item::Value(Expr::Const(ref c)), &ast::Expr::Value(ref val)) if c == val => (),
 
             (&Item::Value(ref v), &ast::Expr::Var(ref name)) => { // A variable binding
                 let ty = v.get_type();
-                let id = scope.new_variable(ctx, &name[..], ty.clone());
-                push(Expr::Variable(id, ty));
+                let id = scope.new_variable(ctx, &name[..], ty.clone(), dir);
+                push(Expr::Variable(id, ty, dir));
             }
 
             (&Item::Tuple(ref ss), &ast::Expr::Var(ref name)) => { // A variable binding for a tuple
                 // Capture a tuple by recursively building a tuple Item containing each of the
                 // captured variables
-                fn build_tuple(ctx: &Ctxt, push: &mut dyn FnMut(Expr), ss: &[Item]) -> Item {
+                fn build_tuple(ctx: &Ctxt, dir: DataMode, push: &mut dyn FnMut(Expr), ss: &[Item]) -> Item {
                     Item::Tuple(ss.iter().map(|i| {
                         match *i {
                             Item::Value(Expr::Const(ref c)) => Item::Value(Expr::Const(c.clone())),
-                            Item::Tuple(ref t) => build_tuple(ctx, push, &t[..]),
+                            Item::Tuple(ref t) => build_tuple(ctx, dir, push, &t[..]),
                             Item::Value(ref v) => {
                                 let ty = v.get_type();
                                 let id = ctx.make_id();
-                                push(Expr::Variable(id, ty.clone()));
-                                Item::Value(Expr::Variable(id, ty))
+                                push(Expr::Variable(id, ty.clone(), dir));
+                                Item::Value(Expr::Variable(id, ty, dir))
                             }
 
                             _ => panic!("{:?} not allowed in shape", i)
@@ -169,7 +169,7 @@ pub fn on_expr_message(ctx: &Ctxt, scope: &mut Scope, shape: &Shape, variant: &s
                     }).collect())
                 }
 
-                scope.bind(name, build_tuple(ctx, push, &ss[..]));
+                scope.bind(name, build_tuple(ctx, dir, push, &ss[..]));
             }
 
             (&Item::Value(_), expr) => { // A match against a refutable pattern
@@ -178,7 +178,7 @@ pub fn on_expr_message(ctx: &Ctxt, scope: &mut Scope, shape: &Shape, variant: &s
 
             (&Item::Tuple(ref ss), &ast::Expr::Tup(ref se)) => {
                 for (s, i) in ss.iter().zip(se.iter()) {
-                    perform_match(ctx, scope, s, i, push)
+                    perform_match(ctx, scope, s, i, dir, push)
                 }
             }
 
@@ -189,7 +189,7 @@ pub fn on_expr_message(ctx: &Ctxt, scope: &mut Scope, shape: &Shape, variant: &s
     shape.build_variant_fields(variant, |msg_params, push| {
         for (param, expr) in msg_params.iter().zip(exprs) {
             if param.direction.up || param.direction.down {
-                perform_match(ctx, scope, &param.item, expr, push);
+                perform_match(ctx, scope, &param.item, expr, param.direction, push);
             }
         }
     })

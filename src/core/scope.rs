@@ -4,7 +4,7 @@ use std::default::Default;
 use std::sync::Arc;
 
 use crate::syntax::Value;
-use super::{ Type, Ctxt, ValueId, Expr, FunctionDef };
+use super::{ Type, Ctxt, ValueId, Expr, FunctionDef, DataMode };
 
 /// A collection of named Items.
 #[derive(Clone)]
@@ -26,10 +26,10 @@ impl Scope {
     }
 
     /// Create a new runtime variable, bind it to a name in this scope, and return its ID
-    pub fn new_variable(&mut self, ctxt: &Ctxt, name: &str, ty: Type) -> ValueId {
+    pub fn new_variable(&mut self, ctxt: &Ctxt, name: &str, ty: Type, dir: DataMode) -> ValueId {
         let id = ctxt.make_id();
         debug!("Variable {} {}", id, name);
-        self.bind(name, Item::Value(Expr::Variable(id, ty)));
+        self.bind(name, Item::Value(Expr::Variable(id, ty, dir)));
         id
     }
 
