@@ -30,18 +30,29 @@ fn resolve(scope: Option<&Scope>, var_handler: &mut dyn FnMut(&str) -> Expr, e: 
         }
 
         ast::Expr::Choose(ref e, ref c) => {
-            let pairs: Vec<(Value, Value)> = c.iter().map(|&(ref le, ref re)| {
-                let l = resolve(scope, var_handler, le);
-                let r = resolve(scope, var_handler, re);
-
-                match (l, r) {
-                    (Expr::Const(lv), Expr::Const(rv)) => (lv, rv),
-                    _ => panic!("Choose expression arms must be constant, for now")
-                }
-            }).collect();
-
             let head = resolve(scope, var_handler, e);
-            Expr::Choose(Box::new(head), pairs)
+
+            if let Expr::Const(value) = head {
+                let re = c.iter().find(|&(ref le, _)| {
+                    let l = resolve(scope, var_handler, le);
+                    l.eval_up(&mut |_, _| panic!("Variable not expected here"), value.clone())
+                }).map(|x| &x.1).unwrap_or_else(|| {
+                    panic!("No match for {} at {:?}", value, e.span);
+                });
+                resolve(scope, var_handler, re)
+            } else {
+                let pairs: Vec<(Value, Value)> = c.iter().map(|&(ref le, ref re)| {
+                    let l = resolve(scope, var_handler, le);
+                    let r = resolve(scope, var_handler, re);
+
+                    match (l, r) {
+                        (Expr::Const(lv), Expr::Const(rv)) => (lv, rv),
+                        _ => panic!("Choose expression arms must be constant, for now")
+                    }
+                }).collect();
+
+                Expr::Choose(Box::new(head), pairs)
+            }
         }
 
         ast::Expr::Concat(ref v) =>  {
