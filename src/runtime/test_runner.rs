@@ -3,7 +3,7 @@ use std::path::Path;
 
 use crate::syntax::{ ast, SourceFile };
 use crate::core::{ Index, FileScope, Ctxt };
-use crate::core::{resolve_protocol_invoke, resolve_process };
+use crate::core::{resolve_protocol_invoke, compile_process_chain };
 use crate::runtime::{ Handle, Connection };
 
 
@@ -80,7 +80,7 @@ pub fn run_test(index: &Index, file: &FileScope, test: &ast::Test) -> TestResult
     let ctx = Ctxt::new(Default::default(), index);
 
     let run_stack = |mut handle: Handle<'_>,  ast: &[ast::Process]| {
-        let p = resolve_process(&ctx, &file.scope, handle.top_shape().unwrap(), ast);
+        let p = compile_process_chain(&ctx, &file.scope, handle.top_shape().unwrap(), ast);
         handle.spawn(p).join()
     };
 
@@ -136,16 +136,9 @@ pub fn run_test(index: &Index, file: &FileScope, test: &ast::Test) -> TestResult
 
         Some(_) => {
             let mut handle = Handle::base(Default::default(), index);
-            let p = resolve_process(&ctx, &file.scope, handle.top_shape().unwrap(), &test.processes);
-            let is_up = match &p.processes[0].shape_up {
-                Some(s) => s.direction().up,
-                None => false,
-            };
-
+            let p = compile_process_chain(&ctx, &file.scope, handle.top_shape().unwrap(), &test.processes);
             let r = handle.spawn(p).join() ^ test.should_fail;
-
-            let (up, down) = if is_up { (Some(r), None) } else { (None, Some(r)) };
-            TestResult { down, up }
+            TestResult { down: Some(r), up: None }
         }
 
         None => panic!("No tests to run")

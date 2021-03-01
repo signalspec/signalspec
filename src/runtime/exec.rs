@@ -2,8 +2,8 @@ use std::i64;
 use scoped_pool::Pool;
 use vec_map::VecMap;
 
-use crate::syntax::Value;
-use crate::core::{ Step, StepInfo, Message, ProcessInfo, ProcessChain, Process, Type, ValueId, MatchSet, Fields };
+use crate::{Shape, syntax::Value};
+use crate::core::{ Step, StepInfo, Message, ProcessChain, Type, ValueId, MatchSet };
 
 use crate::runtime::{ Connection, ConnectionMessage };
 
@@ -11,7 +11,7 @@ use crate::runtime::{ Connection, ConnectionMessage };
 pub fn run(processes: &ProcessChain, downwards: &mut Connection, upwards: &mut Connection) -> bool {
     let pool = Pool::new(4);
     let mut cx = RunCx { downwards, upwards, vars_down: State::new(), vars_up: State::new(), threadpool: &pool };
-    let result = run_processes(&processes.processes, &mut cx);
+    let result = run_step(&processes.step, &mut cx);
     pool.shutdown();
     result
 }
@@ -134,19 +134,18 @@ fn message_match(state: &mut State, msg: &Message, rx: Result<ConnectionMessage,
     }
 }
 
-fn run_processes(processes: &[ProcessInfo], cx: &mut RunCx<'_>) -> bool {
-    let (child, chain) = match processes.split_first() {
+fn run_processes(cx: &mut RunCx<'_>, steps: &[StepInfo], shapes:&[Shape]) -> bool {
+    let (child, rest) = match steps.split_first() {
         Some(x) => x,
         None => return true
     };
 
-    if chain.len() == 0 {
-        run_process(child, cx)
+    if rest.len() == 0 {
+        run_step(child, cx)
     } else {
-        let (mut conn_u, mut conn_l) = Connection::new(&match &child.shape_up {
-            Some(s) => s.fields(),
-            None => Fields::null()
-        });
+        let (shape_up, shape_rest) = shapes.split_first().unwrap();
+
+        let (mut conn_u, mut conn_l) = Connection::new(&shape_up.fields());
         let mut upper_cx = RunCx {
             downwards: &mut conn_u,
             upwards: cx.upwards,
@@ -167,11 +166,11 @@ fn run_processes(processes: &[ProcessInfo], cx: &mut RunCx<'_>) -> bool {
 
         cx.threadpool.scoped(|scoped| {
             scoped.execute(|| {
-                ok1 = run_processes(chain, &mut upper_cx);
+                ok1 = run_processes(&mut upper_cx, rest, shape_rest);
                 upper_cx.downwards.end();
                 debug!("Fork upper end");
             });
-            ok2 = run_process(child, &mut lower_cx);
+            ok2 = run_step(child, &mut lower_cx);
             lower_cx.upwards.end();
             debug!("Fork lower end");
         });
@@ -185,23 +184,17 @@ fn run_processes(processes: &[ProcessInfo], cx: &mut RunCx<'_>) -> bool {
     }
 }
 
-fn run_process(process: &ProcessInfo, cx: &mut RunCx<'_>) -> bool {
-    match process.process {
-        Process::Token(ref msg) => {
+fn run_step(step: &StepInfo, cx: &mut RunCx<'_>) -> bool {
+    use self::Step::*;
+    match &step.step {
+        Nop => true,
+        Chain(ref steps, ref shapes) => run_processes(cx, steps, shapes),
+        Primitive(p) => p.run(cx.downwards, cx.upwards),
+        Token(ref msg) => {
             cx.send_lower(msg).ok();
             let rx = cx.downwards.recv();
             message_match(&mut cx.vars_up, msg, rx)
         }
-        Process::Seq(ref step) => run_step(step, cx),
-        Process::Primitive(ref p) => p.run(cx.downwards, cx.upwards),
-    }
-}
-
-fn run_step(step: &StepInfo, cx: &mut RunCx<'_>) -> bool {
-    use self::Step::*;
-    match step.step {
-        Nop => true,
-        Process(ref p) => run_processes(&p.processes, cx),
         TokenTop(ref msg, ref inner) => {
             let rx = cx.upwards.recv();
             if !message_match(&mut cx.vars_down, msg, rx) {
@@ -266,7 +259,7 @@ fn run_step(step: &StepInfo, cx: &mut RunCx<'_>) -> bool {
             }).collect::<Vec<_>>();
 
 
-            for _ in 0..count {
+            for _ in 0..*count {
                 for &mut (id, ref mut down, _, _) in &mut lstate {
                     if let Some(d) = down {
                         cx.vars_down.set(id, d.next().expect("not enough elements in loop"));

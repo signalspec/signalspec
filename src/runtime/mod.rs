@@ -10,8 +10,9 @@ pub use self::connection::{ Connection, ConnectionMessage };
 pub use self::test_runner::run as run_tests_in_file;
 pub use self::primitives::{ PrimitiveProcess, add_primitives };
 pub use self::exec::run;
+use crate::syntax::{ SourceFile, parse_process_chain };
 
-use crate::core::{ Ctxt, Config, Index, Shape, Fields, Item, ProcessChain };
+use crate::core::{ Ctxt, Config, Index, Shape, Fields, Item, ProcessChain, compile_process_chain };
 
 pub struct Handle<'a> {
     index: &'a Index,
@@ -46,8 +47,8 @@ impl<'a> Handle<'a> {
     pub fn top_shape(&self) -> Option<&Shape> { self.top_shape.as_ref() }
 
     pub fn spawn(&mut self, processes: ProcessChain) -> Handle<'a> {
-        let shape_up = processes.shape_up().cloned();
-        let fields_up = match &shape_up {
+        let shape_up = processes.shape_up.clone();
+        let fields_up = match &processes.shape_up {
             Some(s) => s.fields(),
             None => Fields::null(),
         };
@@ -67,8 +68,13 @@ impl<'a> Handle<'a> {
         info!("parse_spawn `{}` on {:?}", call, self.top_shape());
 
         let ctx = Ctxt::new(self.config.clone(), &self.index);
-        let process = ctx.parse_process(call, self.top_shape().expect("no top shape"))
-            .map_err(|e| e.to_string())?;
+
+        let file = SourceFile { name: "<process>".into(), source: call.into() };
+        let ast = parse_process_chain(&file.source).map_err(|e| e.to_string())?;
+        
+        let shape = self.top_shape().expect("no top shape");
+        let process = compile_process_chain(&ctx, &ctx.index.prelude, &shape, &ast[..]);
+
         Ok(self.spawn(process))
     }
 

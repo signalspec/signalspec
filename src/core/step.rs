@@ -1,11 +1,9 @@
 use std::io::{Write, Result as IoResult};
 use std::iter::repeat;
 
-use crate::syntax::ast;
-use super::{ Scope, Item, Expr, Shape, ValueId,
-    Ctxt, Process, ProcessInfo, ProcessChain, MatchSet, Type };
+use crate::{PrimitiveProcess, syntax::ast};
+use super::{Ctxt, Expr, Item, MatchSet, Scope, Shape, Type, ValueId, index::DefImpl, resolve_protocol_invoke};
 use super::{ on_expr_message, value, pattern_match, rexpr };
-use super::process::resolve_process;
 
 pub type Message = Vec<Option<Expr>>;
 
@@ -27,33 +25,32 @@ impl StepInfo {
 #[derive(Debug)]
 pub enum Step {
     Nop,
-    Process(ProcessChain),
+    Chain(Vec<StepInfo>, Vec<Shape>),
+    Token(Message),
     TokenTop(Message, Box<StepInfo>),
+    Primitive(Box<dyn PrimitiveProcess + 'static>),
     Seq(Vec<StepInfo>),
     Repeat(Expr, Box<StepInfo>),
     Foreach(u32, Vec<(ValueId, Expr)>, Box<StepInfo>),
     Alt(Vec<(Vec<(Expr, Expr)>, StepInfo)>),
 }
 
-
-
 impl StepInfo {
     pub fn write_tree(&self, f: &mut dyn Write, indent: u32) -> IoResult<()> {
         let i: String = repeat(" ").take(indent as usize).collect();
         match self.step {
             Step::Nop => {},
-            Step::Process(ref processes) => {
-                writeln!(f, "{}Process:", i)?;
-                for p in &processes.processes {
-                    match p.process {
-                        Process::Token(ref message) => writeln!(f, "{} Token: {:?}", i, message)?,
-                        Process::Seq(ref step) => {
-                            writeln!(f, "{} Seq:", i)?;
-                            step.write_tree(f, indent+2)?;
-                        }
-                        Process::Primitive(_) => writeln!(f, "{} Primitive", i)?
-                    }
+            Step::Chain(ref c, _) => {
+                writeln!(f, "{}Chain:", i)?;
+                for step in c {
+                    step.write_tree(f, indent+2)?;
                 }
+            }
+            Step::Primitive(_) => {
+                writeln!(f, "{} Primitive", i)?
+            }
+            Step::Token(ref message) => {
+                writeln!(f, "{} Token: {:?}", i, message)?
             }
             Step::TokenTop(ref message, ref body) => {
                 writeln!(f, "{}Up: {:?}", i, message)?;
@@ -103,30 +100,29 @@ impl<'a> StepBuilder<'a> {
         }
     }
 
-    fn process(&self, p: ProcessChain) -> StepInfo {
-        if p.processes.len() == 1 {
-            if let Process::Seq(_) = p.processes[0].process {
-                match p.processes.into_iter().next().unwrap().process {
-                    Process::Seq(s) => return s,
-                    _ => unreachable!()
-                }
-            }
-        }
-
-        fn process_first(p: &ProcessInfo) -> MatchSet {
-            match p.process {
-                Process::Token(ref msg) => MatchSet::lower(msg.clone()),
-                Process::Seq(ref s) => s.first.clone(),
-                Process::Primitive(_) => unimplemented!(),
-            }
-        }
-
-        let bottom_first = process_first(p.processes.first().unwrap());
-        let top_first = process_first(p.processes.last().unwrap());
+    fn chain(&self, steps: Vec<StepInfo>, shapes: Vec<Shape>) -> StepInfo {
+        assert_eq!(shapes.len() + 1, steps.len());
+        
+        let bottom_first = &steps.first().unwrap().first;
+        let top_first = &steps.last().unwrap().first;
 
         StepInfo {
             first: MatchSet::join(&bottom_first, &top_first),
-            step: Step::Process(p)
+            step: Step::Chain(steps, shapes)
+        }
+    }
+
+    fn primitive(&self, prim: Box<dyn PrimitiveProcess + 'static>) -> StepInfo {
+        StepInfo {
+            first: MatchSet::null(),
+            step: Step::Primitive(prim),
+        }
+    }
+
+    fn token(&self, message: Message) -> StepInfo {
+        StepInfo {
+            first: MatchSet::lower(message.clone()),
+            step: Step::Token(message)
         }
     }
 
@@ -184,6 +180,10 @@ impl<'a> StepBuilder<'a> {
         }
     }
 
+    fn with_lower<'b>(&'b self, scope: &'b Scope, shape_down: &'b Shape) -> StepBuilder<'b> {
+        StepBuilder { scope, shape_down, ..*self }
+    }
+
     fn with_upper<'b>(&'b self, scope: &'b Scope, shape_up: Option<&'b Shape>) -> StepBuilder<'b> {
         StepBuilder { scope, shape_up, ..*self }
     }
@@ -196,7 +196,9 @@ impl<'a> StepBuilder<'a> {
 fn resolve_action(sb: StepBuilder<'_>, action: &ast::Action) -> StepInfo {
     match *action {
         ast::Action::Process(ref processes) => {
-            sb.process(resolve_process(sb.ctx, sb.scope, sb.shape_down, &processes[..]))
+            let (step, shape_up) = resolve_processes(sb, processes);
+            assert!(shape_up.is_none());
+            step
         }
         ast::Action::On(ref name, ref exprs, ref body) => {
             let mut body_scope = sb.scope.child();
@@ -262,6 +264,63 @@ fn resolve_action(sb: StepBuilder<'_>, action: &ast::Action) -> StepInfo {
     }
 }
 
+fn resolve_processes(sb: StepBuilder<'_>, processes: &[ast::Process]) -> (StepInfo, Option<Shape>) {
+    let (step1, shape1) = resolve_process(sb, &processes[0]);
+
+    if processes.len() == 1 {
+        (step1, shape1)
+    } else {
+        let mut top_shape = shape1;
+        let mut steps = vec![step1];
+        let mut shapes = vec![];
+
+        for process_ast in &processes[1..] {
+            let shape_down = top_shape.unwrap();
+            let (step, shape_up) = resolve_process(sb.with_lower(sb.scope, &shape_down), process_ast);
+            shapes.push(shape_down);
+            steps.push(step);
+            top_shape = shape_up;
+        }
+
+        (sb.chain(steps, shapes), top_shape)
+    }
+}
+
+fn resolve_process(sb: StepBuilder<'_>, process_ast: &ast::Process) -> (StepInfo, Option<Shape>) {
+    match process_ast {
+        ast::Process::Call(ref name, ref args_ast) => {
+            let args = args_ast.iter().map(|a| rexpr(sb.scope, a)).collect();
+            if sb.shape_down.has_variant_named(name) {
+                let token_proc = resolve_token(sb.shape_down, name, args);
+                (sb.token(token_proc), None)
+            } else {
+                let (scope, imp) = sb.ctx.index.find_def(sb.shape_down, name, args);
+                match *imp {
+                    DefImpl::Code(ref callee_ast) => {
+                        resolve_processes(sb.with_scope(&scope), callee_ast)
+                    }
+                    DefImpl::Primitive(ref primitive, ref shape_up_ast) => {
+                        let shape_up = shape_up_ast.as_ref().map(|s| resolve_protocol_invoke(sb.ctx, &scope, s));
+                        let prim = primitive.instantiate(&scope);
+                        (sb.primitive(prim), shape_up)
+                    }
+                }
+            }
+        }
+
+        ast::Process::Seq(ref top_shape, ref block) => {
+            let top_shape = resolve_protocol_invoke(sb.ctx, &sb.scope, top_shape);
+            let block = resolve_seq(sb.with_upper(&sb.scope, Some(&top_shape)), block);
+            (block, Some(top_shape))
+        }
+
+        ast::Process::InferSeq(ref block) => {
+            let block = resolve_seq(sb.with_upper(&sb.scope, None), block);
+            (block, None)
+        }
+    }
+}
+
 fn resolve_seq(sb: StepBuilder<'_>, block: &ast::Block) -> StepInfo {
     let mut scope = sb.scope.child();
 
@@ -321,24 +380,14 @@ pub fn resolve_token(shape: &Shape, variant_name: &str, args: Vec<Item>) -> Mess
     })
 }
 
-pub fn compile_block(ctx: &Ctxt,
-                     scope: &Scope,
-                     shape_down: &Shape,
-                     shape_up: Option<Shape>,
-                     seq: &ast::Block,
-                     name: &str) -> ProcessInfo {
-    let step = {
-        let sb = StepBuilder { ctx, scope,
-            shape_up: shape_up.as_ref(), shape_down: shape_down,
-        };
+pub struct ProcessChain {
+    pub step: StepInfo,
+    pub shape_up: Option<Shape>,
+}
 
-        resolve_seq(sb, seq)
-    };
-
-    if let Some(mut f) = ctx.debug_file(|| format!("{}.steps", name)) {
-        step.write_tree(&mut f, 0).unwrap_or_else(|e| error!("{}", e));
-    }
-
-    ProcessInfo { shape_up, process: Process::Seq(step) }
+pub fn compile_process_chain(ctx: &Ctxt, scope: &Scope, shape_down: &Shape, ast: &[ast::Process]) -> ProcessChain {
+    let sb = StepBuilder { ctx, scope, shape_up: None, shape_down };
+    let (step, shape_up) = resolve_processes(sb, ast);
+    ProcessChain { step, shape_up }
 }
 
