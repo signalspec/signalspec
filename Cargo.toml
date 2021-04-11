@@ -5,7 +5,7 @@ authors = [ "km@kevinmehall.net" ]
 edition = "2018"
 
 [workspace]
-members = ["cli", "plugins/starfish", "plugins/vcd"]
+members = ["cli"]
 
 [dependencies]
 log = "0.4.14"

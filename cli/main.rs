@@ -1,10 +1,3 @@
-extern crate signalspec;
-extern crate env_logger;
-extern crate argparse;
-
-extern crate signalspec_vcd;
-extern crate signalspec_starfish;
-
 mod console;
 
 use std::io::prelude::*;
@@ -41,8 +34,6 @@ fn main() {
         let mut index = signalspec::Index::new();
 
         signalspec::add_primitives(&mut index);
-        signalspec_vcd::add_primitives(&mut index);
-        signalspec_starfish::add_primitives(&mut index);
 
         for source_fname in imports {
             let mut source = String::new();

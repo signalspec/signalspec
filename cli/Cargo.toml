@@ -2,11 +2,10 @@
 name = "signalspec_cli"
 version = "0.1.0"
 authors = [ "km@kevinmehall.net" ]
+edition = "2018"
 
 [dependencies]
 signalspec = { path = "../" }
-signalspec_vcd = { path = "../plugins/vcd/" }
-signalspec_starfish = { path = "../plugins/starfish/" }
 log = "0.4.14"
 env_logger = "0.8.3"
 argparse = "0.2.1"
