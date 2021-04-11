@@ -14,7 +14,7 @@ use std::path::PathBuf;
 use argparse::{ArgumentParser, Collect, StoreOption};
 
 fn main() {
-    env_logger::init().unwrap();
+    env_logger::init();
 
     let mut test: Option<String> = None;
     let mut imports: Vec<String> = vec![];

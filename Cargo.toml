@@ -8,15 +8,15 @@ edition = "2018"
 members = ["cli", "plugins/starfish", "plugins/vcd"]
 
 [dependencies]
-log = "0.3.2"
-num-complex = "0.2"
+log = "0.4.14"
+num-complex = "0.4"
 byteorder = "1.0.0"
-peg = "0.6"
+peg = "0.7"
 vec_map = "0.8.0"
 scoped-pool = "1.0"
 
 [dev-dependencies]
-env_logger = "0.3"
+env_logger = "0.8.3"
 
 [[test]]
 name = "check"
