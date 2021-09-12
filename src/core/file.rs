@@ -24,7 +24,7 @@ impl FileScope {
         for entry in ast.entries {
             match entry.node {
                 ast::ModuleEntry::Let(letdef) => {
-                    super::step::resolve_letdef(&mut scope, &letdef);
+                    super::resolve::resolve_letdef(&mut scope, &letdef);
                 }
                 ast::ModuleEntry::Use(_) => {
                     panic!("`use` unimplemented");
