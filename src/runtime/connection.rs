@@ -2,10 +2,19 @@ use std::sync::mpsc::{Receiver, Sender, channel};
 use std::io;
 use std::io::prelude::*;
 use num_complex::Complex;
+use crate::DataMode;
 use crate::syntax::Value;
-use crate::core::Fields;
 
-pub type ConnectionMessage = Vec<Option<Value>>;
+#[derive(Debug, Clone, PartialEq)]
+pub struct ConnectionMessage {
+    pub variant: usize,
+    pub values: Vec<Value>,
+}
+
+impl ConnectionMessage {
+    pub fn empty() -> ConnectionMessage { ConnectionMessage { variant: !0, values: vec![] }}
+    pub fn one(v: Value) -> ConnectionMessage { ConnectionMessage { variant: 0, values: vec![v] }}
+}
 
 pub struct Connection {
     rx: Option<Receiver<ConnectionMessage>>,
@@ -13,15 +22,13 @@ pub struct Connection {
 
     tx: Option<Sender<ConnectionMessage>>,
 
-    pub sends: Vec<bool>,
     pub alive: bool,
 }
 
 /// Transfers data between two stacked abstractions
 impl Connection {
-    pub(crate) fn new(fields: &Fields) -> (Connection, Connection) {
-        let direction = fields.direction();
-        debug!("New connection: {:?} {:?}", fields, direction);
+    pub(crate) fn new(direction: DataMode) -> (Connection, Connection) {
+        debug!("New connection: {:?}", direction);
 
         let (s1, r1) = if direction.down {
             let (a, b) = channel();
@@ -35,10 +42,8 @@ impl Connection {
 
         let alive = direction.down || direction.up;
 
-        let (sends1, sends2) = fields.iter().map(|f| (f.dir.down, f.dir.up)).unzip();
-
-        (Connection{ tx: s1, rx: r2, rx_peek: None, alive: alive, sends: sends1 },
-         Connection{ tx: s2, rx: r1, rx_peek: None, alive: alive, sends: sends2 })
+        (Connection{ tx: s1, rx: r2, rx_peek: None, alive: alive },
+         Connection{ tx: s2, rx: r1, rx_peek: None, alive: alive })
     }
 
     pub fn null() -> Connection {
@@ -46,7 +51,6 @@ impl Connection {
             rx: None,
             rx_peek: None,
             tx: None,
-            sends: Vec::new(),
             alive: false,
         }
     }
@@ -72,7 +76,7 @@ impl Connection {
             }
             r
         } else {
-            if self.alive { Ok(vec![]) } else { Err(()) }
+            if self.alive { Ok(ConnectionMessage::empty()) } else { Err(()) }
         }
     }
 
@@ -124,9 +128,10 @@ impl<'a> Read for ConnectionRead<'a> {
             match self.0.recv() {
                 Ok(v) => {
                     debug!("rx {:?}", v);
-                    assert_eq!(v.len(), 1);
-                    match v[0] {
-                        Some(Value::Integer(b)) => { *p = b as u8; }
+                    assert_eq!(v.variant, 0);
+                    assert_eq!(v.values.len(), 1);
+                    match v.values[0] {
+                        Value::Integer(b) => { *p = b as u8; }
                         ref x => panic!("Byte connection received {:?}", x)
                     }
                 }
@@ -148,7 +153,8 @@ impl<'a> Write for ConnectionWrite<'a> {
         debug!("write started: {}", buf.len());
 
         for b in buf.iter() {
-            if self.0.send(vec![Some(Value::Integer(*b as i64))]).is_err() {
+            let m = ConnectionMessage::one(Value::Integer(*b as i64));
+            if self.0.send(m).is_err() {
                 return Err(io::Error::new(io::ErrorKind::BrokenPipe, "Stream ended"))
             }
         }
@@ -170,9 +176,10 @@ impl<'a> Iterator for ConnectionIterNumber<'a> {
     fn next(&mut self) -> Option<f64> {
         match self.0.recv() {
             Ok(v) => {
-                assert_eq!(v.len(), 1);
-                match v[0] {
-                    Some(Value::Number(c)) => Some(c),
+                assert_eq!(v.variant, 0);
+                assert_eq!(v.values.len(), 1);
+                match v.values[0] {
+                    Value::Number(c) => Some(c),
                     ref x => panic!("Number connection received {:?}", x)
                 }
             }
@@ -189,9 +196,10 @@ impl<'a> Iterator for ConnectionIterComplex<'a> {
         match self.0.recv() {
             Ok(v) => {
                 debug!("rx {:?}", v);
-                assert_eq!(v.len(), 1);
-                match v[0] {
-                    Some(Value::Complex(c)) => Some(c),
+                assert_eq!(v.variant, 0);
+                assert_eq!(v.values.len(), 1);
+                match v.values[0] {
+                    Value::Complex(c) => Some(c),
                     ref x => panic!("Complex connection received {:?}", x)
                 }
             }

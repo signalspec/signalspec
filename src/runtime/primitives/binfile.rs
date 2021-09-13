@@ -6,7 +6,7 @@ use num_complex::Complex;
 
 use crate::syntax::Value;
 use crate::core::{Index, PrimitiveDef };
-use crate::runtime::Connection;
+use crate::runtime::{Connection, ConnectionMessage};
 use crate::runtime::primitives::FnProcess;
 
 pub fn add_primitives(index: &mut Index) {
@@ -44,7 +44,7 @@ fn f32_le_up(downwards: &mut Connection, upwards: &mut Connection) -> bool {
     loop {
         match down.read_f32::<LittleEndian>() {
             Ok(v) => {
-                if upwards.send(vec![Some(Value::Number(v as f64))]).is_err() {
+                if upwards.send(ConnectionMessage::one(Value::Number(v as f64))).is_err() {
                     return false;
                 }
             }
@@ -75,7 +75,7 @@ fn cf32_le_up(downwards: &mut Connection, upwards: &mut Connection) -> bool {
     loop {
         match read_complex(&mut down) {
             Ok(v) => {
-                if upwards.send(vec![Some(Value::Complex(v))]).is_err() {
+                if upwards.send(ConnectionMessage::one(Value::Complex(v))).is_err() {
                     return false;
                 }
             }

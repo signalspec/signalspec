@@ -14,7 +14,6 @@ mod shape;
 mod resolve;
 
 use self::file::ProtocolRef;
-pub(crate) use self::shape::Fields;
 pub(crate) use self::step::StepInfo;
 
 pub use self::file::FileScope;

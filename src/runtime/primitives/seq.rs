@@ -2,7 +2,7 @@ use std::slice;
 
 use crate::syntax::Value;
 use crate::core::{ Index, PrimitiveDef, Item };
-use crate::runtime::{ Connection, PrimitiveProcess };
+use crate::runtime::{Connection, ConnectionMessage, PrimitiveProcess};
 
 // This wouldn't need to be a primitive if vectors could contain tuples -- could
 // be a simple `for` loop.
@@ -22,15 +22,15 @@ pub fn add_primitives(index: &mut Index) {
     });
 }
 
-fn item_to_msgs(item: &Item) -> Vec<Vec<Option<Value>>> {
+fn item_to_msgs(item: &Item) -> Vec<ConnectionMessage> {
     let items = match item {
         Item::Tuple(t) => &t[..],
         single => slice::from_ref(single),
     };
 
-    fn inner(m: &mut Vec<Option<Value>>, i: &Item) {
+    fn inner(m: &mut Vec<Value>, i: &Item) {
         match i {
-            Item::Value(e) => m.push(Some(e.eval_const())),
+            Item::Value(e) => m.push(e.eval_const()),
             Item::Tuple(t) => for e in t { inner(m, e) },
             _ => panic!("Item {:?} not allowed in seq literal", i)
         }
@@ -39,12 +39,12 @@ fn item_to_msgs(item: &Item) -> Vec<Vec<Option<Value>>> {
     items.iter().map(|i| {
         let mut msg = Vec::new();
         inner(&mut msg, i);
-        msg
+        ConnectionMessage { variant: 0, values: msg }
     }).collect()
 }
 
 #[derive(Debug)]
-struct SeqUpProcess(Vec<Vec<Option<Value>>>);
+struct SeqUpProcess(Vec<ConnectionMessage>);
 impl PrimitiveProcess for SeqUpProcess {
     fn run(&self, _: &mut Connection, upwards: &mut Connection) -> bool {
         for i in &self.0 {
@@ -57,7 +57,7 @@ impl PrimitiveProcess for SeqUpProcess {
 }
 
 #[derive(Debug)]
-struct SeqDownProcess(Vec<Vec<Option<Value>>>);
+struct SeqDownProcess(Vec<ConnectionMessage>);
 impl PrimitiveProcess for SeqDownProcess {
     fn run(&self, _: &mut Connection, upwards: &mut Connection) -> bool {
         for i in &self.0 {

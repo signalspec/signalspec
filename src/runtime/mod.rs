@@ -10,9 +10,10 @@ pub use self::connection::{ Connection, ConnectionMessage };
 pub use self::test_runner::run as run_tests_in_file;
 pub use self::primitives::{ PrimitiveProcess, add_primitives };
 pub use self::exec::run;
+use crate::DataMode;
 use crate::syntax::{ SourceFile, parse_process_chain };
 
-use crate::core::{ Ctxt, Config, Index, Shape, Fields, Item, ProcessChain, compile_process_chain };
+use crate::core::{ Ctxt, Config, Index, Shape, Item, ProcessChain, compile_process_chain };
 
 pub struct Handle<'a> {
     index: &'a Index,
@@ -48,12 +49,10 @@ impl<'a> Handle<'a> {
 
     pub fn spawn(&mut self, processes: ProcessChain) -> Handle<'a> {
         let shape_up = processes.shape_up.clone();
-        let fields_up = match &processes.shape_up {
-            Some(s) => s.fields(),
-            None => Fields::null(),
-        };
-
-        let (c2, mut c1) = Connection::new(&fields_up);
+        let (c2, mut c1) = Connection::new(match &shape_up {
+            Some(s) => s.direction(),
+            None => DataMode { down: false, up: false },
+        });
         let conn = self.connection.clone();
 
         let thread = thread::spawn(move || {

@@ -122,8 +122,7 @@ pub fn run_test(index: &Index, file: &FileScope, test: &ast::Test) -> TestResult
             let shape_dn = make_seq_shape(args[0].clone(), "dn");
             let shape_up = make_seq_shape(args[0].clone(), "up");
 
-            let fields_dn = shape_dn.fields();
-            let (c1, c2) = Connection::new(&fields_dn);
+            let (c1, c2) = Connection::new(shape_dn.direction());
 
             let h1 = Handle::new(Default::default(), index, Some(shape_dn), c1, None);
             let h2 = Handle::new(Default::default(), index, Some(shape_up), c2, None);

@@ -4,7 +4,12 @@ use std::iter::repeat;
 use crate::{PrimitiveProcess};
 use super::{Expr, MatchSet, Shape, Type, ValueId, resolve::Builder};
 
-pub type Message = Vec<Option<Expr>>;
+#[derive(Debug, Clone, PartialEq)]
+pub struct Message {
+    pub variant: usize,
+    pub dn: Vec<Expr>,
+    pub up: Vec<Expr>,
+}
 
 #[derive(Debug)]
 pub struct StepInfo {

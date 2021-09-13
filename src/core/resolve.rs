@@ -54,15 +54,13 @@ fn resolve_action<B: Builder>(sb: ResolveCx<'_>, builder: &mut B, action: &ast::
 
             let shape_up = sb.shape_up.expect("`on` block with no upper shape");
 
-            let msginfo = on_expr_message(sb.ctx, &mut body_scope, shape_up, name, &exprs[..]);
+            let msg = on_expr_message(sb.ctx, &mut body_scope, shape_up, name, &exprs[..]);
 
             let step = if let &Some(ref body) = body {
                 resolve_seq(sb.with_upper(&body_scope, None), builder, body)
             } else {
                 builder.nop()
             };
-
-            let msg = msginfo.into_iter().collect();
 
             builder.token_top(msg, step)
         }
@@ -137,10 +135,9 @@ fn resolve_processes<B: Builder>(sb: ResolveCx<'_>, builder: &mut B, processes: 
 fn resolve_process<B: Builder>(sb: ResolveCx<'_>, builder: &mut B, process_ast: &ast::Process) -> (B::Res, Option<Shape>) {
     match process_ast {
         ast::Process::Call(ref name, ref args_ast) => {
-            let args = args_ast.iter().map(|a| rexpr(sb.scope, a)).collect();
-            if sb.shape_down.has_variant_named(name) {
-                let token_proc = resolve_token(sb.shape_down, name, args);
-                (builder.token(token_proc), None)
+            let args: Vec<Item> = args_ast.iter().map(|a| rexpr(sb.scope, a)).collect();
+            if let Some(msg) = resolve_token(sb.shape_down, name, &args) {
+                (builder.token(msg), None)
             } else {
                 let (scope, imp) = sb.ctx.index.find_def(sb.shape_down, name, args);
                 match *imp {
@@ -189,13 +186,13 @@ pub fn resolve_letdef(scope: &mut Scope, ld: &ast::LetDef) {
     scope.bind(&name, item);
 }
 
-pub fn resolve_token(shape: &Shape, variant_name: &str, args: Vec<Item>) -> Message {
-    fn inner(i: Item, shape: &Item, push: &mut dyn FnMut(Expr)) {
+pub fn resolve_token(shape: &Shape, variant_name: &str, args: &[Item]) -> Option<Message> {
+    fn inner(i: &Item, shape: &Item, out: &mut Vec<Expr>) {
         match shape {
             &Item::Value(Expr::Const(_)) => (),
             &Item::Value(_) => {
                 if let Item::Value(v) = i {
-                    push(v);
+                    out.push(v.clone());
                 } else {
                     panic!("Expected value but found {:?}", i);
                 }
@@ -204,7 +201,7 @@ pub fn resolve_token(shape: &Shape, variant_name: &str, args: Vec<Item>) -> Mess
                 if let Item::Tuple(t) = i {
                     if t.len() == m.len() {
                         for (mi, i) in m.iter().zip(t.into_iter()) {
-                            inner(i, mi, push)
+                            inner(i, mi, out)
                         }
                     } else {
                         panic!("Expected tuple length {}, found {}", m.len(), t.len());
@@ -217,14 +214,21 @@ pub fn resolve_token(shape: &Shape, variant_name: &str, args: Vec<Item>) -> Mess
         }
     }
 
-    shape.build_variant_fields(variant_name, |msg_params, push| {
-        assert_eq!(args.len(), msg_params.len(), "wrong number of arguments to message {:?} {:?} {:?}", variant_name, msg_params, args);
+    shape.variant_named(variant_name).map(|(variant, msg)| {
+        assert_eq!(args.len(), msg.params.len(), "wrong number of arguments to message {:?} {:?} {:?}", variant_name, msg.params, args);
 
-        for (param, arg) in msg_params.iter().zip(args) {
-            if param.direction.up || param.direction.down {
-                inner(arg, &param.item, push)
+        let mut dn = Vec::new();
+        let mut up = Vec::new();
+
+        for (param, arg) in msg.params.iter().zip(args) {
+            if param.direction.up {
+                inner(arg, &param.item, &mut up)
+            } else if param.direction.down {
+                inner(arg, &param.item, &mut dn)
             }
         }
+
+        Message { variant, dn, up }
     })
 }
 
