@@ -22,8 +22,8 @@ peg::parser!(pub grammar signalspec() for str {
       / KW("with") _ bottom:protocol_ref() _
         KW("def") _ name:IDENTIFIER() _  params:def_params() _ "=" _ processes:process_chain()
         { ast::ModuleEntry::WithDef(ast::Def { bottom, name, params, processes }) }
-      / KW("protocol") _ name:IDENTIFIER() _ param:expr_tup() _ entries:protocol_block()
-        { ast::ModuleEntry::Protocol(ast::Protocol { name, param, entries }) }
+      / KW("protocol") _ name:IDENTIFIER() _ param:expr_tup() _ dir:expr() _ entries:protocol_block()
+        { ast::ModuleEntry::Protocol(ast::Protocol { name, param, dir, entries }) }
       / t:test_block() { ast::ModuleEntry::Test(t) }
 
   pub rule primitive_header() -> ast::PrimitiveHeader

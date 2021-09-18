@@ -1,4 +1,4 @@
-use super::{ DataMode, Item, Expr, ProtocolRef };
+use super::{DataMode, Dir, Expr, Item, ProtocolRef};
 
 fn count_item_fields(i: &Item) -> usize {
     match *i {
@@ -41,6 +41,7 @@ impl ShapeMsg {
 #[derive(Clone, Debug)]
 pub struct Shape {
     pub def: ProtocolRef,
+    pub dir: Dir,
     pub param: Item,
     pub messages: Vec<ShapeMsg>,
 }

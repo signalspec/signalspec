@@ -9,7 +9,7 @@ let CTRL_REG4 = 'h2D
 
 //let I2C = Starfish
 
-protocol I2C(role) {
+protocol I2C(role) role[#master=#dn,#sniff=#up] {
     start(var(role[#master=#dn,#sniff=#up]) byte),
     read(var(role[#master=#up,#sniff=#up]) byte),
     write(var(role[#master=#dn,#sniff=#up]) byte),

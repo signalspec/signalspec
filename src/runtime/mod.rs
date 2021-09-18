@@ -13,7 +13,7 @@ pub use self::exec::run;
 use crate::DataMode;
 use crate::syntax::{ SourceFile, parse_process_chain };
 
-use crate::core::{ Ctxt, Config, Index, Shape, Item, ProcessChain, compile_process_chain };
+use crate::core::{Config, Ctxt, Dir, Index, Item, ProcessChain, Shape, compile_process_chain};
 
 pub struct Handle<'a> {
     index: &'a Index,
@@ -39,6 +39,7 @@ impl<'a> Handle<'a> {
         let base_shape = Shape {
             def: base,
             param: Item::Tuple(vec![]),
+            dir: Dir::Dn,
             messages: vec![],
         };
 

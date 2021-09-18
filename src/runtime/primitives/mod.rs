@@ -20,12 +20,12 @@ use super::Connection;
 
 pub fn add_primitives(index: &mut Index) {
     index.define_prelude(r#"
-    protocol Base() {}
-    protocol Seq(T, dir) {
+    protocol Base() #dn {}
+    protocol Seq(T, dir) dir {
         val(var(dir) T)
     }
 
-    protocol Bytes(dir) { byte(var(dir) 0..255) }
+    protocol Bytes(dir) dir { byte(var(dir) 0..255) }
     let Float32 = -1.0..1.0
     "#);
 

@@ -39,7 +39,7 @@ pub trait Builder {
     fn alt(&mut self, dir: Dir, opts: Vec<(Vec<(Expr, Expr)>, Self::Res)>) -> Self::Res;
 }
 
-fn resolve_dir(e: Expr) -> Dir {
+pub fn resolve_dir(e: Expr) -> Dir {
     match e.eval_const() {
         Value::Symbol(s) if s == "up" => Dir::Up,
         Value::Symbol(s) if s == "dn" => Dir::Dn,

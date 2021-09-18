@@ -1,3 +1,4 @@
+use crate::core::value;
 use crate::syntax::ast;
 use crate::Value;
 use super::{ Scope, Shape, ShapeMsg, ShapeMsgParam, Ctxt, DataMode };
@@ -11,6 +12,8 @@ pub fn resolve_protocol_invoke(ctx: &Ctxt, scope: &Scope, ast: &ast::ProtocolRef
         let mut protocol_def_scope = protocol.scope().child();
         lexpr(&mut protocol_def_scope, &protocol.ast().param, param.clone())
             .unwrap_or_else(|e| panic!("failed to match parameters for protocol `{}`: {:?}", ast.name, e));
+
+        let dir = super::resolve::resolve_dir(value(&protocol_def_scope, &protocol.ast().dir.node));
 
         let mut messages = vec![];
 
@@ -39,7 +42,7 @@ pub fn resolve_protocol_invoke(ctx: &Ctxt, scope: &Scope, ast: &ast::ProtocolRef
             }
         }
 
-        Shape { def: protocol.clone(), messages: messages, param }
+        Shape { def: protocol.clone(), dir, messages, param }
     } else {
         panic!("Protocol `{}` not found", ast.name);
     }

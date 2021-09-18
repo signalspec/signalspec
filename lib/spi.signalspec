@@ -1,7 +1,7 @@
 let bit = 0|1
 let byte = [bit, bit, bit, bit, bit, bit, bit, bit]
 
-protocol SPI(dir) {
+protocol SPI(dir) dir {
   data(var(dir) byte),
   start(),
   end(),

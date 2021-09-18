@@ -63,6 +63,7 @@ pub struct PrimitiveHeader {
 pub struct Protocol {
     pub name: String,
     pub param: SpannedExpr,
+    pub dir: SpannedExpr,
     pub entries: Vec<ProtocolEntry>,
 }
 
