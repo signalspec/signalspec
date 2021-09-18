@@ -17,33 +17,28 @@ pub struct StepInfo {
     pub(crate) first: MatchSet,
 }
 
-impl StepInfo {
-    pub fn fake(step: Step) -> StepInfo {
-        StepInfo {
-            step,
-            first: MatchSet::null()
-        }
-    }
+#[derive(Copy, Clone, Debug)]
+pub enum Dir {
+    Up,
+    Dn,
 }
 
 #[derive(Debug)]
 pub enum Step {
-    Nop,
     Chain(Vec<StepInfo>, Vec<Shape>),
     Token(Message),
     TokenTop(Message, Box<StepInfo>),
     Primitive(Box<dyn PrimitiveProcess + 'static>),
     Seq(Vec<StepInfo>),
-    Repeat(Expr, Box<StepInfo>),
+    Repeat(Dir, Expr, Box<StepInfo>),
     Foreach(u32, Vec<(ValueId, Expr)>, Box<StepInfo>),
-    Alt(Vec<(Vec<(Expr, Expr)>, StepInfo)>),
+    Alt(Dir, Vec<(Vec<(Expr, Expr)>, StepInfo)>),
 }
 
 impl StepInfo {
     pub fn write_tree(&self, f: &mut dyn Write, indent: u32) -> IoResult<()> {
         let i: String = repeat(" ").take(indent as usize).collect();
         match self.step {
-            Step::Nop => {},
             Step::Chain(ref c, _) => {
                 writeln!(f, "{}Chain:", i)?;
                 for step in c {
@@ -51,10 +46,10 @@ impl StepInfo {
                 }
             }
             Step::Primitive(_) => {
-                writeln!(f, "{} Primitive", i)?
+                writeln!(f, "{}Primitive", i)?
             }
             Step::Token(ref message) => {
-                writeln!(f, "{} Token: {:?}", i, message)?
+                writeln!(f, "{}Token: {:?}", i, message)?
             }
             Step::TokenTop(ref message, ref body) => {
                 writeln!(f, "{}Up: {:?}", i, message)?;
@@ -66,8 +61,8 @@ impl StepInfo {
                     c.write_tree(f, indent+1)?;
                 }
             }
-            Step::Repeat(ref count, ref inner) => {
-                writeln!(f, "{}Repeat: {:?}", i, count)?;
+            Step::Repeat(dir, ref count, ref inner) => {
+                writeln!(f, "{}Repeat[{:?}]: {:?}", i, dir, count)?;
                 inner.write_tree(f, indent + 1)?;
             }
             Step::Foreach(width, ref vars, ref inner) => {
@@ -76,8 +71,8 @@ impl StepInfo {
                 writeln!(f, "")?;
                 inner.write_tree(f, indent + 1)?;
             }
-            Step::Alt(ref arms) => {
-                writeln!(f, "{}Alt:", i)?;
+            Step::Alt(dir, ref arms) => {
+                writeln!(f, "{}Alt[{:?}]:", i, dir)?;
                 for &(ref cond, ref inner) in arms {
                     writeln!(f, "{} {:?} =>", i, cond)?;
                     inner.write_tree(f, indent + 2)?;
@@ -92,13 +87,6 @@ pub(crate) struct StepBuilder;
 
 impl Builder for StepBuilder {
     type Res = StepInfo;
-
-    fn nop(&mut self) -> StepInfo {
-        StepInfo {
-            first: MatchSet::epsilon(),
-            step: Step::Nop
-        }
-    }
 
     fn chain(&self, steps: Vec<StepInfo>, shapes: Vec<Shape>) -> StepInfo {
         assert_eq!(shapes.len() + 1, steps.len());
@@ -142,6 +130,7 @@ impl Builder for StepBuilder {
     }
 
     fn repeat(&mut self, count: Expr, inner: StepInfo) -> StepInfo {
+        let dir = if !count.dir().down { Dir::Up } else { Dir::Dn };
         let count_includes_zero = match count.get_type() {
             Type::Integer(lo, hi) => lo <= 0 && hi >= 0,
             count_type => {
@@ -159,7 +148,7 @@ impl Builder for StepBuilder {
             } else {
                 inner.first.clone()
             },
-            step: Step::Repeat(count, Box::new(inner))
+            step: Step::Repeat(dir, count, Box::new(inner))
         }
     }
 
@@ -173,10 +162,15 @@ impl Builder for StepBuilder {
     }
 
     fn alt(&mut self, opts: Vec<(Vec<(Expr, Expr)>, StepInfo)>) -> StepInfo {
+        let up = opts.iter().any(|arm| {
+            arm.0.is_empty() || arm.0.iter().any(|&(_, ref e)| !e.dir().down)
+        });
+        let dir = if up { Dir::Up } else { Dir::Dn };
+
         // TODO: check that first is nonoverlapping
         StepInfo {
             first: opts.iter().fold(MatchSet::null(), |a, &(_, ref inner)| a.alternative(inner.first.clone())),
-            step: Step::Alt(opts)
+            step: Step::Alt(dir, opts)
         }
     }
 }

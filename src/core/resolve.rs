@@ -27,7 +27,6 @@ impl<'a> ResolveCx<'a> {
 pub trait Builder {
     type Res;
 
-    fn nop(&mut self) -> Self::Res;
     //fn process(&mut self) -> Self::Res;
     fn token(&mut self, message: Message) -> Self::Res;
     fn token_top(&mut self, message: Message, inner: Self::Res) -> Self::Res;
@@ -59,7 +58,7 @@ fn resolve_action<B: Builder>(sb: ResolveCx<'_>, builder: &mut B, action: &ast::
             let step = if let &Some(ref body) = body {
                 resolve_seq(sb.with_upper(&body_scope, None), builder, body)
             } else {
-                builder.nop()
+                builder.seq(Vec::new())
             };
 
             builder.token_top(msg, step)

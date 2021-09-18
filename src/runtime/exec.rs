@@ -3,7 +3,7 @@ use scoped_pool::Pool;
 use vec_map::VecMap;
 
 use crate::{Shape, syntax::Value};
-use crate::core::{Expr, MatchSet, Message, ProcessChain, Step, StepInfo, Type, ValueId};
+use crate::core::{Expr, MatchSet, Message, ProcessChain, Step, StepInfo, Dir, Type, ValueId};
 
 use crate::runtime::{ Connection, ConnectionMessage };
 
@@ -193,7 +193,6 @@ fn run_processes(cx: &mut RunCx<'_>, steps: &[StepInfo], shapes:&[Shape]) -> boo
 fn run_step(step: &StepInfo, cx: &mut RunCx<'_>) -> bool {
     use self::Step::*;
     match &step.step {
-        Nop => true,
         Chain(ref steps, ref shapes) => run_processes(cx, steps, shapes),
         Primitive(p) => p.run(cx.downwards, cx.upwards),
         Token(ref msg) => {
@@ -218,37 +217,38 @@ fn run_step(step: &StepInfo, cx: &mut RunCx<'_>) -> bool {
             }
             true
         }
-        Repeat(ref count, ref inner) => {
-            if !count.dir().down {
-                debug!("repeat up");
-                let mut c = 0;
+        Repeat(Dir::Up, ref count, ref inner) => {
+            debug!("repeat up");
+            let mut c = 0;
 
-                let count_type = count.get_type();
-                let hi = match count_type {
-                    Type::Integer(_, hi) => hi,
-                    _ => { warn!("Loop count type is {:?} not int", count_type); i64::MAX }
-                };
+            let count_type = count.get_type();
+            let hi = match count_type {
+                Type::Integer(_, hi) => hi,
+                _ => { warn!("Loop count type is {:?} not int", count_type); i64::MAX }
+            };
 
-                while c < hi && cx.test(&inner.first) {
-                    if !run_step(inner, cx) { return false; }
-                    c += 1;
-                }
-
-                debug!("Repeat end {}", c);
-                count.eval_up(&mut |var, val| cx.vars_up.set(var, val), Value::Integer(c))
-            } else {
-                debug!("repeat down");
-
-                let c = match count.eval_down(&mut |var| cx.vars_down.get(var).clone()) {
-                    Value::Integer(i) => i,
-                    other => panic!("Count evaluated to non-integer {:?}", other)
-                };
-                for _ in 0..c {
-                    if !run_step(inner, cx) { return false; }
-                }
-                true
+            while c < hi && cx.test(&inner.first) {
+                if !run_step(inner, cx) { return false; }
+                c += 1;
             }
+
+            debug!("Repeat end {}", c);
+            count.eval_up(&mut |var, val| cx.vars_up.set(var, val), Value::Integer(c))
         }
+    
+        Repeat(Dir::Dn, ref count, ref inner) => {
+            debug!("repeat down");
+
+            let c = match count.eval_down(&mut |var| cx.vars_down.get(var).clone()) {
+                Value::Integer(i) => i,
+                other => panic!("Count evaluated to non-integer {:?}", other)
+            };
+            for _ in 0..c {
+                if !run_step(inner, cx) { return false; }
+            }
+            true
+        }
+
         Foreach(count, ref assigns, ref inner) => {
             let mut lstate = assigns.iter().map(|&(id, ref expr)| {
                 let dir = expr.dir();
@@ -289,38 +289,35 @@ fn run_step(step: &StepInfo, cx: &mut RunCx<'_>) -> bool {
 
             true
         }
-        Alt(ref opts) => {
-            let up = opts.iter().any(|arm| {
-                arm.0.is_empty() || arm.0.iter().any(|&(_, ref e)| !e.dir().down)
-            });
-            
-            if up {
-                for &(ref vals, ref inner) in opts {
-                    if cx.test(&inner.first) {
-                        for &(ref l, ref r) in vals {
-                            let v = l.eval_down(&mut |var| cx.vars_up.get(var).clone());
-                            r.eval_up(&mut |var, val| cx.vars_up.set(var, val), v);
-                        }
 
-                        return run_step(inner, cx);
+        Alt(Dir::Up, ref opts) => {
+            for &(ref vals, ref inner) in opts {
+                if cx.test(&inner.first) {
+                    for &(ref l, ref r) in vals {
+                        let v = l.eval_down(&mut |var| cx.vars_up.get(var).clone());
+                        r.eval_up(&mut |var, val| cx.vars_up.set(var, val), v);
                     }
-                }
-                false
-            } else {
-                debug!("alt dn");
 
-                for &(ref vals, ref inner) in opts {
-                    let matches = vals.iter().all(|&(ref l, ref r)| {
-                        let v = r.eval_down(&mut |var| cx.vars_down.get(var).clone());
-                        l.eval_up(&mut |var, val| cx.vars_down.set(var, val), v)
-                    });
-
-                    if matches {
-                        return run_step(inner, cx);
-                    }
+                    return run_step(inner, cx);
                 }
-                false
             }
+            false
+        }
+
+        Alt(Dir::Dn, ref opts) => {
+            debug!("alt dn");
+
+            for &(ref vals, ref inner) in opts {
+                let matches = vals.iter().all(|&(ref l, ref r)| {
+                    let v = r.eval_down(&mut |var| cx.vars_down.get(var).clone());
+                    l.eval_up(&mut |var, val| cx.vars_down.set(var, val), v)
+                });
+
+                if matches {
+                    return run_step(inner, cx);
+                }
+            }
+            false
         }
     }
 }
