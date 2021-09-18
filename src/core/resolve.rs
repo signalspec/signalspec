@@ -1,6 +1,7 @@
+use crate::Value;
 use crate::{PrimitiveProcess, syntax::ast};
 use super::{Ctxt, Expr, Item, Scope, Shape, Type, Message, ValueId, index::DefImpl, resolve_protocol_invoke};
-use super::{ on_expr_message, value, pattern_match, rexpr };
+use super::{Dir, on_expr_message, pattern_match, rexpr, value};
 
 #[derive(Clone, Copy)]
 struct ResolveCx<'a> {
@@ -33,9 +34,17 @@ pub trait Builder {
     fn chain(&self, steps: Vec<Self::Res>, shapes: Vec<Shape>) -> Self::Res;
     fn primitive(&self, prim: Box<dyn PrimitiveProcess + 'static>) -> Self::Res;
     fn seq(&mut self, steps: Vec<Self::Res>) -> Self::Res;
-    fn repeat(&mut self, count: Expr, inner: Self::Res) -> Self::Res;
+    fn repeat(&mut self, dir: Dir, count: Expr, inner: Self::Res) -> Self::Res;
     fn foreach(&mut self, length: u32, vars: Vec<(ValueId, Expr)>, inner: Self::Res) -> Self::Res;
-    fn alt(&mut self, opts: Vec<(Vec<(Expr, Expr)>, Self::Res)>) -> Self::Res;
+    fn alt(&mut self, dir: Dir, opts: Vec<(Vec<(Expr, Expr)>, Self::Res)>) -> Self::Res;
+}
+
+fn resolve_dir(e: Expr) -> Dir {
+    match e.eval_const() {
+        Value::Symbol(s) if s == "up" => Dir::Up,
+        Value::Symbol(s) if s == "dn" => Dir::Dn,
+        e => panic!("Invalid direction: {}", e)
+    }
 }
 
 
@@ -64,9 +73,17 @@ fn resolve_action<B: Builder>(sb: ResolveCx<'_>, builder: &mut B, action: &ast::
             builder.token_top(msg, step)
         }
         ast::Action::Repeat(ref count_ast, ref block) => {
-            let count = value(sb.scope, count_ast.as_ref().map_or(&ast::Expr::Ignore, |s| &s.node));
+            let (dir, count) = match count_ast {
+                Some((dir_ast, count_ast)) => {
+                    let count = value(sb.scope, &count_ast.node);
+                    let dir = resolve_dir(value(sb.scope, &dir_ast.node));
+                    (dir, count)
+                }
+                None => (Dir::Up, Expr::Ignored)
+            };
+
             let inner = resolve_seq(sb, builder, block);
-            builder.repeat(count, inner)
+            builder.repeat(dir, count, inner)
         }
         ast::Action::For(ref pairs, ref block) => {
             let mut body_scope = sb.scope.child();
@@ -93,7 +110,8 @@ fn resolve_action<B: Builder>(sb: ResolveCx<'_>, builder: &mut B, action: &ast::
 
             builder.foreach(count.unwrap_or(0) as u32, inner_vars, step)
         }
-        ast::Action::Alt(ref expr, ref arms) => {
+        ast::Action::Alt(ref dir_ast, ref expr, ref arms) => {
+            let dir = resolve_dir(value(sb.scope, dir_ast));
             let r = rexpr(sb.scope, expr);
 
             let v = arms.iter().map(|arm| {
@@ -104,7 +122,7 @@ fn resolve_action<B: Builder>(sb: ResolveCx<'_>, builder: &mut B, action: &ast::
                 (checks, step)
             }).collect();
 
-            builder.alt(v)
+            builder.alt(dir, v)
         }
     }
 }

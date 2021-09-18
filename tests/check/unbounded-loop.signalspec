@@ -3,9 +3,9 @@ def main() = Seq(0..3, d) {
   repeat {
     on val(v) {
       val(#h)
-      repeat v { val(#h) }
+      repeat d v { val(#h) }
     }
-    repeat 1..10 { val(#l) }
+    repeat #up 1..10 { val(#l) }
   }
 }
 

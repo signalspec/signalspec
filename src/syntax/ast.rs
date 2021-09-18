@@ -13,10 +13,10 @@ pub struct Block {
 #[derive(Debug, Clone)]
 pub enum Action {
     Process(Vec<Process>),
-    Repeat(Option<SpannedExpr>, Block),
+    Repeat(Option<(SpannedExpr, SpannedExpr)> , Block),
     On(String, Vec<SpannedExpr>, Option<Block>),
     For(Vec<(String, SpannedExpr)>, Block),
-    Alt(SpannedExpr, Vec<AltArm>),
+    Alt(SpannedExpr, SpannedExpr, Vec<AltArm>),
 }
 
 #[derive(Debug, Clone)]

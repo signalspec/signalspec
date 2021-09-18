@@ -25,10 +25,16 @@ pub use self::function::{ PrimitiveFn, FunctionDef, Func };
 pub use self::primitive::{ PrimitiveDef };
 pub use self::process::{ Ctxt, Config };
 pub use self::protocol::resolve_protocol_invoke;
-pub use self::step::{ Step, Message, Dir };
+pub use self::step::{ Step, Message };
 pub use self::resolve::{ resolve_token, compile_process_chain, ProcessChain };
 pub use self::data::{ Type, DataMode };
 pub use self::shape::{ Shape, ShapeMsg, ShapeMsgParam };
 pub use self::matchset::MatchSet;
+
+#[derive(Copy, Clone, Debug)]
+pub enum Dir {
+    Up,
+    Dn,
+}
 
 pub type ValueId = usize;

@@ -45,14 +45,14 @@ peg::parser!(pub grammar signalspec() for str {
       { ast::Block{ lets:lets, actions:actions } }
 
       rule action() -> ast::Action
-          = KW("repeat") _ count:expr()? _ block:block()
+          = KW("repeat") _ count:(dir:expr() _ count:expr() { (dir, count) })? _ block:block()
               { ast::Action::Repeat(count, block) }
           / KW("on") _ name:IDENTIFIER() _ expr:expr_list() _ body:block()?
               { ast::Action::On(name, expr, body) }
           / KW("for") _ items:(l:IDENTIFIER() _ "=" _ r:expr() { (l,r) })**__ _ body:block()
               { ast::Action::For(items, body) }
-          / KW("alt") _ expr:expr() _ "{" _ arms:alt_arm()**__ _ "}"
-              { ast::Action::Alt(expr, arms) }
+          / KW("alt") _ dir:expr() _ expr:expr() _ "{" _ arms:alt_arm()**__ _ "}"
+              { ast::Action::Alt(dir, expr, arms) }
           / p:process_chain()
               { ast::Action::Process(p) }
 

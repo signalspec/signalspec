@@ -1,6 +1,6 @@
 with Seq(#a|#b, _)
 def bare() = {
-    alt _ {
+    alt #up _ {
         _ => {
             val(#a)
         }
@@ -15,7 +15,7 @@ test seq(#a|#b, #up, (#a)) | bare();
 with Seq(#a|#b, dir)
 def simple() = Seq(#a | #b, dir) {
     on val(x) {
-        alt x {
+        alt dir x {
             #a => {
                 val(#a)
                 val(#b)
@@ -34,7 +34,7 @@ test seq_both(#a|#b, (#a, #b)) | simple() | { val(#a) };
 with Seq(#a|#b|#x|#y, dir)
 def tuple() = Seq((#a|#b, #a|#b|#x|#y), dir) {
     on val(z) {
-        alt z {
+        alt dir z {
             (#a, w) => {
                 val(#a)
                 val(w)
@@ -52,7 +52,7 @@ test seq_both(#a|#b|#x|#y, (#b, #x)) | tuple() | { val((#b, #x)) };
 with Seq(#a|#b, dir)
 def ambiguous() = Seq(#a | #b, dir) {
     on val(x) {
-        alt x {
+        alt dir x {
             #b => {
                 val(#a)
                 val(#b)

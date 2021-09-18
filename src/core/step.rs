@@ -2,7 +2,7 @@ use std::io::{Write, Result as IoResult};
 use std::iter::repeat;
 
 use crate::{PrimitiveProcess};
-use super::{Expr, MatchSet, Shape, Type, ValueId, resolve::Builder};
+use super::{Expr, MatchSet, Shape, Type, ValueId, resolve::Builder, Dir};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Message {
@@ -15,12 +15,6 @@ pub struct Message {
 pub struct StepInfo {
     pub(crate) step: Step,
     pub(crate) first: MatchSet,
-}
-
-#[derive(Copy, Clone, Debug)]
-pub enum Dir {
-    Up,
-    Dn,
 }
 
 #[derive(Debug)]
@@ -129,8 +123,7 @@ impl Builder for StepBuilder {
         }
     }
 
-    fn repeat(&mut self, count: Expr, inner: StepInfo) -> StepInfo {
-        let dir = if !count.dir().down { Dir::Up } else { Dir::Dn };
+    fn repeat(&mut self, dir: Dir, count: Expr, inner: StepInfo) -> StepInfo {
         let count_includes_zero = match count.get_type() {
             Type::Integer(lo, hi) => lo <= 0 && hi >= 0,
             count_type => {
@@ -161,12 +154,7 @@ impl Builder for StepBuilder {
         }
     }
 
-    fn alt(&mut self, opts: Vec<(Vec<(Expr, Expr)>, StepInfo)>) -> StepInfo {
-        let up = opts.iter().any(|arm| {
-            arm.0.is_empty() || arm.0.iter().any(|&(_, ref e)| !e.dir().down)
-        });
-        let dir = if up { Dir::Up } else { Dir::Dn };
-
+    fn alt(&mut self, dir: Dir, opts: Vec<(Vec<(Expr, Expr)>, StepInfo)>) -> StepInfo {
         // TODO: check that first is nonoverlapping
         StepInfo {
             first: opts.iter().fold(MatchSet::null(), |a, &(_, ref inner)| a.alternative(inner.first.clone())),

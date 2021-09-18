@@ -4,7 +4,7 @@ with Seq(t, dir)
 def main(var(dir) x) = {
     val(#a)
     val(#b)
-    repeat x {
+    repeat dir x {
         val(#c)
         val(#d)
     }
