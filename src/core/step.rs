@@ -14,6 +14,7 @@ pub struct Message {
 #[derive(Debug)]
 pub struct StepInfo {
     pub(crate) step: Step,
+    pub(crate) nullable: bool,
     pub(crate) first: MatchSet,
 }
 
@@ -84,19 +85,18 @@ impl Builder for StepBuilder {
 
     fn chain(&self, steps: Vec<StepInfo>, shapes: Vec<Shape>) -> StepInfo {
         assert_eq!(shapes.len() + 1, steps.len());
-        
-        let bottom_first = &steps.first().unwrap().first;
-        let top_first = &steps.last().unwrap().first;
 
         StepInfo {
-            first: MatchSet::join(&bottom_first, &top_first),
+            first: MatchSet::proc(),
+            nullable: false,
             step: Step::Chain(steps, shapes)
         }
     }
 
     fn primitive(&self, prim: Box<dyn PrimitiveProcess + 'static>) -> StepInfo {
         StepInfo {
-            first: MatchSet::null(),
+            first: MatchSet::proc(),
+            nullable: false,
             step: Step::Primitive(prim),
         }
     }
@@ -104,21 +104,45 @@ impl Builder for StepBuilder {
     fn token(&mut self, message: Message) -> StepInfo {
         StepInfo {
             first: MatchSet::lower(message.clone()),
+            nullable: false,
             step: Step::Token(message)
         }
     }
 
-    fn token_top(&mut self, message: Message, inner: StepInfo) -> StepInfo {
-        StepInfo {
-            first: MatchSet::upper(message.clone()).followed_by(inner.first.clone()),
-            step: Step::TokenTop(message, Box::new(inner))
+    fn token_top(&mut self, top_dir: Dir, message: Message, inner: StepInfo) -> StepInfo {
+        match top_dir {
+            Dir::Up => {
+                StepInfo {
+                    first: inner.first.clone(),
+                    nullable: inner.nullable,
+                    step: Step::TokenTop(message, Box::new(inner))
+                }
+            },
+            Dir::Dn => {
+                StepInfo {
+                    first: MatchSet::upper(message.clone()),
+                    nullable: false,
+                    step: Step::TokenTop(message, Box::new(inner))
+                }
+            },
         }
     }
 
     fn seq(&mut self, steps: Vec<StepInfo>) -> StepInfo {
+        let mut nullable = true;
+        let mut first = MatchSet::null();
+
+        for s in &steps {
+            if nullable {
+                first.merge(&s.first);
+                nullable &= s.nullable;
+            }
+        }
+
         //TODO: check that each adjacent followlast and first are non-overlapping
         StepInfo {
-            first: steps.iter().fold(MatchSet::epsilon(), |a, s| a.followed_by(s.first.clone())),
+            first,
+            nullable,
             step: Step::Seq(steps)
         }
     }
@@ -132,16 +156,21 @@ impl Builder for StepBuilder {
             }
         };
 
-        // TODO: check that inner followlast and first are nonoverlapping
-        // TODO: require that inner is non-nullable?
-
-        StepInfo {
-            first: if count_includes_zero {
-                inner.first.clone().alternative(MatchSet::epsilon())
-            } else {
-                inner.first.clone()
+        match dir {
+            Dir::Up => {
+                StepInfo {
+                    first: inner.first.clone(),
+                    nullable: count_includes_zero || inner.nullable,
+                    step: Step::Repeat(Dir::Up, count, Box::new(inner))
+                }
+            }
+            Dir::Dn => {
+                StepInfo {
+                    first: MatchSet::proc(),
+                    nullable: count_includes_zero,
+                    step: Step::Repeat(Dir::Dn, count, Box::new(inner))
+                }
             },
-            step: Step::Repeat(dir, count, Box::new(inner))
         }
     }
 
@@ -150,15 +179,36 @@ impl Builder for StepBuilder {
 
         StepInfo {
             first: inner.first.clone(),
+            nullable: inner.nullable,
             step: Step::Foreach(length, vars, Box::new(inner))
         }
     }
 
     fn alt(&mut self, dir: Dir, opts: Vec<(Vec<(Expr, Expr)>, StepInfo)>) -> StepInfo {
-        // TODO: check that first is nonoverlapping
-        StepInfo {
-            first: opts.iter().fold(MatchSet::null(), |a, &(_, ref inner)| a.alternative(inner.first.clone())),
-            step: Step::Alt(dir, opts)
+        match dir {
+            Dir::Up => {
+                let mut nullable = false;
+                    let mut first = MatchSet::null();
+
+                // TODO: check that first is nonoverlapping
+                for (_, s) in &opts {
+                    first.merge(&s.first);
+                    nullable |= s.nullable;
+                }
+
+                StepInfo {
+                    first,
+                    nullable,
+                    step: Step::Alt(Dir::Up, opts)
+                }
+            },
+            Dir::Dn => {
+                StepInfo {
+                    first: MatchSet::proc(),
+                    nullable: opts.iter().any(|(_, s)| s.nullable),
+                    step: Step::Alt(Dir::Dn, opts)
+                }
+            },
         }
     }
 }

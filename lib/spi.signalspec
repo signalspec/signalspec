@@ -12,7 +12,7 @@ def spi() = SPI(dir) {
   repeat dir <: 10 { val((#h, <: #l, <: #l)) }
   repeat {
     on start() {}
-    repeat #up 1..100 {
+    repeat {
       on data(byte) {
         for bit=byte {
           let b = bit[0=#l, 1=#h]

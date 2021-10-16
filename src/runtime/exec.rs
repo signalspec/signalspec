@@ -3,7 +3,7 @@ use scoped_pool::Pool;
 use vec_map::VecMap;
 
 use crate::{Shape, syntax::Value};
-use crate::core::{Expr, MatchSet, Message, ProcessChain, Step, StepInfo, Dir, Type, ValueId};
+use crate::core::{Expr, MatchSet, MatchSend, Message, ProcessChain, Step, StepInfo, Dir, Type, ValueId};
 
 use crate::runtime::{ Connection, ConnectionMessage };
 
@@ -30,24 +30,19 @@ struct RunCx<'a> {
 
 impl<'a> RunCx<'a> {
     fn test(&mut self, m: &MatchSet) -> bool {
-        for opt in &m.options {
-            let dn_match = if let Some(ref msg) = opt.lower {
-                if let Ok(rx) = self.downwards.peek() {
-                    message_test(msg.variant, &msg.up, rx)
-                } else { false }
-            } else { true };
-
-            let up_match = if let Some(ref msg) = opt.upper {
+        match &m.send {
+            MatchSend::None | MatchSend::Process => true,
+            MatchSend::MessageUp => {
                 if let Ok(rx) = self.upwards.peek() {
-                    message_test(msg.variant, &msg.dn, rx)
+                    m.options.iter().any(|msg|  message_test(msg.variant, &msg.dn,  rx) )
                 } else { false }
-            } else { true };
-
-            if dn_match && up_match {
-                return true;
+            }
+            MatchSend::MessageDn(..) => {
+                if let Ok(rx) = self.downwards.peek() {
+                    m.options.iter().any(|msg|  message_test(msg.variant, &msg.up, rx) )
+                } else { false }
             }
         }
-        false
     }
 
     fn send_lower(&mut self, msg: &Message) -> Result<(), ()> {
@@ -218,7 +213,7 @@ fn run_step(step: &StepInfo, cx: &mut RunCx<'_>) -> bool {
             true
         }
         Repeat(Dir::Up, ref count, ref inner) => {
-            debug!("repeat up");
+            debug!("repeat up {:?}", inner.first);
             let mut c = 0;
 
             let count_type = count.get_type();
@@ -235,7 +230,6 @@ fn run_step(step: &StepInfo, cx: &mut RunCx<'_>) -> bool {
             debug!("Repeat end {}", c);
             count.eval_up(&mut |var, val| cx.vars_up.set(var, val), Value::Integer(c))
         }
-    
         Repeat(Dir::Dn, ref count, ref inner) => {
             debug!("repeat down");
 
@@ -289,8 +283,9 @@ fn run_step(step: &StepInfo, cx: &mut RunCx<'_>) -> bool {
 
             true
         }
-
         Alt(Dir::Up, ref opts) => {
+            debug!("alt up");
+
             for &(ref vals, ref inner) in opts {
                 if cx.test(&inner.first) {
                     for &(ref l, ref r) in vals {
@@ -303,7 +298,6 @@ fn run_step(step: &StepInfo, cx: &mut RunCx<'_>) -> bool {
             }
             false
         }
-
         Alt(Dir::Dn, ref opts) => {
             debug!("alt dn");
 

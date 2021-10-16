@@ -30,7 +30,7 @@ pub trait Builder {
 
     //fn process(&mut self) -> Self::Res;
     fn token(&mut self, message: Message) -> Self::Res;
-    fn token_top(&mut self, message: Message, inner: Self::Res) -> Self::Res;
+    fn token_top(&mut self, top_dir: Dir, message: Message, inner: Self::Res) -> Self::Res;
     fn chain(&self, steps: Vec<Self::Res>, shapes: Vec<Shape>) -> Self::Res;
     fn primitive(&self, prim: Box<dyn PrimitiveProcess + 'static>) -> Self::Res;
     fn seq(&mut self, steps: Vec<Self::Res>) -> Self::Res;
@@ -70,7 +70,7 @@ fn resolve_action<B: Builder>(sb: ResolveCx<'_>, builder: &mut B, action: &ast::
                 builder.seq(Vec::new())
             };
 
-            builder.token_top(msg, step)
+            builder.token_top(shape_up.dir, msg, step)
         }
         ast::Action::Repeat(ref count_ast, ref block) => {
             let (dir, count) = match count_ast {

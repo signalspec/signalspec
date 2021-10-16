@@ -1,51 +1,34 @@
-use super::Message;
+use super::{Expr, Message};
 
 #[derive(Clone, Debug)]
 pub struct MatchSet {
-    pub options: Vec<MatchSetItem>
+    pub send: MatchSend,
+    pub options: Vec<Message>
 }
 
-#[derive(Clone, Debug)]
-pub struct MatchSetItem {
-    pub lower: Option<Message>,
-    pub upper: Option<Message>,
+#[derive(Clone, Debug, PartialEq)]
+pub enum MatchSend {
+    None,
+    Process,
+    MessageUp,
+    MessageDn(usize, Vec<Expr>),
 }
 
 impl MatchSet {
-    pub fn null() -> MatchSet { MatchSet { options: vec![] } }
-    pub fn epsilon() -> MatchSet { MatchSet { options: vec![ MatchSetItem { lower: None, upper: None }] } }
-    pub fn lower(m: Message) -> MatchSet { MatchSet { options: vec![ MatchSetItem { lower: Some(m), upper: None }] } }
-    pub fn upper(m: Message) -> MatchSet { MatchSet { options: vec![ MatchSetItem { lower: None, upper: Some(m) }] } }
+    pub fn null() -> MatchSet { MatchSet { send: MatchSend::None, options: vec![] } }
+    pub fn proc() -> MatchSet { MatchSet { send: MatchSend::Process, options: vec![] } }
+    pub fn lower(m: Message) -> MatchSet { MatchSet { send: MatchSend::MessageDn(m.variant, m.dn.clone()), options: vec![ m ] } }
+    pub fn upper(m: Message) -> MatchSet { MatchSet { send: MatchSend::MessageUp, options: vec![ m ] } }
 
-    pub fn followed_by(mut self, other: MatchSet) -> Self {
-        let mut new = Vec::new();
-        for a in self.options.drain(..) {
-            if a.lower.is_some() {
-                new.push(a);
-            } else if a.upper.is_some() {
-                for b in &other.options {
-                    new.push(MatchSetItem { lower: b.lower.clone(), upper: a.upper.clone() });
-                }
-            } else {
-                new.extend(other.options.iter().cloned())
-            }
+    pub fn merge(&mut self, other: &MatchSet) {
+        if self.send == MatchSend::None {
+            self.send = other.send.clone()
+        } else if other.send != MatchSend::None && self.send != other.send {
+            panic!("Send conflict: {:?} <> {:?}", self, other)
         }
-        self.options = new;
-        self
-    }
 
-    pub fn alternative(mut self, other: MatchSet) -> Self {
-        self.options.extend(other.options.into_iter());
-        self
-    }
+        // TODO: check overlap
 
-    pub fn join(bottom: &MatchSet, top: &MatchSet) -> Self {
-        let mut options = Vec::new();
-        for b in &bottom.options {
-            for t in &top.options {
-                options.push(MatchSetItem { lower: b.lower.clone(), upper: t.upper.clone() });
-            }
-        }
-        MatchSet { options }
+        self.options.extend(other.options.iter().cloned());
     }
 }
