@@ -3,7 +3,7 @@ use scoped_pool::Pool;
 use vec_map::VecMap;
 
 use crate::{Shape, syntax::Value};
-use crate::core::{Expr, MatchSet, Message, ProcessChain, Step, StepInfo, Dir, Type, ValueId};
+use crate::core::{Expr, MatchSet, ProcessChain, Step, StepInfo, Dir, Type, ValueId};
 
 use crate::runtime::{ Connection, ConnectionMessage };
 
@@ -45,20 +45,20 @@ impl<'a> RunCx<'a> {
         }
     }
 
-    fn send_lower(&mut self, msg: &Message) -> Result<(), ()> {
-        let tx = msg.dn.iter().map(|e| {
+    fn send_lower(&mut self, variant: usize, dn: &Vec<Expr>) -> Result<(), ()> {
+        let tx = dn.iter().map(|e| {
             e.eval_down(&mut |var| self.vars_down.get(var).clone())
         }).collect();
-        debug!("{:?} Send lower {} {:?}", ::std::thread::current().id(), msg.variant, tx);
-        self.downwards.send(ConnectionMessage { variant: msg.variant, values: tx })
+        debug!("{:?} Send lower {} {:?}", ::std::thread::current().id(), variant, tx);
+        self.downwards.send(ConnectionMessage { variant: variant, values: tx })
     }
 
-    fn send_upper(&mut self, msg: &Message) -> Result<(), ()> {
-        let tx = msg.up.iter().map(|e| {
+    fn send_upper(&mut self, variant: usize, up: &Vec<Expr>) -> Result<(), ()> {
+        let tx = up.iter().map(|e| {
             e.eval_down(&mut |var| self.vars_up.get(var).clone())
         }).collect();
-        debug!("{:?} Send upper {} {:?}", ::std::thread::current().id(), msg.variant, tx);
-        self.upwards.send(ConnectionMessage { variant: msg.variant, values: tx })
+        debug!("{:?} Send upper {} {:?}", ::std::thread::current().id(), variant, tx);
+        self.upwards.send(ConnectionMessage { variant: variant, values: tx })
     }
 }
 
@@ -190,20 +190,20 @@ fn run_step(step: &StepInfo, cx: &mut RunCx<'_>) -> bool {
     match &step.step {
         Chain(ref steps, ref shapes) => run_processes(cx, steps, shapes),
         Primitive(p) => p.run(cx.downwards, cx.upwards),
-        Token(ref msg) => {
-            cx.send_lower(msg).ok();
+        Token { variant, dn, up, ..}=> {
+            cx.send_lower(*variant, dn).ok();
             let rx = cx.downwards.recv();
-            message_match(&mut cx.vars_up, msg.variant, &msg.up, rx)
+            message_match(&mut cx.vars_up, *variant, up, rx)
         }
-        TokenTop(ref msg, ref inner) => {
+        TokenTop { variant, dn, up, inner } => {
             let rx = cx.upwards.recv();
-            if !message_match(&mut cx.vars_down, msg.variant, &&msg.dn, rx) {
+            if !message_match(&mut cx.vars_down, *variant, dn, rx) {
                 return false;
             }
 
             if !run_step(inner, cx) { return false; }
 
-            cx.send_upper(msg).ok();
+            cx.send_upper(*variant, up).ok();
             true
         }
         Seq(ref steps) => {

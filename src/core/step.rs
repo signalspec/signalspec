@@ -4,13 +4,6 @@ use std::iter::repeat;
 use crate::{PrimitiveProcess};
 use super::{Expr, MatchSet, Shape, Type, ValueId, resolve::Builder, Dir};
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct Message {
-    pub variant: usize,
-    pub dn: Vec<Expr>,
-    pub up: Vec<Expr>,
-}
-
 #[derive(Debug)]
 pub struct StepInfo {
     pub(crate) step: Step,
@@ -21,8 +14,8 @@ pub struct StepInfo {
 #[derive(Debug)]
 pub enum Step {
     Chain(Vec<StepInfo>, Vec<Shape>),
-    Token(Message),
-    TokenTop(Message, Box<StepInfo>),
+    Token { variant: usize, dn: Vec<Expr>, up: Vec<Expr> },
+    TokenTop { variant: usize, dn: Vec<Expr>, up: Vec<Expr>, inner: Box<StepInfo> },
     Primitive(Box<dyn PrimitiveProcess + 'static>),
     Seq(Vec<StepInfo>),
     Repeat(Dir, Expr, Box<StepInfo>),
@@ -33,7 +26,7 @@ pub enum Step {
 impl StepInfo {
     pub fn write_tree(&self, f: &mut dyn Write, indent: u32) -> IoResult<()> {
         let i: String = repeat(" ").take(indent as usize).collect();
-        match self.step {
+        match &self.step {
             Step::Chain(ref c, _) => {
                 writeln!(f, "{}Chain:", i)?;
                 for step in c {
@@ -43,12 +36,12 @@ impl StepInfo {
             Step::Primitive(_) => {
                 writeln!(f, "{}Primitive", i)?
             }
-            Step::Token(ref message) => {
-                writeln!(f, "{}Token: {:?}", i, message)?
+            Step::Token { variant, dn, up } => {
+                writeln!(f, "{}Token: {:?} {:?} {:?}", i, variant, dn, up)?
             }
-            Step::TokenTop(ref message, ref body) => {
-                writeln!(f, "{}Up: {:?}", i, message)?;
-                body.write_tree(f, indent+1)?;
+            Step::TokenTop { variant, dn, up, inner } => {
+                writeln!(f, "{}Up: {:?} {:?} {:?}", i, variant, dn, up)?;
+                inner.write_tree(f, indent+1)?;
             }
             Step::Seq(ref steps) => {
                 writeln!(f, "{}Seq", i)?;
@@ -101,28 +94,28 @@ impl Builder for StepBuilder {
         }
     }
 
-    fn token(&mut self, message: Message) -> StepInfo {
+    fn token(&mut self, variant: usize, dn: Vec<Expr>, up: Vec<Expr>) -> StepInfo {
         StepInfo {
-            first: MatchSet::lower(message.clone()),
+            first: MatchSet::lower(variant, dn.clone(), up.clone()),
             nullable: false,
-            step: Step::Token(message)
+            step: Step::Token { variant, dn, up }
         }
     }
 
-    fn token_top(&mut self, top_dir: Dir, message: Message, inner: StepInfo) -> StepInfo {
+    fn token_top(&mut self, top_dir: Dir, variant: usize, dn: Vec<Expr>, up: Vec<Expr>, inner: StepInfo) -> StepInfo {
         match top_dir {
             Dir::Up => {
                 StepInfo {
                     first: inner.first.clone(),
                     nullable: inner.nullable,
-                    step: Step::TokenTop(message, Box::new(inner))
+                    step: Step::TokenTop { variant, dn, up, inner: Box::new(inner) }
                 }
             },
             Dir::Dn => {
                 StepInfo {
-                    first: MatchSet::upper(message.clone()),
+                    first: MatchSet::upper(variant, dn.clone()),
                     nullable: false,
-                    step: Step::TokenTop(message, Box::new(inner))
+                    step: Step::TokenTop { variant, dn, up, inner: Box::new(inner) }
                 }
             },
         }

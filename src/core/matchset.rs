@@ -1,4 +1,4 @@
-use super::{Expr, Message};
+use super::{Expr};
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum MatchSet {
@@ -11,16 +11,16 @@ pub enum MatchSet {
 impl MatchSet {
     pub fn null() -> MatchSet { MatchSet::None }
     pub fn proc() -> MatchSet { MatchSet::Process }
-    pub fn lower(m: Message) -> MatchSet {
+    pub fn lower(variant: usize, dn: Vec<Expr>, up: Vec<Expr>) -> MatchSet {
         MatchSet::MessageDn {
-            variant: m.variant,
-            send: m.dn.clone(),
-            receive: vec![m.up.clone()]
+            variant,
+            send: dn,
+            receive: vec![up]
         }
     }
-    pub fn upper(m: Message) -> MatchSet {
+    pub fn upper(variant: usize, dn: Vec<Expr>) -> MatchSet {
         MatchSet::MessageUp {
-            receive: vec![(m.variant, m.dn.clone())],
+            receive: vec![(variant, dn)],
         }
     }
 
@@ -45,6 +45,7 @@ impl MatchSet {
                 r1.extend_from_slice(r2);  //TODO: check for overlap
                 MatchSet::MessageUp { receive: r1 }
             }
+
             (s, o) => panic!("Send conflict: {:?} <> {:?}", s, o)
         }
     }

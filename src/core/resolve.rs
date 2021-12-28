@@ -1,6 +1,6 @@
 use crate::Value;
 use crate::{PrimitiveProcess, syntax::ast};
-use super::{Ctxt, Expr, Item, Scope, Shape, Type, Message, ValueId, index::DefImpl, resolve_protocol_invoke};
+use super::{Ctxt, Expr, Item, Scope, Shape, Type, ValueId, index::DefImpl, ShapeMsg, resolve_protocol_invoke};
 use super::{Dir, on_expr_message, pattern_match, rexpr, value};
 
 #[derive(Clone, Copy)]
@@ -29,8 +29,8 @@ pub trait Builder {
     type Res;
 
     //fn process(&mut self) -> Self::Res;
-    fn token(&mut self, message: Message) -> Self::Res;
-    fn token_top(&mut self, top_dir: Dir, message: Message, inner: Self::Res) -> Self::Res;
+    fn token(&mut self, variant: usize, dn: Vec<Expr>, up: Vec<Expr>) -> Self::Res;
+    fn token_top(&mut self, top_dir: Dir, variant: usize, dn: Vec<Expr>, up: Vec<Expr>, inner: Self::Res) -> Self::Res;
     fn chain(&self, steps: Vec<Self::Res>, shapes: Vec<Shape>) -> Self::Res;
     fn primitive(&self, prim: Box<dyn PrimitiveProcess + 'static>) -> Self::Res;
     fn seq(&mut self, steps: Vec<Self::Res>) -> Self::Res;
@@ -62,7 +62,11 @@ fn resolve_action<B: Builder>(sb: ResolveCx<'_>, builder: &mut B, action: &ast::
 
             let shape_up = sb.shape_up.expect("`on` block with no upper shape");
 
-            let msg = on_expr_message(sb.ctx, &mut body_scope, shape_up, name, &exprs[..]);
+            let (variant, msg_def) = if let Some(t) = shape_up.variant_named(name) { t } else {
+                panic!("Variant {:?} not found on shape {:?}", name, shape_up)
+            };
+
+            let (dn, up) = on_expr_message(sb.ctx, &mut body_scope, msg_def, exprs);
 
             let step = if let &Some(ref body) = body {
                 resolve_seq(sb.with_upper(&body_scope, None), builder, body)
@@ -70,7 +74,7 @@ fn resolve_action<B: Builder>(sb: ResolveCx<'_>, builder: &mut B, action: &ast::
                 builder.seq(Vec::new())
             };
 
-            builder.token_top(shape_up.dir, msg, step)
+            builder.token_top(shape_up.dir, variant, dn, up, step)
         }
         ast::Action::Repeat(ref count_ast, ref block) => {
             let (dir, count) = match count_ast {
@@ -153,8 +157,9 @@ fn resolve_process<B: Builder>(sb: ResolveCx<'_>, builder: &mut B, process_ast: 
     match process_ast {
         ast::Process::Call(ref name, ref args_ast) => {
             let args: Vec<Item> = args_ast.iter().map(|a| rexpr(sb.scope, a)).collect();
-            if let Some(msg) = resolve_token(sb.shape_down, name, &args) {
-                (builder.token(msg), None)
+            if let Some((variant, msg_def)) = sb.shape_down.variant_named(name) {
+                let (dn, up) = resolve_token(msg_def, &args);
+                (builder.token(variant, dn, up), None)
             } else {
                 let (scope, imp) = sb.ctx.index.find_def(sb.shape_down, name, args);
                 match *imp {
@@ -203,7 +208,7 @@ pub fn resolve_letdef(scope: &mut Scope, ld: &ast::LetDef) {
     scope.bind(&name, item);
 }
 
-pub fn resolve_token(shape: &Shape, variant_name: &str, args: &[Item]) -> Option<Message> {
+pub fn resolve_token(msg_def: &ShapeMsg, args: &[Item]) -> (Vec<Expr>, Vec<Expr>) {
     fn inner(i: &Item, shape: &Item, out: &mut Vec<Expr>) {
         match shape {
             &Item::Value(Expr::Const(_)) => (),
@@ -231,22 +236,20 @@ pub fn resolve_token(shape: &Shape, variant_name: &str, args: &[Item]) -> Option
         }
     }
 
-    shape.variant_named(variant_name).map(|(variant, msg)| {
-        assert_eq!(args.len(), msg.params.len(), "wrong number of arguments to message {:?} {:?} {:?}", variant_name, msg.params, args);
+    assert_eq!(args.len(), msg_def.params.len(), "wrong number of arguments to message {:?} {:?} {:?}", msg_def.name, msg_def.params, args);
 
-        let mut dn = Vec::new();
-        let mut up = Vec::new();
+    let mut dn = Vec::new();
+    let mut up = Vec::new();
 
-        for (param, arg) in msg.params.iter().zip(args) {
-            if param.direction.up {
-                inner(arg, &param.item, &mut up)
-            } else if param.direction.down {
-                inner(arg, &param.item, &mut dn)
-            }
+    for (param, arg) in msg_def.params.iter().zip(args) {
+        if param.direction.up {
+            inner(arg, &param.item, &mut up)
+        } else if param.direction.down {
+            inner(arg, &param.item, &mut dn)
         }
+    }
 
-        Message { variant, dn, up }
-    })
+    (dn, up)
 }
 
 use super::step::{StepBuilder, StepInfo};

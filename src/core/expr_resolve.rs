@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use crate::syntax::{ast, Value};
-use super::{ConcatElem, Ctxt, DataMode, Expr, Func, FunctionDef, Item, Message, Scope, Shape};
+use super::{ConcatElem, Ctxt, DataMode, Expr, Func, FunctionDef, Item, Scope, ShapeMsg };
 
 fn resolve(scope: Option<&Scope>, var_handler: &mut dyn FnMut(&str) -> Expr, e: &ast::Expr) -> Expr {
     match *e {
@@ -149,7 +149,7 @@ fn resolve_call(scope: &Scope, func: &ast::Expr, arg: &ast::Expr) -> Item {
 }
 
 /// Resolve expressions as used in the arguments of an `on` block, defining variables
-pub fn on_expr_message(ctx: &Ctxt, scope: &mut Scope, shape: &Shape, variant_name: &str, exprs: &[ast::SpannedExpr]) -> Message {
+pub fn on_expr_message(ctx: &Ctxt, scope: &mut Scope, msg_def: &ShapeMsg, exprs: &[ast::SpannedExpr]) -> (Vec<Expr>, Vec<Expr>) {
     fn perform_match(ctx: &Ctxt, scope: &mut Scope, shape: &Item, expr: &ast::Expr, dir: DataMode, push: &mut dyn FnMut(Expr)) {
         match (shape, expr) {
             (&Item::Value(Expr::Const(ref c)), &ast::Expr::Value(ref val)) if c == val => (),
@@ -197,24 +197,20 @@ pub fn on_expr_message(ctx: &Ctxt, scope: &mut Scope, shape: &Shape, variant_nam
         }
     }
 
-    if let Some((variant, msg)) = shape.variant_named(variant_name) {
-        assert_eq!(msg.params.len(), exprs.len());
+    assert_eq!(msg_def.params.len(), exprs.len());
 
-        let mut dn = Vec::new();
-        let mut up = Vec::new();
+    let mut dn = Vec::new();
+    let mut up = Vec::new();
 
-        for (param, expr) in msg.params.iter().zip(exprs) {
-            if param.direction.up {
-                perform_match(ctx, scope, &param.item, expr, param.direction, &mut |i| up.push(i))
-            } else if param.direction.down {
-                perform_match(ctx, scope, &param.item, expr, param.direction, &mut |i| dn.push(i))
-            }
+    for (param, expr) in msg_def.params.iter().zip(exprs) {
+        if param.direction.up {
+            perform_match(ctx, scope, &param.item, expr, param.direction, &mut |i| up.push(i))
+        } else if param.direction.down {
+            perform_match(ctx, scope, &param.item, expr, param.direction, &mut |i| dn.push(i))
         }
-
-        Message { variant, dn, up }
-    } else {
-        panic!("Variant {:?} not found on shape {:?}", variant_name, shape)
     }
+
+    (dn, up)
 }
 
 #[derive(Clone, Debug)]
