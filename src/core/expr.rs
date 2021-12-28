@@ -5,15 +5,24 @@ use super::{ Item, Type, ValueId, DataMode };
 
 /// Element of Expr::Concat
 #[derive(PartialEq, Debug, Clone)]
-pub enum ConcatElem {
+pub enum ConcatElem<E> {
     /// An `Expr` included directly in a concatenation (`[a]`)
-    Elem(Expr),
+    Elem(E),
 
     /// An `Expr` for a `Vector` value whose elements are included in a concatenation (`[8:a]`)
-    Slice(Expr, usize),
+    Slice(E, usize),
 }
 
-impl ConcatElem {
+impl<E> ConcatElem<E> {
+    fn map<T>(&self, f: impl FnOnce(&E) -> T) -> ConcatElem<T> {
+        match *self {
+            ConcatElem::Elem(ref e) => ConcatElem::Elem(f(e)),
+            ConcatElem::Slice(ref e, s) => ConcatElem::Slice(f(e), s),
+        }
+    }
+}
+
+impl ConcatElem<Expr> {
     fn elem_type(&self) -> Type {
         match *self {
             ConcatElem::Elem(ref v) => v.get_type(),
@@ -91,7 +100,7 @@ pub enum Expr {
     Union(Vec<Expr>),
     Flip(Box<Expr>, Box<Expr>),
     Choose(Box<Expr>, Vec<(Value, Value)>),
-    Concat(Vec<ConcatElem>),
+    Concat(Vec<ConcatElem<Expr>>),
     BinaryConst(Box<Expr>, BinOp, Value),
     Unary(Box<Expr>, UnaryOp),
 }
@@ -189,48 +198,23 @@ impl Expr {
         }
     }
 
-    /// Down-evaluate the expression with variables from the given value function.
-    pub fn eval_down(&self, state: &dyn Fn(ValueId)->Value) -> Value {
+    pub fn down(&self) -> ExprDn {
         match *self {
             Expr::Ignored | Expr::Range(..) | Expr::RangeInt(..) | Expr::Union(..) => {
                 panic!("{:?} can't be down-evaluated", self)
             }
-            Expr::Variable(id, _, _) => state(id),
-            Expr::Const(ref v) => v.clone(),
-
-            Expr::Flip(ref d, _) => d.eval_down(state),
-            Expr::Choose(ref e, ref c) => eval_choose(&e.eval_down(state), c).unwrap(),
-
-            Expr::Concat(ref components) => {
-                let mut result = vec![];
-                for component in components {
-                    match component {
-                        ConcatElem::Elem(e) => result.push(e.eval_down(state)),
-                        ConcatElem::Slice(e, w) => {
-                            match e.eval_down(state) {
-                                Value::Vector(v) => result.extend(v.into_iter()),
-                                other => panic!("Slice splat expected vector of length {}, found {}", w, other)
-                            }
-                        }
-                    }
-                }
-                Value::Vector(result)
-            },
-
-            Expr::BinaryConst(ref e, op, ref c) => {
-                match (e.eval_down(state), c) {
-                    (Value::Number(l), &Value::Number(r)) => Value::Number(op.eval(l, r)),
-                    (Value::Integer(l), &Value::Integer(r)) => Value::Integer(op.eval(l, r)),
-                    (l, r) => panic!("Invalid types {} {} in BinaryConst", l, r)
-                }
-            }
-
-            Expr::Unary(ref e, ref op) => op.eval(e.eval_down(state))
+            Expr::Variable(id, ..) => ExprDn::Variable(id),
+            Expr::Const(ref v) => ExprDn::Const(v.clone()),
+            Expr::Flip(ref d, _) => d.down(),
+            Expr::Choose(ref e, ref c) => ExprDn::Choose(Box::new(e.down()), c.clone()),
+            Expr::Concat(ref c) => ExprDn::Concat(c.iter().map(|l| l.map(Self::down)).collect()),
+            Expr::BinaryConst(ref e, op, ref c) => ExprDn::BinaryConst(Box::new(e.down()), op, c.clone()),
+            Expr::Unary(ref e, ref op) => ExprDn::Unary(Box::new(e.down()), op.clone()),
         }
     }
 
     pub fn eval_const(&self) -> Value {
-        self.eval_down(&|_| panic!("Runtime variable not expected here"))
+        self.down().eval(&|_| panic!("Runtime variable not expected here"))
     }
 
     /// Up-evaluate a value. This accepts a value and may write variables
@@ -328,10 +312,61 @@ impl Expr {
                     e => panic!("Expected outer vector in Chunks {}", e)
                 }
             }
-
         }
     }
 }
+
+/// An expression representing a runtime computation
+#[derive(PartialEq, Debug, Clone)]
+pub enum ExprDn {
+    Const(Value),
+    Variable(ValueId),
+    Choose(Box<ExprDn>, Vec<(Value, Value)>),
+    Concat(Vec<ConcatElem<ExprDn>>),
+    BinaryConst(Box<ExprDn>, BinOp, Value),
+    Unary(Box<ExprDn>, UnaryOp),
+}
+
+impl ExprDn {
+    /// Down-evaluate the expression with variables from the given value function.
+    pub fn eval(&self, state: &dyn Fn(ValueId)->Value) -> Value {
+        match *self {
+            ExprDn::Variable(id) => state(id),
+            ExprDn::Const(ref v) => v.clone(),
+
+            ExprDn::Choose(ref e, ref c) => eval_choose(&e.eval(state), c).unwrap(),
+
+            ExprDn::Concat(ref components) => {
+                let mut result = vec![];
+                for component in components {
+                    match component {
+                        ConcatElem::Elem(e) => result.push(e.eval(state)),
+                        ConcatElem::Slice(e, w) => {
+                            match e.eval(state) {
+                                Value::Vector(v) => result.extend(v.into_iter()),
+                                other => panic!("Slice splat expected vector of length {}, found {}", w, other)
+                            }
+                        }
+                    }
+                }
+                Value::Vector(result)
+            },
+
+            ExprDn::BinaryConst(ref e, op, ref c) => {
+                match (e.eval(state), c) {
+                    (Value::Number(l), &Value::Number(r)) => Value::Number(op.eval(l, r)),
+                    (Value::Integer(l), &Value::Integer(r)) => Value::Integer(op.eval(l, r)),
+                    (l, r) => panic!("Invalid types {} {} in BinaryConst", l, r)
+                }
+            }
+
+            ExprDn::Unary(ref e, ref op) => {
+                op.eval(e.eval(state))
+            }
+        }
+    }
+}
+
 
 fn eval_choose(v: &Value, choices: &[(Value, Value)]) -> Option<Value> {
     choices.iter()

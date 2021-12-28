@@ -1,17 +1,17 @@
-use super::{Expr};
+use super::{Expr, ExprDn};
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum MatchSet {
     None,
     Process,
     MessageUp { receive: Vec<(usize, Vec<Expr>)> },
-    MessageDn { variant: usize, send: Vec<Expr>, receive: Vec<Vec<Expr>> },
+    MessageDn { variant: usize, send: Vec<ExprDn>, receive: Vec<Vec<Expr>> },
 }
 
 impl MatchSet {
     pub fn null() -> MatchSet { MatchSet::None }
     pub fn proc() -> MatchSet { MatchSet::Process }
-    pub fn lower(variant: usize, dn: Vec<Expr>, up: Vec<Expr>) -> MatchSet {
+    pub fn lower(variant: usize, dn: Vec<ExprDn>, up: Vec<Expr>) -> MatchSet {
         MatchSet::MessageDn {
             variant,
             send: dn,

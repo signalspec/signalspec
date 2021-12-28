@@ -1,6 +1,6 @@
 use crate::Value;
 use crate::{PrimitiveProcess, syntax::ast};
-use super::{Ctxt, Expr, Item, Scope, Shape, Type, ValueId, index::DefImpl, ShapeMsg, resolve_protocol_invoke};
+use super::{Ctxt, Expr, ExprDn, Item, Scope, Shape, Type, ValueId, index::DefImpl, ShapeMsg, resolve_protocol_invoke};
 use super::{Dir, on_expr_message, pattern_match, rexpr, value};
 
 #[derive(Clone, Copy)]
@@ -29,8 +29,8 @@ pub trait Builder {
     type Res;
 
     //fn process(&mut self) -> Self::Res;
-    fn token(&mut self, variant: usize, dn: Vec<Expr>, up: Vec<Expr>) -> Self::Res;
-    fn token_top(&mut self, top_dir: Dir, variant: usize, dn: Vec<Expr>, up: Vec<Expr>, inner: Self::Res) -> Self::Res;
+    fn token(&mut self, variant: usize, dn: Vec<ExprDn>, up: Vec<Expr>) -> Self::Res;
+    fn token_top(&mut self, top_dir: Dir, variant: usize, dn: Vec<Expr>, up: Vec<ExprDn>, inner: Self::Res) -> Self::Res;
     fn chain(&self, steps: Vec<Self::Res>, shapes: Vec<Shape>) -> Self::Res;
     fn primitive(&self, prim: Box<dyn PrimitiveProcess + 'static>) -> Self::Res;
     fn seq(&mut self, steps: Vec<Self::Res>) -> Self::Res;
@@ -208,7 +208,7 @@ pub fn resolve_letdef(scope: &mut Scope, ld: &ast::LetDef) {
     scope.bind(&name, item);
 }
 
-pub fn resolve_token(msg_def: &ShapeMsg, args: &[Item]) -> (Vec<Expr>, Vec<Expr>) {
+pub fn resolve_token(msg_def: &ShapeMsg, args: &[Item]) -> (Vec<ExprDn>, Vec<Expr>) {
     fn inner(i: &Item, shape: &Item, out: &mut Vec<Expr>) {
         match shape {
             &Item::Value(Expr::Const(_)) => (),
@@ -249,7 +249,7 @@ pub fn resolve_token(msg_def: &ShapeMsg, args: &[Item]) -> (Vec<Expr>, Vec<Expr>
         }
     }
 
-    (dn, up)
+    (dn.into_iter().map(|x| x.down()).collect(), up)
 }
 
 use super::step::{StepBuilder, StepInfo};

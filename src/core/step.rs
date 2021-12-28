@@ -2,7 +2,7 @@ use std::io::{Write, Result as IoResult};
 use std::iter::repeat;
 
 use crate::{PrimitiveProcess};
-use super::{Expr, MatchSet, Shape, Type, ValueId, resolve::Builder, Dir};
+use super::{Expr, ExprDn, MatchSet, Shape, Type, ValueId, resolve::Builder, Dir};
 
 #[derive(Debug)]
 pub struct StepInfo {
@@ -14,13 +14,15 @@ pub struct StepInfo {
 #[derive(Debug)]
 pub enum Step {
     Chain(Vec<StepInfo>, Vec<Shape>),
-    Token { variant: usize, dn: Vec<Expr>, up: Vec<Expr> },
-    TokenTop { variant: usize, dn: Vec<Expr>, up: Vec<Expr>, inner: Box<StepInfo> },
+    Token { variant: usize, send: Vec<ExprDn>, receive: Vec<Expr> },
+    TokenTop { variant: usize, send: Vec<Expr>, receive: Vec<ExprDn>, inner: Box<StepInfo> },
     Primitive(Box<dyn PrimitiveProcess + 'static>),
     Seq(Vec<StepInfo>),
-    Repeat(Dir, Expr, Box<StepInfo>),
-    Foreach(u32, Vec<(ValueId, Expr)>, Box<StepInfo>),
-    Alt(Dir, Vec<(Vec<(Expr, Expr)>, StepInfo)>),
+    RepeatDn(ExprDn, Box<StepInfo>),
+    RepeatUp(Expr, Box<StepInfo>),
+    Foreach { iters: u32, vars_dn: Vec<(ValueId, ExprDn)>, vars_up: Vec<(ValueId, Expr)>, inner: Box<StepInfo> },
+    AltDn(Vec<(Vec<(Expr, ExprDn)>, StepInfo)>),
+    AltUp(Vec<(Vec<(ExprDn, Expr)>, StepInfo)>),
 }
 
 impl StepInfo {
@@ -36,10 +38,10 @@ impl StepInfo {
             Step::Primitive(_) => {
                 writeln!(f, "{}Primitive", i)?
             }
-            Step::Token { variant, dn, up } => {
+            Step::Token { variant, send: dn, receive: up } => {
                 writeln!(f, "{}Token: {:?} {:?} {:?}", i, variant, dn, up)?
             }
-            Step::TokenTop { variant, dn, up, inner } => {
+            Step::TokenTop { variant, send: dn, receive: up, inner } => {
                 writeln!(f, "{}Up: {:?} {:?} {:?}", i, variant, dn, up)?;
                 inner.write_tree(f, indent+1)?;
             }
@@ -49,18 +51,30 @@ impl StepInfo {
                     c.write_tree(f, indent+1)?;
                 }
             }
-            Step::Repeat(dir, ref count, ref inner) => {
-                writeln!(f, "{}Repeat[{:?}]: {:?}", i, dir, count)?;
+            Step::RepeatDn(ref count, ref inner) => {
+                writeln!(f, "{}Repeat[Dn]: {:?}", i, count)?;
                 inner.write_tree(f, indent + 1)?;
             }
-            Step::Foreach(width, ref vars, ref inner) => {
-                write!(f, "{}For: {} ", i, width)?;
-                for &(id, ref expr) in vars { write!(f, "{}={:?}, ", id, expr)?; }
+            Step::RepeatUp(ref count, ref inner) => {
+                writeln!(f, "{}Repeat[Up]: {:?}", i, count)?;
+                inner.write_tree(f, indent + 1)?;
+            }
+            Step::Foreach { iters, ref vars_dn, ref vars_up, ref inner } => {
+                write!(f, "{}For: {} ", i, iters)?;
+                for &(id, ref expr) in vars_dn { write!(f, "{}<={:?}, ", id, expr)?; }
+                for &(id, ref expr) in vars_up { write!(f, "{}=>{:?}, ", id, expr)?; }
                 writeln!(f, "")?;
                 inner.write_tree(f, indent + 1)?;
             }
-            Step::Alt(dir, ref arms) => {
-                writeln!(f, "{}Alt[{:?}]:", i, dir)?;
+            Step::AltDn(ref arms) => {
+                writeln!(f, "{}Alt[{:?}]:", i, Dir::Dn)?;
+                for &(ref cond, ref inner) in arms {
+                    writeln!(f, "{} {:?} =>", i, cond)?;
+                    inner.write_tree(f, indent + 2)?;
+                }
+            }
+            Step::AltUp(ref arms) => {
+                writeln!(f, "{}Alt[{:?}]:", i, Dir::Up)?;
                 for &(ref cond, ref inner) in arms {
                     writeln!(f, "{} {:?} =>", i, cond)?;
                     inner.write_tree(f, indent + 2)?;
@@ -94,28 +108,28 @@ impl Builder for StepBuilder {
         }
     }
 
-    fn token(&mut self, variant: usize, dn: Vec<Expr>, up: Vec<Expr>) -> StepInfo {
+    fn token(&mut self, variant: usize, dn: Vec<ExprDn>, up: Vec<Expr>) -> StepInfo {
         StepInfo {
             first: MatchSet::lower(variant, dn.clone(), up.clone()),
             nullable: false,
-            step: Step::Token { variant, dn, up }
+            step: Step::Token { variant, send: dn, receive: up }
         }
     }
 
-    fn token_top(&mut self, top_dir: Dir, variant: usize, dn: Vec<Expr>, up: Vec<Expr>, inner: StepInfo) -> StepInfo {
+    fn token_top(&mut self, top_dir: Dir, variant: usize, dn: Vec<Expr>, up: Vec<ExprDn>, inner: StepInfo) -> StepInfo {
         match top_dir {
             Dir::Up => {
                 StepInfo {
                     first: inner.first.clone(),
                     nullable: inner.nullable,
-                    step: Step::TokenTop { variant, dn, up, inner: Box::new(inner) }
+                    step: Step::TokenTop { variant, send: dn, receive: up, inner: Box::new(inner) }
                 }
             },
             Dir::Dn => {
                 StepInfo {
                     first: MatchSet::upper(variant, dn.clone()),
                     nullable: false,
-                    step: Step::TokenTop { variant, dn, up, inner: Box::new(inner) }
+                    step: Step::TokenTop { variant, send: dn, receive: up, inner: Box::new(inner) }
                 }
             },
         }
@@ -154,26 +168,39 @@ impl Builder for StepBuilder {
                 StepInfo {
                     first: inner.first.clone(),
                     nullable: count_includes_zero || inner.nullable,
-                    step: Step::Repeat(Dir::Up, count, Box::new(inner))
+                    step: Step::RepeatUp(count, Box::new(inner))
                 }
             }
             Dir::Dn => {
                 StepInfo {
                     first: MatchSet::proc(),
                     nullable: count_includes_zero,
-                    step: Step::Repeat(Dir::Dn, count, Box::new(inner))
+                    step: Step::RepeatDn(count.down(), Box::new(inner))
                 }
             },
         }
     }
 
-    fn foreach(&mut self, length: u32, vars: Vec<(ValueId, Expr)>, inner: StepInfo) -> StepInfo {
+    fn foreach(&mut self, iters: u32, vars: Vec<(ValueId, Expr)>, inner: StepInfo) -> StepInfo {
         //TODO: check that inner followlast and first are non-overlapping
+
+        let mut vars_dn = Vec::new();
+        let mut vars_up = Vec::new();
+
+        for (id, e) in vars {
+            let dir = e.dir();
+            if dir.down {
+                vars_dn.push((id, e.down()));
+            }
+            if dir.up {
+                vars_up.push((id, e));
+            }
+        }
 
         StepInfo {
             first: inner.first.clone(),
             nullable: inner.nullable,
-            step: Step::Foreach(length, vars, Box::new(inner))
+            step: Step::Foreach { iters, vars_dn, vars_up, inner: Box::new(inner) }
         }
     }
 
@@ -189,17 +216,26 @@ impl Builder for StepBuilder {
                     nullable |= s.nullable;
                 }
 
+                let opts = opts.into_iter().map(|(e, b)|
+                    (e.into_iter().map(|(l, r)| (l.down(), r)).collect(), b)
+                ).collect();
+
                 StepInfo {
                     first,
                     nullable,
-                    step: Step::Alt(Dir::Up, opts)
+                    step: Step::AltUp(opts)
                 }
             },
             Dir::Dn => {
+                let nullable = opts.iter().any(|(_, s)| s.nullable);
+                let opts = opts.into_iter().map(|(e, b)|
+                    (e.into_iter().map(|(l, r)| (l, r.down())).collect(), b)
+                ).collect();
+
                 StepInfo {
                     first: MatchSet::proc(),
-                    nullable: opts.iter().any(|(_, s)| s.nullable),
-                    step: Step::Alt(Dir::Dn, opts)
+                    nullable,
+                    step: Step::AltDn(opts)
                 }
             },
         }

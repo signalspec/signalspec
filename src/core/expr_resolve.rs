@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use crate::syntax::{ast, Value};
-use super::{ConcatElem, Ctxt, DataMode, Expr, Func, FunctionDef, Item, Scope, ShapeMsg };
+use super::{ConcatElem, Ctxt, DataMode, Expr, Func, FunctionDef, Item, Scope, ShapeMsg, ExprDn };
 
 fn resolve(scope: Option<&Scope>, var_handler: &mut dyn FnMut(&str) -> Expr, e: &ast::Expr) -> Expr {
     match *e {
@@ -149,7 +149,7 @@ fn resolve_call(scope: &Scope, func: &ast::Expr, arg: &ast::Expr) -> Item {
 }
 
 /// Resolve expressions as used in the arguments of an `on` block, defining variables
-pub fn on_expr_message(ctx: &Ctxt, scope: &mut Scope, msg_def: &ShapeMsg, exprs: &[ast::SpannedExpr]) -> (Vec<Expr>, Vec<Expr>) {
+pub fn on_expr_message(ctx: &Ctxt, scope: &mut Scope, msg_def: &ShapeMsg, exprs: &[ast::SpannedExpr]) -> (Vec<Expr>, Vec<ExprDn>) {
     fn perform_match(ctx: &Ctxt, scope: &mut Scope, shape: &Item, expr: &ast::Expr, dir: DataMode, push: &mut dyn FnMut(Expr)) {
         match (shape, expr) {
             (&Item::Value(Expr::Const(ref c)), &ast::Expr::Value(ref val)) if c == val => (),
@@ -204,7 +204,7 @@ pub fn on_expr_message(ctx: &Ctxt, scope: &mut Scope, msg_def: &ShapeMsg, exprs:
 
     for (param, expr) in msg_def.params.iter().zip(exprs) {
         if param.direction.up {
-            perform_match(ctx, scope, &param.item, expr, param.direction, &mut |i| up.push(i))
+            perform_match(ctx, scope, &param.item, expr, param.direction, &mut |i| up.push(i.down()))
         } else if param.direction.down {
             perform_match(ctx, scope, &param.item, expr, param.direction, &mut |i| dn.push(i))
         }
