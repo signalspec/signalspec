@@ -42,6 +42,42 @@ pub enum SignMode {
     TwosComplement,
 }
 
+#[derive(PartialEq, Debug, Clone)]
+pub enum UnaryOp {
+    FloatToInt,
+    IntToBits { width: usize, signed: SignMode },
+    Chunks { width: usize },
+}
+
+impl UnaryOp {
+    pub fn eval(&self, v: Value) -> Value {
+        match *self {
+            UnaryOp::FloatToInt => {
+                match v {
+                    Value::Number(n) => Value::Integer(n as i64),
+                    e => panic!("Invalid value {} in FloatToInt", e)
+                }
+            }
+            UnaryOp::IntToBits { width, .. } => {
+                match v {
+                    Value::Integer(i) => {
+                        Value::Vector((0..width).rev().map(|bit| Value::Integer((((i as u64) >> bit) & 1) as i64) ).collect())
+                    }
+                    e => panic!("Invalid value {} in IntToBits", e)
+                }
+            },
+            UnaryOp::Chunks { width } => {
+                match v {
+                    Value::Vector(i) => {
+                        Value::Vector(i.chunks(width).map(|s| Value::Vector(s.to_vec())).collect())
+                    }
+                    e => panic!("Invalid value {} in Chunks", e)
+                }
+            },
+        }
+    }
+}
+
 /// An expression representing a runtime computation
 #[derive(PartialEq, Debug, Clone)]
 pub enum Expr {
@@ -57,117 +93,10 @@ pub enum Expr {
     Choose(Box<Expr>, Vec<(Value, Value)>),
     Concat(Vec<ConcatElem>),
     BinaryConst(Box<Expr>, BinOp, Value),
-
-    FloatToInt(Box<Expr>),
-    IntToBits { width: usize, expr: Box<Expr>, signed: SignMode },
-    Chunks { width: usize, expr: Box<Expr> },
+    Unary(Box<Expr>, UnaryOp),
 }
 
 impl Expr {
-    /// Call `f` with the ID of each runtime variable referenced in the expression
-    pub fn each_var(&self, f: &mut dyn FnMut(ValueId)) {
-        use self::Expr::*;
-        match *self {
-            Variable(id, ..) => f(id),
-            Ignored | Const(..) | Range(..) | RangeInt(..) => (),
-            Flip(ref a, ref b) => {
-                a.each_var(f);
-                b.each_var(f);
-            }
-            Union(ref u) => for i in u { i.each_var(f) },
-            Concat(ref l) => {
-                for src in l.iter() {
-                    match *src {
-                        ConcatElem::Elem(ref i) | ConcatElem::Slice(ref i, _) => i.each_var(f),
-                    }
-                }
-            }
-            Choose(ref expr, _)
-            | BinaryConst(ref expr, _, _)
-            | FloatToInt(ref expr)
-            | IntToBits { ref expr, .. }
-            | Chunks { ref expr, .. } => expr.each_var(f),
-        }
-    }
-
-    /// Check whether the expression might fail to match a value on up-evaluation.
-    pub fn refutable(&self) -> bool {
-        use self::Expr::*;
-        match *self {
-            Ignored => false,
-            Range(..) | RangeInt(..) => true,
-            Variable(..) => false,
-            Const(..) => true,
-            Flip(_, ref u) => u.refutable(),
-            Union(ref u) => u.iter().all(Expr::refutable),
-            Concat(ref e) => e.iter().any(|x| {
-                match *x {
-                    ConcatElem::Elem(ref e) | ConcatElem::Slice(ref e, _) => e.refutable(),
-                }
-            }),
-            Choose(ref expr, _)
-            | BinaryConst(ref expr, _, _)
-            | FloatToInt( ref expr)
-            | IntToBits { ref expr, .. }
-            | Chunks { ref expr, .. } => expr.refutable(),
-        }
-    }
-
-    /// Check whether the expression is ignored in all cases
-    pub fn ignored(&self) -> bool {
-        use self::Expr::*;
-        match *self {
-            Ignored => true,
-            Range(..) | RangeInt(..) => false,
-            Union(ref u) => u.iter().all(Expr::ignored),
-            Variable(..) => false,
-            Const(..) => false,
-            Flip(_, ref u) => u.ignored(),
-            Concat(ref e) => e.iter().all(|x| {
-                match *x {
-                    ConcatElem::Elem(ref e) | ConcatElem::Slice(ref e, _) => e.ignored(),
-                }
-            }),
-            Choose(ref expr, _)
-            | BinaryConst(ref expr, _, _)
-            | FloatToInt(ref expr)
-            | IntToBits { ref expr, .. }
-            | Chunks { ref expr, .. } => expr.ignored(),
-        }
-    }
-
-    pub fn up_const(&self) -> Option<Value> {
-        use self::Expr::*;
-        match *self {
-            Const(ref x) => Some(x.clone()),
-            Flip(_, ref u) => u.up_const(),
-            _ => None,
-        }
-    }
-
-    /// Check whether the expression can be down-evaluated
-    pub fn down_evaluable(&self) -> bool {
-        use self::Expr::*;
-        match *self {
-            Ignored => false,
-            Range(..) | RangeInt(..) => false,
-            Union(ref u) => u.iter().all(Expr::down_evaluable),
-            Variable(..) => true,
-            Const(..) => true,
-            Flip(ref d, _) => d.down_evaluable(),
-            Concat(ref e) => e.iter().all(|x| {
-                match *x {
-                    ConcatElem::Elem(ref e) | ConcatElem::Slice(ref e, _) => e.down_evaluable(),
-                }
-            }),
-            Choose(ref expr, _)
-            | BinaryConst(ref expr, _, _)
-            | FloatToInt(ref expr)
-            | IntToBits { ref expr, .. }
-            | Chunks { ref expr, .. } => expr.down_evaluable(),
-        }
-    }
-
     pub fn dir(&self) -> DataMode {
         use self::Expr::*;
         match *self {
@@ -187,9 +116,7 @@ impl Expr {
             }),
             Choose(ref expr, _)
             | BinaryConst(ref expr, _, _)
-            | FloatToInt(ref expr)
-            | IntToBits { ref expr, .. }
-            | Chunks { ref expr, .. } => expr.dir(),
+            | Unary(ref expr, _) => expr.dir(),
         }
     }
 
@@ -242,17 +169,17 @@ impl Expr {
                 }
             }
 
-            Expr::FloatToInt(ref expr) => {
+            Expr::Unary(ref expr, UnaryOp::FloatToInt) => {
                 match expr.get_type() {
                     Type::Number(min, max) => Type::Integer(min as i64, max as i64),
                     _ => panic!("int() requires float argument")
                 }
             }
-            Expr::IntToBits { width, .. } => {
+            Expr::Unary(_, UnaryOp::IntToBits { width, .. }) => {
                 Type::Vector(width, Box::new(Type::Integer(0, 1)))
             }
 
-            Expr::Chunks { ref expr, width } => {
+            Expr::Unary(ref expr, UnaryOp::Chunks { width }) => {
                 if let Type::Vector(c, t) = expr.get_type() {
                     Type::Vector(c/width, Box::new(Type::Vector(width, t)))
                 } else {
@@ -298,30 +225,7 @@ impl Expr {
                 }
             }
 
-            Expr::FloatToInt(ref e) => {
-                match e.eval_down(state) {
-                    Value::Number(n) => Value::Integer(n as i64),
-                    e => panic!("Invalid value {} in FloatToInt", e)
-                }
-            }
-
-            Expr::IntToBits { width, ref expr, signed: _ } => {
-                match expr.eval_down(state) {
-                    Value::Integer(i) => {
-                        Value::Vector((0..width).rev().map(|bit| Value::Integer((((i as u64) >> bit) & 1) as i64) ).collect())
-                    }
-                    e => panic!("Invalid value {} in IntToBits", e)
-                }
-            }
-
-            Expr::Chunks { ref expr, width } => {
-                match expr.eval_down(state) {
-                    Value::Vector(i) => {
-                        Value::Vector(i.chunks(width).map(|s| Value::Vector(s.to_vec())).collect())
-                    }
-                    e => panic!("Invalid value {} in Chunks", e)
-                }
-            }
+            Expr::Unary(ref e, ref op) => op.eval(e.eval_down(state))
         }
     }
 
@@ -360,6 +264,7 @@ impl Expr {
                     false
                 }
             },
+
             Expr::Concat(ref components) => {
                 let mut elems = match v {
                     Value::Vector(e) => e.into_iter(),
@@ -372,8 +277,6 @@ impl Expr {
                         &ConcatElem::Slice(ref e, w) => e.eval_up(state, Value::Vector(elems.by_ref().take(w).collect()))
                     }
                 })
-
-
             }
 
             Expr::BinaryConst(ref e, op, ref c) => {
@@ -384,14 +287,14 @@ impl Expr {
                 }
             }
 
-            Expr::FloatToInt(ref e) => {
+            Expr::Unary(ref e, UnaryOp::FloatToInt) => {
                 match v {
                     Value::Integer(n) => e.eval_up(state, Value::Number(n as f64)),
                     e => panic!("Invalid value {} up-evaluating FloatToInt", e)
                 }
             }
 
-            Expr::IntToBits { width, ref expr, signed } => {
+            Expr::Unary(ref expr, UnaryOp::IntToBits { width, signed }) => {
                 match v {
                     Value::Vector(bits) => {
                         assert_eq!(bits.len(), width);
@@ -414,7 +317,7 @@ impl Expr {
                 }
             }
 
-            Expr::Chunks { ref expr, .. } => {
+            Expr::Unary(ref expr, UnaryOp::Chunks {.. }) => {
                 match v {
                     Value::Vector(chunks) => {
                         let concat = chunks.into_iter().flat_map(|c| {
@@ -476,13 +379,13 @@ impl fmt::Display for Expr {
                 }
             }
 
-            Expr::FloatToInt(ref e) =>
+            Expr::Unary(ref e, UnaryOp::FloatToInt) =>
                 write!(f, "int({})", e),
 
-            Expr::IntToBits { ref expr, width, signed } =>
+            Expr::Unary(ref expr, UnaryOp::IntToBits { width, signed }) =>
                 write!(f, "convert({:?}, {}, {})", signed, width, expr),
 
-            Expr::Chunks { ref expr, width } =>
+            Expr::Unary(ref expr, UnaryOp::Chunks { width }) =>
                 write!(f, "chunks({}, {})", width, expr),
         }
     }
@@ -491,7 +394,7 @@ impl fmt::Display for Expr {
 fn fn_int(arg: Item) -> Result<Item, &'static str> {
     match arg {
         Item::Value(v) => {
-            Ok(Item::Value(Expr::FloatToInt(Box::new(v))))
+            Ok(Item::Value(Expr::Unary(Box::new(v), UnaryOp::FloatToInt)))
         }
         _ => return Err("Invalid arguments to chunks()")
     }
@@ -510,11 +413,10 @@ fn fn_signed_unsigned(arg: Item, sign_mode: SignMode) -> Result<Item, &'static s
         Item::Tuple(mut t) => {
             match (t.pop(), t.pop()) { //TODO: cleaner way to move out of vec without reversing order?
                 (Some(Item::Value(v)), Some(Item::Value(Expr::Const(Value::Integer(width))))) => {
-                    Ok(Item::Value(Expr::IntToBits {
+                    Ok(Item::Value(Expr::Unary(Box::new(v), UnaryOp::IntToBits {
                         width: width as usize,
                         signed: sign_mode,
-                        expr: Box::new(v)
-                    }))
+                    })))
                 }
                 _ => return Err("Invalid arguments to signed()")
             }
@@ -528,10 +430,9 @@ fn fn_chunks(arg: Item) -> Result<Item, &'static str> {
         Item::Tuple(mut t) => {
             match (t.pop(), t.pop()) { //TODO: cleaner way to move out of vec without reversing order?
                 (Some(Item::Value(v)), Some(Item::Value(Expr::Const(Value::Integer(width))))) => {
-                    Ok(Item::Value(Expr::Chunks {
+                    Ok(Item::Value(Expr::Unary(Box::new(v), UnaryOp::Chunks {
                         width: width as usize,
-                        expr: Box::new(v)
-                    }))
+                    })))
                 }
                 _ => return Err("Invalid arguments to chunks()")
             }
