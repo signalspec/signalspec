@@ -29,7 +29,7 @@ pub use self::step::{ Step, Message };
 pub use self::resolve::{ resolve_token, compile_process_chain, ProcessChain };
 pub use self::data::{ Type, DataMode };
 pub use self::shape::{ Shape, ShapeMsg, ShapeMsgParam };
-pub use self::matchset::{ MatchSet, MatchSend };
+pub use self::matchset::{ MatchSet };
 
 #[derive(Copy, Clone, Debug)]
 pub enum Dir {

@@ -1,34 +1,52 @@
 use super::{Expr, Message};
 
-#[derive(Clone, Debug)]
-pub struct MatchSet {
-    pub send: MatchSend,
-    pub options: Vec<Message>
-}
-
 #[derive(Clone, Debug, PartialEq)]
-pub enum MatchSend {
+pub enum MatchSet {
     None,
     Process,
-    MessageUp,
-    MessageDn(usize, Vec<Expr>),
+    MessageUp { receive: Vec<(usize, Vec<Expr>)> },
+    MessageDn { variant: usize, send: Vec<Expr>, receive: Vec<Vec<Expr>> },
 }
 
 impl MatchSet {
-    pub fn null() -> MatchSet { MatchSet { send: MatchSend::None, options: vec![] } }
-    pub fn proc() -> MatchSet { MatchSet { send: MatchSend::Process, options: vec![] } }
-    pub fn lower(m: Message) -> MatchSet { MatchSet { send: MatchSend::MessageDn(m.variant, m.dn.clone()), options: vec![ m ] } }
-    pub fn upper(m: Message) -> MatchSet { MatchSet { send: MatchSend::MessageUp, options: vec![ m ] } }
-
-    pub fn merge(&mut self, other: &MatchSet) {
-        if self.send == MatchSend::None {
-            self.send = other.send.clone()
-        } else if other.send != MatchSend::None && self.send != other.send {
-            panic!("Send conflict: {:?} <> {:?}", self, other)
+    pub fn null() -> MatchSet { MatchSet::None }
+    pub fn proc() -> MatchSet { MatchSet::Process }
+    pub fn lower(m: Message) -> MatchSet {
+        MatchSet::MessageDn {
+            variant: m.variant,
+            send: m.dn.clone(),
+            receive: vec![m.up.clone()]
         }
+    }
+    pub fn upper(m: Message) -> MatchSet {
+        MatchSet::MessageUp {
+            receive: vec![(m.variant, m.dn.clone())],
+        }
+    }
 
-        // TODO: check overlap
+    pub fn merge(self, other: &MatchSet) -> MatchSet {
+        match (self, other) {
+            (MatchSet::None, o) => o.clone(),
 
-        self.options.extend(other.options.iter().cloned());
+            (o, MatchSet::None) => o,
+
+            (
+              MatchSet::MessageDn { variant: v1, send: s1, receive: mut r1 },
+              MatchSet::MessageDn { variant: v2, send: s2, receive: r2 }
+            ) if v1 == *v2 && &s1 == s2 => {
+                r1.extend_from_slice(r2); //TODO: check for overlap
+                MatchSet::MessageDn { variant: v1, send: s1, receive: r1 }
+            }
+
+            (
+              MatchSet::MessageUp { receive: mut r1 },
+              MatchSet::MessageUp { receive: r2 }
+            ) => {
+                r1.extend_from_slice(r2);  //TODO: check for overlap
+                MatchSet::MessageUp { receive: r1 }
+            }
+            (s, o) => panic!("Send conflict: {:?} <> {:?}", s, o)
+        }
     }
 }
+ 

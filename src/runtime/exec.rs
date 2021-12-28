@@ -3,7 +3,7 @@ use scoped_pool::Pool;
 use vec_map::VecMap;
 
 use crate::{Shape, syntax::Value};
-use crate::core::{Expr, MatchSet, MatchSend, Message, ProcessChain, Step, StepInfo, Dir, Type, ValueId};
+use crate::core::{Expr, MatchSet, Message, ProcessChain, Step, StepInfo, Dir, Type, ValueId};
 
 use crate::runtime::{ Connection, ConnectionMessage };
 
@@ -30,16 +30,16 @@ struct RunCx<'a> {
 
 impl<'a> RunCx<'a> {
     fn test(&mut self, m: &MatchSet) -> bool {
-        match &m.send {
-            MatchSend::None | MatchSend::Process => true,
-            MatchSend::MessageUp => {
+        match &m {
+            MatchSet::None | MatchSet::Process => true,
+            MatchSet::MessageUp { receive} => {
                 if let Ok(rx) = self.upwards.peek() {
-                    m.options.iter().any(|msg|  message_test(msg.variant, &msg.dn,  rx) )
+                    receive.iter().any(|&(variant, ref dn)|  message_test(variant, &dn,  rx) )
                 } else { false }
             }
-            MatchSend::MessageDn(..) => {
+            MatchSet::MessageDn { variant, receive, ..} => {
                 if let Ok(rx) = self.downwards.peek() {
-                    m.options.iter().any(|msg|  message_test(msg.variant, &msg.up, rx) )
+                    receive.iter().any(|up|  message_test(*variant, &up, rx) )
                 } else { false }
             }
         }

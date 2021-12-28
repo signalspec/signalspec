@@ -134,7 +134,7 @@ impl Builder for StepBuilder {
 
         for s in &steps {
             if nullable {
-                first.merge(&s.first);
+                first = first.merge(&s.first);
                 nullable &= s.nullable;
             }
         }
@@ -192,7 +192,7 @@ impl Builder for StepBuilder {
 
                 // TODO: check that first is nonoverlapping
                 for (_, s) in &opts {
-                    first.merge(&s.first);
+                    first = first.merge(&s.first);
                     nullable |= s.nullable;
                 }
 
