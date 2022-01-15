@@ -13,7 +13,6 @@ fn count_item_fields(i: &Item) -> usize {
 pub struct ShapeMsg {
     pub name: String,
     pub params: Vec<ShapeMsgParam>,
-    pub num_fields: usize,
 }
 
 #[derive(Clone, Debug)]
@@ -22,18 +21,9 @@ pub struct ShapeMsgParam {
     pub direction: DataMode,
 }
 
-impl ShapeMsgParam {
-    fn count_fields(&self) -> usize {
-        if self.direction.down || self.direction.up {
-            count_item_fields(&self.item)
-        } else { 0 }
-    }
-}
-
 impl ShapeMsg {
     pub fn new(name: String, params: Vec<ShapeMsgParam>) -> ShapeMsg {
-        let num_fields = params.iter().map(|x| x.count_fields()).sum();
-        ShapeMsg { name, params, num_fields }
+        ShapeMsg { name, params }
     }
 }
 
