@@ -31,8 +31,8 @@ pub trait Builder {
     //fn process(&mut self) -> Self::Res;
     fn token(&mut self, variant: usize, dn: Vec<ExprDn>, up: Vec<Expr>) -> Self::Res;
     fn token_top(&mut self, top_dir: Dir, variant: usize, dn: Vec<Expr>, up: Vec<ExprDn>, inner: Self::Res) -> Self::Res;
-    fn chain(&self, steps: Vec<Self::Res>, shapes: Vec<Shape>) -> Self::Res;
-    fn primitive(&self, prim: Box<dyn PrimitiveProcess + 'static>) -> Self::Res;
+    fn stack(&mut self, lo: Self::Res, shape: Shape, hi: Self::Res) -> Self::Res;
+    fn primitive(&mut self, prim: Box<dyn PrimitiveProcess + 'static>) -> Self::Res;
     fn seq(&mut self, steps: Vec<Self::Res>) -> Self::Res;
     fn repeat(&mut self, dir: Dir, count: Expr, inner: Self::Res) -> Self::Res;
     fn foreach(&mut self, length: u32, vars: Vec<(ValueId, Expr)>, inner: Self::Res) -> Self::Res;
@@ -132,25 +132,16 @@ fn resolve_action<B: Builder>(sb: ResolveCx<'_>, builder: &mut B, action: &ast::
 }
 
 fn resolve_processes<B: Builder>(sb: ResolveCx<'_>, builder: &mut B, processes: &[ast::Process]) -> (B::Res, Option<Shape>) {
-    let (step1, shape1) = resolve_process(sb, builder, &processes[0]);
+    let (mut res, mut top_shape) = resolve_process(sb, builder, &processes[0]);
 
-    if processes.len() == 1 {
-        (step1, shape1)
-    } else {
-        let mut top_shape = shape1;
-        let mut steps = vec![step1];
-        let mut shapes = vec![];
-
-        for process_ast in &processes[1..] {
-            let shape_down = top_shape.unwrap();
-            let (step, shape_up) = resolve_process(sb.with_lower(sb.scope, &shape_down), builder, process_ast);
-            shapes.push(shape_down);
-            steps.push(step);
-            top_shape = shape_up;
-        }
-
-        (builder.chain(steps, shapes), top_shape)
+    for process_ast in &processes[1..] {
+        let shape = top_shape.unwrap();
+        let (step, shape_up) = resolve_process(sb.with_lower(sb.scope, &shape), builder, process_ast);
+        res = builder.stack(res, shape, step);
+        top_shape = shape_up;
     }
+
+     (res, top_shape)
 }
 
 fn resolve_process<B: Builder>(sb: ResolveCx<'_>, builder: &mut B, process_ast: &ast::Process) -> (B::Res, Option<Shape>) {

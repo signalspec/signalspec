@@ -136,60 +136,49 @@ fn message_match(state: &mut State, msg_variant: usize, exprs: &[Expr], rx: Resu
     }
 }
 
-fn run_processes(cx: &mut RunCx<'_>, steps: &[StepInfo], shapes:&[Shape]) -> bool {
-    let (child, rest) = match steps.split_first() {
-        Some(x) => x,
-        None => return true
+fn run_stack(cx: &mut RunCx<'_>, lo: &StepInfo, shape: &Shape, hi: &StepInfo) -> bool {
+    let (mut conn_u, mut conn_l) = Connection::new(shape.direction());
+    let mut upper_cx = RunCx {
+        downwards: &mut conn_u,
+        upwards: cx.upwards,
+        vars_down: cx.vars_down.clone(),
+        vars_up: State::new(),
+        threadpool: cx.threadpool
+    };
+    let mut lower_cx = RunCx {
+        downwards: cx.downwards,
+        upwards: &mut conn_l,
+        vars_down: cx.vars_down.clone(),
+        vars_up: State::new(),
+        threadpool: cx.threadpool
     };
 
-    if rest.len() == 0 {
-        run_step(child, cx)
-    } else {
-        let (shape_up, shape_rest) = shapes.split_first().unwrap();
+    let mut ok1 = false;
+    let mut ok2 = false;
 
-        let (mut conn_u, mut conn_l) = Connection::new(shape_up.direction());
-        let mut upper_cx = RunCx {
-            downwards: &mut conn_u,
-            upwards: cx.upwards,
-            vars_down: cx.vars_down.clone(),
-            vars_up: State::new(),
-            threadpool: cx.threadpool
-        };
-        let mut lower_cx = RunCx {
-            downwards: cx.downwards,
-            upwards: &mut conn_l,
-            vars_down: cx.vars_down.clone(),
-            vars_up: State::new(),
-            threadpool: cx.threadpool
-        };
-
-        let mut ok1 = false;
-        let mut ok2 = false;
-
-        cx.threadpool.scoped(|scoped| {
-            scoped.execute(|| {
-                ok1 = run_processes(&mut upper_cx, rest, shape_rest);
-                upper_cx.downwards.end();
-                debug!("Fork upper end");
-            });
-            ok2 = run_step(child, &mut lower_cx);
-            lower_cx.upwards.end();
-            debug!("Fork lower end");
+    cx.threadpool.scoped(|scoped| {
+        scoped.execute(|| {
+            ok1 = run_step(hi, &mut upper_cx);
+            upper_cx.downwards.end();
+            debug!("Fork upper end");
         });
+        ok2 = run_step(lo, &mut lower_cx);
+        lower_cx.upwards.end();
+        debug!("Fork lower end");
+    });
 
-        debug!("fork join");
+    debug!("fork join");
 
-        cx.vars_up.merge(upper_cx.vars_up);
-        cx.vars_up.merge(lower_cx.vars_up);
+    cx.vars_up.merge(upper_cx.vars_up);
+    cx.vars_up.merge(lower_cx.vars_up);
 
-        ok1 && ok2
-    }
+    ok1 && ok2
 }
 
 fn run_step(step: &StepInfo, cx: &mut RunCx<'_>) -> bool {
     use self::Step::*;
     match &step.step {
-        Chain(ref steps, ref shapes) => run_processes(cx, steps, shapes),
+        Stack { ref lo, ref shape, ref hi} => run_stack(cx, lo, shape, hi),
         Primitive(p) => p.run(cx.downwards, cx.upwards),
         Token { variant, send: dn, receive: up, ..}=> {
             cx.send_lower(*variant, dn).ok();

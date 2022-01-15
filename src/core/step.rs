@@ -13,7 +13,7 @@ pub struct StepInfo {
 
 #[derive(Debug)]
 pub enum Step {
-    Chain(Vec<StepInfo>, Vec<Shape>),
+    Stack { lo: Box<StepInfo>, shape: Shape, hi: Box<StepInfo> },
     Token { variant: usize, send: Vec<ExprDn>, receive: Vec<Expr> },
     TokenTop { variant: usize, send: Vec<Expr>, receive: Vec<ExprDn>, inner: Box<StepInfo> },
     Primitive(Box<dyn PrimitiveProcess + 'static>),
@@ -29,11 +29,10 @@ impl StepInfo {
     pub fn write_tree(&self, f: &mut dyn Write, indent: u32) -> IoResult<()> {
         let i: String = repeat(" ").take(indent as usize).collect();
         match &self.step {
-            Step::Chain(ref c, _) => {
-                writeln!(f, "{}Chain:", i)?;
-                for step in c {
-                    step.write_tree(f, indent+2)?;
-                }
+            Step::Stack{ lo, hi, ..} => {
+                writeln!(f, "{}Stack:", i)?;
+                lo.write_tree(f, indent+2)?;
+                hi.write_tree(f, indent+2)?;
             }
             Step::Primitive(_) => {
                 writeln!(f, "{}Primitive", i)?
@@ -90,17 +89,16 @@ pub(crate) struct StepBuilder;
 impl Builder for StepBuilder {
     type Res = StepInfo;
 
-    fn chain(&self, steps: Vec<StepInfo>, shapes: Vec<Shape>) -> StepInfo {
-        assert_eq!(shapes.len() + 1, steps.len());
-
+    
+    fn stack(&mut self, lo: Self::Res, shape: Shape, hi: Self::Res) -> Self::Res {
         StepInfo {
             first: MatchSet::proc(),
             nullable: false,
-            step: Step::Chain(steps, shapes)
+            step: Step::Stack { lo: Box::new(lo), shape, hi: Box::new(hi) }
         }
     }
 
-    fn primitive(&self, prim: Box<dyn PrimitiveProcess + 'static>) -> StepInfo {
+    fn primitive(&mut self, prim: Box<dyn PrimitiveProcess + 'static>) -> StepInfo {
         StepInfo {
             first: MatchSet::proc(),
             nullable: false,
