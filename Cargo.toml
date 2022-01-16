@@ -2,7 +2,7 @@
 name = "signalspec"
 version = "0.1.0"
 authors = [ "km@kevinmehall.net" ]
-edition = "2018"
+edition = "2021"
 
 [workspace]
 members = ["cli"]
