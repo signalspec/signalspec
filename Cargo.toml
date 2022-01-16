@@ -11,7 +11,7 @@ members = ["cli"]
 log = "0.4.14"
 num-complex = "0.4"
 byteorder = "1.0.0"
-peg = "0.7"
+peg = "0.8"
 vec_map = "0.8.0"
 scoped-pool = "1.0"
 
