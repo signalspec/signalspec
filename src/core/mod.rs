@@ -14,7 +14,6 @@ mod shape;
 mod resolve;
 
 use self::file::ProtocolRef;
-pub(crate) use self::step::StepInfo;
 
 pub use self::file::FileScope;
 pub use self::index::{ Index };
@@ -25,7 +24,7 @@ pub use self::function::{ PrimitiveFn, FunctionDef, Func };
 pub use self::primitive::{ PrimitiveDef };
 pub use self::process::{ Ctxt, Config };
 pub use self::protocol::resolve_protocol_invoke;
-pub use self::step::{ Step };
+pub use self::step::{ Step, StepId, StepInfo };
 pub use self::resolve::{ resolve_token, compile_process_chain, ProcessChain };
 pub use self::data::{ Type, DataMode };
 pub use self::shape::{ Shape, ShapeMsg, ShapeMsgParam };

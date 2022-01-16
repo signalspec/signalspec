@@ -4,7 +4,7 @@ use scoped_pool::Pool;
 use vec_map::VecMap;
 
 use crate::{Shape, syntax::Value};
-use crate::core::{Expr, ExprDn, MatchSet, ProcessChain, Step, StepInfo, Type, ValueId};
+use crate::core::{Expr, ExprDn, MatchSet, ProcessChain, Step, Type, ValueId, StepId};
 
 use crate::runtime::{ Connection, ConnectionMessage };
 
@@ -12,7 +12,7 @@ use crate::runtime::{ Connection, ConnectionMessage };
 pub fn run(processes: &ProcessChain, downwards: &mut Connection, upwards: &mut Connection) -> bool {
     let pool = Pool::new(4);
     let mut cx = RunCx { downwards, upwards, vars_down: State::new(), vars_up: State::new(), threadpool: &pool };
-    let result = run_step(&processes.step, &mut cx);
+    let result = run_step(&mut cx, &processes, processes.root);
     pool.shutdown();
     result
 }
@@ -136,7 +136,7 @@ fn message_match(state: &mut State, msg_variant: usize, exprs: &[Expr], rx: Resu
     }
 }
 
-fn run_stack(cx: &mut RunCx<'_>, lo: &StepInfo, shape: &Shape, hi: &StepInfo) -> bool {
+fn run_stack(cx: &mut RunCx<'_>, program: &ProcessChain, lo: StepId, shape: &Shape, hi: StepId) -> bool {
     let (mut conn_u, mut conn_l) = Connection::new(shape.direction());
     let mut upper_cx = RunCx {
         downwards: &mut conn_u,
@@ -158,11 +158,11 @@ fn run_stack(cx: &mut RunCx<'_>, lo: &StepInfo, shape: &Shape, hi: &StepInfo) ->
 
     cx.threadpool.scoped(|scoped| {
         scoped.execute(|| {
-            ok1 = run_step(hi, &mut upper_cx);
+            ok1 = run_step(&mut upper_cx, program, hi);
             upper_cx.downwards.end();
             debug!("Fork upper end");
         });
-        ok2 = run_step(lo, &mut lower_cx);
+        ok2 = run_step(&mut lower_cx, program, lo,);
         lower_cx.upwards.end();
         debug!("Fork lower end");
     });
@@ -175,35 +175,37 @@ fn run_stack(cx: &mut RunCx<'_>, lo: &StepInfo, shape: &Shape, hi: &StepInfo) ->
     ok1 && ok2
 }
 
-fn run_step(step: &StepInfo, cx: &mut RunCx<'_>) -> bool {
-    use self::Step::*;
-    match &step.step {
-        Stack { ref lo, ref shape, ref hi} => run_stack(cx, lo, shape, hi),
-        Primitive(p) => p.run(cx.downwards, cx.upwards),
-        Token { variant, send: dn, receive: up, ..}=> {
-            cx.send_lower(*variant, dn).ok();
+fn run_step(cx: &mut RunCx<'_>, program: &ProcessChain, step: StepId) -> bool {
+    use Step::*;
+
+    match program.steps[step.0 as usize] {
+        Stack { lo, ref shape, hi} => run_stack(cx, program, lo, shape, hi),
+        Primitive(ref p) => p.run(cx.downwards, cx.upwards),
+        Token { variant, ref send, ref receive, ..}=> {
+            cx.send_lower(variant, send).ok();
             let rx = cx.downwards.recv();
-            message_match(&mut cx.vars_up, *variant, up, rx)
+            message_match(&mut cx.vars_up, variant, receive, rx)
         }
-        TokenTop { variant, send: dn, receive: up, inner } => {
+        TokenTop { variant, ref send, ref receive, inner, .. } => {
             let rx = cx.upwards.recv();
-            if !message_match(&mut cx.vars_down, *variant, dn, rx) {
+            if !message_match(&mut cx.vars_down, variant, send, rx) {
                 return false;
             }
 
-            if !run_step(inner, cx) { return false; }
+            if !run_step(cx, program, inner) { return false; }
 
-            cx.send_upper(*variant, up).ok();
+            cx.send_upper(variant, receive).ok();
             true
         }
         Seq(ref steps) => {
-            for step in steps {
-                if !run_step(step, cx) { return false; }
+            for &step in steps {
+                if !run_step(cx, program, step) { return false; }
             }
             true
         }
-        RepeatUp(ref count, ref inner) => {
-            debug!("repeat up {:?}", inner.first);
+        RepeatUp(ref count, inner) => {
+            let inner_info = &program.step_info[inner.0 as usize];
+            debug!("repeat up {:?}", inner_info.first);
             let mut c = 0;
 
             let count_type = count.get_type();
@@ -212,15 +214,15 @@ fn run_step(step: &StepInfo, cx: &mut RunCx<'_>) -> bool {
                 _ => { warn!("Loop count type is {:?} not int", count_type); i64::MAX }
             };
 
-            while c < hi && cx.test(&inner.first) {
-                if !run_step(inner, cx) { return false; }
+            while c < hi && cx.test(&inner_info.first) {
+                if !run_step(cx, program, inner) { return false; }
                 c += 1;
             }
 
             debug!("Repeat end {}", c);
             count.eval_up(&mut |var, val| cx.vars_up.set(var, val), Value::Integer(c))
         }
-        RepeatDn(ref count, ref inner) => {
+        RepeatDn(ref count, inner) => {
             debug!("repeat down");
 
             let c = match count.eval(&mut |var| cx.vars_down.get(var).clone()) {
@@ -228,12 +230,12 @@ fn run_step(step: &StepInfo, cx: &mut RunCx<'_>) -> bool {
                 other => panic!("Count evaluated to non-integer {:?}", other)
             };
             for _ in 0..c {
-                if !run_step(inner, cx) { return false; }
+                if !run_step(cx, program, inner) { return false; }
             }
             true
         }
 
-        Foreach { iters, ref vars_dn, ref vars_up, ref inner} => {
+        Foreach { iters, ref vars_dn, ref vars_up, inner} => {
             let mut state_dn: Vec<(ValueId, IntoIter<Value>)> = vars_dn.iter().map(|&(id, ref e)| {
                 let d = match e.eval(&mut |var| cx.vars_down.get(var).clone()) {
                     Value::Vector(v) => v.into_iter(),
@@ -246,12 +248,12 @@ fn run_step(step: &StepInfo, cx: &mut RunCx<'_>) -> bool {
                 (id, Vec::new(), e)
             ).collect();
 
-            for _ in 0..*iters {
+            for _ in 0..iters {
                 for &mut (id, ref mut d) in &mut state_dn {
                     cx.vars_down.set(id, d.next().expect("not enough elements in loop"));
                 }
 
-                if !run_step(inner, cx) { return false; }
+                if !run_step(cx, program, inner) { return false; }
 
                 for &mut (id, ref mut u, _) in &mut state_up {
                     u.push(cx.vars_up.take(id))
@@ -267,14 +269,15 @@ fn run_step(step: &StepInfo, cx: &mut RunCx<'_>) -> bool {
         AltUp(ref opts) => {
             debug!("alt up");
 
-            for &(ref vals, ref inner) in opts {
-                if cx.test(&inner.first) {
+            for &(ref vals, inner) in opts {
+                let inner_info = &program.step_info[inner.0 as usize];
+                if cx.test(&inner_info.first) {
                     for &(ref l, ref r) in vals {
                         let v = l.eval(&mut |var| cx.vars_up.get(var).clone());
                         r.eval_up(&mut |var, val| cx.vars_up.set(var, val), v);
                     }
 
-                    return run_step(inner, cx);
+                    return run_step(cx, program, inner);
                 }
             }
             false
@@ -282,14 +285,14 @@ fn run_step(step: &StepInfo, cx: &mut RunCx<'_>) -> bool {
         AltDn(ref opts) => {
             debug!("alt dn");
 
-            for &(ref vals, ref inner) in opts {
+            for &(ref vals, inner) in opts {
                 let matches = vals.iter().all(|&(ref l, ref r)| {
                     let v = r.eval(&mut |var| cx.vars_down.get(var).clone());
                     l.eval_up(&mut |var, val| cx.vars_down.set(var, val), v)
                 });
 
                 if matches {
-                    return run_step(inner, cx);
+                    return run_step(cx, program, inner);
                 }
             }
             false

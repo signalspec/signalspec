@@ -2,240 +2,205 @@ use std::io::{Write, Result as IoResult};
 use std::iter::repeat;
 
 use crate::{PrimitiveProcess};
-use super::{Expr, ExprDn, MatchSet, Shape, Type, ValueId, resolve::Builder, Dir};
+use super::{Expr, ExprDn, MatchSet, Shape, Type, ValueId, Dir};
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct StepId(pub(crate) u32);
+
+#[derive(Debug)]
+pub enum Step {
+    Stack { lo: StepId, shape: Shape, hi: StepId },
+    Token { variant: usize, send: Vec<ExprDn>, receive: Vec<Expr> },
+    TokenTop { top_dir: Dir, variant: usize, send: Vec<Expr>, receive: Vec<ExprDn>, inner: StepId },
+    Primitive(Box<dyn PrimitiveProcess + 'static>),
+    Seq(Vec<StepId>),
+    RepeatDn(ExprDn, StepId),
+    RepeatUp(Expr, StepId),
+    Foreach { iters: u32, vars_dn: Vec<(ValueId, ExprDn)>, vars_up: Vec<(ValueId, Expr)>, inner: StepId },
+    AltDn(Vec<(Vec<(Expr, ExprDn)>, StepId)>),
+    AltUp(Vec<(Vec<(ExprDn, Expr)>, StepId)>),
+}
+
+pub fn write_tree(f: &mut dyn Write, indent: u32, steps: &[Step], step: StepId) -> IoResult<()> {
+    let i: String = repeat(" ").take(indent as usize).collect();
+    match steps[step.0 as usize] {
+        Step::Stack{ lo, hi, ..} => {
+            writeln!(f, "{}Stack:", i)?;
+            write_tree(f, indent+2, steps, lo)?;
+            write_tree(f, indent+2, steps, hi)?;
+        }
+        Step::Primitive(_) => {
+            writeln!(f, "{}Primitive", i)?
+        }
+        Step::Token { variant, ref send, ref receive } => {
+            writeln!(f, "{}Token: {:?} {:?} {:?}", i, variant, send, receive)?
+        }
+        Step::TokenTop { variant, ref send, ref receive, inner, .. } => {
+            writeln!(f, "{}Up: {:?} {:?} {:?}", i, variant, send, receive)?;
+            write_tree(f, indent+1, steps, inner)?;
+        }
+        Step::Seq(ref inner) => {
+            writeln!(f, "{}Seq", i)?;
+            for &c in inner.iter() {
+                write_tree(f, indent+1, steps, c)?;
+            }
+        }
+        Step::RepeatDn(ref count, inner) => {
+            writeln!(f, "{}Repeat[Dn]: {:?}", i, count)?;
+            write_tree(f, indent + 1, steps, inner)?;
+        }
+        Step::RepeatUp(ref count, inner) => {
+            writeln!(f, "{}Repeat[Up]: {:?}", i, count)?;
+            write_tree(f, indent + 1, steps, inner)?;
+        }
+        Step::Foreach { iters, ref vars_dn, ref vars_up, inner } => {
+            write!(f, "{}For: {} ", i, iters)?;
+            for &(id, ref expr) in vars_dn { write!(f, "{}<={:?}, ", id, expr)?; }
+            for &(id, ref expr) in vars_up { write!(f, "{}=>{:?}, ", id, expr)?; }
+            writeln!(f, "")?;
+            write_tree(f, indent + 1, steps, inner)?;
+        }
+        Step::AltDn(ref arms) => {
+            writeln!(f, "{}Alt[{:?}]:", i, Dir::Dn)?;
+            for &(ref cond, inner) in arms {
+                writeln!(f, "{} {:?} =>", i, cond)?;
+                write_tree(f, indent + 2, steps, inner)?;
+            }
+        }
+        Step::AltUp(ref arms) => {
+            writeln!(f, "{}Alt[{:?}]:", i, Dir::Up)?;
+            for &(ref cond, inner) in arms {
+                writeln!(f, "{} {:?} =>", i, cond)?;
+                write_tree(f, indent + 2, steps, inner)?;
+            }
+        }
+    }
+    Ok(())
+}
 
 #[derive(Debug)]
 pub struct StepInfo {
-    pub(crate) step: Step,
     pub(crate) nullable: bool,
     pub(crate) first: MatchSet,
 }
 
-#[derive(Debug)]
-pub enum Step {
-    Stack { lo: Box<StepInfo>, shape: Shape, hi: Box<StepInfo> },
-    Token { variant: usize, send: Vec<ExprDn>, receive: Vec<Expr> },
-    TokenTop { variant: usize, send: Vec<Expr>, receive: Vec<ExprDn>, inner: Box<StepInfo> },
-    Primitive(Box<dyn PrimitiveProcess + 'static>),
-    Seq(Vec<StepInfo>),
-    RepeatDn(ExprDn, Box<StepInfo>),
-    RepeatUp(Expr, Box<StepInfo>),
-    Foreach { iters: u32, vars_dn: Vec<(ValueId, ExprDn)>, vars_up: Vec<(ValueId, Expr)>, inner: Box<StepInfo> },
-    AltDn(Vec<(Vec<(Expr, ExprDn)>, StepInfo)>),
-    AltUp(Vec<(Vec<(ExprDn, Expr)>, StepInfo)>),
-}
+pub fn analyze_unambiguous(steps: &[Step]) -> Vec<StepInfo> {
+    let mut res = vec![];
 
-impl StepInfo {
-    pub fn write_tree(&self, f: &mut dyn Write, indent: u32) -> IoResult<()> {
-        let i: String = repeat(" ").take(indent as usize).collect();
-        match &self.step {
-            Step::Stack{ lo, hi, ..} => {
-                writeln!(f, "{}Stack:", i)?;
-                lo.write_tree(f, indent+2)?;
-                hi.write_tree(f, indent+2)?;
-            }
+    for step in steps {
+        let get = |id: StepId| -> &StepInfo {&res[id.0 as usize]};
+
+        let info = match *step {
+            Step::Stack { .. } => {
+                StepInfo {
+                    first: MatchSet::proc(),
+                    nullable: false,
+                }
+            },
+            Step::Token { variant, ref send, ref receive } => {
+                StepInfo {
+                    first: MatchSet::lower(variant, send.clone(), receive.clone()),
+                    nullable: false,
+                }
+            },
+            Step::TokenTop { top_dir, variant, ref send, inner, .. } => {
+                let inner = get(inner);
+                match top_dir {
+                    Dir::Up => {
+                        StepInfo {
+                            first: inner.first.clone(),
+                            nullable: inner.nullable,
+                        }
+                    },
+                    Dir::Dn => {
+                        StepInfo {
+                            first: MatchSet::upper(variant, send.clone()),
+                            nullable: false,
+                        }
+                    },
+                }
+            },
             Step::Primitive(_) => {
-                writeln!(f, "{}Primitive", i)?
-            }
-            Step::Token { variant, send: dn, receive: up } => {
-                writeln!(f, "{}Token: {:?} {:?} {:?}", i, variant, dn, up)?
-            }
-            Step::TokenTop { variant, send: dn, receive: up, inner } => {
-                writeln!(f, "{}Up: {:?} {:?} {:?}", i, variant, dn, up)?;
-                inner.write_tree(f, indent+1)?;
-            }
+                StepInfo {
+                    first: MatchSet::proc(),
+                    nullable: false,
+                }
+            },
             Step::Seq(ref steps) => {
-                writeln!(f, "{}Seq", i)?;
-                for c in steps.iter() {
-                    c.write_tree(f, indent+1)?;
+                let mut nullable = true;
+                let mut first = MatchSet::null();
+
+                for &s in steps {
+                    let s = get(s);
+                    if nullable {
+                        first = first.merge(&s.first);
+                        nullable &= s.nullable;
+                    }
                 }
-            }
-            Step::RepeatDn(ref count, ref inner) => {
-                writeln!(f, "{}Repeat[Dn]: {:?}", i, count)?;
-                inner.write_tree(f, indent + 1)?;
-            }
-            Step::RepeatUp(ref count, ref inner) => {
-                writeln!(f, "{}Repeat[Up]: {:?}", i, count)?;
-                inner.write_tree(f, indent + 1)?;
-            }
-            Step::Foreach { iters, ref vars_dn, ref vars_up, ref inner } => {
-                write!(f, "{}For: {} ", i, iters)?;
-                for &(id, ref expr) in vars_dn { write!(f, "{}<={:?}, ", id, expr)?; }
-                for &(id, ref expr) in vars_up { write!(f, "{}=>{:?}, ", id, expr)?; }
-                writeln!(f, "")?;
-                inner.write_tree(f, indent + 1)?;
-            }
-            Step::AltDn(ref arms) => {
-                writeln!(f, "{}Alt[{:?}]:", i, Dir::Dn)?;
-                for &(ref cond, ref inner) in arms {
-                    writeln!(f, "{} {:?} =>", i, cond)?;
-                    inner.write_tree(f, indent + 2)?;
+
+                //TODO: check that each adjacent followlast and first are non-overlapping
+                StepInfo {
+                    first,
+                    nullable,
                 }
-            }
-            Step::AltUp(ref arms) => {
-                writeln!(f, "{}Alt[{:?}]:", i, Dir::Up)?;
-                for &(ref cond, ref inner) in arms {
-                    writeln!(f, "{} {:?} =>", i, cond)?;
-                    inner.write_tree(f, indent + 2)?;
-                }
-            }
-        }
-        Ok(())
-    }
-}
+            },
+            Step::RepeatDn(ref _count, inner) => {
+                let inner = get(inner);
 
-pub(crate) struct StepBuilder;
-
-impl Builder for StepBuilder {
-    type Res = StepInfo;
-
-    
-    fn stack(&mut self, lo: Self::Res, shape: Shape, hi: Self::Res) -> Self::Res {
-        StepInfo {
-            first: MatchSet::proc(),
-            nullable: false,
-            step: Step::Stack { lo: Box::new(lo), shape, hi: Box::new(hi) }
-        }
-    }
-
-    fn primitive(&mut self, prim: Box<dyn PrimitiveProcess + 'static>) -> StepInfo {
-        StepInfo {
-            first: MatchSet::proc(),
-            nullable: false,
-            step: Step::Primitive(prim),
-        }
-    }
-
-    fn token(&mut self, variant: usize, dn: Vec<ExprDn>, up: Vec<Expr>) -> StepInfo {
-        StepInfo {
-            first: MatchSet::lower(variant, dn.clone(), up.clone()),
-            nullable: false,
-            step: Step::Token { variant, send: dn, receive: up }
-        }
-    }
-
-    fn token_top(&mut self, top_dir: Dir, variant: usize, dn: Vec<Expr>, up: Vec<ExprDn>, inner: StepInfo) -> StepInfo {
-        match top_dir {
-            Dir::Up => {
                 StepInfo {
                     first: inner.first.clone(),
                     nullable: inner.nullable,
-                    step: Step::TokenTop { variant, send: dn, receive: up, inner: Box::new(inner) }
                 }
             },
-            Dir::Dn => {
-                StepInfo {
-                    first: MatchSet::upper(variant, dn.clone()),
-                    nullable: false,
-                    step: Step::TokenTop { variant, send: dn, receive: up, inner: Box::new(inner) }
-                }
-            },
-        }
-    }
+            Step::RepeatUp(ref count, inner) => {
+                let inner = get(inner);
 
-    fn seq(&mut self, steps: Vec<StepInfo>) -> StepInfo {
-        let mut nullable = true;
-        let mut first = MatchSet::null();
+                let count_includes_zero = match count.get_type() {
+                    Type::Integer(lo, hi) => lo <= 0 && hi >= 0,
+                    count_type => {
+                        warn!("Loop count type is {:?} not int", count_type);
+                        false
+                    }
+                };
 
-        for s in &steps {
-            if nullable {
-                first = first.merge(&s.first);
-                nullable &= s.nullable;
-            }
-        }
-
-        //TODO: check that each adjacent followlast and first are non-overlapping
-        StepInfo {
-            first,
-            nullable,
-            step: Step::Seq(steps)
-        }
-    }
-
-    fn repeat(&mut self, dir: Dir, count: Expr, inner: StepInfo) -> StepInfo {
-        let count_includes_zero = match count.get_type() {
-            Type::Integer(lo, hi) => lo <= 0 && hi >= 0,
-            count_type => {
-                warn!("Loop count type is {:?} not int", count_type);
-                false
-            }
-        };
-
-        match dir {
-            Dir::Up => {
                 StepInfo {
                     first: inner.first.clone(),
-                    nullable: count_includes_zero || inner.nullable,
-                    step: Step::RepeatUp(count, Box::new(inner))
-                }
-            }
-            Dir::Dn => {
-                StepInfo {
-                    first: MatchSet::proc(),
-                    nullable: count_includes_zero,
-                    step: Step::RepeatDn(count.down(), Box::new(inner))
+                    nullable: inner.nullable || count_includes_zero,
                 }
             },
-        }
-    }
+            Step::Foreach { inner, .. } => {
+                let inner = get(inner);
 
-    fn foreach(&mut self, iters: u32, vars: Vec<(ValueId, Expr)>, inner: StepInfo) -> StepInfo {
-        //TODO: check that inner followlast and first are non-overlapping
+                //TODO: check that inner followlast and first are non-overlapping
+                StepInfo {
+                    first: inner.first.clone(),
+                    nullable: inner.nullable,
+                }
+            },
+            Step::AltDn(ref opts) => {
+                let nullable = opts.iter().any(|&(_, s)| get(s).nullable);
 
-        let mut vars_dn = Vec::new();
-        let mut vars_up = Vec::new();
-
-        for (id, e) in vars {
-            let dir = e.dir();
-            if dir.down {
-                vars_dn.push((id, e.down()));
-            }
-            if dir.up {
-                vars_up.push((id, e));
-            }
-        }
-
-        StepInfo {
-            first: inner.first.clone(),
-            nullable: inner.nullable,
-            step: Step::Foreach { iters, vars_dn, vars_up, inner: Box::new(inner) }
-        }
-    }
-
-    fn alt(&mut self, dir: Dir, opts: Vec<(Vec<(Expr, Expr)>, StepInfo)>) -> StepInfo {
-        match dir {
-            Dir::Up => {
+                StepInfo {
+                    first: MatchSet::proc(),
+                    nullable,
+                }
+            },
+            Step::AltUp(ref opts) => {
                 let mut nullable = false;
-                    let mut first = MatchSet::null();
+                let mut first = MatchSet::null();
 
                 // TODO: check that first is nonoverlapping
-                for (_, s) in &opts {
+                for &(_, s) in opts {
+                    let s = get(s);
                     first = first.merge(&s.first);
                     nullable |= s.nullable;
                 }
 
-                let opts = opts.into_iter().map(|(e, b)|
-                    (e.into_iter().map(|(l, r)| (l.down(), r)).collect(), b)
-                ).collect();
-
-                StepInfo {
-                    first,
-                    nullable,
-                    step: Step::AltUp(opts)
-                }
+                StepInfo { first,  nullable }
             },
-            Dir::Dn => {
-                let nullable = opts.iter().any(|(_, s)| s.nullable);
-                let opts = opts.into_iter().map(|(e, b)|
-                    (e.into_iter().map(|(l, r)| (l, r.down())).collect(), b)
-                ).collect();
-
-                StepInfo {
-                    first: MatchSet::proc(),
-                    nullable,
-                    step: Step::AltDn(opts)
-                }
-            },
-        }
+        };
+        res.push(info);
     }
+
+    res
 }
