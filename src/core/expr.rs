@@ -20,6 +20,12 @@ impl<E> ConcatElem<E> {
             ConcatElem::Slice(ref e, s) => ConcatElem::Slice(f(e), s),
         }
     }
+
+    fn expr(&self) -> &E {
+        match self {
+            ConcatElem::Elem(e) | ConcatElem::Slice(e, _) => e,
+        }
+    }
 }
 
 impl ConcatElem<Expr> {
@@ -256,9 +262,9 @@ impl Expr {
                 };
 
                 components.iter().all(|component| {
-                    match component {
-                        ConcatElem::Elem(e) => e.eval_up(state, elems.next().expect("not enough elements in slice")),
-                        &ConcatElem::Slice(ref e, w) => e.eval_up(state, Value::Vector(elems.by_ref().take(w).collect()))
+                    match *component {
+                        ConcatElem::Elem(ref e) => e.eval_up(state, elems.next().expect("not enough elements in slice")),
+                        ConcatElem::Slice(ref e, w) => e.eval_up(state, Value::Vector(elems.by_ref().take(w).collect()))
                     }
                 })
             }
@@ -312,6 +318,35 @@ impl Expr {
                     e => panic!("Expected outer vector in Chunks {}", e)
                 }
             }
+        }
+    }
+
+    pub fn excludes(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Expr::Const(v1), Expr::Const(v2)) => v1 != v2,
+            (Expr::Range(lo1, hi1), Expr::Range(lo2, hi2)) => hi1 < lo2 || hi2 < lo1,
+            (Expr::RangeInt(lo1, hi1), Expr::RangeInt(lo2, hi2)) =>  hi1 < lo2 || hi2 < lo1,
+            (Expr::Union(u), e2) => u.iter().all(|e1| e1.excludes(e2)),
+            (e1, Expr::Union(u)) => u.iter().all(|e2| e1.excludes(e2)),
+            (e1, Expr::Flip(_, e2)) => e1.excludes(e2),
+            (Expr::Flip(_, e1), e2) => e1.excludes(e2),
+            _ => false
+        }
+    }
+
+    pub fn refutable(&self) -> bool {
+        match self {
+            Expr::Ignored => false,
+            Expr::Const(_) => true,
+            Expr::Variable(_, _, _) => false,
+            Expr::Range(_, _) => true,
+            Expr::RangeInt(_, _) => true,
+            Expr::Union(u) => u.iter().all(|e| e.refutable()),
+            Expr::Flip(_, u) => u.refutable(),
+            Expr::Choose(_, _) => true,
+            Expr::Concat(u) => u.iter().any(|e| e.expr().refutable()),
+            Expr::BinaryConst(e, _, _) => e.refutable(),
+            Expr::Unary(e, _) => e.refutable(),
         }
     }
 }

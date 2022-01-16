@@ -35,12 +35,12 @@ impl<'a> RunCx<'a> {
             MatchSet::None | MatchSet::Process => true,
             MatchSet::MessageUp { receive} => {
                 if let Ok(rx) = self.upwards.peek() {
-                    receive.iter().any(|&(variant, ref dn)|  message_test(variant, &dn,  rx) )
+                    receive.iter().any(|p|  message_test(p.variant, &p.fields,  rx) )
                 } else { false }
             }
-            MatchSet::MessageDn { variant, receive, ..} => {
+            MatchSet::MessageDn { receive, ..} => {
                 if let Ok(rx) = self.downwards.peek() {
-                    receive.iter().any(|up|  message_test(*variant, &up, rx) )
+                    receive.iter().any(|p|  message_test(p.variant, &p.fields, rx) )
                 } else { false }
             }
         }
