@@ -3,7 +3,6 @@ let byte = [bit, bit, bit, bit, bit, bit, bit, bit]
 
 protocol SPI(dir) dir {
   data(var(dir) byte),
-  start(),
   end(),
 }
 
@@ -11,7 +10,6 @@ with Seq((#l|#h, #l|#h, #l|#h), dir)
 def spi() = SPI(dir) {
   repeat dir <: 10 { val((#h, <: #l, <: #l)) }
   repeat {
-    on start() {}
     repeat {
       on data(byte) {
         for bit=byte {
@@ -23,10 +21,11 @@ def spi() = SPI(dir) {
         }
       }
     }
-    on end() {}
-    val((#h, <: #l, <: #l))
+    on end() {
+      val((#h, <: #l, <: #l))
+    }
     repeat dir <: 9 { val((#h, <: #l, <: #l)) }
   }
 }
 
-test roundtrip((#l|#h, #l|#h, #l|#h)) | spi() | { start(); data('01011101); data('11110000); end(); start(); data('00001000); end() };
+test roundtrip((#l|#h, #l|#h, #l|#h)) | spi() | { data('01011101); data('11110000); end(); data('00001000); end() };

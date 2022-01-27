@@ -32,7 +32,7 @@ struct RunCx<'a> {
 impl<'a> RunCx<'a> {
     fn test(&mut self, m: &MatchSet) -> bool {
         match &m {
-            MatchSet::None | MatchSet::Process => true,
+            MatchSet::Process => true,
             MatchSet::MessageUp { receive} => {
                 if let Ok(rx) = self.upwards.peek() {
                     receive.iter().any(|p|  message_test(p.variant, &p.fields,  rx) )

@@ -82,6 +82,7 @@ pub fn write_tree(f: &mut dyn Write, indent: u32, steps: &[Step], step: StepId) 
 pub struct StepInfo {
     pub(crate) nullable: bool,
     pub(crate) first: MatchSet,
+    pub(crate) followlast: Option<MatchSet>,
 }
 
 pub fn analyze_unambiguous(steps: &[Step]) -> Vec<StepInfo> {
@@ -94,12 +95,14 @@ pub fn analyze_unambiguous(steps: &[Step]) -> Vec<StepInfo> {
             Step::Stack { .. } => {
                 StepInfo {
                     first: MatchSet::proc(),
+                    followlast: None,
                     nullable: false,
                 }
             },
             Step::Token { variant, ref send, ref receive } => {
                 StepInfo {
                     first: MatchSet::lower(variant, send.clone(), receive.clone()),
+                    followlast: None,
                     nullable: false,
                 }
             },
@@ -109,12 +112,14 @@ pub fn analyze_unambiguous(steps: &[Step]) -> Vec<StepInfo> {
                     Dir::Up => {
                         StepInfo {
                             first: inner.first.clone(),
+                            followlast: inner.followlast.clone(),
                             nullable: inner.nullable,
                         }
                     },
                     Dir::Dn => {
                         StepInfo {
                             first: MatchSet::upper(variant, send.clone()),
+                            followlast: inner.followlast.clone(),
                             nullable: false,
                         }
                     },
@@ -123,32 +128,46 @@ pub fn analyze_unambiguous(steps: &[Step]) -> Vec<StepInfo> {
             Step::Primitive(_) => {
                 StepInfo {
                     first: MatchSet::proc(),
+                    followlast: None,
                     nullable: false,
                 }
             },
+            Step::Seq(ref steps) if steps.is_empty() => {
+                StepInfo {
+                    first: MatchSet::proc(),
+                    followlast: None,
+                    nullable: false,
+                }
+            }
             Step::Seq(ref steps) => {
-                let mut nullable = true;
-                let mut first = MatchSet::null();
+                //TODO: take_until https://github.com/rust-itertools/itertools/issues/597
+                let nullable_prefix = &steps[0..=steps.iter().position(|&s| !get(s).nullable).unwrap_or(steps.len() - 1)];
+                let first = MatchSet::merge_first(nullable_prefix.iter().map(|&s| &get(s).first));
 
-                for &s in steps {
-                    let s = get(s);
-                    if nullable {
-                        first = first.merge(&s.first);
-                        nullable &= s.nullable;
-                    }
+                let nullable = steps.iter().all(|&s| get(s).nullable);
+                let followlast = steps.last().and_then(|&l| get(l).followlast.clone());
+
+                let mut prev = &None;
+                for &i in steps {
+                    let i = get(i);
+                    MatchSet::check_compatible(prev, &i.first);
+                    prev = &i.followlast;
                 }
 
-                //TODO: check that each adjacent followlast and first are non-overlapping
                 StepInfo {
                     first,
+                    followlast,
                     nullable,
                 }
             },
             Step::RepeatDn(ref _count, inner) => {
                 let inner = get(inner);
 
+                MatchSet::check_compatible(&inner.followlast, &inner.first);
+
                 StepInfo {
-                    first: inner.first.clone(),
+                    first: MatchSet::proc(),
+                    followlast: inner.followlast.clone(),
                     nullable: inner.nullable,
                 }
             },
@@ -163,40 +182,41 @@ pub fn analyze_unambiguous(steps: &[Step]) -> Vec<StepInfo> {
                     }
                 };
 
+                MatchSet::check_compatible(&inner.followlast, &inner.first);
+
                 StepInfo {
                     first: inner.first.clone(),
+                    followlast: Some(inner.first.clone()),
                     nullable: inner.nullable || count_includes_zero,
                 }
             },
             Step::Foreach { inner, .. } => {
                 let inner = get(inner);
 
-                //TODO: check that inner followlast and first are non-overlapping
+                MatchSet::check_compatible(&inner.followlast, &inner.first);
+                
                 StepInfo {
                     first: inner.first.clone(),
+                    followlast: inner.followlast.clone(),
                     nullable: inner.nullable,
                 }
             },
             Step::AltDn(ref opts) => {
                 let nullable = opts.iter().any(|&(_, s)| get(s).nullable);
+                let followlast = MatchSet::merge_followlast(opts.iter().map(|x| &get(x.1).followlast));
 
                 StepInfo {
                     first: MatchSet::proc(),
+                    followlast,
                     nullable,
                 }
             },
             Step::AltUp(ref opts) => {
-                let mut nullable = false;
-                let mut first = MatchSet::null();
+                let first = MatchSet::merge_first(opts.iter().map(|x| &get(x.1).first));
+                let followlast = MatchSet::merge_followlast(opts.iter().map(|x| &get(x.1).followlast));
+                let nullable = opts.iter().all(|x| get(x.1).nullable);
 
-                // TODO: check that first is nonoverlapping
-                for &(_, s) in opts {
-                    let s = get(s);
-                    first = first.merge(&s.first);
-                    nullable |= s.nullable;
-                }
-
-                StepInfo { first,  nullable }
+                StepInfo { first, nullable, followlast }
             },
         };
         res.push(info);
