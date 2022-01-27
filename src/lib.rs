@@ -6,4 +6,4 @@ mod runtime;
 
 pub use crate::syntax::{ SourceFile, FileSpan, Value };
 pub use crate::core::{ Index, Config, Scope, Item, DataMode, PrimitiveDef, Shape, ShapeMsg };
-pub use crate::runtime::{ Handle, Connection, ConnectionMessage, PrimitiveProcess, run_tests_in_file, add_primitives };
+pub use crate::runtime::{ Connection, ConnectionMessage, PrimitiveProcess, parse_compile_run, run_tests_in_file, add_primitives };

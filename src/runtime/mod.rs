@@ -1,6 +1,3 @@
-use std::thread;
-use std::sync::{Arc, Mutex, MutexGuard};
-
 mod connection;
 mod exec;
 mod test_runner;
@@ -10,80 +7,36 @@ pub use self::connection::{ Connection, ConnectionMessage };
 pub use self::test_runner::run as run_tests_in_file;
 pub use self::primitives::{ PrimitiveProcess, add_primitives };
 pub use self::exec::run;
-use crate::DataMode;
-use crate::syntax::{ SourceFile, parse_process_chain };
+use crate::{ Scope };
+use crate::syntax::{ SourceFile, parse_process_chain, ast };
 
-use crate::core::{Config, Ctxt, Dir, Index, Item, ProcessChain, Shape, compile_process_chain};
+use crate::core::{ Ctxt, Dir, Index, Item, Shape, compile_process_chain};
 
-pub struct Handle<'a> {
-    index: &'a Index,
-    config: Config,
-    top_shape: Option<Shape>,
-    connection: Arc<Mutex<Connection>>,
-    thread: Option<thread::JoinHandle<bool>>,
+fn base_shape(index: &Index) -> Shape {
+    let base = index.find_protocol("Base").cloned().expect("No `Base` protocol found in prelude");
+    Shape {
+        def: base,
+        param: Item::Tuple(vec![]),
+        dir: Dir::Dn,
+        messages: vec![],
+    }
 }
 
-impl<'a> Handle<'a> {
-    pub fn new(config: Config, index: &'a Index, shape: Option<Shape>, connection: Connection, thread: Option<thread::JoinHandle<bool>>) -> Handle<'a> {
-        Handle {
-            index,
-            config,
-            top_shape: shape,
-            connection: Arc::new(Mutex::new(connection)),
-            thread,
-        }
-    }
+pub fn compile_run(index: &Index, scope: &Scope, processes: &[ast::Process]) -> bool {
+    let ctx = Ctxt::new(Default::default(), index);
+    let base_shape = base_shape(index);
+    let p = compile_process_chain(&ctx, &scope, &base_shape, &processes);
 
-    pub fn base(config: Config, index: &'a Index) -> Handle<'a> {
-        let base = index.find_protocol("Base").cloned().expect("No `Base` protocol found in prelude");
-        let base_shape = Shape {
-            def: base,
-            param: Item::Tuple(vec![]),
-            dir: Dir::Dn,
-            messages: vec![],
-        };
+    println!("\nCompiled:");
+    compile::compile(&p);
 
-        Handle::new(config, index, Some(base_shape), Connection::null(), None)
-    }
+    exec::run(&p, &mut Connection::null(), &mut Connection::null())
+}
 
-    pub fn top_shape(&self) -> Option<&Shape> { self.top_shape.as_ref() }
-
-    pub fn spawn(&mut self, processes: ProcessChain) -> Handle<'a> {
-        let shape_up = processes.shape_up.clone();
-        let (c2, mut c1) = Connection::new(match &shape_up {
-            Some(s) => s.direction(),
-            None => DataMode { down: false, up: false },
-        });
-        let conn = self.connection.clone();
-
-        let thread = thread::spawn(move || {
-            let mut conn = conn.try_lock().expect("already in use");
-            exec::run(&processes, &mut conn, &mut c1)
-        });
-
-        Handle::new(self.config.clone(), self.index, shape_up, c2, Some(thread))
-    }
-
-    pub fn parse_spawn(&mut self, call: &str) -> Result<Handle<'a>, String> {
-        info!("parse_spawn `{}` on {:?}", call, self.top_shape());
-
-        let ctx = Ctxt::new(self.config.clone(), &self.index);
-
-        let file = SourceFile { name: "<process>".into(), source: call.into() };
-        let ast = parse_process_chain(&file.source).map_err(|e| e.to_string())?;
-        
-        let shape = self.top_shape().expect("no top shape");
-        let process = compile_process_chain(&ctx, &ctx.index.prelude, &shape, &ast[..]);
-
-        Ok(self.spawn(process))
-    }
-
-    pub fn connection(&self) -> MutexGuard<'_, Connection> {
-        self.connection.try_lock().expect("already in use")
-    }
-
-    pub fn join(self) -> bool {
-        self.connection().end();
-        self.thread.map_or(true, |t| t.join().unwrap())
-    }
+pub fn parse_compile_run(index: &Index, call: &str) -> Result<bool, String> {
+    let scope = Scope::new();
+    let file = SourceFile { name: "<process>".into(), source: call.into() };
+    let ast = parse_process_chain(&file.source).map_err(|e| e.to_string())?;
+    
+    Ok(compile_run(index, &scope, &ast))
 }

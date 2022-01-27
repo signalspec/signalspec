@@ -1,10 +1,10 @@
-use std::fs;
+use std::{fs, thread};
 use std::path::Path;
 
 use crate::syntax::{ ast, SourceFile };
 use crate::core::{ Index, FileScope, Ctxt };
 use crate::core::{resolve_protocol_invoke, compile_process_chain };
-use crate::runtime::{ Handle, Connection };
+use crate::runtime::{ Connection };
 
 
 pub fn run(fname: &str) -> bool {
@@ -79,11 +79,6 @@ pub struct TestResult {
 pub fn run_test(index: &Index, file: &FileScope, test: &ast::Test) -> TestResult {
     let ctx = Ctxt::new(Default::default(), index);
 
-    let run_stack = |mut handle: Handle<'_>,  ast: &[ast::Process]| {
-        let p = compile_process_chain(&ctx, &file.scope, handle.top_shape().unwrap(), ast);
-        handle.spawn(p).join()
-    };
-
     fn symbol_expr(dir: &str) -> ast::SpannedExpr {
         let span = crate::syntax::FileSpan::new(0, 0);
         let node = ast::Expr::Value(ast::Value::Symbol(dir.into()));
@@ -100,7 +95,8 @@ pub fn run_test(index: &Index, file: &FileScope, test: &ast::Test) -> TestResult
                 let process = ast::Process::Call("seq".into(), args);
 
                 let processes: Vec<ast::Process> = Some(process).into_iter().chain(rest.iter().cloned()).collect();
-                run_stack(Handle::base(Default::default(), index), &processes)
+                
+                super::compile_run(index, &file.scope, &processes)
             };
 
             let down_res = run("dn");
@@ -122,22 +118,27 @@ pub fn run_test(index: &Index, file: &FileScope, test: &ast::Test) -> TestResult
             let shape_dn = make_seq_shape(args[0].clone(), "dn");
             let shape_up = make_seq_shape(args[0].clone(), "up");
 
-            let (c1, c2) = Connection::new(shape_dn.direction());
+            let (mut c1, mut c2) = Connection::new(shape_dn.direction());
 
-            let h1 = Handle::new(Default::default(), index, Some(shape_dn), c1, None);
-            let h2 = Handle::new(Default::default(), index, Some(shape_up), c2, None);
+            let p1 = compile_process_chain(&ctx, &file.scope, &shape_dn, rest);
+            let p2 = compile_process_chain(&ctx, &file.scope, &shape_up, rest);
+
+            let j1 = thread::spawn(move || {
+                super::exec::run(&p1, &mut c1, &mut Connection::null())
+            });
+
+            let r2 = super::exec::run(&p2, &mut c2, &mut Connection::null());
+            let r1 = j1.join().unwrap();
 
             TestResult {
-                down: Some(run_stack(h1, rest) ^ test.should_fail),
-                up:   Some(run_stack(h2, rest) ^ test.should_fail),
+                down: Some(r1 ^ test.should_fail),
+                up:   Some(r2 ^ test.should_fail),
             }
         }
 
         Some(_) => {
-            let mut handle = Handle::base(Default::default(), index);
-            let p = compile_process_chain(&ctx, &file.scope, handle.top_shape().unwrap(), &test.processes);
-            let r = handle.spawn(p).join() ^ test.should_fail;
-            TestResult { down: Some(r), up: None }
+            let r = super::compile_run(index, &file.scope, &test.processes);
+            TestResult { down: Some(r ^ test.should_fail), up: None }
         }
 
         None => panic!("No tests to run")

@@ -2,16 +2,15 @@ mod console;
 
 use std::io::prelude::*;
 use std::{ process, fs };
-use std::path::PathBuf;
 
-use argparse::{ArgumentParser, Collect, StoreOption};
+use argparse::{ArgumentParser, Collect, StoreOption, Store};
 
 fn main() {
     env_logger::init();
 
     let mut test: Option<String> = None;
     let mut imports: Vec<String> = vec![];
-    let mut cmds: Vec<String> = vec![];
+    let mut cmd: String = String::new();
     let mut debug: Option<String> = None;
 
     {
@@ -22,8 +21,8 @@ fn main() {
             add_option(&["-i"], Collect, "Import a module");
         ap.refer(&mut debug)
             .add_option(&["-d"], StoreOption, "Dump debug info to DIR");
-        ap.refer(&mut cmds)
-            .add_argument("process", Collect, "Processes to run");
+        ap.refer(&mut cmd)
+            .add_argument("process", Store, "Process to run");
         ap.parse_args_or_exit();
     }
 
@@ -42,20 +41,7 @@ fn main() {
             index.parse_module(file).unwrap();
         }
 
-        let config = signalspec::Config {
-            debug_dir: debug.map(PathBuf::from)
-        };
-
-        let mut stack = signalspec::Handle::base(config, &index);
-        for arg in cmds {
-            stack = stack.parse_spawn(&arg).unwrap_or_else(|e| panic!("Error parsing argument: {}", e));
-        }
-
-        if stack.top_shape().map_or(false, |x| x.direction().up) {
-            console::run(stack.top_shape(), &mut stack.connection());
-        }
-
-        let success = stack.join();
+        let success = signalspec::parse_compile_run(&index, &cmd).unwrap_or_else(|e| panic!("Error parsing argument: {}", e));
 
         process::exit(if success { 0 } else { 1 });
     }
