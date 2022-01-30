@@ -1,28 +1,19 @@
 use std::io::prelude::*;
 use std::io;
-use signalspec::{ Shape, ShapeMsg, Connection, ConnectionMessage, Value, Item };
+use signalspec::{ Shape, ShapeMsg, ChannelMessage, Value, Item, Channel };
 
-pub fn run(shape: Option<&Shape>, downwards: &mut Connection) -> bool {
+pub async fn run(shape: &Shape, channel: &mut Channel) -> Result<(), ()> {
     let stdout = ::std::io::stdout();
-    if downwards.send(ConnectionMessage::empty()).is_err() { return false; }
-    let shape_msg = match shape {
-        None => return true,
-        Some(s) => &s.messages[..],
-    };
 
-    loop {
-        match downwards.recv() {
-            Ok(v) => {
-                let mut w = stdout.lock();
-                format_message(&mut w, &v.values[..], &shape_msg[v.variant]).unwrap();
-                w.write_all(b"\n").unwrap();
-            }
-            Err(..) => break,
-        }
-        if downwards.send(ConnectionMessage::empty()).is_err() { break; }
+    let shape_msg = &shape.messages[..];
+
+    while let Some(v) = channel.receive().await {
+        let mut w = stdout.lock();
+        format_message(&mut w, &v.values[..], &shape_msg[v.variant]).unwrap();
+        w.write_all(b"\n").unwrap();
     }
 
-    true
+    Ok(())
 }
 
 fn format_message<'a, 'b, 'c>(w: &mut dyn Write, values: &[Value], variant: &ShapeMsg) -> io::Result<()> {

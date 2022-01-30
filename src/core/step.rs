@@ -1,5 +1,6 @@
 use std::io::{Write, Result as IoResult};
 use std::iter::repeat;
+use std::sync::Arc;
 
 use crate::{PrimitiveProcess};
 use super::{Expr, ExprDn, MatchSet, Shape, Type, ValueId, Dir};
@@ -12,7 +13,7 @@ pub enum Step {
     Stack { lo: StepId, shape: Shape, hi: StepId },
     Token { variant: usize, send: Vec<ExprDn>, receive: Vec<Expr> },
     TokenTop { top_dir: Dir, variant: usize, send: Vec<Expr>, receive: Vec<ExprDn>, inner: StepId },
-    Primitive(Box<dyn PrimitiveProcess + 'static>),
+    Primitive(Arc<dyn PrimitiveProcess + 'static>),
     Seq(Vec<StepId>),
     RepeatDn(ExprDn, StepId),
     RepeatUp(Expr, StepId),
@@ -190,16 +191,31 @@ pub fn analyze_unambiguous(steps: &[Step]) -> Vec<StepInfo> {
                     nullable: inner.nullable || count_includes_zero,
                 }
             },
-            Step::Foreach { inner, .. } => {
+            Step::Foreach { inner, ref vars_dn, .. } => {
                 let inner = get(inner);
 
                 MatchSet::check_compatible(&inner.followlast, &inner.first);
-                
-                StepInfo {
-                    first: inner.first.clone(),
-                    followlast: inner.followlast.clone(),
-                    nullable: inner.nullable,
+
+                // If the `for` block is introducing variables, the send from first
+                // cannot be lifted out of the block because it relies on those
+                // variables being defined. It would conflict with any alternatives anyway
+                // since those couldn't use the variable.
+                // TODO: is testing vars_dn the right condition or should we more specifically
+                // look at whether `first` contains a send with inner variables.
+                if vars_dn.is_empty() {
+                    StepInfo {
+                        first: inner.first.clone(),
+                        followlast: inner.followlast.clone(),
+                        nullable: inner.nullable,
+                    }
+                } else {
+                    StepInfo {
+                        first: MatchSet::proc(),
+                        followlast: inner.followlast.clone(),
+                        nullable: inner.nullable,
+                    }
                 }
+
             },
             Step::AltDn(ref opts) => {
                 let nullable = opts.iter().any(|&(_, s)| get(s).nullable);

@@ -115,11 +115,9 @@ impl<'a> Builder<'a> {
                         }
                         let id = body_scope.new_variable(self.ctx, name, *ty, dir);
 
-                        let dir = e.dir();
                         if dir.down {
                             vars_dn.push((id, e.down()));
-                        }
-                        if dir.up {
+                        } else if dir.up {
                             vars_up.push((id, e));
                         }
                     } else {
@@ -281,12 +279,13 @@ pub struct ProcessChain {
     pub steps: Vec<Step>,
     pub root: StepId,
     pub step_info: Vec<StepInfo>,
+    pub shape_dn: Shape,
     pub shape_up: Option<Shape>,
 }
 
-pub fn compile_process_chain(ctx: &Ctxt, scope: &Scope, shape_down: &Shape, ast: &[ast::Process]) -> ProcessChain {
+pub fn compile_process_chain(ctx: &Ctxt, scope: &Scope, shape_dn: Shape, ast: &[ast::Process]) -> ProcessChain {
     let mut builder = Builder::new(ctx);
-    let sb = ResolveCx { scope, shape_up: None, shape_down};
+    let sb = ResolveCx { scope, shape_up: None, shape_down: &shape_dn };
     let (step, shape_up) = builder.resolve_processes(sb, ast);
 
     let step_info = analyze_unambiguous(&builder.steps);
@@ -295,6 +294,7 @@ pub fn compile_process_chain(ctx: &Ctxt, scope: &Scope, shape_down: &Shape, ast:
         steps: builder.steps,
         step_info,
         root: step,
+        shape_dn,
         shape_up,
     }
 }

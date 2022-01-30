@@ -1,14 +1,15 @@
-mod connection;
-mod exec;
 mod test_runner;
 mod primitives;
+mod compile;
+mod channel;
 
-pub use self::connection::{ Connection, ConnectionMessage };
+use std::sync::Arc;
+
 pub use self::test_runner::run as run_tests_in_file;
 pub use self::primitives::{ PrimitiveProcess, add_primitives };
-pub use self::exec::run;
 use crate::{ Scope };
 use crate::syntax::{ SourceFile, parse_process_chain, ast };
+pub use channel::{ Channel, ChannelMessage };
 
 use crate::core::{ Ctxt, Dir, Index, Item, Shape, compile_process_chain};
 
@@ -25,12 +26,11 @@ fn base_shape(index: &Index) -> Shape {
 pub fn compile_run(index: &Index, scope: &Scope, processes: &[ast::Process]) -> bool {
     let ctx = Ctxt::new(Default::default(), index);
     let base_shape = base_shape(index);
-    let p = compile_process_chain(&ctx, &scope, &base_shape, &processes);
+    let p = compile_process_chain(&ctx, &scope, base_shape, &processes);
 
-    println!("\nCompiled:");
-    compile::compile(&p);
+    let compiled = Arc::new(compile::compile(&p));
 
-    exec::run(&p, &mut Connection::null(), &mut Connection::null())
+    futures_lite::future::block_on(compile::ProgramExec::new(compiled, Vec::new())).is_ok()
 }
 
 pub fn parse_compile_run(index: &Index, call: &str) -> Result<bool, String> {

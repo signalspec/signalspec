@@ -1,22 +1,24 @@
-use std::io;
 use std::path::PathBuf;
-use std::fs::File;
+use std::future::Future;
+use std::sync::Arc;
+use async_fs::File;
 
 use crate::core::{ Index, PrimitiveDef };
-use crate::runtime::{ Connection, PrimitiveProcess };
+use crate::runtime::channel::Channel;
+use crate::runtime::{ PrimitiveProcess };
 
 pub fn add_primitives(index: &mut Index) {
     index.define_primitive("with Base() def file(const #r, const name): Bytes(#up)", PrimitiveDef {
         id: "file_read",
         instantiate: primitive_args!(|name: &str| {
-            Ok(Box::new(ReaderProcess(PathBuf::from(name))))
+            Ok(Arc::new(ReaderProcess(PathBuf::from(name))))
         })
     });
 
     index.define_primitive("with Base() def file(const #w, const name): Bytes(#dn)", PrimitiveDef {
         id: "file_write",
         instantiate: primitive_args!(|name: &str| {
-            Ok(Box::new(WriterProcess(PathBuf::from(name))))
+            Ok(Arc::new(WriterProcess(PathBuf::from(name))))
         })
     });
 }
@@ -24,13 +26,17 @@ pub fn add_primitives(index: &mut Index) {
 
 struct ReaderProcess(pub PathBuf);
 impl PrimitiveProcess for ReaderProcess {
-    fn run(&self, _: &mut Connection, upwards: &mut Connection) -> bool {
-        debug!("reader started");
-
-        let mut c = upwards.write_bytes();
-        let mut file = File::open(&self.0).unwrap();
-        io::copy(&mut file, &mut c).is_ok()
+    fn run(&self, chan: Vec<Channel>) -> std::pin::Pin<Box<dyn Future<Output = Result<(), ()>>>> {
+        assert_eq!(chan.len(), 1);
+        let mut chan = chan.into_iter().next().unwrap();
+        let fname = self.0.clone();
+        Box::pin(async move {
+            let file = File::open(&fname).await.unwrap();
+            futures_lite::io::copy(file, chan.write_bytes()).await.unwrap();
+            Ok(())
+        })
     }
+    
 }
 
 impl ::std::fmt::Debug for ReaderProcess {
@@ -41,12 +47,15 @@ impl ::std::fmt::Debug for ReaderProcess {
 
 struct WriterProcess(pub PathBuf);
 impl PrimitiveProcess for WriterProcess {
-    fn run(&self, _: &mut Connection, upwards: &mut Connection) -> bool {
-        debug!("writer started {} {}", upwards.can_tx(), upwards.can_rx());
-
-        let mut c = upwards.read_bytes();
-        let mut file = File::create(&self.0).unwrap();
-        io::copy(&mut c, &mut file).is_ok()
+    fn run(&self, chan: Vec<Channel>) -> std::pin::Pin<Box<dyn Future<Output = Result<(), ()>>>> {
+        assert_eq!(chan.len(), 1);
+        let mut chan = chan.into_iter().next().unwrap();
+        let fname = self.0.clone();
+        Box::pin(async move {
+            let file = File::create(&fname).await.unwrap();
+            futures_lite::io::copy(chan.read_bytes(), file).await.unwrap();
+            Ok(())
+        })
     }
 }
 

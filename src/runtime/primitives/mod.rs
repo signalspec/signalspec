@@ -1,4 +1,4 @@
-use std::fmt::Debug;
+use std::{fmt::Debug, pin::Pin, future::Future};
 
 #[macro_export]
 macro_rules! primitive_args {
@@ -12,11 +12,10 @@ macro_rules! primitive_args {
 }
 
 mod file_io;
-mod binfile;
 mod seq;
 
 use crate::core::{ add_primitive_fns, Index };
-use super::Connection;
+use super::Channel;
 
 pub fn add_primitives(index: &mut Index) {
     index.define_prelude(r#"
@@ -33,23 +32,9 @@ pub fn add_primitives(index: &mut Index) {
 
     seq::add_primitives(index);
     file_io::add_primitives(index);
-    binfile::add_primitives(index);
 }
 
 pub trait PrimitiveProcess: Debug + Send + Sync {
-    fn run(&self, downwards: &mut Connection, upwards: &mut Connection) -> bool;
+    fn run(&self, chan: Vec<Channel>) -> Pin<Box<dyn Future<Output = Result<(), ()>>>>;
 }
 
-pub struct FnProcess<T: Fn(&mut Connection, &mut Connection) -> bool>(pub T, pub &'static str);
-
-impl<T: Sync + Send + Fn(&mut Connection, &mut Connection) -> bool> PrimitiveProcess for FnProcess<T> {
-    fn run(&self, downwards: &mut Connection, upwards: &mut Connection) -> bool {
-        (self.0)(downwards, upwards)
-    }
-}
-
-impl<T: Sync +Send + Fn(&mut Connection, &mut Connection) -> bool> Debug for FnProcess<T> {
-    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> Result<(), ::std::fmt::Error> {
-        write!(f, "{}", self.1)
-    }
-}

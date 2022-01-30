@@ -27,3 +27,26 @@ impl fmt::Debug for Value {
         fmt::Display::fmt(self, f)
     }
 }
+
+impl TryFrom<Value> for i64 {
+    type Error = ();
+
+    fn try_from(value: Value) -> Result<Self, Self::Error> {
+        match value {
+            Value::Integer(i) => Ok(i),
+            _ => Err(())
+        }
+    }
+}
+
+impl TryFrom<Value> for Vec<Value> {
+    type Error = ();
+
+    fn try_from(value: Value) -> Result<Self, Self::Error> {
+        match value {
+            Value::Vector(v) => Ok(v),
+            _ => Err(())
+        }
+    }
+}
+

@@ -1,11 +1,11 @@
-use std::{fs, thread};
+use std::sync::Arc;
+use std::fs;
 use std::path::Path;
+use futures_lite::future;
 
 use crate::syntax::{ ast, SourceFile };
 use crate::core::{ Index, FileScope, Ctxt };
 use crate::core::{resolve_protocol_invoke, compile_process_chain };
-use crate::runtime::{ Connection };
-
 
 pub fn run(fname: &str) -> bool {
     let fname = Path::new(fname);
@@ -118,21 +118,27 @@ pub fn run_test(index: &Index, file: &FileScope, test: &ast::Test) -> TestResult
             let shape_dn = make_seq_shape(args[0].clone(), "dn");
             let shape_up = make_seq_shape(args[0].clone(), "up");
 
-            let (mut c1, mut c2) = Connection::new(shape_dn.direction());
+            let p1 = compile_process_chain(&ctx, &file.scope, shape_dn, rest);
+            let p2 = compile_process_chain(&ctx, &file.scope, shape_up, rest);
 
-            let p1 = compile_process_chain(&ctx, &file.scope, &shape_dn, rest);
-            let p2 = compile_process_chain(&ctx, &file.scope, &shape_up, rest);
+            let c1 = Arc::new(super::compile::compile(&p1));
+            let c2 = Arc::new(super::compile::compile(&p2));
 
-            let j1 = thread::spawn(move || {
-                super::exec::run(&p1, &mut c1, &mut Connection::null())
-            });
+            let channel = super::Channel::new();
 
-            let r2 = super::exec::run(&p2, &mut c2, &mut Connection::null());
-            let r1 = j1.join().unwrap();
+            let (r1, r2) = future::block_on(future::zip(
+                async {
+                    let r = super::compile::ProgramExec::new(c1, vec![channel.clone()]).await;
+                    channel.set_closed(true);
+                    r
+                },
+                super::compile::ProgramExec::new(c2, vec![channel.clone()])
+            ));
+
 
             TestResult {
-                down: Some(r1 ^ test.should_fail),
-                up:   Some(r2 ^ test.should_fail),
+                down: Some(r1.is_ok() ^ test.should_fail),
+                up:   Some(r2.is_ok() ^ test.should_fail),
             }
         }
 
