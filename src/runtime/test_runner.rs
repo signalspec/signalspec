@@ -4,7 +4,7 @@ use std::path::Path;
 use futures_lite::future;
 
 use crate::syntax::{ ast, SourceFile };
-use crate::core::{ Index, FileScope, Ctxt };
+use crate::core::{ Index, FileScope };
 use crate::core::{resolve_protocol_invoke, compile_process_chain };
 
 pub fn run(fname: &str) -> bool {
@@ -77,8 +77,6 @@ pub struct TestResult {
 }
 
 pub fn run_test(index: &Index, file: &FileScope, test: &ast::Test) -> TestResult {
-    let ctx = Ctxt::new(Default::default(), index);
-
     fn symbol_expr(dir: &str) -> ast::SpannedExpr {
         let span = crate::syntax::FileSpan::new(0, 0);
         let node = ast::Expr::Value(ast::Value::Symbol(dir.into()));
@@ -112,14 +110,14 @@ pub fn run_test(index: &Index, file: &FileScope, test: &ast::Test) -> TestResult
             let make_seq_shape = |ty: ast::SpannedExpr, dir: &str| {
                 let seq_args = ast::Spanned { span: ty.span, node: ast::Expr::Tup(vec![ty, symbol_expr(dir)]) };
                 let seq = ast::ProtocolRef { name: "Seq".into(), param: seq_args };
-                resolve_protocol_invoke(&ctx, &file.scope, &seq)
+                resolve_protocol_invoke(index, &file.scope, &seq)
             };
 
             let shape_dn = make_seq_shape(args[0].clone(), "dn");
             let shape_up = make_seq_shape(args[0].clone(), "up");
 
-            let p1 = compile_process_chain(&ctx, &file.scope, shape_dn, rest);
-            let p2 = compile_process_chain(&ctx, &file.scope, shape_up, rest);
+            let p1 = compile_process_chain(index, &file.scope, shape_dn, rest);
+            let p2 = compile_process_chain(index, &file.scope, shape_up, rest);
 
             let c1 = Arc::new(super::compile::compile(&p1));
             let c2 = Arc::new(super::compile::compile(&p2));

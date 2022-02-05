@@ -11,7 +11,7 @@ use crate::{ Scope };
 use crate::syntax::{ SourceFile, parse_process_chain, ast };
 pub use channel::{ Channel, ChannelMessage };
 
-use crate::core::{ Ctxt, Dir, Index, Item, Shape, compile_process_chain};
+use crate::core::{ Dir, Index, Item, Shape, compile_process_chain};
 
 fn base_shape(index: &Index) -> Shape {
     let base = index.find_protocol("Base").cloned().expect("No `Base` protocol found in prelude");
@@ -24,9 +24,8 @@ fn base_shape(index: &Index) -> Shape {
 }
 
 pub fn compile_run(index: &Index, scope: &Scope, processes: &[ast::Process]) -> bool {
-    let ctx = Ctxt::new(Default::default(), index);
     let base_shape = base_shape(index);
-    let p = compile_process_chain(&ctx, &scope, base_shape, &processes);
+    let p = compile_process_chain(index, &scope, base_shape, &processes);
 
     let compiled = Arc::new(compile::compile(&p));
 

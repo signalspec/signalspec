@@ -4,7 +4,7 @@ use std::default::Default;
 use std::sync::Arc;
 
 use crate::syntax::Value;
-use super::{ Type, Ctxt, ValueId, Expr, FunctionDef, DataMode };
+use super::{ Expr, FunctionDef };
 
 /// A collection of named Items.
 #[derive(Clone)]
@@ -23,14 +23,6 @@ impl Scope {
     /// Bind a name to a value
     pub fn bind(&mut self, name: &str, value: Item) {
         self.names.insert(name.to_string(), value);
-    }
-
-    /// Create a new runtime variable, bind it to a name in this scope, and return its ID
-    pub fn new_variable(&mut self, ctxt: &Ctxt, name: &str, ty: Type, dir: DataMode) -> ValueId {
-        let id = ctxt.make_id();
-        debug!("Variable {} {}", id, name);
-        self.bind(name, Item::Value(Expr::Variable(id, ty, dir)));
-        id
     }
 
     /// Get the item associated with the name

@@ -1,12 +1,12 @@
 use crate::core::value;
 use crate::syntax::ast;
-use crate::Value;
-use super::{ Scope, Shape, ShapeMsg, ShapeMsgParam, Ctxt, DataMode };
+use crate::{Value, Index};
+use super::{ Scope, Shape, ShapeMsg, ShapeMsgParam, DataMode };
 use super::{ lexpr, rexpr, Item };
 
 /// Instantiates a protocol with passed arguments, creating a Shape.
-pub fn resolve_protocol_invoke(ctx: &Ctxt, scope: &Scope, ast: &ast::ProtocolRef) -> Shape {
-    if let Some(protocol) = ctx.index.find_protocol(&ast.name[..]) {
+pub fn resolve_protocol_invoke(index: &Index, scope: &Scope, ast: &ast::ProtocolRef) -> Shape {
+    if let Some(protocol) = index.find_protocol(&ast.name[..]) {
         let param = rexpr(scope, &ast.param);
 
         let mut protocol_def_scope = protocol.scope().child();

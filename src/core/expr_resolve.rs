@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use crate::syntax::{ast, Value};
-use super::{ConcatElem, Ctxt, DataMode, Expr, Func, FunctionDef, Item, Scope, ShapeMsg, ExprDn };
+use super::{ConcatElem, DataMode, Expr, Func, FunctionDef, Item, Scope, ShapeMsg, ExprDn, ValueId };
 
 fn resolve(scope: Option<&Scope>, var_handler: &mut dyn FnMut(&str) -> Expr, e: &ast::Expr) -> Expr {
     match *e {
@@ -149,28 +149,29 @@ fn resolve_call(scope: &Scope, func: &ast::Expr, arg: &ast::Expr) -> Item {
 }
 
 /// Resolve expressions as used in the arguments of an `on` block, defining variables
-pub fn on_expr_message(ctx: &Ctxt, scope: &mut Scope, msg_def: &ShapeMsg, exprs: &[ast::SpannedExpr]) -> (Vec<Expr>, Vec<ExprDn>) {
-    fn perform_match(ctx: &Ctxt, scope: &mut Scope, shape: &Item, expr: &ast::Expr, dir: DataMode, push: &mut dyn FnMut(Expr)) {
+pub fn on_expr_message(mut new_var: impl FnMut() -> ValueId, scope: &mut Scope, msg_def: &ShapeMsg, exprs: &[ast::SpannedExpr]) -> (Vec<Expr>, Vec<ExprDn>) {
+    fn perform_match(new_var: &mut impl FnMut() -> ValueId, scope: &mut Scope, shape: &Item, expr: &ast::Expr, dir: DataMode, push: &mut dyn FnMut(Expr)) {
         match (shape, expr) {
             (&Item::Value(Expr::Const(ref c)), &ast::Expr::Value(ref val)) if c == val => (),
 
             (&Item::Value(ref v), &ast::Expr::Var(ref name)) => { // A variable binding
                 let ty = v.get_type();
-                let id = scope.new_variable(ctx, &name[..], ty.clone(), dir);
+                let id = new_var();
+                scope.bind(name, Item::Value(Expr::Variable(id, ty.clone(), dir)));
                 push(Expr::Variable(id, ty, dir));
             }
 
             (&Item::Tuple(ref ss), &ast::Expr::Var(ref name)) => { // A variable binding for a tuple
                 // Capture a tuple by recursively building a tuple Item containing each of the
                 // captured variables
-                fn build_tuple(ctx: &Ctxt, dir: DataMode, push: &mut dyn FnMut(Expr), ss: &[Item]) -> Item {
+                fn build_tuple(new_var: &mut impl FnMut() -> ValueId, dir: DataMode, push: &mut dyn FnMut(Expr), ss: &[Item]) -> Item {
                     Item::Tuple(ss.iter().map(|i| {
                         match *i {
                             Item::Value(Expr::Const(ref c)) => Item::Value(Expr::Const(c.clone())),
-                            Item::Tuple(ref t) => build_tuple(ctx, dir, push, &t[..]),
+                            Item::Tuple(ref t) => build_tuple(new_var, dir, push, &t[..]),
                             Item::Value(ref v) => {
                                 let ty = v.get_type();
-                                let id = ctx.make_id();
+                                let id = new_var();
                                 push(Expr::Variable(id, ty.clone(), dir));
                                 Item::Value(Expr::Variable(id, ty, dir))
                             }
@@ -180,7 +181,7 @@ pub fn on_expr_message(ctx: &Ctxt, scope: &mut Scope, msg_def: &ShapeMsg, exprs:
                     }).collect())
                 }
 
-                scope.bind(name, build_tuple(ctx, dir, push, &ss[..]));
+                scope.bind(name, build_tuple(new_var, dir, push, &ss[..]));
             }
 
             (&Item::Value(_), expr) => { // A match against a refutable pattern
@@ -189,7 +190,7 @@ pub fn on_expr_message(ctx: &Ctxt, scope: &mut Scope, msg_def: &ShapeMsg, exprs:
 
             (&Item::Tuple(ref ss), &ast::Expr::Tup(ref se)) => {
                 for (s, i) in ss.iter().zip(se.iter()) {
-                    perform_match(ctx, scope, s, i, dir, push)
+                    perform_match(new_var, scope, s, i, dir, push)
                 }
             }
 
@@ -204,9 +205,9 @@ pub fn on_expr_message(ctx: &Ctxt, scope: &mut Scope, msg_def: &ShapeMsg, exprs:
 
     for (param, expr) in msg_def.params.iter().zip(exprs) {
         if param.direction.up {
-            perform_match(ctx, scope, &param.item, expr, param.direction, &mut |i| up.push(i.down()))
+            perform_match(&mut new_var, scope, &param.item, expr, param.direction, &mut |i| up.push(i.down()))
         } else if param.direction.down {
-            perform_match(ctx, scope, &param.item, expr, param.direction, &mut |i| dn.push(i))
+            perform_match(&mut new_var, scope, &param.item, expr, param.direction, &mut |i| dn.push(i))
         }
     }
 
@@ -264,7 +265,7 @@ pub fn lexpr(scope: &mut Scope, l: &ast::Expr, r: Item) -> Result<(), PatternErr
 }
 
 /// Destructure an item into an expression, like lexpr, but allowing runtime pattern-matching
-pub fn pattern_match(ctx: &Ctxt, scope: &mut Scope, pat: &ast::Expr, r: &Item, checks: &mut Vec<(Expr, Expr)>) {
+pub fn pattern_match(scope: &mut Scope, pat: &ast::Expr, r: &Item, checks: &mut Vec<(Expr, Expr)>) {
         match (pat, r) {
             (&ast::Expr::Ignore, _) => (),
 
@@ -278,7 +279,7 @@ pub fn pattern_match(ctx: &Ctxt, scope: &mut Scope, pat: &ast::Expr, r: &Item, c
                     panic!("can't match a tuple with a different length");
                 }
                 for (expr, item) in exprs.iter().zip(v.iter()) {
-                    pattern_match(ctx, scope, expr, item, checks);
+                    pattern_match(scope, expr, item, checks);
                 }
             }
 

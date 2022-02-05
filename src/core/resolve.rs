@@ -1,8 +1,8 @@
-use crate::Value;
+use crate::{Value, Index};
 use crate::syntax::ast;
 use super::step::{Step, StepInfo, StepId, analyze_unambiguous};
-use super::{Ctxt, Expr, ExprDn, Item, Scope, Shape, Type, index::DefImpl, ShapeMsg, resolve_protocol_invoke};
-use super::{Dir, on_expr_message, pattern_match, rexpr, value};
+use super::{Expr, ExprDn, Item, Scope, Shape, Type, index::DefImpl, ShapeMsg, resolve_protocol_invoke};
+use super::{Dir, on_expr_message, pattern_match, rexpr, value, ValueId};
 
 #[derive(Clone, Copy)]
 struct ResolveCx<'a> {
@@ -34,19 +34,26 @@ pub fn resolve_dir(e: Expr) -> Dir {
 }
 
 pub struct Builder<'a> {
-    ctx: &'a Ctxt<'a>,
+    index: &'a Index,
     steps: Vec<Step>,
+    next_var_id: ValueId,
 }
 
 impl<'a> Builder<'a> {
-    pub fn new(ctx: &'a Ctxt<'a>) -> Self {
-        Self { ctx, steps: vec![] }
+    pub fn new(index: &'a Index) -> Self {
+        Self { index, steps: vec![], next_var_id: 0 }
     }
 
     fn add_step(&mut self, step: Step) -> StepId {
         let id = StepId(self.steps.len().try_into().expect("step id overflow"));
         self.steps.push(step);
         id
+    }
+
+    fn add_var(&mut self) -> ValueId {
+        let v = self.next_var_id;
+        self.next_var_id += 1;
+        v
     }
 
     fn resolve_action(&mut self, sb: ResolveCx<'_>, action: &ast::Action) -> StepId {
@@ -68,7 +75,7 @@ impl<'a> Builder<'a> {
                     panic!("Variant {:?} not found on shape {:?}", name, shape_up)
                 };
 
-                let (dn, up) = on_expr_message(self.ctx, &mut body_scope, msg_def, exprs);
+                let (dn, up) = on_expr_message(|| self.add_var(), &mut body_scope, msg_def, exprs);
 
                 let inner = if let &Some(ref body) = body {
                     self.resolve_seq(sb.with_upper(&body_scope, None), body)
@@ -113,7 +120,9 @@ impl<'a> Builder<'a> {
                             Some(count) => assert_eq!(count, c),
                             None => count = Some(c),
                         }
-                        let id = body_scope.new_variable(self.ctx, name, *ty, dir);
+
+                        let id = self.add_var();
+                        body_scope.bind(name, Item::Value(Expr::Variable(id, *ty, dir)));
 
                         if dir.down {
                             vars_dn.push((id, e.down()));
@@ -138,7 +147,7 @@ impl<'a> Builder<'a> {
                 let v: Vec<_> = arms.iter().map(|arm| {
                     let mut body_scope = sb.scope.child();
                     let mut checks = Vec::new();
-                    pattern_match(self.ctx, &mut body_scope, &arm.discriminant, &r, &mut checks);
+                    pattern_match(&mut body_scope, &arm.discriminant, &r, &mut checks);
                     let step = self.resolve_seq(sb.with_scope(&body_scope), &arm.block);
                     (checks, step)
                 }).collect();
@@ -182,13 +191,13 @@ impl<'a> Builder<'a> {
                     let (dn, up) = resolve_token(msg_def, &args);
                     (self.add_step(Step::Token { variant, send: dn, receive: up }), None)
                 } else {
-                    let (scope, imp) = self.ctx.index.find_def(sb.shape_down, name, args);
+                    let (scope, imp) = self.index.find_def(sb.shape_down, name, args);
                     match *imp {
                         DefImpl::Code(ref callee_ast) => {
                             self.resolve_processes(sb.with_scope(&scope), callee_ast)
                         }
                         DefImpl::Primitive(ref primitive, ref shape_up_ast) => {
-                            let shape_up = shape_up_ast.as_ref().map(|s| resolve_protocol_invoke(self.ctx, &scope, s));
+                            let shape_up = shape_up_ast.as_ref().map(|s| resolve_protocol_invoke(self.index, &scope, s));
                             let prim = primitive.instantiate(&scope);
                             (self.add_step(Step::Primitive(prim)), shape_up)
                         }
@@ -197,7 +206,7 @@ impl<'a> Builder<'a> {
             }
 
             ast::Process::Seq(ref top_shape, ref block) => {
-                let top_shape = resolve_protocol_invoke(self.ctx, &sb.scope, top_shape);
+                let top_shape = resolve_protocol_invoke(self.index, &sb.scope, top_shape);
                 let block = self.resolve_seq(sb.with_upper(&sb.scope, Some(&top_shape)), block);
                 (block, Some(top_shape))
             }
@@ -283,8 +292,8 @@ pub struct ProcessChain {
     pub shape_up: Option<Shape>,
 }
 
-pub fn compile_process_chain(ctx: &Ctxt, scope: &Scope, shape_dn: Shape, ast: &[ast::Process]) -> ProcessChain {
-    let mut builder = Builder::new(ctx);
+pub fn compile_process_chain(index: &Index, scope: &Scope, shape_dn: Shape, ast: &[ast::Process]) -> ProcessChain {
+    let mut builder = Builder::new(index);
     let sb = ResolveCx { scope, shape_up: None, shape_down: &shape_dn };
     let (step, shape_up) = builder.resolve_processes(sb, ast);
 
