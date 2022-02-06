@@ -1,8 +1,9 @@
+use crate::entitymap::{ EntityMap };
 use crate::{Value, Index};
 use crate::syntax::ast;
-use super::step::{Step, StepInfo, StepId, analyze_unambiguous};
+use super::step::{Step, StepInfo, analyze_unambiguous};
 use super::{Expr, ExprDn, Item, Scope, Shape, Type, index::DefImpl, ShapeMsg, resolve_protocol_invoke};
-use super::{Dir, on_expr_message, pattern_match, rexpr, value, ValueId};
+use super::{Dir, on_expr_message, pattern_match, rexpr, value, VarId, StepId};
 
 #[derive(Clone, Copy)]
 struct ResolveCx<'a> {
@@ -35,25 +36,21 @@ pub fn resolve_dir(e: Expr) -> Dir {
 
 pub struct Builder<'a> {
     index: &'a Index,
-    steps: Vec<Step>,
-    next_var_id: ValueId,
+    steps: EntityMap<StepId, Step>,
+    vars: EntityMap<VarId, ()>,
 }
 
 impl<'a> Builder<'a> {
     pub fn new(index: &'a Index) -> Self {
-        Self { index, steps: vec![], next_var_id: 0 }
+        Self { index, steps: EntityMap::new(), vars: EntityMap::new() }
     }
 
     fn add_step(&mut self, step: Step) -> StepId {
-        let id = StepId(self.steps.len().try_into().expect("step id overflow"));
-        self.steps.push(step);
-        id
+        self.steps.push(step)
     }
 
-    fn add_var(&mut self) -> ValueId {
-        let v = self.next_var_id;
-        self.next_var_id += 1;
-        v
+    fn add_var(&mut self) -> VarId {
+        self.vars.push(())
     }
 
     fn resolve_action(&mut self, sb: ResolveCx<'_>, action: &ast::Action) -> StepId {
@@ -285,9 +282,10 @@ pub fn resolve_token(msg_def: &ShapeMsg, args: &[Item]) -> (Vec<ExprDn>, Vec<Exp
 }
 
 pub struct ProcessChain {
-    pub steps: Vec<Step>,
+    pub steps: EntityMap<StepId, Step>,
     pub root: StepId,
-    pub step_info: Vec<StepInfo>,
+    pub vars: EntityMap<VarId, ()>,
+    pub step_info: EntityMap<StepId, StepInfo>,
     pub shape_dn: Shape,
     pub shape_up: Option<Shape>,
 }
@@ -301,6 +299,7 @@ pub fn compile_process_chain(index: &Index, scope: &Scope, shape_dn: Shape, ast:
 
     ProcessChain {
         steps: builder.steps,
+        vars: builder.vars,
         step_info,
         root: step,
         shape_dn,

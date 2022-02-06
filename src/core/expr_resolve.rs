@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use crate::syntax::{ast, Value};
-use super::{ConcatElem, DataMode, Expr, Func, FunctionDef, Item, Scope, ShapeMsg, ExprDn, ValueId };
+use super::{ConcatElem, DataMode, Expr, Func, FunctionDef, Item, Scope, ShapeMsg, ExprDn, VarId };
 
 fn resolve(scope: Option<&Scope>, var_handler: &mut dyn FnMut(&str) -> Expr, e: &ast::Expr) -> Expr {
     match *e {
@@ -149,8 +149,8 @@ fn resolve_call(scope: &Scope, func: &ast::Expr, arg: &ast::Expr) -> Item {
 }
 
 /// Resolve expressions as used in the arguments of an `on` block, defining variables
-pub fn on_expr_message(mut new_var: impl FnMut() -> ValueId, scope: &mut Scope, msg_def: &ShapeMsg, exprs: &[ast::SpannedExpr]) -> (Vec<Expr>, Vec<ExprDn>) {
-    fn perform_match(new_var: &mut impl FnMut() -> ValueId, scope: &mut Scope, shape: &Item, expr: &ast::Expr, dir: DataMode, push: &mut dyn FnMut(Expr)) {
+pub fn on_expr_message(mut new_var: impl FnMut() -> VarId, scope: &mut Scope, msg_def: &ShapeMsg, exprs: &[ast::SpannedExpr]) -> (Vec<Expr>, Vec<ExprDn>) {
+    fn perform_match(new_var: &mut impl FnMut() -> VarId, scope: &mut Scope, shape: &Item, expr: &ast::Expr, dir: DataMode, push: &mut dyn FnMut(Expr)) {
         match (shape, expr) {
             (&Item::Value(Expr::Const(ref c)), &ast::Expr::Value(ref val)) if c == val => (),
 
@@ -164,7 +164,7 @@ pub fn on_expr_message(mut new_var: impl FnMut() -> ValueId, scope: &mut Scope, 
             (&Item::Tuple(ref ss), &ast::Expr::Var(ref name)) => { // A variable binding for a tuple
                 // Capture a tuple by recursively building a tuple Item containing each of the
                 // captured variables
-                fn build_tuple(new_var: &mut impl FnMut() -> ValueId, dir: DataMode, push: &mut dyn FnMut(Expr), ss: &[Item]) -> Item {
+                fn build_tuple(new_var: &mut impl FnMut() -> VarId, dir: DataMode, push: &mut dyn FnMut(Expr), ss: &[Item]) -> Item {
                     Item::Tuple(ss.iter().map(|i| {
                         match *i {
                             Item::Value(Expr::Const(ref c)) => Item::Value(Expr::Const(c.clone())),

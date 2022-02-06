@@ -1,7 +1,7 @@
 use std::fmt;
 use num_complex::Complex;
 use crate::syntax::{ Value, BinOp };
-use super::{ Item, Type, ValueId, DataMode };
+use super::{ Item, Type, VarId, DataMode };
 
 /// Element of Expr::Concat
 #[derive(PartialEq, Debug, Clone)]
@@ -98,7 +98,7 @@ impl UnaryOp {
 pub enum Expr {
     Ignored,
     Const(Value),
-    Variable(ValueId, Type, DataMode),
+    Variable(VarId, Type, DataMode),
 
     Range(f64, f64),
     RangeInt(i64, i64),
@@ -225,7 +225,7 @@ impl Expr {
 
     /// Up-evaluate a value. This accepts a value and may write variables
     /// via the passed function. It returns whether the expression matched the value.
-    pub fn eval_up(&self, state: &mut dyn FnMut(ValueId, Value) -> bool, v: Value) -> bool {
+    pub fn eval_up(&self, state: &mut dyn FnMut(VarId, Value) -> bool, v: Value) -> bool {
         match *self {
             Expr::Ignored => true,
             Expr::Range(a, b) => match v {
@@ -355,7 +355,7 @@ impl Expr {
 #[derive(PartialEq, Debug, Clone)]
 pub enum ExprDn {
     Const(Value),
-    Variable(ValueId),
+    Variable(VarId),
     Choose(Box<ExprDn>, Vec<(Value, Value)>),
     Concat(Vec<ConcatElem<ExprDn>>),
     BinaryConst(Box<ExprDn>, BinOp, Value),
@@ -364,7 +364,7 @@ pub enum ExprDn {
 
 impl ExprDn {
     /// Down-evaluate the expression with variables from the given value function.
-    pub fn eval(&self, state: &dyn Fn(ValueId)->Value) -> Value {
+    pub fn eval(&self, state: &dyn Fn(VarId)->Value) -> Value {
         match *self {
             ExprDn::Variable(id) => state(id),
             ExprDn::Const(ref v) => v.clone(),
@@ -416,7 +416,7 @@ impl fmt::Display for Expr {
             Expr::Ignored => write!(f, "_"),
             Expr::Range(a, b) => write!(f, "{}..{}", a, b),
             Expr::RangeInt(a, b) => write!(f, "#{}..#{}", a, b),
-            Expr::Variable(id, _, _) => write!(f, "${}", id),
+            Expr::Variable(id, _, _) => write!(f, "${}", u32::from(*id)),
             Expr::Const(ref p) => write!(f, "{}", p),
             Expr::Flip(ref d, ref u) if **d == Expr::Ignored => write!(f, ":> {}", u),
             Expr::Flip(ref d, ref u) if **u == Expr::Ignored => write!(f, "<: {}", d),

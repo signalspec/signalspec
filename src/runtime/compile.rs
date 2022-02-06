@@ -1,12 +1,13 @@
+use crate::{Shape, PrimitiveProcess};
+use crate::entitymap::{EntityMap, entity_key};
+use crate::core::{ExprDn, Expr, ProcessChain, MatchSet, MessagePatternSet, StepId, Step, VarId, Dir};
 
-use crate::{core::{ExprDn, Expr, ProcessChain, MatchSet, MessagePatternSet, StepId, Step, ValueId, Dir}, Shape, PrimitiveProcess};
-
-type TaskId = usize;
-type InsnId = usize;
-type ChanId = usize;
 type VariantId = usize;
-type CounterId = usize;
-type PrimitiveId = usize;
+entity_key!(pub TaskId);
+entity_key!(pub InsnId);
+entity_key!(pub ChanId);
+entity_key!(pub CounterId);
+entity_key!(pub PrimitiveId);
 
 #[derive(Debug)]
 pub enum Insn {
@@ -34,10 +35,10 @@ pub enum Insn {
     CounterDecrement(CounterId, InsnId),
     CounterIncrement(CounterId),
 
-    IterDnStart(ValueId, ExprDn),
-    IterDnStep(ValueId),
-    IterUpStep(ValueId),
-    IterUpExit(ValueId, Expr),
+    IterDnStart(VarId, ExprDn),
+    IterDnStep(VarId),
+    IterUpStep(VarId),
+    IterUpExit(VarId, Expr),
 
     Assign(Expr, ExprDn),
     TestAssign(Expr, ExprDn, InsnId),
@@ -77,26 +78,24 @@ impl Channels {
 
 struct Compiler<'a> {
     program: &'a ProcessChain,
-    insns: Vec<Insn>,
-    tasks: Vec<()>,
-    counters: Vec<()>,
-    channels: Vec<()>,
-    primitives: Vec<Arc<dyn PrimitiveProcess + 'static>>,
+    insns: EntityMap<InsnId, Insn>,
+    tasks: EntityMap<TaskId, ()>,
+    counters: EntityMap<CounterId, ()>,
+    channels: EntityMap<ChanId, ()>,
+    primitives: EntityMap<PrimitiveId, Arc<dyn PrimitiveProcess + 'static>>,
 }
 
 impl Compiler<'_> {
-    fn next_ip(&self) -> usize {
-        self.insns.len()
+    fn next_ip(&self) -> InsnId {
+        self.insns.next_key()
     }
 
     fn emit(&mut self, i: Insn) {
-        self.insns.push(i)
+        self.insns.push(i);
     }
 
     fn emit_placeholder(&mut self) -> InsnId {
-        let ip = self.next_ip();
-        self.emit(Insn::Fail);
-        ip
+        self.insns.push(Insn::Fail)
     }
 
     fn backpatch(&mut self, ip: InsnId, i: Insn) {
@@ -104,21 +103,15 @@ impl Compiler<'_> {
     }
 
     fn new_task(&mut self) -> TaskId {
-        let id = self.tasks.len();
-        self.tasks.push(());
-        id
+        self.tasks.push(())
     }
 
     fn new_counter(&mut self) -> CounterId {
-        let id = self.counters.len();
-        self.counters.push(());
-        id
+        self.counters.push(())
     }
 
     fn new_channel(&mut self) -> ChanId {
-        let id = self.channels.len();
-        self.channels.push(());
-        id
+        self.channels.push(())
     }
 
     fn new_channels(&mut self, shape: &Shape) -> (Option<ChanId>, Option<ChanId>) {
@@ -127,9 +120,7 @@ impl Compiler<'_> {
     }
 
     fn new_primitive(&mut self, p: Arc<dyn PrimitiveProcess>) -> PrimitiveId {
-        let id = self.primitives.len();
-        self.primitives.push(p);
-        id
+        self.primitives.push(p)
     }
 
     fn seq_prep(&mut self, channels: Channels, prev_followlast: &Option<MatchSet>, next_first: &MatchSet) {
@@ -172,10 +163,10 @@ impl Compiler<'_> {
     }
 
     fn compile_step(&mut self, step: StepId, channels: Channels) {
-        match self.program.steps[step.0 as usize] {
+        match self.program.steps[step] {
             Step::Stack { lo, ref shape, hi} => {
-                let lo_info = &self.program.step_info[lo.0 as usize];
-                let hi_info = &self.program.step_info[hi.0 as usize];
+                let lo_info = &self.program.step_info[lo];
+                let hi_info = &self.program.step_info[hi];
                 let (c_dn, c_up) = self.new_channels(shape);
 
                 if let Some(c) = c_up {
@@ -231,7 +222,7 @@ impl Compiler<'_> {
             }
 
             Step::TokenTop { top_dir, variant, ref send, ref receive, inner } => {
-                let inner_info = &self.program.step_info[inner.0 as usize];
+                let inner_info = &self.program.step_info[inner];
 
                 match top_dir {
                     Dir::Up => {},
@@ -254,7 +245,7 @@ impl Compiler<'_> {
             Step::Seq(ref steps) => {
                 let mut prev_followlast = None;
                 for &step in steps {
-                    let inner_info = &self.program.step_info[step.0 as usize];
+                    let inner_info = &self.program.step_info[step];
 
                     if let Some(prev_followlast) = prev_followlast {
                         self.seq_prep(channels, prev_followlast, &inner_info.first);
@@ -266,7 +257,7 @@ impl Compiler<'_> {
             }
 
             Step::RepeatUp(ref count, inner) => {
-                let inner_info = &self.program.step_info[inner.0 as usize];
+                let inner_info = &self.program.step_info[inner];
                 let counter = self.new_counter();
 
                 self.emit(Insn::CounterReset(counter, 0));
@@ -281,7 +272,7 @@ impl Compiler<'_> {
             }
 
             Step::RepeatDn(ref count, inner) => {
-                let inner_info = &self.program.step_info[inner.0 as usize];
+                let inner_info = &self.program.step_info[inner];
                 let counter = self.new_counter();
                 self.emit(Insn::CounterDownEval(counter, count.clone()));
                 let test_ip = self.emit_placeholder();
@@ -296,7 +287,7 @@ impl Compiler<'_> {
             Step::Foreach { iters, ref vars_dn, ref vars_up, inner} => {
                 assert!(iters > 0);
 
-                let inner_info = &self.program.step_info[inner.0 as usize];
+                let inner_info = &self.program.step_info[inner];
 
                 let counter = self.new_counter();
                 self.emit(Insn::CounterReset(counter, iters - 1)); // tested at end of loop
@@ -340,7 +331,7 @@ impl Compiler<'_> {
                 let mut jumps_to_final = vec![];
 
                 for &(ref vals, inner) in opts {
-                    let inner_info = &self.program.step_info[inner.0 as usize];
+                    let inner_info = &self.program.step_info[inner];
                     let test = self.emit_placeholder();
 
                     self.compile_step(inner, channels);
@@ -365,7 +356,7 @@ impl Compiler<'_> {
                 let mut jumps_to_final = vec![];
 
                 for &(ref vals, inner) in opts {
-                    let inner_info = &self.program.step_info[inner.0 as usize];
+                    let inner_info = &self.program.step_info[inner];
                     let jumps_to_next: Vec<_> = vals.iter().map(|_| self.emit_placeholder()).collect();
 
                     self.seq_prep(channels, &None, &inner_info.first);
@@ -389,21 +380,22 @@ impl Compiler<'_> {
 }
 
 pub struct CompiledProgram {
-    insns: Vec<Insn>,
-    tasks: Vec<()>,
-    counters: Vec<()>,
-    channels: Vec<()>,
-    primitives: Vec<Arc<dyn PrimitiveProcess>>,
+    insns: EntityMap<InsnId, Insn>,
+    vars: EntityMap<VarId, ()>,
+    tasks: EntityMap<TaskId, ()>,
+    counters: EntityMap<CounterId, ()>,
+    channels: EntityMap<ChanId, ()>,
+    primitives: EntityMap<PrimitiveId, Arc<dyn PrimitiveProcess>>,
 }
 
 pub fn compile(program: &ProcessChain) -> CompiledProgram {
     let mut compiler = Compiler {
         program,
-        insns: Vec::new(),
-        counters: Vec::new(),
-        tasks: Vec::new(),
-        channels: Vec::new(),
-        primitives: Vec::new(),
+        insns: EntityMap::new(),
+        counters: EntityMap::new(),
+        tasks: EntityMap::new(),
+        channels: EntityMap::new(),
+        primitives: EntityMap::new(),
     };
 
     let _root_task = compiler.new_task();
@@ -427,6 +419,7 @@ pub fn compile(program: &ProcessChain) -> CompiledProgram {
 
     CompiledProgram {
         insns: compiler.insns,
+        vars: program.vars.clone(),
         tasks: compiler.tasks,
         counters: compiler.counters,
         channels: compiler.channels,
@@ -436,41 +429,43 @@ pub fn compile(program: &ProcessChain) -> CompiledProgram {
 
 use std::{task::{Context, Poll}, sync::Arc, future::Future, pin::Pin};
 use futures_lite::{ready, FutureExt};
-use vec_map::VecMap;
 use crate::Value;
 use super::channel::{Channel, ChannelMessage};
 
 pub struct ProgramExec {
     program: Arc<CompiledProgram>,
-    tasks: Vec<InsnId>,
-    registers: VecMap<Value>,
-    channels: Vec<Channel>,
-    counters: Vec<u32>,
-    iters: VecMap<Vec<Value>>,
-    primitives: Vec<Option<Pin<Box<dyn Future<Output = Result<(), ()>>>>>>,
+    tasks: EntityMap<TaskId, InsnId>,
+    registers: EntityMap<VarId, Option<Value>>,
+    channels: EntityMap<ChanId, Channel>,
+    counters: EntityMap<CounterId, u32>,
+    iters: EntityMap<VarId, Option<Vec<Value>>>,
+    primitives: EntityMap<PrimitiveId, Option<Pin<Box<dyn Future<Output = Result<(), ()>>>>>>,
 }
+
+const INVALID_IP: InsnId = InsnId::from(u32::MAX);
+const INITIAL_TASK: TaskId = TaskId::from(0);
 
 impl ProgramExec {
     pub fn new(program: Arc<CompiledProgram>, mut channels: Vec<Channel>) -> ProgramExec {
         channels.resize_with(program.channels.len(), || Channel::new());
 
-        let mut tasks: Vec<_> = program.tasks.iter().map(|_| !0).collect();
-        tasks[0] = 0;
+        let mut tasks: EntityMap<TaskId, InsnId> = program.tasks.iter().map(|_| INVALID_IP).collect();
+        tasks[INITIAL_TASK] = InsnId::from(0);
 
         ProgramExec {     
             tasks,
-            registers: VecMap::new(),
-            channels,
+            registers: program.vars.iter().map(|_| None).collect(),
+            channels: channels.into(),
             counters: program.counters.iter().map(|_| 0).collect(),
-            iters: VecMap::with_capacity(program.counters.len()),
+            iters: program.vars.iter().map(|_| None).collect(),
             primitives: program.primitives.iter().map(|_| None).collect(),
             program,
         }
     }
 
     fn poll_all(&mut self, cx: &mut Context) -> Poll<Result<(), ()>> {
-        for task in 0..self.tasks.len() {
-            if self.tasks[task] != !0 {
+        for task in self.tasks.keys() {
+            if self.tasks[task] != INVALID_IP {
                 match self.poll_task(cx, task) {
                     Poll::Ready(Ok(_)) | Poll::Pending => {},
                     Poll::Ready(Err(_)) => return Poll::Ready(Err(())),
@@ -478,7 +473,7 @@ impl ProgramExec {
             }
         }
     
-        if self.tasks[0] != !0 {
+        if self.tasks[INITIAL_TASK] != INVALID_IP {
             Poll::Pending
         } else {
             Poll::Ready(Result::Ok(()))
@@ -489,12 +484,15 @@ impl ProgramExec {
         let p = &*self.program;
         loop {
             let ip = self.tasks[task];
-            let mut next_ip = ip + 1;
-            debug!("Task {task:3}: {ip:4} {insn:?}", insn=p.insns[ip]);
+            let mut next_ip = InsnId::from(u32::from(ip) + 1);
+            debug!("Task {task:3}: {ip:4} {insn:?}", task = u32::from(task), ip = u32::from(ip), insn = p.insns[ip]);
             match p.insns[ip] {
                 Insn::Send(chan, variant, ref expr) => {
                     let values = expr.iter().map(|e| {
-                        e.eval(&mut |var| self.registers[var].clone())
+                        e.eval(&mut |var| {
+                            let ref this = self;
+                            this.registers[var].clone().unwrap()
+                        })
                     }).collect();
                     self.channels[chan].send(ChannelMessage { variant, values });
                 }
@@ -519,7 +517,7 @@ impl ProgramExec {
                     assert_eq!(rx.values.len(), exprs.len());
     
                     let matched = exprs.iter().zip(rx.values.into_iter()).all(|(e, v)| {
-                        e.eval_up(&mut |var, val| { self.registers.insert(var, val); true }, v)
+                        e.eval_up(&mut |var, val| {self.registers[var] = Some(val); true }, v)
                     });
     
                     if !matched {
@@ -565,12 +563,15 @@ impl ProgramExec {
                 }
                 Insn::CounterUpEval(counter, ref expr) => {
                     let v = Value::Integer(self.counters[counter].into());
-                    if !expr.eval_up(&mut |var, val| { self.registers.insert(var, val); true }, v) {
+                    if !expr.eval_up(&mut |var, val| { self.registers[var] = Some(val); true }, v) {
                         return Poll::Ready(Err(()))
                     }
                 }
                 Insn::CounterDownEval(counter, ref expr) => {
-                    let v = expr.eval(&mut |var| self.registers[var].clone());
+                    let v = expr.eval(&mut |var| {
+                        let ref this = self;
+                        this.registers[var].clone().unwrap()
+                    });
     
                     self.counters[counter] = i64::try_from(v).unwrap().try_into().unwrap();
                 }
@@ -585,32 +586,41 @@ impl ProgramExec {
                     self.counters[counter] += 1;
                 }
                 Insn::IterDnStart(var, ref expr) => {
-                    let v =  expr.eval(&mut |var| self.registers[var].clone());
+                    let v =  expr.eval(&mut |var| {
+                        let ref this = self;
+                        this.registers[var].clone().unwrap()
+                    });
                     let mut v = Vec::<Value>::try_from(v).unwrap();
                     v.reverse();
-                    self.iters.insert(var, v);
+                    self.iters[var] = Some(v);
                 }
                 Insn::IterDnStep(var) => {
-                    let v = self.iters[var].pop().unwrap();
-                    self.registers.insert(var, v);
+                    let v = self.iters[var].as_mut().unwrap().pop().unwrap();
+                    self.registers[var] = Some(v);
                 }
                 Insn::IterUpStep(var) => {
-                    let v = self.registers.remove(var).unwrap();
-                    self.iters.entry(var).or_insert_with(|| Vec::new()).push(v);
+                    let v = self.registers[var].take().unwrap();
+                    self.iters[var].get_or_insert_with(|| Vec::new()).push(v);
                 }
                 Insn::IterUpExit(var, ref expr) => {
-                    let v = self.iters.remove(var).unwrap();
-                    expr.eval_up(&mut |var, val| { self.registers.insert(var, val); true }, Value::Vector(v));
+                    let v = self.iters[var].take().unwrap();
+                    expr.eval_up(&mut |var, val| { self.registers[var] = Some(val); true }, Value::Vector(v));
                 }
                 Insn::Assign(ref l, ref r) => {
-                    let v = r.eval(&mut |var| self.registers[var].clone());
-                    if !l.eval_up(&mut |var, val| { self.registers.insert(var, val); true }, v) {
+                    let v = r.eval(&mut |var| {
+                        let ref this = self;
+                        this.registers[var].clone().unwrap()
+                    });
+                    if !l.eval_up(&mut |var, val| { self.registers[var] = Some(val); true }, v) {
                         return Poll::Ready(Err(()));
                     }
                 }
                 Insn::TestAssign(ref l, ref r, if_false) => {
-                    let v = r.eval(&mut |var| self.registers[var].clone());
-                    if !l.eval_up(&mut |var, val| { self.registers.insert(var, val); true }, v) {
+                    let v = r.eval(&mut |var| {
+                        let ref this = self;
+                        this.registers[var].clone().unwrap()
+                    });
+                    if !l.eval_up(&mut |var, val| { self.registers[var] = Some(val); true }, v) {
                         next_ip = if_false;
                     }
                 }
@@ -619,12 +629,12 @@ impl ProgramExec {
                     next_ip = dest;
                 }
                 Insn::Join(task) => {
-                    if self.tasks[task] != !0 {
+                    if self.tasks[task] != INVALID_IP {
                         return Poll::Pending;
                     }
                 }
                 Insn::End => {
-                    self.tasks[task] = !0;
+                    self.tasks[task] = INVALID_IP;
                     cx.waker().wake_by_ref(); // Wake the joining task
                     return Poll::Ready(Ok(()));
                 }

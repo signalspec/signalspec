@@ -12,6 +12,8 @@ mod data;
 mod shape;
 mod resolve;
 
+use crate::entitymap::entity_key;
+
 use self::file::ProtocolRef;
 
 pub use self::file::FileScope;
@@ -34,4 +36,4 @@ pub enum Dir {
     Dn,
 }
 
-pub type ValueId = usize;
+entity_key!(pub VarId);

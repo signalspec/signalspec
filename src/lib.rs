@@ -3,6 +3,7 @@
 mod core;
 mod syntax;
 mod runtime;
+mod entitymap;
 
 pub use crate::syntax::{ SourceFile, FileSpan, Value };
 pub use crate::core::{ Index, Scope, Item, DataMode, PrimitiveDef, Shape, ShapeMsg };

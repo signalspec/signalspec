@@ -2,11 +2,13 @@ use std::io::{Write, Result as IoResult};
 use std::iter::repeat;
 use std::sync::Arc;
 
+use crate::entitymap::{entity_key, EntityMap};
 use crate::{PrimitiveProcess};
-use super::{Expr, ExprDn, MatchSet, Shape, Type, ValueId, Dir};
+use super::{Expr, ExprDn, MatchSet, Shape, Type, VarId, Dir};
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub struct StepId(pub(crate) u32);
+entity_key!(pub StepId);
+
+
 
 #[derive(Debug)]
 pub enum Step {
@@ -17,7 +19,7 @@ pub enum Step {
     Seq(Vec<StepId>),
     RepeatDn(ExprDn, StepId),
     RepeatUp(Expr, StepId),
-    Foreach { iters: u32, vars_dn: Vec<(ValueId, ExprDn)>, vars_up: Vec<(ValueId, Expr)>, inner: StepId },
+    Foreach { iters: u32, vars_dn: Vec<(VarId, ExprDn)>, vars_up: Vec<(VarId, Expr)>, inner: StepId },
     AltDn(Vec<(Vec<(Expr, ExprDn)>, StepId)>),
     AltUp(Vec<(Vec<(ExprDn, Expr)>, StepId)>),
 }
@@ -56,8 +58,8 @@ pub fn write_tree(f: &mut dyn Write, indent: u32, steps: &[Step], step: StepId) 
         }
         Step::Foreach { iters, ref vars_dn, ref vars_up, inner } => {
             write!(f, "{}For: {} ", i, iters)?;
-            for &(id, ref expr) in vars_dn { write!(f, "{}<={:?}, ", id, expr)?; }
-            for &(id, ref expr) in vars_up { write!(f, "{}=>{:?}, ", id, expr)?; }
+            for &(id, ref expr) in vars_dn { write!(f, "{}<={:?}, ", u32::from(id), expr)?; }
+            for &(id, ref expr) in vars_up { write!(f, "{}=>{:?}, ", u32::from(id), expr)?; }
             writeln!(f, "")?;
             write_tree(f, indent + 1, steps, inner)?;
         }
@@ -86,11 +88,11 @@ pub struct StepInfo {
     pub(crate) followlast: Option<MatchSet>,
 }
 
-pub fn analyze_unambiguous(steps: &[Step]) -> Vec<StepInfo> {
-    let mut res = vec![];
+pub fn analyze_unambiguous(steps: &EntityMap<StepId, Step>) -> EntityMap<StepId, StepInfo> {
+    let mut res = EntityMap::with_capacity(steps.len());
 
-    for step in steps {
-        let get = |id: StepId| -> &StepInfo {&res[id.0 as usize]};
+    for (_, step) in steps {
+        let get = |id: StepId| -> &StepInfo {&res[id]};
 
         let info = match *step {
             Step::Stack { .. } => {
