@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use crate::syntax::{ ast, ParseError, SourceFile };
-use super::{ ProtocolRef, Item, PrimitiveDef, Scope, FunctionDef, PrimitiveFn, FileScope, Shape };
+use super::{ ProtocolRef, Item, PrimitiveDef, Scope, FunctionDef, PrimitiveFn, FileScope, Shape, scope::LeafItem };
 
 pub struct Index {
     pub prelude: Scope,
@@ -32,7 +32,7 @@ impl Index {
     }
 
     pub fn add_primitive_fn(&mut self, name: &str, prim: PrimitiveFn) {
-        self.prelude.bind(name, Item::Func(Arc::new(FunctionDef::Primitive(prim))));
+        self.prelude.bind(name, Item::Leaf(LeafItem::Func(Arc::new(FunctionDef::Primitive(prim)))));
     }
 
     pub fn define_prelude(&mut self, source: &str) {

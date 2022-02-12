@@ -26,8 +26,8 @@ pub type PrimitiveFn = fn(Item)->Result<Item, &'static str>;
 
 #[derive(Clone)]
 pub struct Func {
-    pub args: ast::Expr,
-    pub body: ast::Expr,
+    pub args: ast::SpannedExpr,
+    pub body: ast::SpannedExpr,
     pub scope: Scope,
 }
 

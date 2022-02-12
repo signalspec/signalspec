@@ -3,7 +3,7 @@ use crate::{Value, Index};
 use crate::syntax::ast;
 use super::step::{Step, StepInfo, analyze_unambiguous};
 use super::{Expr, ExprDn, Item, Scope, Shape, Type, index::DefImpl, ShapeMsg, resolve_protocol_invoke};
-use super::{Dir, on_expr_message, pattern_match, rexpr, value, VarId, StepId};
+use super::{Dir, on_expr_message, pattern_match, rexpr, value, VarId, StepId, LeafItem};
 
 #[derive(Clone, Copy)]
 struct ResolveCx<'a> {
@@ -119,7 +119,7 @@ impl<'a> Builder<'a> {
                         }
 
                         let id = self.add_var();
-                        body_scope.bind(name, Item::Value(Expr::Variable(id, *ty, dir)));
+                        body_scope.bind(name, Item::Leaf(LeafItem::Value(Expr::Variable(id, *ty, dir))));
 
                         if dir.down {
                             vars_dn.push((id, e.down()));
@@ -238,44 +238,28 @@ pub fn resolve_letdef(scope: &mut Scope, ld: &ast::LetDef) {
 }
 
 pub fn resolve_token(msg_def: &ShapeMsg, args: &[Item]) -> (Vec<ExprDn>, Vec<Expr>) {
-    fn inner(i: &Item, shape: &Item, out: &mut Vec<Expr>) {
-        match shape {
-            &Item::Value(Expr::Const(_)) => (),
-            &Item::Value(_) => {
-                if let Item::Value(v) = i {
-                    out.push(v.clone());
-                } else {
-                    panic!("Expected value but found {:?}", i);
-                }
-            }
-            &Item::Tuple(ref m) => {
-                if let Item::Tuple(t) = i {
-                    if t.len() == m.len() {
-                        for (mi, i) in m.iter().zip(t.into_iter()) {
-                            inner(i, mi, out)
-                        }
-                    } else {
-                        panic!("Expected tuple length {}, found {}", m.len(), t.len());
-                    }
-                } else {
-                    panic!("Expected tuple of length {}, found {:?}", m.len(), i);
-                }
-            }
-            _ => panic!("Item {:?} not allowed in shape", shape)
-        }
-    }
-
     assert_eq!(args.len(), msg_def.params.len(), "wrong number of arguments to message {:?} {:?} {:?}", msg_def.name, msg_def.params, args);
 
     let mut dn = Vec::new();
     let mut up = Vec::new();
 
     for (param, arg) in msg_def.params.iter().zip(args) {
-        if param.direction.up {
-            inner(arg, &param.item, &mut up)
+        let out = if param.direction.up {
+            &mut up
         } else if param.direction.down {
-            inner(arg, &param.item, &mut dn)
-        }
+            &mut dn
+        } else {
+            unreachable!();
+        };
+
+        use crate::tree::Zip::*;
+        param.item.zip(arg, &mut |m| { match m {
+            Both(&Item::Leaf(LeafItem::Value(Expr::Const(_))), _) => (),
+            Both(&Item::Leaf(LeafItem::Value(_)), &Item::Leaf(LeafItem::Value(ref v))) => {
+                out.push(v.clone());
+            },
+            _ => panic!("Invalid pattern")
+        }})
     }
 
     (dn.into_iter().map(|x| x.down()).collect(), up)

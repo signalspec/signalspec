@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::default::Default;
 use std::sync::Arc;
 
-use crate::syntax::Value;
+use crate::{syntax::Value, tree::Tree};
 use super::{ Expr, FunctionDef };
 
 /// A collection of named Items.
@@ -47,19 +47,18 @@ impl Scope {
 
 /// A thing associated with a name in a Scope
 #[derive(Clone)]
-pub enum Item {
+pub enum LeafItem {
     /// Expression for a (possibly runtime-variable) value
     Value(Expr),
 
     // Function closure
     Func(Arc<FunctionDef>),
 
-    /// Collection of `Item`s
-    Tuple(Vec<Item>), // TODO: named components
-
     /// Sequence of Unicode code points. Not a Value because it is not of constant size.
     String(String),
 }
+
+pub type Item = Tree<LeafItem>;
 
 pub trait FromItem<'a>: Sized { // TODO: use TryFrom once stable
     fn try_from_item(_: &'a Item) -> Option<Self>;
@@ -67,7 +66,7 @@ pub trait FromItem<'a>: Sized { // TODO: use TryFrom once stable
 
 impl<'a> FromItem<'a> for &'a str {
     fn try_from_item(i: &'a Item) -> Option<Self> {
-        if let &Item::String(ref s) = i { Some(s) } else { None }
+        if let &Item::Leaf(LeafItem::String(ref s)) = i { Some(s) } else { None }
     }
 }
 
@@ -78,7 +77,7 @@ impl<'a> FromItem<'a> for &'a Item {
 impl Item {
     pub fn as_constant(&self) -> Option<&Value> {
         match *self {
-            Item::Value(Expr::Const(ref c)) => Some(c),
+            Item::Leaf(LeafItem::Value(Expr::Const(ref c))) => Some(c),
             _ => None
         }
     }
@@ -90,20 +89,12 @@ impl Default for Item {
     }
 }
 
-impl fmt::Debug for Item {
+impl fmt::Debug for LeafItem {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
-            Item::Value(ref v) => write!(f, "{:?}", v),
-            Item::Func(..) => write!(f, "<function>"),
-            Item::Tuple(ref v) => {
-                write!(f, "(")?;
-                for i in v.iter() {
-                    i.fmt(f)?;
-                    write!(f, ", ")?;
-                }
-                write!(f, ")")
-            }
-            Item::String(ref s) => write!(f, "{:?}", s),
+            LeafItem::Value(ref v) => write!(f, "{:?}", v),
+            LeafItem::Func(..) => write!(f, "<function>"),
+            LeafItem::String(ref s) => write!(f, "{:?}", s),
         }
     }
 }

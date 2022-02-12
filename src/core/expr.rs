@@ -1,7 +1,7 @@
 use std::fmt;
 use num_complex::Complex;
 use crate::syntax::{ Value, BinOp };
-use super::{ Item, Type, VarId, DataMode };
+use super::{ Item, Type, VarId, DataMode, LeafItem };
 
 /// Element of Expr::Concat
 #[derive(PartialEq, Debug, Clone)]
@@ -463,8 +463,8 @@ impl fmt::Display for Expr {
 
 fn fn_int(arg: Item) -> Result<Item, &'static str> {
     match arg {
-        Item::Value(v) => {
-            Ok(Item::Value(Expr::Unary(Box::new(v), UnaryOp::FloatToInt)))
+        Item::Leaf(LeafItem::Value(v)) => {
+            Ok(Item::Leaf(LeafItem::Value(Expr::Unary(Box::new(v), UnaryOp::FloatToInt))))
         }
         _ => return Err("Invalid arguments to chunks()")
     }
@@ -482,11 +482,11 @@ fn fn_signed_unsigned(arg: Item, sign_mode: SignMode) -> Result<Item, &'static s
     match arg {
         Item::Tuple(mut t) => {
             match (t.pop(), t.pop()) { //TODO: cleaner way to move out of vec without reversing order?
-                (Some(Item::Value(v)), Some(Item::Value(Expr::Const(Value::Integer(width))))) => {
-                    Ok(Item::Value(Expr::Unary(Box::new(v), UnaryOp::IntToBits {
+                (Some(Item::Leaf(LeafItem::Value(v))), Some(Item::Leaf(LeafItem::Value(Expr::Const(Value::Integer(width)))))) => {
+                    Ok(Item::Leaf(LeafItem::Value(Expr::Unary(Box::new(v), UnaryOp::IntToBits {
                         width: width as usize,
                         signed: sign_mode,
-                    })))
+                    }))))
                 }
                 _ => return Err("Invalid arguments to signed()")
             }
@@ -499,10 +499,10 @@ fn fn_chunks(arg: Item) -> Result<Item, &'static str> {
     match arg {
         Item::Tuple(mut t) => {
             match (t.pop(), t.pop()) { //TODO: cleaner way to move out of vec without reversing order?
-                (Some(Item::Value(v)), Some(Item::Value(Expr::Const(Value::Integer(width))))) => {
-                    Ok(Item::Value(Expr::Unary(Box::new(v), UnaryOp::Chunks {
+                (Some(Item::Leaf(LeafItem::Value(v))), Some(Item::Leaf(LeafItem::Value(Expr::Const(Value::Integer(width)))))) => {
+                    Ok(Item::Leaf(LeafItem::Value(Expr::Unary(Box::new(v), UnaryOp::Chunks {
                         width: width as usize,
-                    })))
+                    }))))
                 }
                 _ => return Err("Invalid arguments to chunks()")
             }
@@ -516,8 +516,8 @@ fn fn_complex(arg: Item) -> Result<Item, &'static str> {
         Item::Tuple(t) => {
             assert_eq!(t.len(), 2, "complex(re, im) requires two arguments");
             match (&t[0], &t[1]) {
-                (&Item::Value(Expr::Const(Value::Number(re))), &Item::Value(Expr::Const(Value::Number(im)))) => {
-                    Ok(Item::Value(Expr::Const(Value::Complex(Complex::new(re, im)))))
+                (&Item::Leaf(LeafItem::Value(Expr::Const(Value::Number(re)))), &Item::Leaf(LeafItem::Value(Expr::Const(Value::Number(im))))) => {
+                    Ok(Item::Leaf(LeafItem::Value(Expr::Const(Value::Complex(Complex::new(re, im))))))
                 }
                 _ => return Err("Invalid arguments to complex()")
             }

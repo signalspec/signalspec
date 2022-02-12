@@ -1,6 +1,6 @@
 use std::sync::Arc;
-use crate::syntax::{ast, Value};
-use super::{ConcatElem, DataMode, Expr, Func, FunctionDef, Item, Scope, ShapeMsg, ExprDn, VarId };
+use crate::{syntax::{ast, Value}, tree::Tree};
+use super::{ConcatElem, Expr, Func, FunctionDef, Item, Scope, ShapeMsg, ExprDn, VarId, LeafItem };
 
 fn resolve(scope: Option<&Scope>, var_handler: &mut dyn FnMut(&str) -> Expr, e: &ast::Expr) -> Expr {
     match *e {
@@ -87,7 +87,7 @@ fn resolve(scope: Option<&Scope>, var_handler: &mut dyn FnMut(&str) -> Expr, e: 
         ast::Expr::Call(ref func, ref arg) => {
             let scope = scope.expect("Function call not allowed here");
             match resolve_call(scope, func, arg) {
-                Item::Value(v) => v,
+                Item::Leaf(LeafItem::Value(v)) => v,
                 other => panic!("Expcted value item, but function evaluated to {:?}", other),
             }
         }
@@ -101,7 +101,7 @@ fn resolve(scope: Option<&Scope>, var_handler: &mut dyn FnMut(&str) -> Expr, e: 
 pub fn value(scope: &Scope, e: &ast::Expr) -> Expr {
     resolve(Some(scope), &mut |name| {
         match scope.get(name) {
-            Some(Item::Value(v)) => v,
+            Some(Item::Leaf(LeafItem::Value(v))) => v,
             Some(..) => panic!("Variable {} is not a value expression", name),
             None => panic!("Undefined variable {}", name),
         }
@@ -119,96 +119,107 @@ pub fn rexpr(scope: &Scope, e: &ast::Expr) -> Item {
             Item::Tuple(items.iter().map(|i| rexpr(scope, i)).collect())
         }
 
-        ast::Expr::String(ref s) => Item::String(s.clone()),
+        ast::Expr::String(ref s) => Item::Leaf(LeafItem::String(s.clone())),
+
 
         ast::Expr::Func{ ref body, ref args } => {
-            Item::Func(Arc::new(FunctionDef::Code(Func{
-                args: args.node.clone(),
-                body: body.node.clone(),
+            Item::Leaf(LeafItem::Func(Arc::new(FunctionDef::Code(Func{
+                args: (**args).clone(),
+                body: (**body).clone(),
                 scope: scope.clone(),
-            })))
+            }))))
         }
 
         ast::Expr::Call(ref func, ref arg) => {
             resolve_call(scope, func, arg)
         }
 
-        ref other => Item::Value(value(scope, other))
+        ref other => Item::Leaf(LeafItem::Value(value(scope, other)))
     }
 }
 
-fn resolve_call(scope: &Scope, func: &ast::Expr, arg: &ast::Expr) -> Item {
+fn resolve_call(scope: &Scope, func: &ast::SpannedExpr, arg: &ast::SpannedExpr) -> Item {
     let func = rexpr(scope, func);
     let arg = rexpr(scope, arg);
 
-    if let Item::Func(func) = func {
+    if let Item::Leaf(LeafItem::Func(func)) = func {
         func.apply(arg)
     } else {
         panic!("{:?} is not a function", func)
     }
 }
 
+fn zip_ast<T>(ast: &ast::SpannedExpr, tree: &Tree<T>, f: &mut impl FnMut(&ast::Expr, &Tree<T>) -> Result<(), &'static str>) -> Result<(), &'static str> {
+    match (&ast.node, tree) {
+        (ast::Expr::Tup(a), Tree::Tuple(t)) => {
+            let mut a = a.iter();
+            let mut t = t.iter();
+            loop {
+                match (a.next(), t.next()) {
+                    (None, None) => break,
+                    (Some(ai), Some(ti)) => zip_ast(ai, ti, f)?,
+                    _ => return Err("mismatched tuples")
+                }
+            }
+        }
+        (a, t) => f(a, t)?
+    }
+    Ok(())
+}
+
 /// Resolve expressions as used in the arguments of an `on` block, defining variables
 pub fn on_expr_message(mut new_var: impl FnMut() -> VarId, scope: &mut Scope, msg_def: &ShapeMsg, exprs: &[ast::SpannedExpr]) -> (Vec<Expr>, Vec<ExprDn>) {
-    fn perform_match(new_var: &mut impl FnMut() -> VarId, scope: &mut Scope, shape: &Item, expr: &ast::Expr, dir: DataMode, push: &mut dyn FnMut(Expr)) {
-        match (shape, expr) {
-            (&Item::Value(Expr::Const(ref c)), &ast::Expr::Value(ref val)) if c == val => (),
-
-            (&Item::Value(ref v), &ast::Expr::Var(ref name)) => { // A variable binding
-                let ty = v.get_type();
-                let id = new_var();
-                scope.bind(name, Item::Value(Expr::Variable(id, ty.clone(), dir)));
-                push(Expr::Variable(id, ty, dir));
-            }
-
-            (&Item::Tuple(ref ss), &ast::Expr::Var(ref name)) => { // A variable binding for a tuple
-                // Capture a tuple by recursively building a tuple Item containing each of the
-                // captured variables
-                fn build_tuple(new_var: &mut impl FnMut() -> VarId, dir: DataMode, push: &mut dyn FnMut(Expr), ss: &[Item]) -> Item {
-                    Item::Tuple(ss.iter().map(|i| {
-                        match *i {
-                            Item::Value(Expr::Const(ref c)) => Item::Value(Expr::Const(c.clone())),
-                            Item::Tuple(ref t) => build_tuple(new_var, dir, push, &t[..]),
-                            Item::Value(ref v) => {
-                                let ty = v.get_type();
-                                let id = new_var();
-                                push(Expr::Variable(id, ty.clone(), dir));
-                                Item::Value(Expr::Variable(id, ty, dir))
-                            }
-
-                            _ => panic!("{:?} not allowed in shape", i)
-                        }
-                    }).collect())
-                }
-
-                scope.bind(name, build_tuple(new_var, dir, push, &ss[..]));
-            }
-
-            (&Item::Value(_), expr) => { // A match against a refutable pattern
-                push(resolve(None, &mut |_| { panic!("Variable binding not allowed here") }, expr));
-            }
-
-            (&Item::Tuple(ref ss), &ast::Expr::Tup(ref se)) => {
-                for (s, i) in ss.iter().zip(se.iter()) {
-                    perform_match(new_var, scope, s, i, dir, push)
-                }
-            }
-
-            (shape, expr) => panic!("Expression {:?} doesn't match shape {:?}", expr, shape)
-        }
-    }
-
     assert_eq!(msg_def.params.len(), exprs.len());
 
     let mut dn = Vec::new();
     let mut up = Vec::new();
 
     for (param, expr) in msg_def.params.iter().zip(exprs) {
+        let dir = param.direction;
+        let push_up = &mut |i: Expr| up.push(i.down());
+        let push_dn = &mut |i| dn.push(i);
+        let push: &mut dyn FnMut(Expr);
+        
         if param.direction.up {
-            perform_match(&mut new_var, scope, &param.item, expr, param.direction, &mut |i| up.push(i.down()))
+            push = push_up;
         } else if param.direction.down {
-            perform_match(&mut new_var, scope, &param.item, expr, param.direction, &mut |i| dn.push(i))
-        }
+            push = push_dn;
+        } else {
+            unreachable!()
+        };
+
+        zip_ast(expr, &param.item, &mut |a, e| {
+            match (e, a) {
+                (&Item::Leaf(LeafItem::Value(ref v)), ast::Expr::Var(ref name)) => {
+                    let ty = v.get_type();
+                    let id = new_var();
+                    scope.bind(name, Item::Leaf(LeafItem::Value(Expr::Variable(id, ty.clone(), dir))));
+                    push(Expr::Variable(id, ty, dir));
+                }
+                (&Item::Leaf(LeafItem::Value(_)), ref expr) => {
+                    push(resolve(None, &mut |_| { panic!("Variable binding not allowed here") }, expr));
+                }
+                (t @ &Item::Tuple(_), ast::Expr::Var(ref name)) => {
+                    // Capture a tuple by recursively building a tuple Item containing each of the
+                    // captured variables
+                    let v = t.map_leaf(&mut |i| {
+                        match i {
+                            LeafItem::Value(Expr::Const(ref c)) => LeafItem::Value(Expr::Const(c.clone())),
+                            LeafItem::Value(ref v) => {
+                                let ty = v.get_type();
+                                let id = new_var();
+                                push(Expr::Variable(id, ty.clone(), dir));
+                                LeafItem::Value(Expr::Variable(id, ty, dir))
+                            }
+                            _ => panic!("{:?} not allowed in shape", i)
+                        }
+                    });
+                    scope.bind(name, v);
+                }
+                _ => return Err("invalid pattern")
+            }
+            Ok(())
+        }).unwrap();
     }
 
     (dn, up)
@@ -216,56 +227,34 @@ pub fn on_expr_message(mut new_var: impl FnMut() -> VarId, scope: &mut Scope, ms
 
 #[derive(Clone, Debug)]
 pub struct PatternError {
-    expected: &'static str,
-    found: Item,
+    msg: &'static str,
 }
 
 /// Destructures an item into left-hand-side binding, such as a function argument, returning
 /// whether the pattern matched. No runtime evaluation is allowed.
-pub fn lexpr(scope: &mut Scope, l: &ast::Expr, r: Item) -> Result<(), PatternError> {
-    Ok(match *l {
-        ast::Expr::Ignore => (),
-
-        ast::Expr::Var(ref name) => {
-            debug!("defined {} = {:?}", name, r);
-            scope.bind(name, r);
-        }
-
-        ast::Expr::Tup(ref exprs) => {
-            match r {
-                Item::Tuple(v) => {
-                    if exprs.len() != v.len() {
-                        return Err(PatternError { expected: "tuple with a different length", found: Item::Tuple(v) });
-                    }
-                    for (expr, item) in exprs.iter().zip(v.into_iter()) {
-                        lexpr(scope, expr, item)?
+pub fn lexpr(scope: &mut Scope, l: &ast::SpannedExpr, r: Item) -> Result<(), PatternError> {
+    zip_ast(l, &r, &mut |l, r| {
+        Ok(match l {
+            ast::Expr::Ignore => {},
+            ast::Expr::Var(ref name) => {
+                scope.bind(name, r.clone())
+            }
+            ref l => {
+                let lv = &value(scope, l);
+                if let Item::Leaf(LeafItem::Value(rv)) = &r {
+                    debug!("{:?} == {:?} => {:?}", lv, rv, lv == rv);
+                    if lv != rv {
+                        Err("expected tuple, variable, or ignore")?
                     }
                 }
-                r => return Err(PatternError { expected: "tuple", found: r })
             }
-        }
-
-        ast::Expr::Value(ref lv) => {
-            match r {
-                Item::Value(Expr::Const(ref rv)) if lv == rv => (),
-                r => return Err(PatternError { expected: "a constant", found: r })
-            }
-        }
-
-        _ => {
-            let lv = &value(scope, l);
-            if let Item::Value(rv) = &r {
-                debug!("{:?} == {:?} => {:?}", lv, rv, lv == rv);
-                if lv != rv {
-                    return Err(PatternError { expected: "tuple, variable, or ignore", found: r })
-                }
-            }
-        }
-    })
+        })
+    }).map_err(|msg| PatternError { msg })
 }
 
 /// Destructure an item into an expression, like lexpr, but allowing runtime pattern-matching
-pub fn pattern_match(scope: &mut Scope, pat: &ast::Expr, r: &Item, checks: &mut Vec<(Expr, Expr)>) {
+pub fn pattern_match(scope: &mut Scope, pat: &ast::SpannedExpr, r: &Item, checks: &mut Vec<(Expr, Expr)>) {
+    zip_ast(pat, r, &mut |pat, r| {
         match (pat, r) {
             (&ast::Expr::Ignore, _) => (),
 
@@ -274,20 +263,13 @@ pub fn pattern_match(scope: &mut Scope, pat: &ast::Expr, r: &Item, checks: &mut 
                 scope.bind(name, r.clone());
             }
 
-            (&ast::Expr::Tup(ref exprs), &Item::Tuple(ref v)) => {
-                if exprs.len() != v.len() {
-                    panic!("can't match a tuple with a different length");
-                }
-                for (expr, item) in exprs.iter().zip(v.iter()) {
-                    pattern_match(scope, expr, item, checks);
-                }
-            }
-
-            (ref other, &Item::Value(ref re)) => {
+            (other, Item::Leaf(LeafItem::Value(ref re))) => {
                 let le = resolve(None, &mut |_| { panic!("Variable binding not allowed here")}, other);
                 checks.push((le, re.clone()));
             }
 
             (pat, r) => panic!("can't match {:?} with {:?}", pat, r)
         }
+        Ok(())
+    }).unwrap();
 }

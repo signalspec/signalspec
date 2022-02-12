@@ -1,13 +1,4 @@
-use super::{DataMode, Dir, Expr, Item, ProtocolRef};
-
-fn count_item_fields(i: &Item) -> usize {
-    match *i {
-        Item::Value(Expr::Const(_)) => 0,
-        Item::Value(_) => 1,
-        Item::Tuple(ref t) => t.iter().map(count_item_fields).sum(),
-        _ => panic!("Item {:?} not allowed in shape", i),
-    }
-}
+use super::{DataMode, Dir, Item, ProtocolRef};
 
 #[derive(Clone, Debug)]
 pub struct ShapeMsg {

@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use crate::runtime::channel::Channel;
 use crate::syntax::Value;
-use crate::core::{ Index, PrimitiveDef, Item };
+use crate::core::{ Index, PrimitiveDef, Item, LeafItem };
 use crate::runtime::{ChannelMessage, PrimitiveProcess};
 
 // This wouldn't need to be a primitive if vectors could contain tuples -- could
@@ -33,7 +33,7 @@ fn item_to_msgs(item: &Item) -> Vec<ChannelMessage> {
 
     fn inner(m: &mut Vec<Value>, i: &Item) {
         match i {
-            Item::Value(e) => m.push(e.eval_const()),
+            Item::Leaf(LeafItem::Value(e)) => m.push(e.eval_const()),
             Item::Tuple(t) => for e in t { inner(m, e) },
             _ => panic!("Item {:?} not allowed in seq literal", i)
         }

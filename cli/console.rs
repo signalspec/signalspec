@@ -1,6 +1,6 @@
 use std::io::prelude::*;
 use std::io;
-use signalspec::{ Shape, ShapeMsg, ChannelMessage, Value, Item, Channel };
+use signalspec::{ Shape, ShapeMsg, ChannelMessage, Value, Item, Channel, LeafItem };
 
 pub async fn run(shape: &Shape, channel: &mut Channel) -> Result<(), ()> {
     let stdout = ::std::io::stdout();
@@ -41,7 +41,7 @@ fn format_message_item<'a, I: Iterator<Item=&'a Value>>(w: &mut dyn Write, value
             }
             write!(w, ")")?;
         }
-        Item::Value(_) => {
+        Item::Leaf(LeafItem::Value(_)) => {
             let v = values.next().expect("message doesn't match shape");
             write!(w, "{}", v)?;
         }
