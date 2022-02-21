@@ -141,7 +141,7 @@ peg::parser!(pub grammar signalspec() for str {
 
     rule process() -> ast::Process
       = proto:protocol_ref() _ block:block() { ast::Process::Seq(proto, block) }
-      / name:IDENTIFIER() _ args:expr_list() { ast::Process::Call(name, args) }
+      / name:spanned(<IDENTIFIER()>) _ args:expr_list() { ast::Process::Call(name, args) }
       / block:block() { ast::Process::InferSeq(block) }
 
   rule test_block() -> ast::Test

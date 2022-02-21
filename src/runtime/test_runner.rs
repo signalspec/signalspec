@@ -3,6 +3,7 @@ use std::fs;
 use std::path::Path;
 use futures_lite::future;
 
+use crate::DiagnosticHandler;
 use crate::syntax::{ ast, SourceFile };
 use crate::core::{ Index, FileScope };
 use crate::core::{resolve_protocol_invoke, compile_process_chain };
@@ -31,6 +32,8 @@ pub fn run(fname: &str) -> bool {
 pub fn run_file(fname: &Path) -> bool {
     println!("Running tests for {}", fname.to_string_lossy());
 
+    let ui = &crate::diagnostic::SimplePrintHandler;
+
     let mut index = Index::new();
     super::primitives::add_primitives(&mut index);
     
@@ -54,7 +57,7 @@ pub fn run_file(fname: &Path) -> bool {
 
     for (count, test) in module.tests.iter().enumerate() {
         print!("\tTest #{}:", count+1);
-        let res = run_test(&index, &module, &test);
+        let res = run_test(ui, &index, &module, &test);
 
         if let Some(r) = res.down{
             print!(" down:{}", if r { "ok" } else { "FAIL" });
@@ -76,7 +79,7 @@ pub struct TestResult {
     pub down: Option<bool>
 }
 
-pub fn run_test(index: &Index, file: &FileScope, test: &ast::Test) -> TestResult {
+pub fn run_test(ui: &dyn DiagnosticHandler, index: &Index, file: &FileScope, test: &ast::Test) -> TestResult {
     fn symbol_expr(dir: &str) -> ast::SpannedExpr {
         let span = crate::syntax::FileSpan::new(0, 0);
         let node = ast::Expr::Value(ast::Value::Symbol(dir.into()));
@@ -85,16 +88,16 @@ pub fn run_test(index: &Index, file: &FileScope, test: &ast::Test) -> TestResult
 
     // If the test uses `seq_both`, or `roundtrip`, generate `up` and `dn` versions and run them
     match test.processes.split_first() {
-        Some((&ast::Process::Call(ref name, ref args), rest)) if name == "seq_both" => {
+        Some((&ast::Process::Call(ref name, ref args), rest)) if name.node == "seq_both" => {
             // Turn seq_both into seq(_, dir, ...) and run it
             let run = |dir: &str| -> bool {
                 let mut args = args.clone();
                 args.insert(1, symbol_expr(dir));
-                let process = ast::Process::Call("seq".into(), args);
+                let process = ast::Process::Call(ast::Spanned { node: "seq".into(), span: name.span }, args);
 
                 let processes: Vec<ast::Process> = Some(process).into_iter().chain(rest.iter().cloned()).collect();
                 
-                super::compile_run(index, &file.scope, &processes)
+                super::compile_run(ui, index, &file.scope, &processes)
             };
 
             let down_res = run("dn");
@@ -106,7 +109,7 @@ pub fn run_test(index: &Index, file: &FileScope, test: &ast::Test) -> TestResult
             }
         }
 
-        Some((&ast::Process::Call(ref name, ref args), rest)) if name == "roundtrip" => {
+        Some((&ast::Process::Call(ref name, ref args), rest)) if name.node == "roundtrip" => {
             let make_seq_shape = |ty: ast::SpannedExpr, dir: &str| {
                 let seq_args = ast::Spanned { span: ty.span, node: ast::Expr::Tup(vec![ty, symbol_expr(dir)]) };
                 let seq = ast::ProtocolRef { name: "Seq".into(), param: seq_args };
@@ -116,8 +119,8 @@ pub fn run_test(index: &Index, file: &FileScope, test: &ast::Test) -> TestResult
             let shape_dn = make_seq_shape(args[0].clone(), "dn");
             let shape_up = make_seq_shape(args[0].clone(), "up");
 
-            let p1 = compile_process_chain(index, &file.scope, shape_dn, rest);
-            let p2 = compile_process_chain(index, &file.scope, shape_up, rest);
+            let p1 = compile_process_chain(ui, index, &file.scope, shape_dn, rest);
+            let p2 = compile_process_chain(ui, index, &file.scope, shape_up, rest);
 
             let c1 = Arc::new(super::compile::compile(&p1));
             let c2 = Arc::new(super::compile::compile(&p2));
@@ -141,7 +144,7 @@ pub fn run_test(index: &Index, file: &FileScope, test: &ast::Test) -> TestResult
         }
 
         Some(_) => {
-            let r = super::compile_run(index, &file.scope, &test.processes);
+            let r = super::compile_run(ui, index, &file.scope, &test.processes);
             TestResult { down: Some(r ^ test.should_fail), up: None }
         }
 

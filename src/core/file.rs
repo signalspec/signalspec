@@ -17,7 +17,7 @@ pub struct FileScope {
 
 impl FileScope {
     pub fn new(file: Arc<SourceFile>, prelude: &ScopeNames) -> Result<FileScope, ParseError> {
-        let ast = parse_module(&file.source)?;
+        let ast = parse_module(&file.source())?;
 
         let mut scope = Scope { file: file, names: prelude.clone() };
         let mut defs = vec![];

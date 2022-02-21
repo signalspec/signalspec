@@ -12,6 +12,7 @@ entity_key!(pub StepId);
 
 #[derive(Debug)]
 pub enum Step {
+    Invalid,
     Stack { lo: StepId, shape: Shape, hi: StepId },
     Token { variant: usize, send: Vec<ExprDn>, receive: Vec<Expr> },
     TokenTop { top_dir: Dir, variant: usize, send: Vec<Expr>, receive: Vec<ExprDn>, inner: StepId },
@@ -27,6 +28,7 @@ pub enum Step {
 pub fn write_tree(f: &mut dyn Write, indent: u32, steps: &[Step], step: StepId) -> IoResult<()> {
     let i: String = repeat(" ").take(indent as usize).collect();
     match steps[step.0 as usize] {
+        Step::Invalid => writeln!(f, "{}Invalid", i)?,
         Step::Stack{ lo, hi, ..} => {
             writeln!(f, "{}Stack:", i)?;
             write_tree(f, indent+2, steps, lo)?;
@@ -95,6 +97,13 @@ pub fn analyze_unambiguous(steps: &EntityMap<StepId, Step>) -> EntityMap<StepId,
         let get = |id: StepId| -> &StepInfo {&res[id]};
 
         let info = match *step {
+            Step::Invalid => {
+                StepInfo {
+                    first: MatchSet::proc(),
+                    followlast: None,
+                    nullable: false,
+                }
+            }
             Step::Stack { .. } => {
                 StepInfo {
                     first: MatchSet::proc(),

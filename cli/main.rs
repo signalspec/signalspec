@@ -1,4 +1,5 @@
 mod console;
+mod diagnostic;
 
 use std::io::prelude::*;
 use std::sync::Arc;
@@ -42,8 +43,11 @@ fn main() {
             index.parse_module(file).unwrap();
         }
 
-        let success = signalspec::parse_compile_run(&index, &cmd).unwrap_or_else(|e| panic!("Error parsing argument: {}", e));
+        let ui = &diagnostic::CliHandler;
+
+        let success = signalspec::parse_compile_run(ui, &index, &cmd).unwrap();
 
         process::exit(if success { 0 } else { 1 });
     }
 }
+

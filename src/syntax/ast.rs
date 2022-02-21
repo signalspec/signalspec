@@ -21,7 +21,7 @@ pub enum Action {
 
 #[derive(Debug, Clone)]
 pub enum Process {
-    Call(String, Vec<SpannedExpr>),
+    Call(Spanned<String>, Vec<SpannedExpr>),
     Seq(ProtocolRef, Block),
     InferSeq(Block),
 }

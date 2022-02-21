@@ -1,6 +1,7 @@
 use crate::entitymap::{ EntityMap };
-use crate::{Value, Index};
+use crate::{Value, Index, DiagnosticHandler, DiagnosticKind, Label};
 use crate::syntax::ast;
+use super::index::FindDefError;
 use super::step::{Step, StepInfo, analyze_unambiguous};
 use super::{Expr, ExprDn, Item, Scope, Shape, Type, index::DefImpl, ShapeMsg, resolve_protocol_invoke};
 use super::{Dir, on_expr_message, pattern_match, rexpr, value, VarId, StepId, LeafItem};
@@ -35,14 +36,15 @@ pub fn resolve_dir(e: Expr) -> Dir {
 }
 
 pub struct Builder<'a> {
+    ui: &'a dyn DiagnosticHandler,
     index: &'a Index,
     steps: EntityMap<StepId, Step>,
     vars: EntityMap<VarId, ()>,
 }
 
 impl<'a> Builder<'a> {
-    pub fn new(index: &'a Index) -> Self {
-        Self { index, steps: EntityMap::new(), vars: EntityMap::new() }
+    pub fn new(ui: &'a dyn DiagnosticHandler, index: &'a Index) -> Self {
+        Self { ui, index, steps: EntityMap::new(), vars: EntityMap::new() }
     }
 
     fn add_step(&mut self, step: Step) -> StepId {
@@ -184,11 +186,22 @@ impl<'a> Builder<'a> {
         match process_ast {
             ast::Process::Call(ref name, ref args_ast) => {
                 let args: Vec<Item> = args_ast.iter().map(|a| rexpr(sb.scope, a)).collect();
-                if let Some((variant, msg_def)) = sb.shape_down.variant_named(name) {
+                if let Some((variant, msg_def)) = sb.shape_down.variant_named(&name.node) {
                     let (dn, up) = resolve_token(msg_def, &args);
                     (self.add_step(Step::Token { variant, send: dn, receive: up }), None)
                 } else {
-                    let (scope, imp) = self.index.find_def(sb.shape_down, name, args);
+                    let (scope, imp) = match self.index.find_def(sb.shape_down, &name.node, args) {
+                        Ok(res) => res,
+                        Err(FindDefError::NoDefinitionWithName) => {
+                            self.ui.report(DiagnosticKind::NoDefNamed {
+                                protocol_name: sb.shape_down.def.ast().name.to_owned(),
+                                def_name: name.node.to_owned(),
+                            }, vec![
+                                Label { file: sb.scope.file.clone(), span: name.span, label: "not found".into() }
+                            ]);
+                            return (self.add_step(Step::Invalid), None)
+                        }
+                    };
                     match *imp {
                         DefImpl::Code(ref callee_ast) => {
                             self.resolve_processes(sb.with_scope(&scope), callee_ast)
@@ -274,8 +287,8 @@ pub struct ProcessChain {
     pub shape_up: Option<Shape>,
 }
 
-pub fn compile_process_chain(index: &Index, scope: &Scope, shape_dn: Shape, ast: &[ast::Process]) -> ProcessChain {
-    let mut builder = Builder::new(index);
+pub fn compile_process_chain(ui: &dyn DiagnosticHandler, index: &Index, scope: &Scope, shape_dn: Shape, ast: &[ast::Process]) -> ProcessChain {
+    let mut builder = Builder::new(ui, index);
     let sb = ResolveCx { scope, shape_up: None, shape_down: &shape_dn };
     let (step, shape_up) = builder.resolve_processes(sb, ast);
 

@@ -43,7 +43,7 @@ impl Index {
 
     pub fn define_primitive(&mut self, header_src: &str, implementation: PrimitiveDef) {
         let file = Arc::new(SourceFile::new("<primitive>".into(), header_src.into()));
-        let header = crate::syntax::parse_primitive_header(&file.source).expect("failed to parse primitive header");
+        let header = crate::syntax::parse_primitive_header(&file.source()).expect("failed to parse primitive header");
         self.defs.push(Def {
             protocol: header.bottom,
             name: header.name.clone(),
@@ -57,7 +57,7 @@ impl Index {
         self.protocols_by_name.get(name)
     }
 
-    pub(crate) fn find_def(&self, shape: &Shape, name: &str, args: Vec<Item>) -> (Scope, &DefImpl) {
+    pub(crate) fn find_def(&self, shape: &Shape, name: &str, args: Vec<Item>) -> Result<(Scope, &DefImpl), FindDefError> {
         let mut found = None;
         for entry in &self.defs {
             if let Some(scope) = match_def(entry, shape, name, &args) {
@@ -68,7 +68,7 @@ impl Index {
                 }
             }
         }
-        found.unwrap_or_else(|| panic!("No definition found for `{}`", name))
+        found.ok_or(FindDefError::NoDefinitionWithName)
     }
 
     pub fn add_file(&mut self, file: Arc<FileScope>) {
@@ -97,6 +97,10 @@ impl Index {
     pub fn prelude(&self) -> &HashMap<String, Item> {
         &self.prelude
     }
+}
+
+pub enum FindDefError {
+    NoDefinitionWithName,
 }
 
 /// Match a shape, name, and argument against a candidate with-def block. If
