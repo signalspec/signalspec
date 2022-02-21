@@ -1,6 +1,7 @@
 mod console;
 
 use std::io::prelude::*;
+use std::sync::Arc;
 use std::{ process, fs };
 
 use argparse::{ArgumentParser, Collect, StoreOption, Store};
@@ -37,7 +38,7 @@ fn main() {
         for source_fname in imports {
             let mut source = String::new();
             fs::File::open(&source_fname).unwrap().read_to_string(&mut source).unwrap();
-            let file = signalspec::SourceFile::new(source_fname, source);
+            let file = Arc::new(signalspec::SourceFile::new(source_fname, source));
             index.parse_module(file).unwrap();
         }
 

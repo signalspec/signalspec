@@ -3,19 +3,23 @@ use std::collections::HashMap;
 use std::default::Default;
 use std::sync::Arc;
 
-use crate::{syntax::Value, tree::Tree};
+use crate::{syntax::Value, tree::Tree, SourceFile};
 use super::{ Expr, FunctionDef };
+
+pub type ScopeNames = HashMap<String, Item>;
 
 /// A collection of named Items.
 #[derive(Clone)]
-pub struct Scope{
-    pub names: HashMap<String, Item>
+pub struct Scope {
+    pub file: Arc<SourceFile>,
+    pub names: ScopeNames,
 }
 
 impl Scope {
     /// Create an empty `Scope`
-    pub fn new() -> Scope {
+    pub fn new(file: Arc<SourceFile>) -> Scope {
       Scope {
+        file,
         names: HashMap::new(),
       }
     }
@@ -40,6 +44,7 @@ impl Scope {
     /// Create a child scope for a lexically nested block
     pub fn child(&self) -> Scope {
         Scope {
+            file: self.file.clone(),
             names: self.names.clone(),
         }
     }

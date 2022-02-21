@@ -1,10 +1,10 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 use crate::syntax::{ ast, ParseError, SourceFile };
 use super::{ ProtocolRef, Item, PrimitiveDef, Scope, FunctionDef, PrimitiveFn, FileScope, Shape, scope::LeafItem };
 
 pub struct Index {
-    pub prelude: Scope,
+    prelude: HashMap<String, Item>,
     protocols_by_name: BTreeMap<String, ProtocolRef>,
     defs: Vec<Def>,
 }
@@ -25,29 +25,29 @@ pub (crate) enum DefImpl {
 impl Index {
     pub fn new() -> Index {
         Index {
-            prelude: Scope::new(),
+            prelude: HashMap::new(),
             protocols_by_name: BTreeMap::new(),
             defs: Vec::new(),
         }
     }
 
     pub fn add_primitive_fn(&mut self, name: &str, prim: PrimitiveFn) {
-        self.prelude.bind(name, Item::Leaf(LeafItem::Func(Arc::new(FunctionDef::Primitive(prim)))));
+        self.prelude.insert(name.to_owned(), Item::Leaf(LeafItem::Func(Arc::new(FunctionDef::Primitive(prim)))));
     }
 
     pub fn define_prelude(&mut self, source: &str) {
-        let file = SourceFile { name: "<prelude>".into(), source: source.into() };
+        let file = Arc::new(SourceFile::new("<prelude>".into(), source.into()));
         let module = self.parse_module(file).expect("failed to parse prelude module");
-        self.prelude = module.scope.clone();
+        self.prelude = module.scope.names.clone();
     }
 
     pub fn define_primitive(&mut self, header_src: &str, implementation: PrimitiveDef) {
-        let file = SourceFile { name: "<primitive>".into(), source: header_src.into() };
+        let file = Arc::new(SourceFile::new("<primitive>".into(), header_src.into()));
         let header = crate::syntax::parse_primitive_header(&file.source).expect("failed to parse primitive header");
         self.defs.push(Def {
             protocol: header.bottom,
             name: header.name.clone(),
-            scope: self.prelude.child(),
+            scope: Scope { file, names: self.prelude.clone() },
             params: header.params.iter().map(|x| x.node.clone()).collect(),
             implementation: DefImpl::Primitive(implementation, header.top),
         });
@@ -87,10 +87,15 @@ impl Index {
         }
     }
 
-    pub fn parse_module(&mut self, file: SourceFile) -> Result<Arc<FileScope>, ParseError> {
+    pub fn parse_module(&mut self, file: Arc<SourceFile>) -> Result<Arc<FileScope>, ParseError> {
         let file = Arc::new(FileScope::new(file, &self.prelude)?);
         self.add_file(file.clone());
         Ok(file)
+    }
+
+    /// Get a reference to the index's prelude.
+    pub fn prelude(&self) -> &HashMap<String, Item> {
+        &self.prelude
     }
 }
 

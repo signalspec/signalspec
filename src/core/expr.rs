@@ -1,6 +1,6 @@
-use std::fmt;
+use std::{fmt, sync::Arc, collections::HashMap};
 use num_complex::Complex;
-use crate::syntax::{ Value, BinOp };
+use crate::{syntax::{ Value, BinOp }, Scope, SourceFile};
 use super::{ Item, Type, VarId, DataMode, LeafItem };
 
 /// Element of Expr::Concat
@@ -542,7 +542,10 @@ fn exprs() {
     let mut index = Index::new();
 
     index.add_primitive_fn("complex", fn_complex);
-    let scope = index.prelude.child();
+    let scope = Scope { 
+        file: Arc::new(SourceFile::new("<tests>".into(), "".into())),
+        names: index.prelude().clone()
+    };
 
     let expr = |e: &str| {
         let ast = parse_valexpr(e).unwrap();

@@ -35,7 +35,7 @@ pub fn run_file(fname: &Path) -> bool {
     super::primitives::add_primitives(&mut index);
     
     let file = match SourceFile::load(fname) {
-        Ok(file) => file,
+        Ok(file) => Arc::new(file),
         Err(err) => {
             println!("\tCould not open '{}': {}", fname.display(), err);
             return false;

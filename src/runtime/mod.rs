@@ -33,9 +33,9 @@ pub fn compile_run(index: &Index, scope: &Scope, processes: &[ast::Process]) -> 
 }
 
 pub fn parse_compile_run(index: &Index, call: &str) -> Result<bool, String> {
-    let scope = Scope::new();
-    let file = SourceFile { name: "<process>".into(), source: call.into() };
+    let file = Arc::new(SourceFile::new("<process>".into(),  call.into()));
     let ast = parse_process_chain(&file.source).map_err(|e| e.to_string())?;
+    let scope = Scope::new(file.clone());
     
     Ok(compile_run(index, &scope, &ast))
 }

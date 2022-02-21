@@ -1,11 +1,14 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 
+use crate::Item;
 use crate::syntax::{ ast, parse_module, ParseError, SourceFile };
 use crate::core::Scope;
 use std::fmt::Debug;
 
+use super::scope::ScopeNames;
+
 pub struct FileScope {
-    pub(crate) file: SourceFile,
     pub(crate) scope: Scope,
     pub(crate) protocols: Vec<ast::Protocol>,
     pub(crate) defs: Vec<ast::Def>,
@@ -13,10 +16,10 @@ pub struct FileScope {
 }
 
 impl FileScope {
-    pub fn new(file: SourceFile, prelude: &Scope) -> Result<FileScope, ParseError> {
+    pub fn new(file: Arc<SourceFile>, prelude: &ScopeNames) -> Result<FileScope, ParseError> {
         let ast = parse_module(&file.source)?;
 
-        let mut scope = prelude.child();
+        let mut scope = Scope { file: file, names: prelude.clone() };
         let mut defs = vec![];
         let mut protocols = vec![];
         let mut tests = vec![];
@@ -41,7 +44,7 @@ impl FileScope {
             }
         }
 
-        Ok(FileScope { file, scope, defs, protocols, tests })
+        Ok(FileScope { scope, defs, protocols, tests })
     }
 }
 
