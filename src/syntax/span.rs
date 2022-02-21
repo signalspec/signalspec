@@ -28,13 +28,6 @@ pub struct Spanned<T> {
     pub span: FileSpan,
 }
 
-impl<T> Deref for Spanned<T> {
-    type Target = T;
-
-    fn deref(&self) -> &T {
-        &self.node
-    }
-}
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug, Copy)]
 pub struct FileSpan {

@@ -13,7 +13,7 @@ pub fn resolve_protocol_invoke(index: &Index, scope: &Scope, ast: &ast::Protocol
         lexpr(&mut protocol_def_scope, &protocol.ast().param, param.clone())
             .unwrap_or_else(|e| panic!("failed to match parameters for protocol `{}`: {:?}", ast.name, e));
 
-        let dir = super::resolve::resolve_dir(value(&protocol_def_scope, &protocol.ast().dir.node));
+        let dir = super::resolve::resolve_dir(value(&protocol_def_scope, &protocol.ast().dir));
 
         let mut messages = vec![];
 

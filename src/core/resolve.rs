@@ -86,8 +86,8 @@ impl<'a> Builder<'a> {
             ast::Action::Repeat(ref count_ast, ref block) => {
                 let (dir, count) = match count_ast {
                     Some((dir_ast, count_ast)) => {
-                        let count = value(sb.scope, &count_ast.node);
-                        let dir = resolve_dir(value(sb.scope, &dir_ast.node));
+                        let count = value(sb.scope, &count_ast);
+                        let dir = resolve_dir(value(sb.scope, &dir_ast));
                         (dir, count)
                     }
                     None => (Dir::Up, Expr::Ignored)
@@ -219,11 +219,11 @@ impl<'a> Builder<'a> {
         let mut scope = sb.scope.child();
 
         for ld in &block.lets {
-            resolve_letdef(&mut scope, ld);
+            resolve_letdef(&mut scope, &ld.node);
         }
 
         let steps = block.actions.iter().map(|action| {
-            self.resolve_action(sb.with_scope(&scope), action)
+            self.resolve_action(sb.with_scope(&scope), &action.node)
         }).collect();
 
         self.add_step(Step::Seq(steps))

@@ -2,15 +2,15 @@ use std::sync::Arc;
 use crate::{syntax::{ast, Value}, tree::Tree};
 use super::{ConcatElem, Expr, Func, FunctionDef, Item, Scope, ShapeMsg, ExprDn, VarId, LeafItem };
 
-fn resolve(scope: Option<&Scope>, var_handler: &mut dyn FnMut(&str) -> Expr, e: &ast::Expr) -> Expr {
-    match *e {
+fn resolve(scope: Option<&Scope>, var_handler: &mut dyn FnMut(&str) -> Expr, e: &ast::SpannedExpr) -> Expr {
+    match e.node {
         ast::Expr::Ignore => Expr::Ignored,
         ast::Expr::Value(ref val) => Expr::Const(val.clone()),
 
         ast::Expr::Flip(ref down, ref up) => {
             Expr::Flip(
-                Box::new(resolve(scope, var_handler, down.as_ref().map_or(&ast::Expr::Ignore, |s| &s.node))),
-                Box::new(resolve(scope, var_handler, up.as_ref().map_or(&ast::Expr::Ignore, |s| &s.node))),
+                Box::new(down.as_ref().map_or(Expr::Ignored,  |dn| resolve(scope, var_handler, dn))),
+                Box::new(up.as_ref().map_or(Expr::Ignored,  |up| resolve(scope, var_handler, up))),
             )
         }
 
@@ -98,7 +98,7 @@ fn resolve(scope: Option<&Scope>, var_handler: &mut dyn FnMut(&str) -> Expr, e: 
     }
 }
 
-pub fn value(scope: &Scope, e: &ast::Expr) -> Expr {
+pub fn value(scope: &Scope, e: &ast::SpannedExpr) -> Expr {
     resolve(Some(scope), &mut |name| {
         match scope.get(name) {
             Some(Item::Leaf(LeafItem::Value(v))) => v,
@@ -109,8 +109,8 @@ pub fn value(scope: &Scope, e: &ast::Expr) -> Expr {
 }
 
 /// Resolve an expression as used in an argument or right hand side of an assignment
-pub fn rexpr(scope: &Scope, e: &ast::Expr) -> Item {
-    match *e {
+pub fn rexpr(scope: &Scope, e: &ast::SpannedExpr) -> Item {
+    match e.node {
         ast::Expr::Var(ref name) => {
             if let Some(s) = scope.get(name) { s } else { panic!("Undefined variable `{}`", name); }
         }
@@ -134,7 +134,7 @@ pub fn rexpr(scope: &Scope, e: &ast::Expr) -> Item {
             resolve_call(scope, func, arg)
         }
 
-        ref other => Item::Leaf(LeafItem::Value(value(scope, other)))
+        _ => Item::Leaf(LeafItem::Value(value(scope, e)))
     }
 }
 
@@ -149,7 +149,7 @@ fn resolve_call(scope: &Scope, func: &ast::SpannedExpr, arg: &ast::SpannedExpr) 
     }
 }
 
-fn zip_ast<T>(ast: &ast::SpannedExpr, tree: &Tree<T>, f: &mut impl FnMut(&ast::Expr, &Tree<T>) -> Result<(), &'static str>) -> Result<(), &'static str> {
+fn zip_ast<T>(ast: &ast::SpannedExpr, tree: &Tree<T>, f: &mut impl FnMut(&ast::SpannedExpr, &Tree<T>) -> Result<(), &'static str>) -> Result<(), &'static str> {
     match (&ast.node, tree) {
         (ast::Expr::Tup(a), Tree::Tuple(t)) => {
             let mut a = a.iter();
@@ -162,7 +162,7 @@ fn zip_ast<T>(ast: &ast::SpannedExpr, tree: &Tree<T>, f: &mut impl FnMut(&ast::E
                 }
             }
         }
-        (a, t) => f(a, t)?
+        (_, t) => f(ast, t)?
     }
     Ok(())
 }
@@ -189,15 +189,15 @@ pub fn on_expr_message(mut new_var: impl FnMut() -> VarId, scope: &mut Scope, ms
         };
 
         zip_ast(expr, &param.item, &mut |a, e| {
-            match (e, a) {
+            match (e, &a.node) {
                 (&Item::Leaf(LeafItem::Value(ref v)), ast::Expr::Var(ref name)) => {
                     let ty = v.get_type();
                     let id = new_var();
                     scope.bind(name, Item::Leaf(LeafItem::Value(Expr::Variable(id, ty.clone(), dir))));
                     push(Expr::Variable(id, ty, dir));
                 }
-                (&Item::Leaf(LeafItem::Value(_)), ref expr) => {
-                    push(resolve(None, &mut |_| { panic!("Variable binding not allowed here") }, expr));
+                (&Item::Leaf(LeafItem::Value(_)), _) => {
+                    push(resolve(None, &mut |_| { panic!("Variable binding not allowed here") }, a));
                 }
                 (t @ &Item::Tuple(_), ast::Expr::Var(ref name)) => {
                     // Capture a tuple by recursively building a tuple Item containing each of the
@@ -234,12 +234,12 @@ pub struct PatternError {
 /// whether the pattern matched. No runtime evaluation is allowed.
 pub fn lexpr(scope: &mut Scope, l: &ast::SpannedExpr, r: Item) -> Result<(), PatternError> {
     zip_ast(l, &r, &mut |l, r| {
-        Ok(match l {
+        Ok(match l.node {
             ast::Expr::Ignore => {},
             ast::Expr::Var(ref name) => {
                 scope.bind(name, r.clone())
             }
-            ref l => {
+            _ => {
                 let lv = &value(scope, l);
                 if let Item::Leaf(LeafItem::Value(rv)) = &r {
                     debug!("{:?} == {:?} => {:?}", lv, rv, lv == rv);
@@ -255,16 +255,16 @@ pub fn lexpr(scope: &mut Scope, l: &ast::SpannedExpr, r: Item) -> Result<(), Pat
 /// Destructure an item into an expression, like lexpr, but allowing runtime pattern-matching
 pub fn pattern_match(scope: &mut Scope, pat: &ast::SpannedExpr, r: &Item, checks: &mut Vec<(Expr, Expr)>) {
     zip_ast(pat, r, &mut |pat, r| {
-        match (pat, r) {
-            (&ast::Expr::Ignore, _) => (),
+        match (&pat.node, r) {
+            (ast::Expr::Ignore, _) => (),
 
-            (&ast::Expr::Var(ref name), r) => {
+            (ast::Expr::Var(ref name), r) => {
                 debug!("defined {} = {:?}", name, r);
                 scope.bind(name, r.clone());
             }
 
-            (other, Item::Leaf(LeafItem::Value(ref re))) => {
-                let le = resolve(None, &mut |_| { panic!("Variable binding not allowed here")}, other);
+            (_, Item::Leaf(LeafItem::Value(ref re))) => {
+                let le = resolve(None, &mut |_| { panic!("Variable binding not allowed here")}, pat);
                 checks.push((le, re.clone()));
             }
 

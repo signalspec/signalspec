@@ -72,7 +72,7 @@ peg::parser!(pub grammar signalspec() for str {
 
   rule expr_tup() -> ast::SpannedExpr
       = es:spanned(<es:expr_list()>)
-      { if es.len() == 1 { es.node.into_iter().next().unwrap() } else { Spanned { node: ast::Expr::Tup(es.node), span: es.span } } }
+      { if es.node.len() == 1 { es.node.into_iter().next().unwrap() } else { Spanned { node: ast::Expr::Tup(es.node), span: es.span } } }
       
   rule expr_list() -> Vec<ast::SpannedExpr>
       = "(" e:COMMASEP(<valexpr()>) ")" { e }
