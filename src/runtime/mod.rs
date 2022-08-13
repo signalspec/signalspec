@@ -26,7 +26,7 @@ fn base_shape(index: &Index) -> Shape {
 
 pub fn compile_run(ui: &dyn DiagnosticHandler, index: &Index, scope: &Scope, processes: &[ast::Process]) -> bool {
     let base_shape = base_shape(index);
-    let p = compile_process_chain(ui, index, &scope, base_shape, &processes);
+    let p = compile_process_chain(ui, index, scope, base_shape, processes);
 
     let compiled = Arc::new(compile::compile(&p));
 
@@ -36,7 +36,7 @@ pub fn compile_run(ui: &dyn DiagnosticHandler, index: &Index, scope: &Scope, pro
 pub fn parse_compile_run(ui: &dyn DiagnosticHandler, index: &Index, call: &str) -> Result<bool, ()> {
     let file = Arc::new(SourceFile::new("<process>".into(),  call.into()));
     let scope = Scope::new(file.clone());
-    let ast = match parse_process_chain(&file.source()) {
+    let ast = match parse_process_chain(file.source()) {
         Ok(ast) => ast,
         Err(err) => {
             ui.report(

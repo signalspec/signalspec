@@ -43,7 +43,7 @@ impl Index {
 
     pub fn define_primitive(&mut self, header_src: &str, implementation: PrimitiveDef) {
         let file = Arc::new(SourceFile::new("<primitive>".into(), header_src.into()));
-        let header = crate::syntax::parse_primitive_header(&file.source()).expect("failed to parse primitive header");
+        let header = crate::syntax::parse_primitive_header(file.source()).expect("failed to parse primitive header");
         self.defs.push(Def {
             protocol: header.bottom,
             name: header.name.clone(),
@@ -112,7 +112,7 @@ fn match_def(def: &Def, shape: &Shape, name: &str, args: &[Item]) -> Option<Scop
 
     let mut scope = def.scope.child();
 
-    if !crate::core::protocol::match_protocol(&mut scope, &def.protocol, &shape) {
+    if !crate::core::protocol::match_protocol(&mut scope, &def.protocol, shape) {
         return None;
     }
 

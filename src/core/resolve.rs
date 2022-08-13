@@ -88,8 +88,8 @@ impl<'a> Builder<'a> {
             ast::Action::Repeat(ref count_ast, ref block) => {
                 let (dir, count) = match count_ast {
                     Some((dir_ast, count_ast)) => {
-                        let count = value(sb.scope, &count_ast);
-                        let dir = resolve_dir(value(sb.scope, &dir_ast));
+                        let count = value(sb.scope, count_ast);
+                        let dir = resolve_dir(value(sb.scope, dir_ast));
                         (dir, count)
                     }
                     None => (Dir::Up, Expr::Ignored)
@@ -216,13 +216,13 @@ impl<'a> Builder<'a> {
             }
 
             ast::Process::Seq(ref top_shape, ref block) => {
-                let top_shape = resolve_protocol_invoke(self.index, &sb.scope, top_shape);
-                let block = self.resolve_seq(sb.with_upper(&sb.scope, Some(&top_shape)), block);
+                let top_shape = resolve_protocol_invoke(self.index, sb.scope, top_shape);
+                let block = self.resolve_seq(sb.with_upper(sb.scope, Some(&top_shape)), block);
                 (block, Some(top_shape))
             }
 
             ast::Process::InferSeq(ref block) => {
-                let block = self.resolve_seq(sb.with_upper(&sb.scope, None), block);
+                let block = self.resolve_seq(sb.with_upper(sb.scope, None), block);
                 (block, None)
             }
         }
@@ -247,7 +247,7 @@ impl<'a> Builder<'a> {
 pub fn resolve_letdef(scope: &mut Scope, ld: &ast::LetDef) {
     let &ast::LetDef(ref name, ref expr) = ld;
     let item = rexpr(scope, expr);
-    scope.bind(&name, item);
+    scope.bind(name, item);
 }
 
 pub fn resolve_token(msg_def: &ShapeMsg, args: &[Item]) -> (Vec<ExprDn>, Vec<Expr>) {

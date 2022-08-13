@@ -1,5 +1,4 @@
 use std::io::{Write, Result as IoResult};
-use std::iter::repeat;
 use std::sync::Arc;
 
 use crate::entitymap::{entity_key, EntityMap};
@@ -26,7 +25,7 @@ pub enum Step {
 }
 
 pub fn write_tree(f: &mut dyn Write, indent: u32, steps: &[Step], step: StepId) -> IoResult<()> {
-    let i: String = repeat(" ").take(indent as usize).collect();
+    let i: String = " ".repeat(indent as usize);
     match steps[step.0 as usize] {
         Step::Invalid => writeln!(f, "{}Invalid", i)?,
         Step::Stack{ lo, hi, ..} => {

@@ -64,7 +64,7 @@ pub(crate) fn match_protocol(scope: &mut Scope, protocol: &ast::ProtocolRef, sha
         return false;
     }
 
-    return true;
+    true
 }
 
 /// Match an argument item against the parameters of a def, binding variables
@@ -82,7 +82,7 @@ pub(crate) fn match_def_params(scope: &mut Scope, params: &[ast::DefParam], args
             ast::DefParam::Var{value, ..} => value,
         };
 
-        if let Err(err) = lexpr(scope, &param_expr, arg.clone()) {
+        if let Err(err) = lexpr(scope, param_expr, arg.clone()) {
             debug!("Failed to match argument: {:?}", err);
             return false;
         }

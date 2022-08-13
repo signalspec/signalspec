@@ -1,6 +1,6 @@
-use std::{fmt, sync::Arc, collections::HashMap};
+use std::fmt;
 use num_complex::Complex;
-use crate::{syntax::{ Value, BinOp }, Scope, SourceFile};
+use crate::syntax::{ Value, BinOp };
 use super::{ Item, Type, VarId, DataMode, LeafItem };
 
 /// Element of Expr::Concat
@@ -466,7 +466,7 @@ fn fn_int(arg: Item) -> Result<Item, &'static str> {
         Item::Leaf(LeafItem::Value(v)) => {
             Ok(Item::Leaf(LeafItem::Value(Expr::Unary(Box::new(v), UnaryOp::FloatToInt))))
         }
-        _ => return Err("Invalid arguments to chunks()")
+        _ => Err("Invalid arguments to chunks()")
     }
 }
 
@@ -488,10 +488,10 @@ fn fn_signed_unsigned(arg: Item, sign_mode: SignMode) -> Result<Item, &'static s
                         signed: sign_mode,
                     }))))
                 }
-                _ => return Err("Invalid arguments to signed()")
+                _ => Err("Invalid arguments to signed()")
             }
         }
-        _ => return Err("Invalid arguments to signed()")
+        _ => Err("Invalid arguments to signed()")
     }
 }
 
@@ -504,10 +504,10 @@ fn fn_chunks(arg: Item) -> Result<Item, &'static str> {
                         width: width as usize,
                     }))))
                 }
-                _ => return Err("Invalid arguments to chunks()")
+                _ => Err("Invalid arguments to chunks()")
             }
         }
-        _ => return Err("Invalid arguments to chunks()")
+        _ => Err("Invalid arguments to chunks()")
     }
 }
 
@@ -519,10 +519,10 @@ fn fn_complex(arg: Item) -> Result<Item, &'static str> {
                 (&Item::Leaf(LeafItem::Value(Expr::Const(Value::Number(re)))), &Item::Leaf(LeafItem::Value(Expr::Const(Value::Number(im))))) => {
                     Ok(Item::Leaf(LeafItem::Value(Expr::Const(Value::Complex(Complex::new(re, im))))))
                 }
-                _ => return Err("Invalid arguments to complex()")
+                _ => Err("Invalid arguments to complex()")
             }
         }
-        _ => return Err("Invalid arguments to complex()")
+        _ => Err("Invalid arguments to complex()")
     }
 }
 
@@ -536,8 +536,9 @@ pub fn add_primitive_fns(loader: &mut super::Index) {
 
 #[test]
 fn exprs() {
-    use crate::syntax::parse_valexpr;
-    use crate::core::{Index, value};
+    use std::sync::Arc;
+    use crate::syntax::{parse_valexpr, SourceFile};
+    use crate::core::{Index, Scope, value};
 
     let mut index = Index::new();
 

@@ -448,7 +448,7 @@ const INITIAL_TASK: TaskId = TaskId::from(0);
 
 impl ProgramExec {
     pub fn new(program: Arc<CompiledProgram>, mut channels: Vec<Channel>) -> ProgramExec {
-        channels.resize_with(program.channels.len(), || Channel::new());
+        channels.resize_with(program.channels.len(), Channel::new);
 
         let mut tasks: EntityMap<TaskId, InsnId> = program.tasks.iter().map(|_| INVALID_IP).collect();
         tasks[INITIAL_TASK] = InsnId::from(0);
@@ -480,6 +480,12 @@ impl ProgramExec {
             Poll::Ready(Result::Ok(()))
         }
     }
+
+    fn down_eval(&self, expr: &ExprDn) -> Value {
+        expr.eval(&|var| {
+            self.registers[var].clone().unwrap()
+        })
+    }
     
     fn poll_task(&mut self, cx: &mut Context, task: TaskId) -> Poll<Result<(), ()>> {
         let p = &*self.program;
@@ -490,10 +496,7 @@ impl ProgramExec {
             match p.insns[ip] {
                 Insn::Send(chan, variant, ref expr) => {
                     let values = expr.iter().map(|e| {
-                        e.eval(&mut |var| {
-                            let ref this = self;
-                            this.registers[var].clone().unwrap()
-                        })
+                        self.down_eval(e)
                     }).collect();
                     self.channels[chan].send(ChannelMessage { variant, values });
                 }
@@ -569,11 +572,7 @@ impl ProgramExec {
                     }
                 }
                 Insn::CounterDownEval(counter, ref expr) => {
-                    let v = expr.eval(&mut |var| {
-                        let ref this = self;
-                        this.registers[var].clone().unwrap()
-                    });
-    
+                    let v = self.down_eval(expr);
                     self.counters[counter] = i64::try_from(v).unwrap().try_into().unwrap();
                 }
                 Insn::CounterDecrement(counter, if_zero) => {
@@ -587,11 +586,7 @@ impl ProgramExec {
                     self.counters[counter] += 1;
                 }
                 Insn::IterDnStart(var, ref expr) => {
-                    let v =  expr.eval(&mut |var| {
-                        let ref this = self;
-                        this.registers[var].clone().unwrap()
-                    });
-                    let mut v = Vec::<Value>::try_from(v).unwrap();
+                    let mut v = Vec::<Value>::try_from(self.down_eval(expr)).unwrap();
                     v.reverse();
                     self.iters[var] = Some(v);
                 }
@@ -601,26 +596,20 @@ impl ProgramExec {
                 }
                 Insn::IterUpStep(var) => {
                     let v = self.registers[var].take().unwrap();
-                    self.iters[var].get_or_insert_with(|| Vec::new()).push(v);
+                    self.iters[var].get_or_insert_with(Vec::new).push(v);
                 }
                 Insn::IterUpExit(var, ref expr) => {
                     let v = self.iters[var].take().unwrap();
                     expr.eval_up(&mut |var, val| { self.registers[var] = Some(val); true }, Value::Vector(v));
                 }
                 Insn::Assign(ref l, ref r) => {
-                    let v = r.eval(&mut |var| {
-                        let ref this = self;
-                        this.registers[var].clone().unwrap()
-                    });
+                    let v = self.down_eval(r);
                     if !l.eval_up(&mut |var, val| { self.registers[var] = Some(val); true }, v) {
                         return Poll::Ready(Err(()));
                     }
                 }
                 Insn::TestAssign(ref l, ref r, if_false) => {
-                    let v = r.eval(&mut |var| {
-                        let ref this = self;
-                        this.registers[var].clone().unwrap()
-                    });
+                    let v = self.down_eval(r);
                     if !l.eval_up(&mut |var, val| { self.registers[var] = Some(val); true }, v) {
                         next_ip = if_false;
                     }

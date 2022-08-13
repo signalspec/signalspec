@@ -10,7 +10,7 @@ peg::parser!(pub grammar signalspec() for str {
 
   pub rule module() -> ast::Module
       = _ entries:spanned(<module_entry()>)**__ _
-      { ast::Module { entries: entries } }
+      { ast::Module { entries } }
 
   rule letstmt() -> ast::LetDef
       = KW("let") _ name:IDENTIFIER() _ "=" _ value:expr()
@@ -31,7 +31,7 @@ peg::parser!(pub grammar signalspec() for str {
       { ast::PrimitiveHeader { bottom, name, params, top } }
 
   rule protocol_ref() -> ast::ProtocolRef
-    = name:IDENTIFIER() _ param:expr_tup() { ast::ProtocolRef { name: name, param: param } }
+    = name:IDENTIFIER() _ param:expr_tup() { ast::ProtocolRef { name, param } }
     
   rule def_params() -> Vec<Spanned<ast::DefParam>>
     = "(" _ params:COMMASEP(<spanned(<def_param()>)>) _ ")" { params }
@@ -42,7 +42,7 @@ peg::parser!(pub grammar signalspec() for str {
 
   rule block() -> ast::Block
       = "{" _ lets:spanned(<letstmt()>)**_ _ actions:spanned(<action()>)**(_ (";" _)?) _ "}"
-      { ast::Block{ lets:lets, actions:actions } }
+      { ast::Block{ lets, actions } }
 
       rule action() -> ast::Action
           = KW("repeat") _ count:(dir:expr() _ count:expr() { (dir, count) })? _ block:block()
@@ -146,7 +146,7 @@ peg::parser!(pub grammar signalspec() for str {
 
   rule test_block() -> ast::Test
     = KW("test") _ fails:(KW("fail") __)? processes:process_chain() _ ";"
-    { ast::Test { should_fail: fails.is_some(), processes: processes } }
+    { ast::Test { should_fail: fails.is_some(), processes } }
 
   // Lexer
 

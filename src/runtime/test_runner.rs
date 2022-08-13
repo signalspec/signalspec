@@ -57,7 +57,7 @@ pub fn run_file(fname: &Path) -> bool {
 
     for (count, test) in module.tests.iter().enumerate() {
         print!("\tTest #{}:", count+1);
-        let res = run_test(ui, &index, &module, &test);
+        let res = run_test(ui, &index, &module, test);
 
         if let Some(r) = res.down{
             print!(" down:{}", if r { "ok" } else { "FAIL" });
