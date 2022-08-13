@@ -18,7 +18,6 @@ peg::parser!(pub grammar signalspec() for str {
 
   rule module_entry() -> ast::ModuleEntry
       = l:letstmt() { ast::ModuleEntry::Let(l) }
-      / KW("use") _ name:IDENTIFIER() { ast::ModuleEntry::Use(name) }
       / KW("with") _ bottom:protocol_ref() _
         KW("def") _ name:IDENTIFIER() _  params:def_params() _ "=" _ processes:process_chain()
         { ast::ModuleEntry::WithDef(ast::Def { bottom, name, params, processes }) }

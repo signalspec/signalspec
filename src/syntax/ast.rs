@@ -34,7 +34,6 @@ pub struct AltArm {
 
 pub enum ModuleEntry {
     Let(LetDef),
-    Use(String),
     WithDef(Def),
     Protocol(Protocol),
     Test(Test),

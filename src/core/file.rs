@@ -1,7 +1,5 @@
-use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::Item;
 use crate::syntax::{ ast, parse_module, ParseError, SourceFile };
 use crate::core::Scope;
 use std::fmt::Debug;
@@ -28,9 +26,6 @@ impl FileScope {
             match entry.node {
                 ast::ModuleEntry::Let(letdef) => {
                     super::resolve::resolve_letdef(&mut scope, &letdef);
-                }
-                ast::ModuleEntry::Use(_) => {
-                    panic!("`use` unimplemented");
                 }
                 ast::ModuleEntry::WithDef(def) => {
                     defs.push(def);
