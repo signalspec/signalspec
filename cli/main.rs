@@ -45,7 +45,10 @@ fn main() {
 
         let ui = &diagnostic::CliHandler;
 
-        let success = signalspec::parse_compile_run(ui, &index, &cmd).unwrap();
+        let mut handle = signalspec::Handle::base(&index);
+        let inner_handle = handle.parse_compile_run(ui, &index, &cmd).unwrap();
+
+        let success = console::run(inner_handle).is_ok();
 
         process::exit(if success { 0 } else { 1 });
     }

@@ -1,7 +1,7 @@
 use std::{cell::{RefCell, RefMut}, rc::Rc, task::{Poll, Context, Waker}, collections::VecDeque, future::Future, io, pin::Pin};
 use futures_lite::{ ready, AsyncRead, AsyncWrite };
 
-use crate::Value;
+use crate::{Value, Shape};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ChannelMessage {
@@ -141,6 +141,26 @@ impl<'a> AsyncWrite for WriteBytes<'a> {
 
     fn poll_close(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         Poll::Ready(Ok(()))
+    }
+}
+
+#[derive(Clone)]
+pub struct SeqChannels {
+    pub dn: Option<Channel>,
+    pub up: Option<Channel>,
+}
+
+impl SeqChannels {
+    pub fn null() -> SeqChannels {
+        SeqChannels { dn: None, up: None }
+    }
+
+    pub fn for_shape(shape: &Shape) -> SeqChannels {
+        let dir = shape.direction();
+        SeqChannels { 
+            dn: dir.down.then(Channel::new),
+            up: dir.up.then(Channel::new),
+        }
     }
 }
 

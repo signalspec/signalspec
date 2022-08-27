@@ -1,19 +1,21 @@
 use std::io::prelude::*;
 use std::io;
-use signalspec::{ Shape, ShapeMsg, Value, Item, Channel, LeafItem };
+use signalspec::{ Handle, ShapeMsg, Value, Item, LeafItem };
 
-pub async fn run(shape: &Shape, channel: &mut Channel) -> Result<(), ()> {
+pub fn run(mut handle: Handle) -> Result<(), ()> {
     let stdout = ::std::io::stdout();
 
-    let shape_msg = &shape.messages[..];
+    if let Some(shape) = handle.shape().cloned() {
+        let shape_msg = &shape.messages[..];
 
-    while let Some(v) = channel.receive().await {
-        let mut w = stdout.lock();
-        format_message(&mut w, &v.values[..], &shape_msg[v.variant]).unwrap();
-        w.write_all(b"\n").unwrap();
+        while let Some(v) = handle.receive() {
+            let mut w = stdout.lock();
+            format_message(&mut w, &v.values[..], &shape_msg[v.variant]).unwrap();
+            w.write_all(b"\n").unwrap();
+        }
     }
 
-    Ok(())
+    handle.finish()
 }
 
 fn format_message<'a, 'b, 'c>(w: &mut dyn Write, values: &[Value], variant: &ShapeMsg) -> io::Result<()> {

@@ -59,15 +59,15 @@ pub enum Insn {
 }
 
 #[derive(Clone, Copy, Debug)]
-struct Channels {
+struct ChannelIds {
     dn_tx: Option<ChanId>,
     dn_rx: Option<ChanId>,
     up_tx: Option<ChanId>, 
     up_rx: Option<ChanId>,
 }
 
-impl Channels {
-    fn without_up(self) -> Channels {
+impl ChannelIds {
+    fn without_up(self) -> ChannelIds {
         Self { up_rx: None, up_tx: None, ..self }
     }
 
@@ -123,7 +123,7 @@ impl Compiler<'_> {
         self.primitives.push(p)
     }
 
-    fn seq_prep(&mut self, channels: Channels, prev_followlast: &Option<MatchSet>, next_first: &MatchSet) {
+    fn seq_prep(&mut self, channels: ChannelIds, prev_followlast: &Option<MatchSet>, next_first: &MatchSet) {
         match (prev_followlast, next_first) {
             (None, MatchSet::MessageUp { .. }) => {
                 if let Some(c) = channels.up_rx {
@@ -150,7 +150,7 @@ impl Compiler<'_> {
         }
     }
 
-    fn test_matchset(&self, channels: Channels, m: &MatchSet, if_false: InsnId) -> Insn {
+    fn test_matchset(&self, channels: ChannelIds, m: &MatchSet, if_false: InsnId) -> Insn {
         match m {
             MatchSet::Process => todo!(),
             MatchSet::MessageUp { receive } => {
@@ -162,7 +162,7 @@ impl Compiler<'_> {
         }
     }
 
-    fn compile_step(&mut self, step: StepId, channels: Channels) {
+    fn compile_step(&mut self, step: StepId, channels: ChannelIds) {
         match self.program.steps[step] {
             Step::Invalid => panic!("Compiling invalid step"),
             Step::Stack { lo, ref shape, hi} => {
@@ -181,7 +181,7 @@ impl Compiler<'_> {
                 let i = self.emit_placeholder();
                 let task = self.new_task();
 
-                let channels_hi = Channels {
+                let channels_hi = ChannelIds {
                     dn_tx: c_dn,
                     dn_rx: c_up,
                     up_tx: channels.up_tx,
@@ -196,7 +196,7 @@ impl Compiler<'_> {
 
                 self.backpatch(i, Insn::Fork(task, self.next_ip()));
 
-                let channels_lo = Channels {
+                let channels_lo = ChannelIds {
                     dn_tx: channels.dn_tx,
                     dn_rx: channels.dn_rx,
                     up_tx: c_up,
@@ -404,7 +404,7 @@ pub fn compile(program: &ProcessChain) -> CompiledProgram {
     let dn_dir = program.shape_dn.direction();
     let up_dir = program.shape_up.as_ref().map(|x| x.direction());
 
-    let channels = Channels {
+    let channels = ChannelIds {
         dn_tx: dn_dir.down.then(|| compiler.new_channel()),
         dn_rx: dn_dir.up.then(|| compiler.new_channel()),
         up_tx: up_dir.map_or(false, |d| d.up).then(|| compiler.new_channel()),
@@ -412,6 +412,9 @@ pub fn compile(program: &ProcessChain) -> CompiledProgram {
     };
 
     compiler.compile_step(program.root, channels);
+    if let Some(up_tx) = channels.up_tx {
+        compiler.emit(Insn::ChannelClose(up_tx));
+    }
     compiler.emit(Insn::End);
 
     for (ip, insn) in compiler.insns.iter().enumerate() {
@@ -431,7 +434,7 @@ pub fn compile(program: &ProcessChain) -> CompiledProgram {
 use std::{task::{Context, Poll}, sync::Arc, future::Future, pin::Pin};
 use futures_lite::{ready, FutureExt};
 use crate::Value;
-use super::channel::{Channel, ChannelMessage};
+use super::channel::{Channel, ChannelMessage, SeqChannels};
 
 pub struct ProgramExec {
     program: Arc<CompiledProgram>,
@@ -447,7 +450,9 @@ const INVALID_IP: InsnId = InsnId::from(u32::MAX);
 const INITIAL_TASK: TaskId = TaskId::from(0);
 
 impl ProgramExec {
-    pub fn new(program: Arc<CompiledProgram>, mut channels: Vec<Channel>) -> ProgramExec {
+    pub fn new(program: Arc<CompiledProgram>, channels_lo: SeqChannels, channels_hi: SeqChannels) -> ProgramExec {
+        let mut channels = Vec::with_capacity(program.channels.len());
+        channels.extend([channels_lo.dn, channels_lo.up, channels_hi.dn, channels_hi.up].into_iter().flatten());
         channels.resize_with(program.channels.len(), Channel::new);
 
         let mut tasks: EntityMap<TaskId, InsnId> = program.tasks.iter().map(|_| INVALID_IP).collect();
@@ -464,7 +469,7 @@ impl ProgramExec {
         }
     }
 
-    fn poll_all(&mut self, cx: &mut Context) -> Poll<Result<(), ()>> {
+    pub fn poll_all(&mut self, cx: &mut Context) -> Poll<Result<(), ()>> {
         for task in self.tasks.keys() {
             if self.tasks[task] != INVALID_IP {
                 match self.poll_task(cx, task) {

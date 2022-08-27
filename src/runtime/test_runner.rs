@@ -4,6 +4,7 @@ use std::path::Path;
 use futures_lite::future;
 
 use crate::DiagnosticHandler;
+use crate::runtime::channel::SeqChannels;
 use crate::syntax::{ ast, SourceFile };
 use crate::core::{ Index, FileScope };
 use crate::core::{resolve_protocol_invoke, compile_process_chain };
@@ -129,11 +130,17 @@ pub fn run_test(ui: &dyn DiagnosticHandler, index: &Index, file: &FileScope, tes
 
             let (r1, r2) = future::block_on(future::zip(
                 async {
-                    let r = super::compile::ProgramExec::new(c1, vec![channel.clone()]).await;
+                    let r = super::compile::ProgramExec::new(c1,
+                        SeqChannels { dn: Some(channel.clone()), up: None },
+                        SeqChannels { dn: None, up: None }
+                    ).await;
                     channel.set_closed(true);
                     r
                 },
-                super::compile::ProgramExec::new(c2, vec![channel.clone()])
+                super::compile::ProgramExec::new(c2,
+                    SeqChannels { dn: None, up: Some(channel.clone()) },
+                    SeqChannels { dn: None, up: None }
+                )
             ));
 
 
