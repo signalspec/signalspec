@@ -1,51 +1,57 @@
 use crate::core::value;
 use crate::syntax::ast;
 use crate::{Value, Index};
+use super::expr_resolve::PatternError;
 use super::{ Scope, Shape, ShapeMsg, ShapeMsgParam, DataMode };
 use super::{ lexpr, rexpr, Item };
 
+pub fn resolve(index: &Index, scope: &Scope, ast: &ast::ProtocolRef) -> Shape {
+    let args = rexpr(scope, &ast.param);
+    instantiate(index, &ast.name, args).unwrap()
+}
+
+#[derive(Debug)]
+pub enum InstantiateProtocolError {
+    ProtocolNotFound,
+    ArgsMismatch(PatternError),
+}
+
 /// Instantiates a protocol with passed arguments, creating a Shape.
-pub fn resolve_protocol_invoke(index: &Index, scope: &Scope, ast: &ast::ProtocolRef) -> Shape {
-    if let Some(protocol) = index.find_protocol(&ast.name[..]) {
-        let param = rexpr(scope, &ast.param);
+pub fn instantiate(index: &Index, protocol_name: &str, args: Item) -> Result<Shape, InstantiateProtocolError> {
+    let protocol = index.find_protocol(protocol_name).ok_or(InstantiateProtocolError::ProtocolNotFound)?;
+    let mut protocol_def_scope = protocol.scope().child();
+    lexpr(&mut protocol_def_scope, &protocol.ast().param, args.clone()).map_err(InstantiateProtocolError::ArgsMismatch)?;
 
-        let mut protocol_def_scope = protocol.scope().child();
-        lexpr(&mut protocol_def_scope, &protocol.ast().param, param.clone())
-            .unwrap_or_else(|e| panic!("failed to match parameters for protocol `{}`: {:?}", ast.name, e));
+    let dir = super::resolve::resolve_dir(value(&protocol_def_scope, &protocol.ast().dir));
 
-        let dir = super::resolve::resolve_dir(value(&protocol_def_scope, &protocol.ast().dir));
+    let mut messages = vec![];
 
-        let mut messages = vec![];
-
-        for entry in &protocol.ast().entries {
-            match *entry {
-                ast::ProtocolEntry::Message(ref name, ref es) => {
-                    let params = es.iter().map(|p| {
-                         match &p.node {
-                            ast::DefParam::Const(e) => {
-                                let item = rexpr(&protocol_def_scope, e);
-                                ShapeMsgParam { item, direction: DataMode { up: false, down: false} }
-                            }
-                            ast::DefParam::Var{ value, direction } => {
-                                let item = rexpr(&protocol_def_scope, value);
-                                let direction = match super::expr_resolve::value(&protocol_def_scope, direction).eval_const() {
-                                    Value::Symbol(s) if s == "up" => DataMode { up: true, down: false },
-                                    Value::Symbol(s) if s == "dn" => DataMode { up: false, down: true },
-                                    other => panic!("Invalid direction {:?}, expected `#up` or `#dn`", other)
-                                };
-                                ShapeMsgParam { item, direction }
-                            }
+    for entry in &protocol.ast().entries {
+        match *entry {
+            ast::ProtocolEntry::Message(ref name, ref es) => {
+                let params = es.iter().map(|p| {
+                        match &p.node {
+                        ast::DefParam::Const(e) => {
+                            let item = rexpr(&protocol_def_scope, e);
+                            ShapeMsgParam { item, direction: DataMode { up: false, down: false} }
                         }
-                    }).collect();
-                    messages.push(ShapeMsg::new(name.clone(), params));
-                }
+                        ast::DefParam::Var{ value, direction } => {
+                            let item = rexpr(&protocol_def_scope, value);
+                            let direction = match super::expr_resolve::value(&protocol_def_scope, direction).eval_const() {
+                                Value::Symbol(s) if s == "up" => DataMode { up: true, down: false },
+                                Value::Symbol(s) if s == "dn" => DataMode { up: false, down: true },
+                                other => panic!("Invalid direction {:?}, expected `#up` or `#dn`", other)
+                            };
+                            ShapeMsgParam { item, direction }
+                        }
+                    }
+                }).collect();
+                messages.push(ShapeMsg::new(name.clone(), params));
             }
         }
-
-        Shape { def: protocol.clone(), dir, messages, param }
-    } else {
-        panic!("Protocol `{}` not found", ast.name);
     }
+
+    Ok(Shape { def: protocol.clone(), dir, messages, param: args })
 }
 
 /// Match a Shape against the `with` part of a with-def block, binding variables

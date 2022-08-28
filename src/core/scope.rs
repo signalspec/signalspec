@@ -80,6 +80,14 @@ impl<'a> FromItem<'a> for &'a Item {
 }
 
 impl Item {
+    pub fn value(v: Value) -> Item {
+        Item::Leaf(LeafItem::Value(Expr::Const(v)))
+    }
+
+    pub fn symbol(s: &str) -> Item {
+        Item::value(Value::Symbol(s.into()))
+    }
+
     pub fn as_constant(&self) -> Option<&Value> {
         match *self {
             Item::Leaf(LeafItem::Value(Expr::Const(ref c))) => Some(c),

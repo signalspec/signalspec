@@ -3,7 +3,7 @@ use crate::{Value, Index, DiagnosticHandler, DiagnosticKind, Label};
 use crate::syntax::ast;
 use super::index::FindDefError;
 use super::step::{Step, StepInfo, analyze_unambiguous};
-use super::{Expr, ExprDn, Item, Scope, Shape, Type, index::DefImpl, ShapeMsg, resolve_protocol_invoke};
+use super::{Expr, ExprDn, Item, Scope, Shape, Type, index::DefImpl, ShapeMsg, protocol};
 use super::{Dir, on_expr_message, pattern_match, rexpr, value, VarId, StepId, LeafItem};
 
 #[derive(Clone, Copy)]
@@ -207,7 +207,7 @@ impl<'a> Builder<'a> {
                             self.resolve_processes(sb.with_scope(&scope), callee_ast)
                         }
                         DefImpl::Primitive(ref primitive, ref shape_up_ast) => {
-                            let shape_up = shape_up_ast.as_ref().map(|s| resolve_protocol_invoke(self.index, &scope, s));
+                            let shape_up = shape_up_ast.as_ref().map(|s| protocol::resolve(self.index, &scope, s));
                             let prim = primitive.instantiate(&scope);
                             (self.add_step(Step::Primitive(prim)), shape_up)
                         }
@@ -216,7 +216,7 @@ impl<'a> Builder<'a> {
             }
 
             ast::Process::Seq(ref top_shape, ref block) => {
-                let top_shape = resolve_protocol_invoke(self.index, sb.scope, top_shape);
+                let top_shape = protocol::resolve(self.index, sb.scope, top_shape);
                 let block = self.resolve_seq(sb.with_upper(sb.scope, Some(&top_shape)), block);
                 (block, Some(top_shape))
             }

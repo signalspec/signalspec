@@ -3,11 +3,11 @@ use std::fs;
 use std::path::Path;
 use futures_lite::future;
 
-use crate::DiagnosticHandler;
+use crate::{DiagnosticHandler, Item};
 use crate::runtime::channel::SeqChannels;
 use crate::syntax::{ ast, SourceFile };
-use crate::core::{ Index, FileScope };
-use crate::core::{resolve_protocol_invoke, compile_process_chain };
+use crate::core::{ Index, FileScope, rexpr };
+use crate::core::{ protocol, compile_process_chain };
 
 pub fn run(fname: &str) -> bool {
     let fname = Path::new(fname);
@@ -112,9 +112,8 @@ pub fn run_test(ui: &dyn DiagnosticHandler, index: &Index, file: &FileScope, tes
 
         Some((&ast::Process::Call(ref name, ref args), rest)) if name.node == "roundtrip" => {
             let make_seq_shape = |ty: ast::SpannedExpr, dir: &str| {
-                let seq_args = ast::Spanned { span: ty.span, node: ast::Expr::Tup(vec![ty, symbol_expr(dir)]) };
-                let seq = ast::ProtocolRef { name: "Seq".into(), param: seq_args };
-                resolve_protocol_invoke(index, &file.scope, &seq)
+                let ty = rexpr(&file.scope, &ty);
+                protocol::instantiate(index, "Seq", Item::Tuple(vec![ty, Item::symbol(dir)])).unwrap()
             };
 
             let shape_dn = make_seq_shape(args[0].clone(), "dn");
