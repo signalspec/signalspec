@@ -16,13 +16,16 @@ peg::parser!(pub grammar signalspec() for str {
       = KW("let") _ name:IDENTIFIER() _ "=" _ value:expr()
       { ast::LetDef(name, value) }
 
+  rule attribute() -> ast::Attribute
+    = "@" name:IDENTIFIER() _ args:expr_tup() __ { ast::Attribute { name, args } }
+
   rule module_entry() -> ast::ModuleEntry
       = l:letstmt() { ast::ModuleEntry::Let(l) }
-      / KW("with") _ bottom:protocol_ref() _
+      / attributes:attribute()* KW("with") _ bottom:protocol_ref() _
         KW("def") _ name:IDENTIFIER() _  params:def_params() _ "=" _ processes:process_chain()
-        { ast::ModuleEntry::WithDef(ast::Def { bottom, name, params, processes }) }
-      / KW("protocol") _ name:IDENTIFIER() _ param:expr_tup() _ dir:expr() _ entries:protocol_block()
-        { ast::ModuleEntry::Protocol(ast::Protocol { name, param, dir, entries }) }
+        { ast::ModuleEntry::WithDef(ast::Def { attributes, bottom, name, params, processes }) }
+      / attributes:attribute()* KW("protocol") _ name:IDENTIFIER() _ param:expr_tup() _ dir:expr() _ entries:protocol_block()
+        { ast::ModuleEntry::Protocol(ast::Protocol { attributes, name, param, dir, entries }) }
       / t:test_block() { ast::ModuleEntry::Test(t) }
 
   pub rule primitive_header() -> ast::PrimitiveHeader

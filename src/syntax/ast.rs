@@ -31,8 +31,12 @@ pub struct AltArm {
     pub discriminant: SpannedExpr,
     pub block: Block,
 }
+pub struct Attribute {
+    pub name: String,
+    pub args: SpannedExpr,
+}
 
-pub enum ModuleEntry {
+pub enum ModuleEntry{
     Let(LetDef),
     WithDef(Def),
     Protocol(Protocol),
@@ -40,9 +44,10 @@ pub enum ModuleEntry {
 }
 
 pub struct Def {
+    pub attributes: Vec<Attribute>,
+    pub bottom: ProtocolRef,
     pub name: String,
     pub params: Vec<Spanned<DefParam>>,
-    pub bottom: ProtocolRef,
     pub processes: Vec<Process>,
 }
 
@@ -60,6 +65,7 @@ pub struct PrimitiveHeader {
 }
 
 pub struct Protocol {
+    pub attributes: Vec<Attribute>,
     pub name: String,
     pub param: SpannedExpr,
     pub dir: SpannedExpr,
