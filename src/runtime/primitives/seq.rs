@@ -1,11 +1,10 @@
-use std::slice;
 use std::future::Future;
 use std::sync::Arc;
 
 use crate::runtime::channel::Channel;
-use crate::syntax::Value;
-use crate::core::{ Index, PrimitiveDef, Item, LeafItem };
+use crate::core::{ Index, PrimitiveDef, Item };
 use crate::runtime::{ChannelMessage, PrimitiveProcess};
+use super::super::channel::item_to_msgs;
 
 // This wouldn't need to be a primitive if vectors could contain tuples -- could
 // be a simple `for` loop.
@@ -23,27 +22,6 @@ pub fn add_primitives(index: &mut Index) {
             Ok(Arc::new(SeqDownProcess(item_to_msgs(seq))))
         })
     });
-}
-
-fn item_to_msgs(item: &Item) -> Vec<ChannelMessage> {
-    let items = match item {
-        Item::Tuple(t) => &t[..],
-        single => slice::from_ref(single),
-    };
-
-    fn inner(m: &mut Vec<Value>, i: &Item) {
-        match i {
-            Item::Leaf(LeafItem::Value(e)) => m.push(e.eval_const()),
-            Item::Tuple(t) => for e in t { inner(m, e) },
-            _ => panic!("Item {:?} not allowed in seq literal", i)
-        }
-    }
-
-    items.iter().map(|i| {
-        let mut msg = Vec::new();
-        inner(&mut msg, i);
-        ChannelMessage { variant: 0, values: msg }
-    }).collect()
 }
 
 #[derive(Debug)]

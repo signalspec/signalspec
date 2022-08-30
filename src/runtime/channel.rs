@@ -1,7 +1,7 @@
 use std::{cell::{RefCell, RefMut}, rc::Rc, task::{Poll, Context, Waker}, collections::VecDeque, future::Future, io, pin::Pin};
 use futures_lite::{ ready, AsyncRead, AsyncWrite };
 
-use crate::{Value, Shape};
+use crate::{Value, Shape, Item, LeafItem};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ChannelMessage {
@@ -164,4 +164,20 @@ impl SeqChannels {
     }
 }
 
+pub(crate) fn item_to_msgs(item: &Item) -> Vec<ChannelMessage> {
+    let items = item.as_tuple();
 
+    fn inner(m: &mut Vec<Value>, i: &Item) {
+        match i {
+            Item::Leaf(LeafItem::Value(e)) => m.push(e.eval_const()),
+            Item::Tuple(t) => for e in t { inner(m, e) },
+            _ => panic!("Item {:?} not allowed in seq literal", i)
+        }
+    }
+
+    items.iter().map(|i| {
+        let mut msg = Vec::new();
+        inner(&mut msg, i);
+        ChannelMessage { variant: 0, values: msg }
+    }).collect()
+}

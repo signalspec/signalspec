@@ -1,6 +1,8 @@
-let t = #a|#b|#c|#d|#e
-
-with Seq(t, _)
+@test(#up, (#a, #e))
+@test(#up, (#a, #b, #c, #d, #e))
+@test(#up, (#a, #b, #b, #c, #c, #c, #d, #b, #d, #e))
+@test(#up_fail, (#a, #b, #c))
+with Seq(#a|#b|#c|#d|#e, #up)
 def main() = {
     val(#a)
     repeat {
@@ -14,8 +16,3 @@ def main() = {
     }
     val(#e)
 }
-
-test seq(t, #up, (#a, #e)) | main();
-test seq(t, #up, (#a, #b, #c, #d, #e)) | main();
-test seq(t, #up, (#a, #b, #b, #c, #c, #c, #d, #b, #d, #e)) | main();
-test fail seq(t, #up, (#a, #b, #c)) | main();

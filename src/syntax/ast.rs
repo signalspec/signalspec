@@ -40,7 +40,6 @@ pub enum ModuleEntry{
     Let(LetDef),
     WithDef(Def),
     Protocol(Protocol),
-    Test(Test),
 }
 
 pub struct Def {
@@ -107,8 +106,3 @@ pub enum Expr {
     Var(String),
 }
 
-#[derive(Debug)]
-pub struct Test {
-    pub should_fail: bool,
-    pub processes: Vec<Process>,
-}

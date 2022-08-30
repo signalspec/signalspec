@@ -29,7 +29,7 @@ pub use self::data::{ Type, DataMode };
 pub use self::shape::{ Shape, ShapeMsg, ShapeMsgParam };
 pub use self::matchset::{ MatchSet, MessagePatternSet };
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub enum Dir {
     Up,
     Dn,

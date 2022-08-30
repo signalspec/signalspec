@@ -10,7 +10,6 @@ pub struct FileScope {
     pub(crate) scope: Scope,
     pub(crate) protocols: Vec<ast::Protocol>,
     pub(crate) defs: Vec<ast::Def>,
-    pub(crate) tests: Vec<ast::Test>,
 }
 
 impl FileScope {
@@ -20,7 +19,6 @@ impl FileScope {
         let mut scope = Scope { file, names: prelude.clone() };
         let mut defs = vec![];
         let mut protocols = vec![];
-        let mut tests = vec![];
 
         for entry in ast.entries {
             match entry.node {
@@ -33,13 +31,10 @@ impl FileScope {
                 ast::ModuleEntry::Protocol(d) => {
                     protocols.push(d);
                 }
-                ast::ModuleEntry::Test(t) => {
-                    tests.push(t)
-                }
             }
         }
 
-        Ok(FileScope { scope, defs, protocols, tests })
+        Ok(FileScope { scope, defs, protocols })
     }
 }
 

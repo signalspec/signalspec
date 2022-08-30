@@ -26,7 +26,6 @@ peg::parser!(pub grammar signalspec() for str {
         { ast::ModuleEntry::WithDef(ast::Def { attributes, bottom, name, params, processes }) }
       / attributes:attribute()* KW("protocol") _ name:IDENTIFIER() _ param:expr_tup() _ dir:expr() _ entries:protocol_block()
         { ast::ModuleEntry::Protocol(ast::Protocol { attributes, name, param, dir, entries }) }
-      / t:test_block() { ast::ModuleEntry::Test(t) }
 
   pub rule primitive_header() -> ast::PrimitiveHeader
     = KW("with") _ bottom:protocol_ref() _ KW("def") _ name:IDENTIFIER() _ params:def_params()  _ top:(":" _ p:protocol_ref() {p})?
@@ -145,10 +144,6 @@ peg::parser!(pub grammar signalspec() for str {
       = proto:protocol_ref() _ block:block() { ast::Process::Seq(proto, block) }
       / name:spanned(<IDENTIFIER()>) _ args:expr_list() { ast::Process::Call(name, args) }
       / block:block() { ast::Process::InferSeq(block) }
-
-  rule test_block() -> ast::Test
-    = KW("test") _ fails:(KW("fail") __)? processes:process_chain() _ ";"
-    { ast::Test { should_fail: fails.is_some(), processes } }
 
   // Lexer
 

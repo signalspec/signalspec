@@ -11,14 +11,14 @@ use self::channel::SeqChannels;
 pub use self::test_runner::run as run_tests_in_file;
 pub use self::primitives::{ PrimitiveProcess, add_primitives };
 use crate::diagnostic::{ DiagnosticHandler, DiagnosticKind, Label };
-use crate::{ Scope };
+use crate::{ Scope, ShapeMsg, DataMode };
 use crate::syntax::{ SourceFile, FileSpan, parse_process_chain, ast };
 pub use channel::{ Channel, ChannelMessage };
 use futures_lite::ready;
 use peg::error::ParseError;
 use peg::str::LineCol;
 
-use crate::core::{ Dir, Index, Item, Shape, compile_process_chain};
+use crate::core::{ Dir, Index, Item, Shape, compile_process_chain, ShapeMsgParam};
 
 pub struct Handle<'a> {
     shape: Option<Shape>,
@@ -29,12 +29,24 @@ pub struct Handle<'a> {
 
 impl<'a> Handle<'a> {
     pub fn base(index: &Index) -> Handle {
-        return Handle {
+        Handle {
             shape: Some(base_shape(index)),
             channels: SeqChannels::null(),
             future: None,
             parent: None,
         }
+    }
+
+    pub fn seq_dn(index: &Index, ty: Item) -> (Channel, Handle) {
+        let shape = seq_shape(index, ty, Dir::Dn);
+        let channels = SeqChannels::for_shape(&shape);
+        (channels.dn.as_ref().unwrap().clone(), Handle { shape: Some(shape), channels, future: None , parent: None})
+    }
+
+    pub fn seq_up(index: &Index, ty: Item) -> (Channel, Handle) {
+        let shape = seq_shape(index, ty, Dir::Up);
+        let channels = SeqChannels::for_shape(&shape);
+        (channels.up.as_ref().unwrap().clone(), Handle { shape: Some(shape), channels, future: None , parent: None})
     }
 
     pub fn shape(&self) -> Option<&Shape> {
@@ -112,13 +124,19 @@ fn base_shape(index: &Index) -> Shape {
     }
 }
 
-pub fn compile_run(ui: &dyn DiagnosticHandler, index: &Index, scope: &Scope, processes: &[ast::Process]) -> bool {
-    let base_shape = base_shape(index);
-    let p = compile_process_chain(ui, index, scope, base_shape, processes);
-
-    let compiled = Arc::new(compile::compile(&p));
-
-    futures_lite::future::block_on(compile::ProgramExec::new(compiled, SeqChannels::null(), SeqChannels::null())).is_ok()
+fn seq_shape(index: &Index, ty: Item, dir: Dir) -> Shape {
+    let base = index.find_protocol("Seq").cloned().expect("No `Seq` protocol found in prelude");
+    Shape {
+        def: base,
+        param: Item::Tuple(vec![ty.clone(), Item::symbol(match dir { Dir::Dn => "dn", Dir::Up => "up"})]),
+        dir,
+        messages: vec![
+            ShapeMsg {
+                name: "val".into(),
+                params: vec![ShapeMsgParam { item: ty, direction: DataMode { down: dir == Dir::Dn, up: dir == Dir::Up } }]
+            }
+        ],
+    }
 }
 
 fn report_parse_error(ui: &dyn DiagnosticHandler, file: Arc<SourceFile>, err: ParseError<LineCol>) {

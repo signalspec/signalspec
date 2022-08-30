@@ -1,3 +1,4 @@
+use core::slice;
 use std::fmt;
 use std::collections::HashMap;
 use std::default::Default;
@@ -88,10 +89,24 @@ impl Item {
         Item::value(Value::Symbol(s.into()))
     }
 
+    pub fn as_tuple(&self) -> &[Item] {
+        match self {
+            Item::Leaf(_) => slice::from_ref(self),
+            Item::Tuple(v) => &v[..],
+        }
+    }
+
     pub fn as_constant(&self) -> Option<&Value> {
         match *self {
             Item::Leaf(LeafItem::Value(Expr::Const(ref c))) => Some(c),
             _ => None
+        }
+    }
+
+    pub fn as_symbol(&self) -> Option<&str> {
+        match self.as_constant() {
+            Some(Value::Symbol(s)) => Some(s),
+            _ => None,
         }
     }
 }

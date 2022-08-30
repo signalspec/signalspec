@@ -1,13 +1,11 @@
 use std::sync::Arc;
 use std::fs;
 use std::path::Path;
-use futures_lite::future;
 
-use crate::{DiagnosticHandler, Item};
-use crate::runtime::channel::SeqChannels;
+use crate::{DiagnosticHandler,  Handle, ChannelMessage };
+use crate::runtime::channel::item_to_msgs;
 use crate::syntax::{ ast, SourceFile };
 use crate::core::{ Index, FileScope, rexpr };
-use crate::core::{ protocol, compile_process_chain };
 
 pub fn run(fname: &str) -> bool {
     let fname = Path::new(fname);
@@ -56,19 +54,21 @@ pub fn run_file(fname: &Path) -> bool {
 
     let mut success = true;
 
-    for (count, test) in module.tests.iter().enumerate() {
-        print!("\tTest #{}:", count+1);
-        let res = run_test(ui, &index, &module, test);
-
-        if let Some(r) = res.down{
-            print!(" down:{}", if r { "ok" } else { "FAIL" });
-            success &= r;
+    for def in &module.defs {
+        for (count, attr) in def.attributes.iter().filter(|a| a.name == "test").enumerate() {
+            print!("\tTest {} #{}:", def.name, count+1);
+            let res = run_test(ui, &index, &module, def, attr);
+    
+            if let Some(r) = res.down{
+                print!(" down:{}", if r { "ok" } else { "FAIL" });
+                success &= r;
+            }
+            if let Some(r) = res.up {
+                print!(" up:{}", if r { "ok" } else { "FAIL" });
+                success &= r;
+            }
+            println!("");
         }
-        if let Some(r) = res.up {
-            print!(" up:{}", if r { "ok" } else { "FAIL" });
-            success &= r;
-        }
-        println!("");
     }
 
     success
@@ -80,80 +80,64 @@ pub struct TestResult {
     pub down: Option<bool>
 }
 
-pub fn run_test(ui: &dyn DiagnosticHandler, index: &Index, file: &FileScope, test: &ast::Test) -> TestResult {
-    fn symbol_expr(dir: &str) -> ast::SpannedExpr {
-        let span = crate::syntax::FileSpan::new(0, 0);
-        let node = ast::Expr::Value(ast::Value::Symbol(dir.into()));
-        ast::Spanned { node, span }
-    }
+pub fn run_test(ui: &dyn DiagnosticHandler, index: &Index, file: &FileScope, def: &ast::Def, attr: &ast::Attribute) -> TestResult {
+    assert!(def.bottom.name == "Seq", "Test def must use Seq");
+    assert!(def.params.is_empty(), "Test def must not have parameters");
 
-    // If the test uses `seq_both`, or `roundtrip`, generate `up` and `dn` versions and run them
-    match test.processes.split_first() {
-        Some((&ast::Process::Call(ref name, ref args), rest)) if name.node == "seq_both" => {
-            // Turn seq_both into seq(_, dir, ...) and run it
-            let run = |dir: &str| -> bool {
-                let mut args = args.clone();
-                args.insert(1, symbol_expr(dir));
-                let process = ast::Process::Call(ast::Spanned { node: "seq".into(), span: name.span }, args);
+    let seq_ty = match &def.bottom.param.node {
+        ast::Expr::Tup(t) if t.len() == 2 => rexpr(&file.scope, &t[0]),
+        e => panic!("Invalid seq args {e:?}")
+    };
 
-                let processes: Vec<ast::Process> = Some(process).into_iter().chain(rest.iter().cloned()).collect();
-                
-                super::compile_run(ui, index, &file.scope, &processes)
-            };
+    let test_args = rexpr(&file.scope, &attr.args);
+    let test_args = test_args.as_tuple();
+    let test_mode = test_args.first().and_then(|i| i.as_symbol());
+    let test_data = test_args.get(1);
 
-            let down_res = run("dn");
-            let up_res = run("up");
+    let run_dn = || -> Result<Vec<ChannelMessage>, ()> {
+        let (channel, mut handle) = Handle::seq_dn(index, seq_ty.clone());
+        handle.compile_run(ui, index, &file.scope, &def.processes).expect("failed to compile").finish()?;
 
-            TestResult {
-                down: Some(down_res ^ test.should_fail),
-                up:   Some(up_res ^ test.should_fail),
-            }
+        let mut read = channel.read();
+        Ok(std::iter::from_fn(|| read.pop()).collect())
+    };
+
+    let run_up = |messages: Vec<ChannelMessage>| -> Result<(), ()> {
+        let (channel, mut handle) = Handle::seq_up(index, seq_ty.clone());
+        for m in messages { channel.send(m); }
+        channel.set_closed(true);
+        handle.compile_run(ui, index, &file.scope, &def.processes).expect("failed to compile").finish()
+    };
+
+    match (test_mode, test_data.map(item_to_msgs)) {
+        (Some("up"), Some(data)) => {
+            let up = run_up(data).is_ok();
+            TestResult { down: None, up: Some(up) }
         }
 
-        Some((&ast::Process::Call(ref name, ref args), rest)) if name.node == "roundtrip" => {
-            let make_seq_shape = |ty: ast::SpannedExpr, dir: &str| {
-                let ty = rexpr(&file.scope, &ty);
-                protocol::instantiate(index, "Seq", Item::Tuple(vec![ty, Item::symbol(dir)])).unwrap()
-            };
-
-            let shape_dn = make_seq_shape(args[0].clone(), "dn");
-            let shape_up = make_seq_shape(args[0].clone(), "up");
-
-            let p1 = compile_process_chain(ui, index, &file.scope, shape_dn, rest);
-            let p2 = compile_process_chain(ui, index, &file.scope, shape_up, rest);
-
-            let c1 = Arc::new(super::compile::compile(&p1));
-            let c2 = Arc::new(super::compile::compile(&p2));
-
-            let channel = super::Channel::new();
-
-            let (r1, r2) = future::block_on(future::zip(
-                async {
-                    let r = super::compile::ProgramExec::new(c1,
-                        SeqChannels { dn: Some(channel.clone()), up: None },
-                        SeqChannels { dn: None, up: None }
-                    ).await;
-                    channel.set_closed(true);
-                    r
-                },
-                super::compile::ProgramExec::new(c2,
-                    SeqChannels { dn: None, up: Some(channel.clone()) },
-                    SeqChannels { dn: None, up: None }
-                )
-            ));
-
-
-            TestResult {
-                down: Some(r1.is_ok() ^ test.should_fail),
-                up:   Some(r2.is_ok() ^ test.should_fail),
-            }
+        (Some("up_fail"), Some(data)) => {
+            let up = run_up(data).is_err();
+            TestResult { down: None, up: Some(up) }
         }
 
-        Some(_) => {
-            let r = super::compile_run(ui, index, &file.scope, &test.processes);
-            TestResult { down: Some(r ^ test.should_fail), up: None }
+        (Some("dn"), Some(data)) => {
+            let down = run_dn() == Ok(data);
+            TestResult { down: Some(down), up: None }
         }
 
-        None => panic!("No tests to run")
+        (Some("both"), Some(data)) => {
+            let down = run_dn().as_ref() == Ok(&data);
+            let up = run_up(data).is_ok();
+            TestResult { down: Some(down), up: Some(up) }
+        }
+
+        (Some("roundtrip"), None)  => {
+            let down_res = run_dn();
+            let down = Some(down_res.is_ok());
+            let up = down_res.ok().map(|msgs| run_up(msgs).is_ok());
+            TestResult { down, up }
+        }
+
+        _ => panic!("Invalid test args {:?}", test_args)
     }
 }

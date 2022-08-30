@@ -8,7 +8,8 @@ def main() = Seq(0..10, dir) {
     }
 }
 
-test seq_both(0..10, (5, 5)) | main() | { val(1) ; val(2) ; val(5) };
+@test(#both, (5, 5))
+with Seq(0..10, _) def test1() = { main() | { val(1) ; val(2) ; val(5) } }
 
 with Seq((0..10, 0..10), dir)
 def tuple() = Seq((0..10, 0..10), dir) {
@@ -23,4 +24,6 @@ def tuple() = Seq((0..10, 0..10), dir) {
     }
 }
 
-test seq_both((0..10, 0..10), ((5, 6), (5, 6), (7, 8), (7, 8))) | tuple() | { val((5, 6)); val((7, 8)) };
+@test(#both, ((5, 6), (5, 6), (7, 8), (7, 8)))
+with Seq((0..10, 0..10), _) def test2() = { tuple() | { val((5, 6)); val((7, 8)) } }
+

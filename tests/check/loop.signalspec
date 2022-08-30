@@ -11,9 +11,16 @@ def main(var(dir) x) = {
     val(#a)
 }
 
-test seq_both(t, (#a, #b, #a)) | main(0);
-test fail seq(t, #up, (#a, #b, #a)) | main(1);
-test seq_both(t, (#a, #b, #c, #d, #a)) | main(1);
-test seq_both(t, (#a, #b, #c, #d, #c, #d, #a)) | main(2);
-test fail seq(t, #up, (#a, #b, #c, #a)) | main(_);
-test fail seq(t, #up, (#a, #b, #c, #d)) | main(_);
+@test(#both, (#a, #b, #a))
+with Seq(t, _) def test1() = { main(0) }
+
+@test(#up_fail, (#a, #b, #a))
+@test(#both, (#a, #b, #c, #d, #a))
+with Seq(t, _) def test2() = { main(1) }
+
+@test(#both, (#a, #b, #c, #d, #c, #d, #a))
+with Seq(t, _) def test2() = { main(2) }
+
+@test(#up_fail, (#a, #b, #c, #a))
+@test(#up_fail, (#a, #b, #c, #d))
+with Seq(t, _) def test2() = { main(_) }

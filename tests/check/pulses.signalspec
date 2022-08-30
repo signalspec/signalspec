@@ -1,0 +1,17 @@
+with Seq(#h|#l, dir)
+def pulses() = Seq(1..10, dir) {
+    repeat {
+        on val(len) {
+            repeat dir 1!1..10 {
+                val(#l)
+            }
+            repeat dir len {
+                val(#h)
+            }
+        }
+    }
+}
+
+@test(#both, (#l, #h, #h, #l, #h, #h, #h))
+@test(#up, (#l, #h, #h, #l, #l, #l, #h, #h, #h))
+with Seq(#h|#l, _) def test1() = { pulses() | { val(2); val(3) } }

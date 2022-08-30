@@ -1,3 +1,4 @@
+@test(#both, (#a, #b, #b))
 with Seq(#a|#b, _) def main() = {
     inner() | {
         val(#x)
@@ -13,5 +14,3 @@ with Seq(#a|#b, dir) def inner() = Seq(#x|#y, dir) {
         }
     }
 }
-
-test seq_both(#a|#b, (#a, #b, #b)) | main();

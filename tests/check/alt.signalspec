@@ -10,7 +10,10 @@ def bare() = {
     }
 }
 
-test seq(#a|#b, #up, (#a)) | bare();
+@test(#up, (#a))
+with Seq(#a | #b, _) def test1() = {
+    bare()
+}
 
 with Seq(#a|#b, dir)
 def simple() = Seq(#a | #b, dir) {
@@ -28,8 +31,15 @@ def simple() = Seq(#a | #b, dir) {
     }
 }
 
-test seq_both(#a|#b, (#b, #a)) | simple() | { val(#b) };
-test seq_both(#a|#b, (#a, #b)) | simple() | { val(#a) };
+@test(#both, (#b, #a))
+with Seq(#a|#b, _) def test2() = {
+    simple() | { val(#b) }
+}
+
+@test(#both, (#a, #b))
+with Seq(#a|#b, _) def test2() = {
+    simple() | { val(#a) }
+}
 
 with Seq(#a|#b|#x|#y, dir)
 def tuple() = Seq((#a|#b, #a|#b|#x|#y), dir) {
@@ -47,7 +57,10 @@ def tuple() = Seq((#a|#b, #a|#b|#x|#y), dir) {
     }
 }
 
-test seq_both(#a|#b|#x|#y, (#b, #x)) | tuple() | { val((#b, #x)) };
+@test(#both, (#b, #x))
+with Seq(#a|#b|#x|#y, _) def test_tuple() = {
+    tuple() | { val((#b, #x)) }
+}
 
 with Seq(#a|#b, dir)
 def ambiguous() = Seq(#a | #b, dir) {

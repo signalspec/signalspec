@@ -9,4 +9,5 @@ def main() = Seq(0..3, d) {
   }
 }
 
-test seq(#h|#l, #up, (#h, #l, #h, #h, #l, #h, #h, #h, #l)) | main() | { val(0); val(1); val(2) };
+@test(#up, (#h, #l, #h, #h, #l, #h, #h, #h, #l))
+with Seq(#h|#l, _) def test1() = { main() | { val(0); val(1); val(2) } }
