@@ -411,6 +411,7 @@ pub fn compile(program: &ProcessChain) -> CompiledProgram {
         up_rx: up_dir.map_or(false, |d| d.down).then(|| compiler.new_channel()),
     };
 
+    compiler.seq_prep(channels, &None, &program.step_info[program.root].first);
     compiler.compile_step(program.root, channels);
     if let Some(up_tx) = channels.up_tx {
         compiler.emit(Insn::ChannelClose(up_tx));
