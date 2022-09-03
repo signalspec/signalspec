@@ -20,7 +20,7 @@ pub use self::file::FileScope;
 pub use self::index::{ Index };
 pub use self::scope::{ Item, LeafItem, Scope };
 pub use self::expr::{ Expr, ExprDn, ConcatElem, add_primitive_fns};
-pub use self::expr_resolve::{ rexpr, lexpr, on_expr_message, value, pattern_match };
+pub use self::expr_resolve::{ rexpr, rexpr_tup, lexpr, on_expr_message, value, pattern_match };
 pub use self::function::{ PrimitiveFn, FunctionDef, Func };
 pub use self::primitive::{ PrimitiveDef };
 pub use self::step::{ Step, StepId, StepInfo };

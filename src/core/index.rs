@@ -11,7 +11,7 @@ pub struct Index {
 
 struct Def {
     protocol: ast::ProtocolRef,
-    name: String,
+    name: ast::Identifier,
     params: Vec<ast::DefParam>,
     scope: Scope,
     implementation: DefImpl
@@ -48,7 +48,7 @@ impl Index {
             protocol: header.bottom,
             name: header.name.clone(),
             scope: Scope { file, names: self.prelude.clone() },
-            params: header.params.iter().map(|x| x.node.clone()).collect(),
+            params: header.params.iter().map(|x| x.clone()).collect(),
             implementation: DefImpl::Primitive(implementation, header.top),
         });
     }
@@ -73,7 +73,7 @@ impl Index {
 
     pub fn add_file(&mut self, file: Arc<FileScope>) {
         for (index, protocol_ast) in file.protocols.iter().enumerate() {
-            self.protocols_by_name.insert(protocol_ast.name.clone(), ProtocolRef { file: file.clone(), index });
+            self.protocols_by_name.insert(protocol_ast.name.name.clone(), ProtocolRef { file: file.clone(), index });
         }
 
         for def in &file.defs {
@@ -81,7 +81,7 @@ impl Index {
                 protocol: def.bottom.clone(),
                 name: def.name.clone(),
                 scope: file.scope.clone(),
-                params: def.params.iter().map(|x| x.node.clone()).collect(),
+                params: def.params.iter().map(|x| x.clone()).collect(),
                 implementation: DefImpl::Code(def.processes.clone())
             });
         }
@@ -106,7 +106,7 @@ pub enum FindDefError {
 /// Match a shape, name, and argument against a candidate with-def block. If
 /// matched, returns a scope for the inside of the block.
 fn match_def(def: &Def, shape: &Shape, name: &str, args: &[Item]) -> Option<Scope> {
-    if def.name != name {
+    if def.name.name != name {
         return None;
     }
 

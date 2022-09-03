@@ -21,7 +21,7 @@ impl FileScope {
         let mut protocols = vec![];
 
         for entry in ast.entries {
-            match entry.node {
+            match entry {
                 ast::ModuleEntry::Let(letdef) => {
                     super::resolve::resolve_letdef(&mut scope, &letdef);
                 }
@@ -62,6 +62,6 @@ impl PartialEq<ProtocolRef> for ProtocolRef {
 
 impl Debug for ProtocolRef {
     fn fmt(&self, fmt: &mut std::fmt::Formatter) -> Result<(), std::fmt::Error> {
-        write!(fmt, "<protocol {}>", self.ast().name)
+        write!(fmt, "<protocol {}>", self.ast().name.name)
     }
 }

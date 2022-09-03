@@ -2,21 +2,21 @@ use std::sync::Arc;
 use crate::{syntax::{ast, Value}, tree::Tree};
 use super::{ConcatElem, Expr, Func, FunctionDef, Item, Scope, ShapeMsg, ExprDn, VarId, LeafItem };
 
-fn resolve(scope: Option<&Scope>, var_handler: &mut dyn FnMut(&str) -> Expr, e: &ast::SpannedExpr) -> Expr {
-    match e.node {
-        ast::Expr::Ignore => Expr::Ignored,
-        ast::Expr::Value(ref val) => Expr::Const(val.clone()),
+fn resolve(scope: Option<&Scope>, var_handler: &mut dyn FnMut(&str) -> Expr, e: &ast::Expr) -> Expr {
+    match e {
+        ast::Expr::Ignore(_) => Expr::Ignored,
+        ast::Expr::Value(ref node) => Expr::Const(node.value.clone()),
 
-        ast::Expr::Flip(ref down, ref up) => {
+        ast::Expr::Flip(ref node) => {
             Expr::Flip(
-                Box::new(down.as_ref().map_or(Expr::Ignored,  |dn| resolve(scope, var_handler, dn))),
-                Box::new(up.as_ref().map_or(Expr::Ignored,  |up| resolve(scope, var_handler, up))),
+                Box::new(node.dn.as_ref().map_or(Expr::Ignored,  |dn| resolve(scope, var_handler, dn))),
+                Box::new(node.up.as_ref().map_or(Expr::Ignored,  |up| resolve(scope, var_handler, up))),
             )
         }
 
-        ast::Expr::Range(ref min_expr, ref max_expr) => {
-            let min = resolve(scope, var_handler, min_expr);
-            let max = resolve(scope, var_handler, max_expr);
+        ast::Expr::Range(ref node) => {
+            let min = resolve(scope, var_handler, &node.lo);
+            let max = resolve(scope, var_handler, &node.hi);
 
             match (min, max) {
                 (Expr::Const(Value::Number(l)), Expr::Const(Value::Number(h))) => Expr::Range(l, h),
@@ -25,23 +25,23 @@ fn resolve(scope: Option<&Scope>, var_handler: &mut dyn FnMut(&str) -> Expr, e: 
             }
         }
 
-        ast::Expr::Union(ref u) => {
-            Expr::Union(u.iter().map(|i| resolve(scope, var_handler, i)).collect())
+        ast::Expr::Union(ref node) => {
+            Expr::Union(node.items.iter().map(|i| resolve(scope, var_handler, i)).collect())
         }
 
-        ast::Expr::Choose(ref e, ref c) => {
-            let head = resolve(scope, var_handler, e);
+        ast::Expr::Choose(ref node) => {
+            let head = resolve(scope, var_handler, &node.e);
 
             if let Expr::Const(value) = head {
-                let re = c.iter().find(|&(ref le, _)| {
+                let re = node.choices.iter().find(|&(ref le, _)| {
                     let l = resolve(scope, var_handler, le);
                     l.eval_up(&mut |_, _| panic!("Variable not expected here"), value.clone())
                 }).map(|x| &x.1).unwrap_or_else(|| {
-                    panic!("No match for {} at {:?}", value, e.span);
+                    panic!("No match for {} at {:?}", value, &node.span);
                 });
                 resolve(scope, var_handler, re)
             } else {
-                let pairs: Vec<(Value, Value)> = c.iter().map(|&(ref le, ref re)| {
+                let pairs: Vec<(Value, Value)> = node.choices.iter().map(|&(ref le, ref re)| {
                     let l = resolve(scope, var_handler, le);
                     let r = resolve(scope, var_handler, re);
 
@@ -55,22 +55,23 @@ fn resolve(scope: Option<&Scope>, var_handler: &mut dyn FnMut(&str) -> Expr, e: 
             }
         }
 
-        ast::Expr::Concat(ref v) =>  {
-            let elems = v.iter().map(|&(slice_width, ref e)| {
+        ast::Expr::Concat(ref node) =>  {
+            let elems = node.elems.iter().map(|&(slice_width, ref e)| {
                 let expr = resolve(scope, var_handler, e);
                 match slice_width {
                     None => ConcatElem::Elem(expr),
-                    Some(w) => ConcatElem::Slice(expr, w)
+                    Some(w) => ConcatElem::Slice(expr, w as usize)
                 }
             }).collect();
 
             Expr::Concat(elems)
         }
 
-        ast::Expr::Bin(ref a, op, ref b) => {
+        ast::Expr::Bin(ref node) => {
             use self::Expr::Const;
-            let lhs = resolve(scope, var_handler, a);
-            let rhs = resolve(scope, var_handler, b);
+            let lhs = resolve(scope, var_handler, &node.l);
+            let rhs = resolve(scope, var_handler, &node.r);
+            let op = node.op;
             match (lhs, rhs) {
                 (Const(Value::Number(a)),  Const(Value::Number(b))) => Const(Value::Number(op.eval(a, b))),
                 (Const(Value::Integer(a)), Const(Value::Integer(b))) => Const(Value::Integer(op.eval(a, b))),
@@ -83,14 +84,16 @@ fn resolve(scope: Option<&Scope>, var_handler: &mut dyn FnMut(&str) -> Expr, e: 
             }
         }
 
-        ast::Expr::Var(ref name) => var_handler(name),
-        ast::Expr::Call(ref func, ref arg) => {
+        ast::Expr::Var(ref name) => var_handler(&name.name),
+        ast::Expr::Call(ref node) => {
             let scope = scope.expect("Function call not allowed here");
-            match resolve_call(scope, func, arg) {
+            match resolve_call(scope, &node.func, &node.arg) {
                 Item::Leaf(LeafItem::Value(v)) => v,
                 other => panic!("Expcted value item, but function evaluated to {:?}", other),
             }
         }
+
+        ast::Expr::Tup(t) if t.items.len() == 1 => { resolve(scope, var_handler, &t.items[0]) }
 
         ast::Expr::Tup(..) => panic!("Tuple not allowed here"),
         ast::Expr::String(..) => panic!("String not allowed here"),
@@ -98,7 +101,7 @@ fn resolve(scope: Option<&Scope>, var_handler: &mut dyn FnMut(&str) -> Expr, e: 
     }
 }
 
-pub fn value(scope: &Scope, e: &ast::SpannedExpr) -> Expr {
+pub fn value(scope: &Scope, e: &ast::Expr) -> Expr {
     resolve(Some(scope), &mut |name| {
         match scope.get(name) {
             Some(Item::Leaf(LeafItem::Value(v))) => v,
@@ -108,39 +111,45 @@ pub fn value(scope: &Scope, e: &ast::SpannedExpr) -> Expr {
     }, e)
 }
 
+pub fn rexpr_tup(scope: &Scope, node: &ast::ExprTup) -> Item {
+    let values: Vec<Item> = node.items.iter().map(|i| rexpr(scope, i)).collect();
+    if values.len() == 1 {
+        values.into_iter().next().unwrap()
+    } else {
+        Item::Tuple(values)
+    }
+}
+
 /// Resolve an expression as used in an argument or right hand side of an assignment
-pub fn rexpr(scope: &Scope, e: &ast::SpannedExpr) -> Item {
-    match e.node {
+pub fn rexpr(scope: &Scope, e: &ast::Expr) -> Item {
+    match e {
         ast::Expr::Var(ref name) => {
-            if let Some(s) = scope.get(name) { s } else { panic!("Undefined variable `{}`", name); }
+            if let Some(s) = scope.get(&name.name) { s } else { panic!("Undefined variable `{}`", name.name); }
         }
 
-        ast::Expr::Tup(ref items) => {
-            Item::Tuple(items.iter().map(|i| rexpr(scope, i)).collect())
-        }
+        ast::Expr::Tup(ref node) => rexpr_tup(scope, node),
 
-        ast::Expr::String(ref s) => Item::Leaf(LeafItem::String(s.clone())),
+        ast::Expr::String(ref node) => Item::Leaf(LeafItem::String(node.value.clone())),
 
-
-        ast::Expr::Func{ ref body, ref args } => {
+        ast::Expr::Func(ref node) => {
             Item::Leaf(LeafItem::Func(Arc::new(FunctionDef::Code(Func{
-                args: (**args).clone(),
-                body: (**body).clone(),
+                args: (*node.args).clone(),
+                body: (*node.body).clone(),
                 scope: scope.clone(),
             }))))
         }
 
-        ast::Expr::Call(ref func, ref arg) => {
-            resolve_call(scope, func, arg)
+        ast::Expr::Call(ref node) => {
+            resolve_call(scope, &node.func, &node.arg)
         }
 
         _ => Item::Leaf(LeafItem::Value(value(scope, e)))
     }
 }
 
-fn resolve_call(scope: &Scope, func: &ast::SpannedExpr, arg: &ast::SpannedExpr) -> Item {
+fn resolve_call(scope: &Scope, func: &ast::Expr, arg: &ast::ExprTup) -> Item {
     let func = rexpr(scope, func);
-    let arg = rexpr(scope, arg);
+    let arg = rexpr_tup(scope, arg);
 
     if let Item::Leaf(LeafItem::Func(func)) = func {
         func.apply(arg)
@@ -149,10 +158,10 @@ fn resolve_call(scope: &Scope, func: &ast::SpannedExpr, arg: &ast::SpannedExpr) 
     }
 }
 
-fn zip_ast<T>(ast: &ast::SpannedExpr, tree: &Tree<T>, f: &mut impl FnMut(&ast::SpannedExpr, &Tree<T>) -> Result<(), &'static str>) -> Result<(), &'static str> {
-    match (&ast.node, tree) {
+fn zip_ast<T>(ast: &ast::Expr, tree: &Tree<T>, f: &mut impl FnMut(&ast::Expr, &Tree<T>) -> Result<(), &'static str>) -> Result<(), &'static str> {
+    match (&ast, tree) {
         (ast::Expr::Tup(a), Tree::Tuple(t)) => {
-            let mut a = a.iter();
+            let mut a = a.items.iter();
             let mut t = t.iter();
             loop {
                 match (a.next(), t.next()) {
@@ -168,7 +177,7 @@ fn zip_ast<T>(ast: &ast::SpannedExpr, tree: &Tree<T>, f: &mut impl FnMut(&ast::S
 }
 
 /// Resolve expressions as used in the arguments of an `on` block, defining variables
-pub fn on_expr_message(mut new_var: impl FnMut() -> VarId, scope: &mut Scope, msg_def: &ShapeMsg, exprs: &[ast::SpannedExpr]) -> (Vec<Expr>, Vec<ExprDn>) {
+pub fn on_expr_message(mut new_var: impl FnMut() -> VarId, scope: &mut Scope, msg_def: &ShapeMsg, exprs: &[ast::Expr]) -> (Vec<Expr>, Vec<ExprDn>) {
     assert_eq!(msg_def.params.len(), exprs.len());
 
     let mut dn = Vec::new();
@@ -189,11 +198,11 @@ pub fn on_expr_message(mut new_var: impl FnMut() -> VarId, scope: &mut Scope, ms
         };
 
         zip_ast(expr, &param.item, &mut |a, e| {
-            match (e, &a.node) {
+            match (e, &a) {
                 (&Item::Leaf(LeafItem::Value(ref v)), ast::Expr::Var(ref name)) => {
                     let ty = v.get_type();
                     let id = new_var();
-                    scope.bind(name, Item::Leaf(LeafItem::Value(Expr::Variable(id, ty.clone(), dir))));
+                    scope.bind(&name.name, Item::Leaf(LeafItem::Value(Expr::Variable(id, ty.clone(), dir))));
                     push(Expr::Variable(id, ty, dir));
                 }
                 (&Item::Leaf(LeafItem::Value(_)), _) => {
@@ -214,7 +223,7 @@ pub fn on_expr_message(mut new_var: impl FnMut() -> VarId, scope: &mut Scope, ms
                             _ => panic!("{:?} not allowed in shape", i)
                         }
                     });
-                    scope.bind(name, v);
+                    scope.bind(&name.name, v);
                 }
                 _ => return Err("invalid pattern")
             }
@@ -232,12 +241,16 @@ pub struct PatternError {
 
 /// Destructures an item into left-hand-side binding, such as a function argument, returning
 /// whether the pattern matched. No runtime evaluation is allowed.
-pub fn lexpr(scope: &mut Scope, l: &ast::SpannedExpr, r: Item) -> Result<(), PatternError> {
+pub fn lexpr(scope: &mut Scope, l: &ast::Expr, r: Item) -> Result<(), PatternError> {
     zip_ast(l, &r, &mut |l, r| {
-        Ok(match l.node {
-            ast::Expr::Ignore => {},
+        let l = match l {
+            ast::Expr::Tup(t) if t.items.len() == 1 => &t.items[0],
+            l => l,
+        };
+        Ok(match l {
+            ast::Expr::Ignore(_) => {},
             ast::Expr::Var(ref name) => {
-                scope.bind(name, r.clone())
+                scope.bind(&name.name, r.clone())
             }
             _ => {
                 let lv = &value(scope, l);
@@ -253,14 +266,14 @@ pub fn lexpr(scope: &mut Scope, l: &ast::SpannedExpr, r: Item) -> Result<(), Pat
 }
 
 /// Destructure an item into an expression, like lexpr, but allowing runtime pattern-matching
-pub fn pattern_match(scope: &mut Scope, pat: &ast::SpannedExpr, r: &Item, checks: &mut Vec<(Expr, Expr)>) {
+pub fn pattern_match(scope: &mut Scope, pat: &ast::Expr, r: &Item, checks: &mut Vec<(Expr, Expr)>) {
     zip_ast(pat, r, &mut |pat, r| {
-        match (&pat.node, r) {
-            (ast::Expr::Ignore, _) => (),
+        match (&pat, r) {
+            (ast::Expr::Ignore(_), _) => (),
 
             (ast::Expr::Var(ref name), r) => {
-                debug!("defined {} = {:?}", name, r);
-                scope.bind(name, r.clone());
+                debug!("defined {} = {:?}", name.name, r);
+                scope.bind(&name.name, r.clone());
             }
 
             (_, Item::Leaf(LeafItem::Value(ref re))) => {
@@ -268,7 +281,7 @@ pub fn pattern_match(scope: &mut Scope, pat: &ast::SpannedExpr, r: &Item, checks
                 checks.push((le, re.clone()));
             }
 
-            (pat, r) => panic!("can't match {:?} with {:?}", pat, r)
+            (_, r) => panic!("can't match expr with {:?}", r)
         }
         Ok(())
     }).unwrap();

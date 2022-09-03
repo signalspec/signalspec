@@ -537,7 +537,7 @@ pub fn add_primitive_fns(loader: &mut super::Index) {
 #[test]
 fn exprs() {
     use std::sync::Arc;
-    use crate::syntax::{parse_valexpr, SourceFile};
+    use crate::syntax::{parse_expr, SourceFile};
     use crate::core::{Index, Scope, value};
 
     let mut index = Index::new();
@@ -549,7 +549,7 @@ fn exprs() {
     };
 
     let expr = |e: &str| {
-        let ast = parse_valexpr(e).unwrap();
+        let ast = parse_expr(e).unwrap();
         value(&scope, &ast)
     };
 

@@ -2,6 +2,7 @@ mod console;
 mod diagnostic;
 
 use std::io::prelude::*;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::{ process, fs };
 
@@ -14,11 +15,14 @@ fn main() {
     let mut imports: Vec<String> = vec![];
     let mut cmd: String = String::new();
     let mut debug: Option<String> = None;
+    let mut dump_ast: Option<PathBuf> = None;
 
     {
         let mut ap = ArgumentParser::new();
         ap.refer(&mut test)
             .add_option(&["-t"], StoreOption, "Run tests from FILE");
+        ap.refer(&mut dump_ast)
+            .add_option(&["--dump-ast"], StoreOption, "Dump AST from FILE");
         ap.refer(&mut imports).
             add_option(&["-i"], Collect, "Import a module");
         ap.refer(&mut debug)
@@ -28,7 +32,12 @@ fn main() {
         ap.parse_args_or_exit();
     }
 
-    if let Some(path) = test {
+    if let Some(dump_ast) = dump_ast {
+        let file = signalspec::syntax::SourceFile::load(&dump_ast).unwrap();
+        let ast = signalspec::syntax::parse_module(file.source()).unwrap();
+        signalspec::syntax::dump_tree(&mut std::io::stdout(), &file, &ast, 0).unwrap();
+        process::exit(0);
+    } if let Some(path) = test {
         let success = signalspec::run_tests_in_file(&*path);
         process::exit( if success { 0 } else { 1 } );
     } else {
@@ -53,4 +62,3 @@ fn main() {
         process::exit(if success { 0 } else { 1 });
     }
 }
-

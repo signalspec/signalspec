@@ -1,7 +1,7 @@
 #[macro_use] extern crate log;
 
 mod core;
-mod syntax;
+pub mod syntax;
 mod runtime;
 mod entitymap;
 mod tree;

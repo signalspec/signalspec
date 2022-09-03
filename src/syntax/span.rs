@@ -6,7 +6,7 @@ use std::ops::Range;
 ///
 /// This wraps `u32` under the assumption that source code won't exceed 4 GiB.
 #[derive(Clone, PartialEq, Eq,  PartialOrd, Ord, Hash, Debug, Copy)]
-pub struct FilePos(u32);
+pub struct FilePos(pub u32);
 
 impl From<FilePos> for usize {
     fn from(p: FilePos) -> Self {
@@ -35,6 +35,14 @@ impl FileSpan {
 
     pub fn at(p: usize) -> FileSpan {
         Self::new(p, p)
+    }
+
+    pub fn contains(&self, p: FilePos) -> bool {
+        p >= self.start && p <= self.end
+    }
+
+    pub fn to(self, other: FileSpan) -> FileSpan {
+        FileSpan { start: self.start, end: other.end }
     }
 }
 
@@ -132,6 +140,10 @@ impl SourceFile {
 
     pub fn num_lines(&self) -> usize {
         self.lines.num_lines()
+    }
+
+    pub fn slice(&self, span: FileSpan) -> &str {
+        &self.source[Range::<usize>::from(span)]
     }
 }
 

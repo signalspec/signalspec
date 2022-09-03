@@ -5,7 +5,7 @@ use std::path::Path;
 use crate::{DiagnosticHandler,  Handle, ChannelMessage };
 use crate::runtime::channel::item_to_msgs;
 use crate::syntax::{ ast, SourceFile };
-use crate::core::{ Index, FileScope, rexpr };
+use crate::core::{ Index, FileScope, rexpr, rexpr_tup };
 
 pub fn run(fname: &str) -> bool {
     let fname = Path::new(fname);
@@ -55,8 +55,8 @@ pub fn run_file(fname: &Path) -> bool {
     let mut success = true;
 
     for def in &module.defs {
-        for (count, attr) in def.attributes.iter().filter(|a| a.name == "test").enumerate() {
-            print!("\tTest {} #{}:", def.name, count+1);
+        for (count, attr) in def.attributes.iter().filter(|a| a.name.name == "test").enumerate() {
+            print!("\tTest {} #{}:", def.name.name, count+1);
             let res = run_test(ui, &index, &module, def, attr);
     
             if let Some(r) = res.down{
@@ -81,15 +81,15 @@ pub struct TestResult {
 }
 
 pub fn run_test(ui: &dyn DiagnosticHandler, index: &Index, file: &FileScope, def: &ast::Def, attr: &ast::Attribute) -> TestResult {
-    assert!(def.bottom.name == "Seq", "Test def must use Seq");
+    assert!(def.bottom.name.name == "Seq", "Test def must use Seq");
     assert!(def.params.is_empty(), "Test def must not have parameters");
 
-    let seq_ty = match &def.bottom.param.node {
-        ast::Expr::Tup(t) if t.len() == 2 => rexpr(&file.scope, &t[0]),
-        e => panic!("Invalid seq args {e:?}")
+    let seq_ty = match &def.bottom.param {
+        ast::Expr::Tup(t) if t.items.len() == 2 => rexpr(&file.scope, &t.items[0]),
+        e => panic!("Invalid seq args")
     };
 
-    let test_args = rexpr(&file.scope, &attr.args);
+    let test_args = rexpr_tup(&file.scope, &attr.args);
     let test_args = test_args.as_tuple();
     let test_mode = test_args.first().and_then(|i| i.as_symbol());
     let test_data = test_args.get(1);

@@ -7,7 +7,7 @@ use super::{ lexpr, rexpr, Item };
 
 pub fn resolve(index: &Index, scope: &Scope, ast: &ast::ProtocolRef) -> Shape {
     let args = rexpr(scope, &ast.param);
-    instantiate(index, &ast.name, args).unwrap()
+    instantiate(index, &ast.name.name, args).unwrap()
 }
 
 #[derive(Debug)]
@@ -28,16 +28,16 @@ pub fn instantiate(index: &Index, protocol_name: &str, args: Item) -> Result<Sha
 
     for entry in &protocol.ast().entries {
         match *entry {
-            ast::ProtocolEntry::Message(ref name, ref es) => {
-                let params = es.iter().map(|p| {
-                        match &p.node {
-                        ast::DefParam::Const(e) => {
-                            let item = rexpr(&protocol_def_scope, e);
+            ast::ProtocolEntry::Message(ast::ProtocolMessageDef { ref name, ref params, .. }) => {
+                let params = params.iter().map(|p| {
+                    match &p {
+                        ast::DefParam::Const(node) => {
+                            let item = rexpr(&protocol_def_scope, &node.expr);
                             ShapeMsgParam { item, direction: DataMode { up: false, down: false} }
                         }
-                        ast::DefParam::Var{ value, direction } => {
-                            let item = rexpr(&protocol_def_scope, value);
-                            let direction = match super::expr_resolve::value(&protocol_def_scope, direction).eval_const() {
+                        ast::DefParam::Var(node) => {
+                            let item = rexpr(&protocol_def_scope, &node.expr);
+                            let direction = match super::expr_resolve::value(&protocol_def_scope, &node.direction).eval_const() {
                                 Value::Symbol(s) if s == "up" => DataMode { up: true, down: false },
                                 Value::Symbol(s) if s == "dn" => DataMode { up: false, down: true },
                                 other => panic!("Invalid direction {:?}, expected `#up` or `#dn`", other)
@@ -46,7 +46,7 @@ pub fn instantiate(index: &Index, protocol_name: &str, args: Item) -> Result<Sha
                         }
                     }
                 }).collect();
-                messages.push(ShapeMsg::new(name.clone(), params));
+                messages.push(ShapeMsg::new(name.name.clone(), params));
             }
         }
     }
@@ -58,15 +58,13 @@ pub fn instantiate(index: &Index, protocol_name: &str, args: Item) -> Result<Sha
 /// in scope. Returns false if the shape's arguments fail to match, but the
 /// scope may have already been modified.
 pub(crate) fn match_protocol(scope: &mut Scope, protocol: &ast::ProtocolRef, shape: &Shape) -> bool {
-    debug!("Trying to match {:?} against {:?}", protocol, shape);
-
     // TODO: resolve protocol.name in its file and make sure they refer to the same protocol
-    if protocol.name != shape.def.ast().name {
+    if protocol.name.name != shape.def.ast().name.name {
         return false;
     }
 
     if let Err(e) = lexpr(scope, &protocol.param, shape.param.clone()) {
-        debug!("Failed to match protocol argument for `{}`: {:?}", protocol.name, e);
+        debug!("Failed to match protocol argument for `{}`: {:?}", protocol.name.name, e);
         return false;
     }
 
@@ -84,8 +82,8 @@ pub(crate) fn match_def_params(scope: &mut Scope, params: &[ast::DefParam], args
 
     for (param, arg) in params.iter().zip(args.iter()) {
         let param_expr = match param {
-            ast::DefParam::Const(e) => e,
-            ast::DefParam::Var{value, ..} => value,
+            ast::DefParam::Const(node) => &node.expr,
+            ast::DefParam::Var(node) => &node.expr,
         };
 
         if let Err(err) = lexpr(scope, param_expr, arg.clone()) {

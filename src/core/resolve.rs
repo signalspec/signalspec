@@ -56,27 +56,27 @@ impl<'a> Builder<'a> {
     }
 
     fn resolve_action(&mut self, sb: ResolveCx<'_>, action: &ast::Action) -> StepId {
-        match *action {
-            ast::Action::Process(ref processes) => {
-                let (step, shape_up) = self.resolve_processes(sb, processes);
+        match action {
+            ast::Action::Process(ref node) => {
+                let (step, shape_up) = self.resolve_processes(sb, &node.processes);
                 assert!(shape_up.is_none());
                 step
             }
 
-            ast::Action::On(ref name, ref exprs, ref body) => {
+            ast::Action::On(ref node) => {
                 let mut body_scope = sb.scope.child();
 
                 debug!("Upper message, shape: {:?}", sb.shape_up);
 
                 let shape_up = sb.shape_up.expect("`on` block with no upper shape");
 
-                let (variant, msg_def) = if let Some(t) = shape_up.variant_named(name) { t } else {
-                    panic!("Variant {:?} not found on shape {:?}", name, shape_up)
+                let (variant, msg_def) = if let Some(t) = shape_up.variant_named(&node.name.name) { t } else {
+                    panic!("Variant {:?} not found on shape {:?}", node.name.name, shape_up)
                 };
 
-                let (dn, up) = on_expr_message(|| self.add_var(), &mut body_scope, msg_def, exprs);
+                let (dn, up) = on_expr_message(|| self.add_var(), &mut body_scope, msg_def, &node.args.items);
 
-                let inner = if let &Some(ref body) = body {
+                let inner = if let &Some(ref body) = &node.block {
                     self.resolve_seq(sb.with_upper(&body_scope, None), body)
                 } else {
                     self.add_step(Step::Seq(vec![]))
@@ -85,8 +85,8 @@ impl<'a> Builder<'a> {
                 self.add_step(Step::TokenTop { top_dir: shape_up.dir, variant, send: dn, receive: up, inner })
             }
 
-            ast::Action::Repeat(ref count_ast, ref block) => {
-                let (dir, count) = match count_ast {
+            ast::Action::Repeat(ref node) => {
+                let (dir, count) = match &node.dir_count {
                     Some((dir_ast, count_ast)) => {
                         let count = value(sb.scope, count_ast);
                         let dir = resolve_dir(value(sb.scope, dir_ast));
@@ -95,7 +95,7 @@ impl<'a> Builder<'a> {
                     None => (Dir::Up, Expr::Ignored)
                 };
 
-                let inner = self.resolve_seq(sb, block);
+                let inner = self.resolve_seq(sb, &node.block);
 
                 self.add_step(match dir {
                     Dir::Up => Step::RepeatUp(count, inner),
@@ -103,14 +103,14 @@ impl<'a> Builder<'a> {
                 })
             }
 
-            ast::Action::For(ref pairs, ref block) => {
+            ast::Action::For(ref node) => {
                 let mut body_scope = sb.scope.child();
                 let mut count = None;
 
                 let mut vars_dn = Vec::new();
                 let mut vars_up = Vec::new();
 
-                for &(ref name, ref expr) in pairs {
+                for &(ref name, ref expr) in &node.vars {
                     let e = value(sb.scope, expr);
                     let t = e.get_type();
                     let dir = e.dir();
@@ -121,7 +121,7 @@ impl<'a> Builder<'a> {
                         }
 
                         let id = self.add_var();
-                        body_scope.bind(name, Item::Leaf(LeafItem::Value(Expr::Variable(id, *ty, dir))));
+                        body_scope.bind(&name.name, Item::Leaf(LeafItem::Value(Expr::Variable(id, *ty, dir))));
 
                         if dir.down {
                             vars_dn.push((id, e.down()));
@@ -133,17 +133,17 @@ impl<'a> Builder<'a> {
                     }
                 }
 
-                let inner = self.resolve_seq(sb.with_scope(&body_scope), block);
+                let inner = self.resolve_seq(sb.with_scope(&body_scope), &node.block);
 
                 let iters = count.unwrap_or(0) as u32;
                 self.add_step(Step::Foreach { iters, vars_dn, vars_up, inner })
             }
 
-            ast::Action::Alt(ref dir_ast, ref expr, ref arms) => {
-                let dir = resolve_dir(value(sb.scope, dir_ast));
-                let r = rexpr(sb.scope, expr);
+            ast::Action::Alt(ref node) => {
+                let dir = resolve_dir(value(sb.scope, &node.dir));
+                let r = rexpr(sb.scope, &node.expr);
 
-                let v: Vec<_> = arms.iter().map(|arm| {
+                let v: Vec<_> = node.arms.iter().map(|arm| {
                     let mut body_scope = sb.scope.child();
                     let mut checks = Vec::new();
                     pattern_match(&mut body_scope, &arm.discriminant, &r, &mut checks);
@@ -184,20 +184,20 @@ impl<'a> Builder<'a> {
 
     fn resolve_process(&mut self, sb: ResolveCx<'_>, process_ast: &ast::Process) -> (StepId, Option<Shape>) {
         match process_ast {
-            ast::Process::Call(ref name, ref args_ast) => {
-                let args: Vec<Item> = args_ast.iter().map(|a| rexpr(sb.scope, a)).collect();
-                if let Some((variant, msg_def)) = sb.shape_down.variant_named(&name.node) {
+            ast::Process::Call(node) => {
+                let args: Vec<Item> = node.args.items.iter().map(|a| rexpr(sb.scope, a)).collect();
+                if let Some((variant, msg_def)) = sb.shape_down.variant_named(&node.name.name) {
                     let (dn, up) = resolve_token(msg_def, &args);
                     (self.add_step(Step::Token { variant, send: dn, receive: up }), None)
                 } else {
-                    let (scope, imp) = match self.index.find_def(sb.shape_down, &name.node, args) {
+                    let (scope, imp) = match self.index.find_def(sb.shape_down, &node.name.name, args) {
                         Ok(res) => res,
                         Err(FindDefError::NoDefinitionWithName) => {
                             self.ui.report(DiagnosticKind::NoDefNamed {
-                                protocol_name: sb.shape_down.def.ast().name.to_owned(),
-                                def_name: name.node.to_owned(),
+                                protocol_name: sb.shape_down.def.ast().name.name.to_owned(),
+                                def_name: node.name.name.to_owned(),
                             }, vec![
-                                Label { file: sb.scope.file.clone(), span: name.span, label: "not found".into() }
+                                Label { file: sb.scope.file.clone(), span: node.name.span, label: "not found".into() }
                             ]);
                             return (self.add_step(Step::Invalid), None)
                         }
@@ -215,9 +215,9 @@ impl<'a> Builder<'a> {
                 }
             }
 
-            ast::Process::Seq(ref top_shape, ref block) => {
-                let top_shape = protocol::resolve(self.index, sb.scope, top_shape);
-                let block = self.resolve_seq(sb.with_upper(sb.scope, Some(&top_shape)), block);
+            ast::Process::Seq(node) => {
+                let top_shape = protocol::resolve(self.index, sb.scope, &node.top);
+                let block = self.resolve_seq(sb.with_upper(sb.scope, Some(&top_shape)), &node.block);
                 (block, Some(top_shape))
             }
 
@@ -232,11 +232,11 @@ impl<'a> Builder<'a> {
         let mut scope = sb.scope.child();
 
         for ld in &block.lets {
-            resolve_letdef(&mut scope, &ld.node);
+            resolve_letdef(&mut scope, &ld);
         }
 
         let steps = block.actions.iter().map(|action| {
-            self.resolve_action(sb.with_scope(&scope), &action.node)
+            self.resolve_action(sb.with_scope(&scope), &action)
         }).collect();
 
         self.add_step(Step::Seq(steps))
@@ -245,9 +245,9 @@ impl<'a> Builder<'a> {
 
 
 pub fn resolve_letdef(scope: &mut Scope, ld: &ast::LetDef) {
-    let &ast::LetDef(ref name, ref expr) = ld;
+    let &ast::LetDef { ref name, ref expr, .. } = ld;
     let item = rexpr(scope, expr);
-    scope.bind(name, item);
+    scope.bind(&name.name, item);
 }
 
 pub fn resolve_token(msg_def: &ShapeMsg, args: &[Item]) -> (Vec<ExprDn>, Vec<Expr>) {

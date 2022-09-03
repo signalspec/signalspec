@@ -1,5 +1,7 @@
-use super::{ ast, BinOp, FileSpan, Spanned };
+use super::{ ast, BinOp, FilePos, FileSpan, Spanned };
 use std::char;
+
+const FAKE_SPAN: FileSpan = FileSpan { start: FilePos(0), end: FilePos(0) };
 
 peg::parser!(pub grammar signalspec() for str {
   use peg::ParseLiteral;
@@ -8,110 +10,119 @@ peg::parser!(pub grammar signalspec() for str {
     = start:position!() node:inner() end:position!()
     { Spanned { node, span: FileSpan::new(start, end) } }
 
+  rule pos() -> FilePos = p:position!() { p.into() }
+
   pub rule module() -> ast::Module
-      = _ entries:spanned(<module_entry()>)**__ _
-      { ast::Module { entries } }
+      = start:position!() _ entries:module_entry()**__ _ end:position!()
+      { ast::Module { span: FileSpan::new(start, end), entries } }
 
   rule letstmt() -> ast::LetDef
-      = KW("let") _ name:IDENTIFIER() _ "=" _ value:expr()
-      { ast::LetDef(name, value) }
+      = start:pos() tok_let:KW("let") _ name:IDENTIFIER() _ "=" _ expr:expr() end:pos()
+      { ast::LetDef { span: FileSpan{ start, end }, tok_let, name, expr } }
 
   rule attribute() -> ast::Attribute
-    = "@" name:IDENTIFIER() _ args:expr_tup() __ { ast::Attribute { name, args } }
+    = start:pos() tok_at:TOK("@") name:IDENTIFIER() _ args:expr_tup() __ end:pos()
+    { ast::Attribute { span: FileSpan{ start, end }, tok_at, name, args } }
 
   rule module_entry() -> ast::ModuleEntry
-      = l:letstmt() { ast::ModuleEntry::Let(l) }
-      / attributes:attribute()* KW("with") _ bottom:protocol_ref() _
-        KW("def") _ name:IDENTIFIER() _  params:def_params() _ "=" _ processes:process_chain()
-        { ast::ModuleEntry::WithDef(ast::Def { attributes, bottom, name, params, processes }) }
-      / attributes:attribute()* KW("protocol") _ name:IDENTIFIER() _ param:expr_tup() _ dir:expr() _ entries:protocol_block()
-        { ast::ModuleEntry::Protocol(ast::Protocol { attributes, name, param, dir, entries }) }
+    = l:letstmt() { ast::ModuleEntry::Let(l) }
+    / d:def() { ast::ModuleEntry::WithDef(d) }
+    / p:protocol() { ast::ModuleEntry::Protocol(p) }
+
+    rule def() -> ast::Def
+      = start:pos()
+        attributes:attribute()*
+        tok_with:KW("with") _ bottom:protocol_ref() _
+        tok_def:KW("def") _ name:IDENTIFIER() _  params:def_params() _ "=" _ processes:process_chain()
+        end:pos()
+        { ast::Def { span:FileSpan{start, end}, attributes, bottom, name, params, processes } }
+
+    rule protocol() -> ast::Protocol
+      = start:pos()
+        attributes:attribute()*
+        tok_protocol:KW("protocol") _ name:IDENTIFIER() _ param:expr_tup() _ dir:expr() _ entries:protocol_block()
+        end:pos()
+        { ast::Protocol { span:FileSpan{start, end}, attributes, name, param: param.into(), dir, entries }}
+      
+      rule protocol_block() -> Vec<ast::ProtocolEntry> = "{" _ e:protocol_entry() ** (_ "," _) _ ","? _ "}" { e }
+
+      rule protocol_entry() -> ast::ProtocolEntry
+        = start:pos() name:IDENTIFIER() _ params:def_params() end:pos() 
+        { ast::ProtocolEntry::Message( ast::ProtocolMessageDef { span: FileSpan{start, end}, name, params }) }
 
   pub rule primitive_header() -> ast::PrimitiveHeader
-    = KW("with") _ bottom:protocol_ref() _ KW("def") _ name:IDENTIFIER() _ params:def_params()  _ top:(":" _ p:protocol_ref() {p})?
-      { ast::PrimitiveHeader { bottom, name, params, top } }
+    = start:pos() KW("with") _ bottom:protocol_ref() _ KW("def") _ name:IDENTIFIER() _ params:def_params() _ top:(":" _ p:protocol_ref() {p})? end:pos()
+      { ast::PrimitiveHeader { span: FileSpan{start, end}, bottom, name, params, top } }
 
   rule protocol_ref() -> ast::ProtocolRef
-    = name:IDENTIFIER() _ param:expr_tup() { ast::ProtocolRef { name, param } }
+    = start:pos() name:IDENTIFIER() _ param:expr_tup() end:pos() { ast::ProtocolRef { span: FileSpan{ start, end }, name, param: param.into() } }
     
-  rule def_params() -> Vec<Spanned<ast::DefParam>>
-    = "(" _ params:COMMASEP(<spanned(<def_param()>)>) _ ")" { params }
+  rule def_params() -> Vec<ast::DefParam>
+    = "(" _ params:COMMASEP(<def_param()>) _ ")" { params }
 
     rule def_param() -> ast::DefParam
-      = "const" _ e:expr() { ast::DefParam::Const(e) }
-      / "var" _ "(" _ direction:expr() _ ")" _ value:expr() { ast::DefParam::Var{ direction, value} }
+      = start:pos() "const" _ expr:expr() end:pos() { ast::DefParam::Const(ast::ParamConst { span: FileSpan{start, end}, expr }) }
+      / start:pos() "var" _ "(" _ direction:expr() _ ")" _ expr:expr() end:pos()
+        { ast::DefParam::Var(ast::ParamVar{ span: FileSpan{start, end}, direction, expr}) }
 
   rule block() -> ast::Block
-      = "{" _ lets:spanned(<letstmt()>)**_ _ actions:spanned(<action()>)**(_ (";" _)?) _ "}"
-      { ast::Block{ lets, actions } }
+      = start:pos() "{" _ lets:letstmt()**_ _ actions:action()**(_ (";" _)?) _ "}" end:pos()
+      { ast::Block{ span: FileSpan{start, end}, lets, actions } }
 
       rule action() -> ast::Action
-          = KW("repeat") _ count:(dir:expr() _ count:expr() { (dir, count) })? _ block:block()
-              { ast::Action::Repeat(count, block) }
-          / KW("on") _ name:IDENTIFIER() _ expr:expr_list() _ body:block()?
-              { ast::Action::On(name, expr, body) }
-          / KW("for") _ items:(l:IDENTIFIER() _ "=" _ r:expr() { (l,r) })**__ _ body:block()
-              { ast::Action::For(items, body) }
-          / KW("alt") _ dir:expr() _ expr:expr() _ "{" _ arms:alt_arm()**__ _ "}"
-              { ast::Action::Alt(dir, expr, arms) }
-          / p:process_chain()
-              { ast::Action::Process(p) }
+        = start:pos() KW("repeat") _ dir_count:(dir:expr() _ count:expr() { (dir, count) })? _ block:block() end:pos()
+          { ast::Action::Repeat(ast::ActionRepeat{ span: FileSpan{start, end}, dir_count, block }) }
+        / start:pos() KW("on") _ name:IDENTIFIER() _ args:expr_tup() _ block:block()? end:pos()
+          { ast::Action::On(ast::ActionOn{ span: FileSpan{start, end}, name, args, block }) }
+        / start:pos() KW("for") _ vars:(l:IDENTIFIER() _ "=" _ r:expr() { (l,r) })**__ _ block:block() end:pos()
+          { ast::Action::For(ast::ActionFor{ span: FileSpan{start, end}, vars, block }) }
+        / start:pos() KW("alt") _ dir:expr() _ expr:expr() _ "{" _ arms:alt_arm()**__ _ "}" end:pos()
+          { ast::Action::Alt(ast::ActionAlt{ span: FileSpan{start, end}, dir, expr, arms }) }
+        / start:pos() processes:process_chain() end:pos()
+          { ast::Action::Process(ast::ProcessChain { span: FileSpan{start, end}, processes }) }
 
           rule alt_arm() -> ast::AltArm
-            = discriminant:expr() _ "=>" _ block:block()
-            { ast::AltArm { discriminant, block } }
-
-  rule protocol_block() -> Vec<ast::ProtocolEntry> = "{" _ e:protocol_entry() ** (_ "," _) _ ","? _ "}" { e }
-
-    rule protocol_entry() -> ast::ProtocolEntry
-      = name:IDENTIFIER() _ params:def_params() { ast::ProtocolEntry::Message(name, params) }
+            = start:pos() discriminant:expr() _ "=>" _ block:block() end:pos()
+            { ast::AltArm { span: FileSpan{start, end}, discriminant, block } }
 
   // Expressions
-  rule expr() -> ast::SpannedExpr
-      = expr_tup()
-      / valexpr()
+  rule expr_tup() -> ast::ExprTup
+      =  start:pos() "(" items:COMMASEP(<expr()>) ")" end:pos() { ast::ExprTup { span: FileSpan{start, end}, items }}
 
-  rule expr_tup() -> ast::SpannedExpr
-      = es:spanned(<es:expr_list()>)
-      { if es.node.len() == 1 { es.node.into_iter().next().unwrap() } else { Spanned { node: ast::Expr::Tup(es.node), span: es.span } } }
-      
-  rule expr_list() -> Vec<ast::SpannedExpr>
-      = "(" e:COMMASEP(<valexpr()>) ")" { e }
-
-  pub rule valexpr() -> ast::SpannedExpr = precedence! {
-    start:position!() node:@ end:position!() { Spanned { node, span: FileSpan::new(start, end) } }
+  pub rule expr() -> ast::Expr = precedence! {
+    start:position!() e:@ end:position!() { let e:ast::Expr = e; e.with_span(FileSpan::from(start..end)) }
     --
-    l:@ _ "=>" _ r:(@)  { ast::Expr::Func { args: Box::new(l), body: Box::new(r) } }
+    l:@ _ "=>" _ r:(@)  { ast::ExprFunc { span: FAKE_SPAN, args: Box::new(l), body: Box::new(r) }.into() }
     --
-    l:@ _ "!" _ r:(@)   { ast::Expr::Flip(Some(Box::new(l)), Some(Box::new(r))) } // TODO: nonassociative
-    "<:" _ x:@          { ast::Expr::Flip(Some(Box::new(x)), None) }
-    ":>" _ x:@          { ast::Expr::Flip(None, Some(Box::new(x))) }
+    l:@ _ "!" _ r:(@)   { ast::ExprFlip { span: FAKE_SPAN, dn: Some(Box::new(l)), up: Some(Box::new(r)) }.into() } // TODO: nonassociative
+    "<:" _ x:@          { ast::ExprFlip { span: FAKE_SPAN, dn: Some(Box::new(x)), up: None }.into() }
+    ":>" _ x:@          { ast::ExprFlip { span: FAKE_SPAN, dn: None, up: Some(Box::new(x))}.into() }
     --
-    l:@ _ "|" _ r:(@)   { ast::Expr::Union(vec![l, r]) }
+    l:@ _ "|" _ r:(@)   { ast::ExprUnion { span: FAKE_SPAN, items: vec![l, r] }.into() }
     --
-    l:@ _ ".." _ r:(@)  { ast::Expr::Range(Box::new(l), Box::new(r)) } // TODO: nonassociative
+    l:@ _ ".." _ r:(@)  { ast::ExprRange { span: FAKE_SPAN, lo: Box::new(l), hi: Box::new(r) }.into() } // TODO: nonassociative
     --
-    l:(@) _ "+" _ r:@   { ast::Expr::Bin(Box::new(l), BinOp::Add, Box::new(r)) }
-    l:(@) _ "-" _ r:@   { ast::Expr::Bin(Box::new(l), BinOp::Sub, Box::new(r)) }
+    l:(@) _ "+" _ r:@   { ast::ExprBin { span: FAKE_SPAN, l: Box::new(l), op: BinOp::Add, r:Box::new(r) }.into() }
+    l:(@) _ "-" _ r:@   { ast::ExprBin { span: FAKE_SPAN, l: Box::new(l), op: BinOp::Sub, r:Box::new(r) }.into() }
     --
-    l:(@) _ "*" _ r:@   { ast::Expr::Bin(Box::new(l), BinOp::Mul, Box::new(r)) }
-    l:(@) _ "/" _ r:@   { ast::Expr::Bin(Box::new(l), BinOp::Div, Box::new(r)) }
+    l:(@) _ "*" _ r:@   { ast::ExprBin { span: FAKE_SPAN, l: Box::new(l), op: BinOp::Mul, r: Box::new(r) }.into() }
+    l:(@) _ "/" _ r:@   { ast::ExprBin { span: FAKE_SPAN, l: Box::new(l), op: BinOp::Div, r: Box::new(r) }.into() }
     --
-    e:@ "[" vs:COMMASEP(<k:valexpr() _ "=" _ v:valexpr() { (k,v) }>) "]" { ast::Expr::Choose(Box::new(e), vs) }
-    e:@ arg:expr_tup() { ast::Expr::Call(Box::new(e), Box::new(arg)) }
+    e:@ "[" choices:COMMASEP(<k:expr() _ "=" _ v:expr() { (k,v) }>) "]" { ast::ExprChoose { span: FAKE_SPAN, e: Box::new(e), choices }.into() }
+    e:@ arg:expr_tup() { ast::ExprCall { span: FAKE_SPAN, func: Box::new(e), arg }.into() }
     --
-    v:literal() { ast::Expr::Value(v) }
-    s:STRING() { ast::Expr::String(s) }
-    "_" { ast::Expr::Ignore }
-    "[" vs:COMMASEP(<concat_elem()>) "]" { ast::Expr::Concat(vs) }
-    i:IDENTIFIER() { ast::Expr::Var(i) }
-    e:expr_tup() { e.node }
+    start:pos() value:literal() end:pos() { ast::ExprLiteral { span: FileSpan { start, end }, value }.into() }
+    start:pos() value:STRING() end:pos() { ast::ExprString { span: FileSpan { start, end }, value }.into() }
+    start:pos() "_" end:pos() { ast::ExprIgnore { span: FileSpan { start, end } }.into() }
+    start:pos() "[" elems:COMMASEP(<concat_elem()>) "]" end:pos() { ast::ExprConcat { span: FileSpan { start, end }, elems }.into() }
+    i:IDENTIFIER() { i.into() }
+    e:expr_tup() { e.into() }
   }
 
-  rule concat_elem() -> (Option<usize>, ast::SpannedExpr) = w:(w:INTEGER() ":" {w as usize})? e:valexpr() { (w, e) }
+  rule concat_elem() -> (Option<u32>, ast::Expr) = w:(w:INTEGER() ":" {w as u32})? e:expr() { (w, e) }
 
   pub rule literal() -> ast::Value
-    = "#" i:IDENTIFIER() { ast::Value::Symbol(i) }
+    = "#" i:IDENTIFIER() { ast::Value::Symbol(i.name) }
     / v:FLOAT() u:unit() { ast::Value::Number(v) }
     / n:INTEGER() { ast::Value::Integer(n) }
     / bitsliteral()
@@ -141,8 +152,8 @@ peg::parser!(pub grammar signalspec() for str {
     = process() ++ (_ "|" _)
 
     rule process() -> ast::Process
-      = proto:protocol_ref() _ block:block() { ast::Process::Seq(proto, block) }
-      / name:spanned(<IDENTIFIER()>) _ args:expr_list() { ast::Process::Call(name, args) }
+      = start:pos() top:protocol_ref() _ block:block() end:pos() { ast::Process::Seq(ast::ProcessSeq { span: FileSpan { start, end }, top, block }) }
+      / start:pos() name:IDENTIFIER() _ args:expr_tup() end:pos() { ast::Process::Call(ast::ProcessCall { span: FileSpan { start, end }, name, args }) }
       / block:block() { ast::Process::InferSeq(block) }
 
   // Lexer
@@ -158,10 +169,18 @@ peg::parser!(pub grammar signalspec() for str {
 
   rule COMMASEP<T>(x: rule<T>) -> Vec<T> = v:(x() ** (_ "," _)) (_ ",")? {v}
 
-  rule KW(id: &str) = ##parse_string_literal(id) !['0'..='9' | 'a'..='z' | 'A'..='Z' | '_']
+  rule TOK(s: &str) -> FileSpan = start:position!() ##parse_string_literal(s) end:position!() {
+    FileSpan::new(start, end)
+  }
 
-  rule IDENTIFIER() -> String
-    = quiet!{ i:$(['a'..='z' | 'A'..='Z'| '_']['0'..='9' | 'a'..='z' | 'A'..='Z' | '_']*) { i.to_string() } }
+  rule KW(id: &str) -> FileSpan = start:position!() ##parse_string_literal(id) !['0'..='9' | 'a'..='z' | 'A'..='Z' | '_'] end:position!() {
+    FileSpan::new(start, end)
+  }
+
+  rule IDENTIFIER() -> ast::Identifier
+    = quiet!{ start:position!() i:$(['a'..='z' | 'A'..='Z'| '_']['0'..='9' | 'a'..='z' | 'A'..='Z' | '_']*) end:position!() { 
+      ast::Identifier { span: (start..end).into(), name: i.to_string() } 
+    }}
     / expected!("identifier")
   
   rule INTEGER() -> i64
