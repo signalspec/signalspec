@@ -41,6 +41,7 @@ fn main() {
         let success = signalspec::run_tests_in_file(&*path);
         process::exit( if success { 0 } else { 1 } );
     } else {
+        let ui = &diagnostic::CliHandler;
         let mut index = signalspec::Index::new();
 
         signalspec::add_primitives(&mut index);
@@ -49,10 +50,10 @@ fn main() {
             let mut source = String::new();
             fs::File::open(&source_fname).unwrap().read_to_string(&mut source).unwrap();
             let file = Arc::new(signalspec::SourceFile::new(source_fname, source));
-            index.parse_module(file).unwrap();
+            let m = index.parse_module(file);
+            m.report_parse_errors(ui);
         }
 
-        let ui = &diagnostic::CliHandler;
 
         let mut handle = signalspec::Handle::base(&index);
         let inner_handle = handle.parse_compile_run(ui, &index, &cmd).unwrap();

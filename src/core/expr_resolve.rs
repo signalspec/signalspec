@@ -98,6 +98,7 @@ fn resolve(scope: Option<&Scope>, var_handler: &mut dyn FnMut(&str) -> Expr, e: 
         ast::Expr::Tup(..) => panic!("Tuple not allowed here"),
         ast::Expr::String(..) => panic!("String not allowed here"),
         ast::Expr::Func{..} => panic!("Function not allowed here"),
+        ast::Expr::Error(_) => panic!("Syntax error"),
     }
 }
 

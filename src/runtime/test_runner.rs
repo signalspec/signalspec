@@ -44,17 +44,15 @@ pub fn run_file(fname: &Path) -> bool {
         }
     };
 
-    let module = match index.parse_module(file) {
-        Ok(m) => m,
-        Err(e) => {
-            println!("\tParse error: {}", e);
-            return false;
-        }
-    };
+    let module = index.parse_module(file);
+
+    if module.report_parse_errors(ui) {
+        return false;
+    }
 
     let mut success = true;
 
-    for def in &module.defs {
+    for def in module.defs() {
         for (count, attr) in def.attributes.iter().filter(|a| a.name.name == "test").enumerate() {
             print!("\tTest {} #{}:", def.name.name, count+1);
             let res = run_test(ui, &index, &module, def, attr);

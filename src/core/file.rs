@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
-use crate::syntax::{ ast, parse_module, ParseError, SourceFile };
+use crate::DiagnosticHandler;
+use crate::syntax::{ ast, parse_module, SourceFile };
 use crate::core::Scope;
 use std::fmt::Debug;
 
@@ -8,45 +9,61 @@ use super::scope::ScopeNames;
 
 pub struct FileScope {
     pub(crate) scope: Scope,
-    pub(crate) protocols: Vec<ast::Protocol>,
-    pub(crate) defs: Vec<ast::Def>,
+    pub(crate) ast: ast::Module,
 }
 
 impl FileScope {
-    pub fn new(file: Arc<SourceFile>, prelude: &ScopeNames) -> Result<FileScope, ParseError> {
-        let ast = parse_module(file.source())?;
-
+    pub fn new(file: Arc<SourceFile>, prelude: &ScopeNames) -> FileScope {
+        let ast = parse_module(file.source()).expect("parser failed");
         let mut scope = Scope { file, names: prelude.clone() };
-        let mut defs = vec![];
-        let mut protocols = vec![];
 
-        for entry in ast.entries {
+        for entry in &ast.entries {
             match entry {
                 ast::ModuleEntry::Let(letdef) => {
                     super::resolve::resolve_letdef(&mut scope, &letdef);
                 }
-                ast::ModuleEntry::WithDef(def) => {
-                    defs.push(def);
-                }
-                ast::ModuleEntry::Protocol(d) => {
-                    protocols.push(d);
-                }
+                _ => {}
             }
         }
 
-        Ok(FileScope { scope, defs, protocols })
+        FileScope { scope, ast }
+    }
+
+    pub fn protocols<'a>(self: &'a Arc<Self>) -> impl Iterator<Item=(ProtocolRef, &'a ast::Protocol)> + 'a {
+        self.ast.entries.iter().enumerate().filter_map(|(ix, node)| match (ix, node) {
+            (index, ast::ModuleEntry::Protocol(p)) => Some((ProtocolRef { file: self.clone(), index }, p)),
+            _ => None
+        })
+    }
+
+    pub fn defs<'a>(&'a self) -> impl Iterator<Item = &'a ast::Def> {
+        self.ast.entries.iter().filter_map(|node| match node {
+            ast::ModuleEntry::WithDef(d) => Some(d),
+            _ => None
+        })
+    }
+
+    pub fn report_parse_errors(&self, ui: &dyn DiagnosticHandler) -> bool {
+        crate::diagnostic::report_parse_errors(ui, &self.scope.file, &self.ast)
     }
 }
 
 #[derive(Clone)]
 pub struct ProtocolRef {
-    pub(crate) file: Arc<FileScope>,
-    pub(crate) index: usize,
+    file: Arc<FileScope>,
+    index: usize,
 }
 
 impl ProtocolRef {
     pub fn ast(&self) -> &ast::Protocol {
-        &self.file.protocols[self.index]
+        match &self.file.ast.entries[self.index] {
+            ast::ModuleEntry::Protocol(p) => p,
+            _ => panic!("ProtocolRef points to non-protocol")
+        }
+    }
+
+    pub fn file(&self) -> &Arc<FileScope> {
+        &self.file
     }
 
     pub fn scope(&self) -> &Scope {

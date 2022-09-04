@@ -1,3 +1,4 @@
+use std::any::Any;
 pub use super::{ BinOp, Value, FileSpan, Spanned, AstNode };
 
 /// Helper trait for iterating AST children in macro
@@ -21,6 +22,15 @@ impl<T> AstWalk for Option<T> where T:AstWalk {
     }
 }
 
+impl<T, E> AstWalk for Result<T, E> where T:AstWalk, E: AstWalk {
+    fn walk<'a>(&'a self, res: &mut Vec<&'a dyn AstNode>) {
+        match self {
+            Ok(n) => n.walk(res),
+            Err(n) => n.walk(res),
+        }
+    }
+}
+
 impl<A, B> AstWalk for (A, B) where A:AstWalk, B:AstWalk {
     fn walk<'a>(&'a self, res: &mut Vec<&'a dyn AstNode>) {
         self.0.walk(res);
@@ -38,6 +48,7 @@ impl<T> AstWalk for Box<T> where T:AstWalk {
 impl AstWalk for FileSpan { fn walk(&self, _res: &mut Vec<&dyn AstNode>) {} }
 impl AstWalk for u32 { fn walk(&self, _res: &mut Vec<&dyn AstNode>) {} }
 impl AstWalk for String { fn walk(&self, _res: &mut Vec<&dyn AstNode>) {} }
+impl AstWalk for &'static str { fn walk(&self, _res: &mut Vec<&dyn AstNode>) {} }
 impl AstWalk for Value { fn walk(&self, _res: &mut Vec<&dyn AstNode>) {} }
 impl AstWalk for BinOp { fn walk(&self, _res: &mut Vec<&dyn AstNode>) {} }
 
@@ -64,11 +75,13 @@ macro_rules! ast_node {
                 self.span
             }
 
-            fn children<'a>(&'a self, res: &mut Vec<&'a dyn AstNode>) {
-                $(AstWalk::walk(&self.$fname, res);)*
+            fn children<'a>(&'a self, _res: &mut Vec<&'a dyn AstNode>) {
+                $(AstWalk::walk(&self.$fname, _res);)*
             }
 
             fn node_name(&self) -> &'static str { stringify!($name) }
+
+            fn as_any(&self) -> &dyn Any { self }
         }
 
         impl $name {
@@ -121,6 +134,8 @@ macro_rules! ast_node {
             }
 
             fn node_name(&self) -> &'static str { stringify!($name) }
+
+            fn as_any(&self) -> &dyn Any { self }
         }
 
         $(impl From<$ftype> for $name {
@@ -129,6 +144,13 @@ macro_rules! ast_node {
             }
         })*
     );
+}
+
+ast_node! {
+    pub struct Error {
+        pub span: FileSpan,
+        pub expected: &'static str,
+    }
 }
 
 ast_node! {
@@ -150,6 +172,7 @@ ast_node! {
         Let(LetDef),
         WithDef(Def),
         Protocol(Protocol),
+        Error(Error),
     }
 }
 
@@ -230,6 +253,7 @@ ast_node!{
         On(ActionOn),
         For(ActionFor),
         Alt(ActionAlt),
+        Error(Error),
     }
 }
 
@@ -356,6 +380,8 @@ ast_node!{
     
         Call(ExprCall),
         Var(Identifier),
+
+        Error(Error),
     }
 }
 

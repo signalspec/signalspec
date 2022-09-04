@@ -10,10 +10,32 @@ peg::parser!(pub grammar signalspec() for str {
     = start:position!() node:inner() end:position!()
     { Spanned { node, span: FileSpan::new(start, end) } }
 
+  rule recover(expected: &'static str, skip_until: rule<()>) -> ast::Error
+    = start:pos() (!("//" / skip_until()) [_])* end:pos()
+    { ast::Error { span: FileSpan{ start, end }, expected } }
+
+  rule skip_recover(expected: &'static str, skip_until: rule<()>) -> ast::Error
+    = start:pos() [_] (!("//" / skip_until()) [_])* end:pos()
+    { ast::Error { span: FileSpan{ start, end }, expected } }
+
+  rule module_recovery_set() -> ()
+    = RAW_KW("let")
+    / RAW_KW("with")
+    / "@"
+
+  rule action_recovery_set() -> ()
+    = RAW_KW("repeat")
+    / RAW_KW("on")
+    / RAW_KW("for")
+    / RAW_KW("alt")
+    / "}"
+    / ";"
+    / module_recovery_set()
+
   rule pos() -> FilePos = p:position!() { p.into() }
 
   pub rule module() -> ast::Module
-      = start:position!() _ entries:module_entry()**__ _ end:position!()
+      = start:position!() _ entries:module_entry()**(_ &[_]) _ end:position!()
       { ast::Module { span: FileSpan::new(start, end), entries } }
 
   rule letstmt() -> ast::LetDef
@@ -28,6 +50,7 @@ peg::parser!(pub grammar signalspec() for str {
     = l:letstmt() { ast::ModuleEntry::Let(l) }
     / d:def() { ast::ModuleEntry::WithDef(d) }
     / p:protocol() { ast::ModuleEntry::Protocol(p) }
+    / e:skip_recover("module item", <module_recovery_set()>) {e.into() }
 
     rule def() -> ast::Def
       = start:pos()
@@ -66,11 +89,11 @@ peg::parser!(pub grammar signalspec() for str {
         { ast::DefParam::Var(ast::ParamVar{ span: FileSpan{start, end}, direction, expr}) }
 
   rule block() -> ast::Block
-      = start:pos() "{" _ lets:letstmt()**_ _ actions:action()**(_ (";" _)?) _ "}" end:pos()
+      = start:pos() "{" _ lets:letstmt()**_ _ actions:(!['}'] a:action() {a})**(_ (";" _)?) _ "}" end:pos()
       { ast::Block{ span: FileSpan{start, end}, lets, actions } }
 
       rule action() -> ast::Action
-        = start:pos() KW("repeat") _ dir_count:(dir:expr() _ count:expr() { (dir, count) })? _ block:block() end:pos()
+        = start:pos() KW("repeat") _ dir_count:(!['{'] dir:expr() _ count:expr() { (dir, count) })? _ block:block() end:pos()
           { ast::Action::Repeat(ast::ActionRepeat{ span: FileSpan{start, end}, dir_count, block }) }
         / start:pos() KW("on") _ name:IDENTIFIER() _ args:expr_tup() _ block:block()? end:pos()
           { ast::Action::On(ast::ActionOn{ span: FileSpan{start, end}, name, args, block }) }
@@ -80,6 +103,7 @@ peg::parser!(pub grammar signalspec() for str {
           { ast::Action::Alt(ast::ActionAlt{ span: FileSpan{start, end}, dir, expr, arms }) }
         / start:pos() processes:process_chain() end:pos()
           { ast::Action::Process(ast::ProcessChain { span: FileSpan{start, end}, processes }) }
+        / e:skip_recover("action", <action_recovery_set()>) { e.into() }
 
           rule alt_arm() -> ast::AltArm
             = start:pos() discriminant:expr() _ "=>" _ block:block() end:pos()
@@ -87,7 +111,8 @@ peg::parser!(pub grammar signalspec() for str {
 
   // Expressions
   rule expr_tup() -> ast::ExprTup
-      =  start:pos() "(" items:COMMASEP(<expr()>) ")" end:pos() { ast::ExprTup { span: FileSpan{start, end}, items }}
+      = start:pos() "(" items:COMMASEP(<(![')'] e:expr() {e})>) ")" end:pos()
+        { ast::ExprTup { span: FileSpan{start, end}, items }}
 
   pub rule expr() -> ast::Expr = precedence! {
     start:position!() e:@ end:position!() { let e:ast::Expr = e; e.with_span(FileSpan::from(start..end)) }
@@ -117,7 +142,7 @@ peg::parser!(pub grammar signalspec() for str {
     start:pos() "[" elems:COMMASEP(<concat_elem()>) "]" end:pos() { ast::ExprConcat { span: FileSpan { start, end }, elems }.into() }
     i:IDENTIFIER() { i.into() }
     e:expr_tup() { e.into() }
-  }
+  } / e:recover("expression", <action_recovery_set() / [',' | ')' | ']' | '}'] {}>) { e.into() }
 
   rule concat_elem() -> (Option<u32>, ast::Expr) = w:(w:INTEGER() ":" {w as u32})? e:expr() { (w, e) }
 
@@ -173,7 +198,9 @@ peg::parser!(pub grammar signalspec() for str {
     FileSpan::new(start, end)
   }
 
-  rule KW(id: &str) -> FileSpan = start:position!() ##parse_string_literal(id) !['0'..='9' | 'a'..='z' | 'A'..='Z' | '_'] end:position!() {
+  rule RAW_KW(id: &str) -> () = ##parse_string_literal(id) !['0'..='9' | 'a'..='z' | 'A'..='Z' | '_']
+
+  rule KW(id: &str) -> FileSpan = start:position!() RAW_KW(id) end:position!() {
     FileSpan::new(start, end)
   }
 
@@ -184,7 +211,7 @@ peg::parser!(pub grammar signalspec() for str {
     / expected!("identifier")
   
   rule INTEGER() -> i64
-    = quiet!{ i:$("-"?['0'..='9']+) { i.parse().unwrap() } }
+    = quiet!{ i:$("-"?['0'..='9']+) {? i.parse().map_err(|e| "valid integer") } }
     / expected!("integer")
   
   rule FLOAT() -> f64

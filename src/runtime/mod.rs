@@ -65,13 +65,12 @@ impl<'a> Handle<'a> {
     pub fn parse_compile_run<'x: 'a>(&'x mut self, ui: &dyn DiagnosticHandler, index: &Index, call: &str) -> Result<Handle<'x>, ()> {
         let file = Arc::new(SourceFile::new("<process>".into(),  call.into()));
         let scope = Scope::new(file.clone());
-        let ast = match parse_process_chain(file.source()) {
-            Ok(ast) => ast,
-            Err(err) => {
-                report_parse_error(ui, file, err);
-                return Err(());
+        let ast = parse_process_chain(file.source()).expect("parser failed");
+        for n in &ast {
+            if crate::diagnostic::report_parse_errors(ui, &file, n) {
+                return Err(())
             }
-        };
+        }
 
         self.compile_run(ui, index, &scope, &ast)
     }
@@ -139,15 +138,3 @@ fn seq_shape(index: &Index, ty: Item, dir: Dir) -> Shape {
     }
 }
 
-fn report_parse_error(ui: &dyn DiagnosticHandler, file: Arc<SourceFile>, err: ParseError<LineCol>) {
-    ui.report(
-        DiagnosticKind::ParseError,
-        vec![
-            Label {
-                file,
-                span: FileSpan::at(err.location.offset),
-                label: format!("expected {}", err.expected).into()
-            }
-        ]
-    );
-}

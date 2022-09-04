@@ -1,6 +1,6 @@
 use std::{sync::Arc, borrow::Cow, fmt::Display};
 
-use crate::{SourceFile, FileSpan};
+use crate::{SourceFile, FileSpan, syntax::{AstNode, ast}};
 
 pub trait DiagnosticHandler {
     fn report(&self,
@@ -53,4 +53,22 @@ impl DiagnosticHandler for SimplePrintHandler {
             eprintln!("\t{}:{} {}", l.file.name(), start_line + 1, l.label);
         }
     }
+}
+
+pub fn report_parse_errors(ui: &dyn DiagnosticHandler, file: &Arc<SourceFile>, ast: &dyn AstNode) -> bool{
+    let mut has_errors = false;
+    for err in ast.walk_preorder().filter_map(|n| n.downcast::<ast::Error>()) {
+        ui.report(
+            DiagnosticKind::ParseError,
+            vec![
+                Label {
+                    file: file.clone(),
+                    span: err.span,
+                    label: format!("expected {}", err.expected).into()
+                }
+            ]
+        );
+        has_errors = true;
+    }
+    has_errors
 }

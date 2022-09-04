@@ -37,7 +37,7 @@ impl Index {
 
     pub fn define_prelude(&mut self, source: &str) {
         let file = Arc::new(SourceFile::new("<prelude>".into(), source.into()));
-        let module = self.parse_module(file).expect("failed to parse prelude module");
+        let module = self.parse_module(file);
         self.prelude = module.scope.names.clone();
     }
 
@@ -72,11 +72,11 @@ impl Index {
     }
 
     pub fn add_file(&mut self, file: Arc<FileScope>) {
-        for (index, protocol_ast) in file.protocols.iter().enumerate() {
-            self.protocols_by_name.insert(protocol_ast.name.name.clone(), ProtocolRef { file: file.clone(), index });
+        for (protocol_ref, protocol_ast) in file.protocols() {
+            self.protocols_by_name.insert(protocol_ast.name.name.clone(), protocol_ref);
         }
 
-        for def in &file.defs {
+        for def in file.defs() {
             self.defs.push(Def {
                 protocol: def.bottom.clone(),
                 name: def.name.clone(),
@@ -87,10 +87,10 @@ impl Index {
         }
     }
 
-    pub fn parse_module(&mut self, file: Arc<SourceFile>) -> Result<Arc<FileScope>, ParseError> {
-        let file = Arc::new(FileScope::new(file, &self.prelude)?);
+    pub fn parse_module(&mut self, file: Arc<SourceFile>) -> Arc<FileScope> {
+        let file = Arc::new(FileScope::new(file, &self.prelude));
         self.add_file(file.clone());
-        Ok(file)
+        file
     }
 
     /// Get a reference to the index's prelude.
