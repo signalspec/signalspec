@@ -1,7 +1,7 @@
 let bit = 0 | 1
 
 with Seq([bit, bit, bit], dir)
-def test_signed() = Seq(-4..3, dir) {
+def test_signed() = ^Seq(-4..3, dir) {
     on val(x) { val(signed(3, x)) }
     on val(x) { val(signed(3, x)) }
     on val(x) { val(signed(3, x)) }

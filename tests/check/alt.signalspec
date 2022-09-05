@@ -16,7 +16,7 @@ with Seq(#a | #b, _) def test1() = {
 }
 
 with Seq(#a|#b, dir)
-def simple() = Seq(#a | #b, dir) {
+def simple() = ^Seq(#a | #b, dir) {
     on val(x) {
         alt dir x {
             #a => {
@@ -42,7 +42,7 @@ with Seq(#a|#b, _) def test2() = {
 }
 
 with Seq(#a|#b|#x|#y, dir)
-def tuple() = Seq((#a|#b, #a|#b|#x|#y), dir) {
+def tuple() = ^Seq((#a|#b, #a|#b|#x|#y), dir) {
     on val(z) {
         alt dir z {
             (#a, w) => {
@@ -63,7 +63,7 @@ with Seq(#a|#b|#x|#y, _) def test_tuple() = {
 }
 
 with Seq(#a|#b, dir)
-def ambiguous() = Seq(#a | #b, dir) {
+def ambiguous() = ^Seq(#a | #b, dir) {
     on val(x) {
         alt dir x {
             #b => {

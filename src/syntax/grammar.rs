@@ -177,7 +177,7 @@ peg::parser!(pub grammar signalspec() for str {
     = process() ++ (_ "|" _)
 
     rule process() -> ast::Process
-      = start:pos() top:protocol_ref() _ block:block() end:pos() { ast::Process::Seq(ast::ProcessSeq { span: FileSpan { start, end }, top, block }) }
+      = start:pos() "^" _ top:protocol_ref() _ block:block() end:pos() { ast::Process::Seq(ast::ProcessSeq { span: FileSpan { start, end }, top, block }) }
       / start:pos() name:IDENTIFIER() _ args:expr_tup() end:pos() { ast::Process::Call(ast::ProcessCall { span: FileSpan { start, end }, name, args }) }
       / block:block() { ast::Process::InferSeq(block) }
 

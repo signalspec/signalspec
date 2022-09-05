@@ -7,7 +7,7 @@ protocol SPI(dir) dir {
 }
 
 with Seq((#l|#h, #l|#h, #l|#h), dir)
-def spi() = SPI(dir) {
+def spi() = ^SPI(dir) {
   repeat dir <: 10 { val((#h, <: #l, <: #l)) }
   repeat {
     repeat {

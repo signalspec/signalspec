@@ -7,7 +7,7 @@ with Seq(#a|#b, _) def main() = {
     }
 }
 
-with Seq(#a|#b, dir) def inner() = Seq(#x|#y, dir) {
+with Seq(#a|#b, dir) def inner() = ^Seq(#x|#y, dir) {
     repeat {
         on val(i) {
             val(i[#x=#a, #y=#b])
