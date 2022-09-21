@@ -166,7 +166,7 @@ impl<'a> Builder<'a> {
                      }
                 })
             }
-            ast::Action::Error(e) => panic!("Syntax error"),
+            ast::Action::Error(_) => panic!("Syntax error"),
         }
     }
 

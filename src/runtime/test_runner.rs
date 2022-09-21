@@ -84,7 +84,7 @@ pub fn run_test(ui: &dyn DiagnosticHandler, index: &Index, file: &FileScope, def
 
     let seq_ty = match &def.bottom.param {
         ast::Expr::Tup(t) if t.items.len() == 2 => rexpr(&file.scope, &t.items[0]),
-        e => panic!("Invalid seq args")
+        _ => panic!("Invalid seq args")
     };
 
     let test_args = rexpr_tup(&file.scope, &attr.args);

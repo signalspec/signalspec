@@ -7,8 +7,6 @@ use super::{Expr, ExprDn, MatchSet, Shape, Type, VarId, Dir};
 
 entity_key!(pub StepId);
 
-
-
 #[derive(Debug)]
 pub enum Step {
     Invalid,

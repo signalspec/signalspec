@@ -10,13 +10,11 @@ use std::future::poll_fn;
 use self::channel::SeqChannels;
 pub use self::test_runner::run as run_tests_in_file;
 pub use self::primitives::{ PrimitiveProcess, add_primitives };
-use crate::diagnostic::{ DiagnosticHandler, DiagnosticKind, Label };
+use crate::diagnostic::DiagnosticHandler;
 use crate::{ Scope, ShapeMsg, DataMode };
-use crate::syntax::{ SourceFile, FileSpan, parse_process_chain, ast };
+use crate::syntax::{ SourceFile, parse_process_chain, ast };
 pub use channel::{ Channel, ChannelMessage };
 use futures_lite::ready;
-use peg::error::ParseError;
-use peg::str::LineCol;
 
 use crate::core::{ Dir, Index, Item, Shape, compile_process_chain, ShapeMsgParam};
 

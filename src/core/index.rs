@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
-use crate::syntax::{ ast, ParseError, SourceFile };
+use crate::syntax::{ ast, SourceFile };
 use super::{ ProtocolRef, Item, PrimitiveDef, Scope, FunctionDef, PrimitiveFn, FileScope, Shape, scope::LeafItem };
 
 pub struct Index {
