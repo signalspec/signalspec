@@ -5,7 +5,7 @@ authors = [ "km@kevinmehall.net" ]
 edition = "2021"
 
 [workspace]
-members = ["cli"]
+members = ["cli", "lsp"]
 
 [dependencies]
 log = "0.4.14"

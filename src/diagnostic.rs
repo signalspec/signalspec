@@ -1,4 +1,4 @@
-use std::{sync::Arc, borrow::Cow, fmt::Display};
+use std::{sync::Arc, borrow::Cow, fmt::Display, cell::RefCell};
 
 use crate::{SourceFile, FileSpan, syntax::{AstNode, ast}};
 
@@ -71,4 +71,26 @@ pub fn report_parse_errors(ui: &dyn DiagnosticHandler, file: &Arc<SourceFile>, a
         has_errors = true;
     }
     has_errors
+}
+
+/// Implementation of DiagnosticHandler that simply collects errors in a Vec
+pub struct Collector {
+    diagnostics: RefCell<Vec<(DiagnosticKind, Vec<Label>)>>
+}
+
+impl Collector {
+    pub fn new() -> Self { Self { diagnostics: RefCell::new(Vec::new()) } }
+
+    pub fn diagnostics(self) -> Vec<(DiagnosticKind, Vec<Label>)> {
+        self.diagnostics.into_inner()
+    }
+}
+
+impl DiagnosticHandler for Collector {
+    fn report(&self,
+        error: DiagnosticKind,
+        labels: Vec<Label>,
+    ) {
+        self.diagnostics.borrow_mut().push((error, labels));
+    }
 }

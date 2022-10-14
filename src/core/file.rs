@@ -46,6 +46,8 @@ impl FileScope {
     pub fn report_parse_errors(&self, ui: &dyn DiagnosticHandler) -> bool {
         crate::diagnostic::report_parse_errors(ui, &self.scope.file, &self.ast)
     }
+
+    pub fn source(&self) -> &Arc<SourceFile> { &self.scope.file }
 }
 
 #[derive(Clone)]

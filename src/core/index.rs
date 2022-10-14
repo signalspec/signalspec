@@ -87,6 +87,16 @@ impl Index {
         }
     }
 
+    pub fn remove_file(&mut self, file: &Arc<FileScope>) {
+        for (_, protocol_ast) in file.protocols() {
+            self.protocols_by_name.remove(&protocol_ast.name.name);
+        }
+
+        self.defs.retain(|d| {
+            !Arc::ptr_eq(&d.scope.file, &file.scope.file)
+        });
+    }
+
     pub fn parse_module(&mut self, file: Arc<SourceFile>) -> Arc<FileScope> {
         let file = Arc::new(FileScope::new(file, &self.prelude));
         self.add_file(file.clone());
