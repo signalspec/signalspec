@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use crate::{syntax::{ast, Value}, tree::Tree};
+use crate::{syntax::{ast, Value}, tree::Tree, core::Dir, DataMode};
 use super::{ConcatElem, Expr, Func, FunctionDef, Item, Scope, ShapeMsg, ExprDn, VarId, LeafItem };
 
 fn resolve(scope: Option<&Scope>, var_handler: &mut dyn FnMut(&str) -> Expr, e: &ast::Expr) -> Expr {
@@ -185,17 +185,15 @@ pub fn on_expr_message(mut new_var: impl FnMut() -> VarId, scope: &mut Scope, ms
     let mut up = Vec::new();
 
     for (param, expr) in msg_def.params.iter().zip(exprs) {
-        let dir = param.direction;
+        let dir = match param.direction {
+            Dir::Up => DataMode { down: false, up: true },
+            Dir::Dn => DataMode { down: true, up: false },
+        };
         let push_up = &mut |i: Expr| up.push(i.down());
         let push_dn = &mut |i| dn.push(i);
-        let push: &mut dyn FnMut(Expr);
-        
-        if param.direction.up {
-            push = push_up;
-        } else if param.direction.down {
-            push = push_dn;
-        } else {
-            unreachable!()
+        let push: &mut dyn FnMut(Expr) = match param.direction {
+            Dir::Up => push_up,
+            Dir::Dn => push_dn,
         };
 
         zip_ast(expr, &param.item, &mut |a, e| {

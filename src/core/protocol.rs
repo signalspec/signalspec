@@ -1,8 +1,9 @@
 use crate::core::value;
 use crate::syntax::ast;
-use crate::{Value, Index};
+use crate::{Index, Dir};
 use super::expr_resolve::PatternError;
-use super::{ Scope, Shape, ShapeMsg, ShapeMsgParam, DataMode };
+use super::resolve::resolve_dir;
+use super::{ Scope, Shape, ShapeMsg, ShapeMsgParam };
 use super::{ lexpr, rexpr, Item };
 
 pub fn resolve(index: &Index, scope: &Scope, ast: &ast::ProtocolRef) -> Shape {
@@ -33,15 +34,11 @@ pub fn instantiate(index: &Index, protocol_name: &str, args: Item) -> Result<Sha
                     match &p {
                         ast::DefParam::Const(node) => {
                             let item = rexpr(&protocol_def_scope, &node.expr);
-                            ShapeMsgParam { item, direction: DataMode { up: false, down: false} }
+                            ShapeMsgParam { item, direction: Dir::Dn } // TODO: allow const here at all?
                         }
                         ast::DefParam::Var(node) => {
                             let item = rexpr(&protocol_def_scope, &node.expr);
-                            let direction = match super::expr_resolve::value(&protocol_def_scope, &node.direction).eval_const() {
-                                Value::Symbol(s) if s == "up" => DataMode { up: true, down: false },
-                                Value::Symbol(s) if s == "dn" => DataMode { up: false, down: true },
-                                other => panic!("Invalid direction {:?}, expected `#up` or `#dn`", other)
-                            };
+                            let direction = resolve_dir(value(&protocol_def_scope, &node.direction));
                             ShapeMsgParam { item, direction }
                         }
                     }

@@ -11,7 +11,7 @@ use self::channel::SeqChannels;
 pub use self::test_runner::run as run_tests_in_file;
 pub use self::primitives::{ PrimitiveProcess, add_primitives };
 use crate::diagnostic::DiagnosticHandler;
-use crate::{ Scope, ShapeMsg, DataMode };
+use crate::{ Scope, ShapeMsg };
 use crate::syntax::{ SourceFile, parse_process_chain, ast };
 pub use channel::{ Channel, ChannelMessage };
 use futures_lite::ready;
@@ -130,7 +130,7 @@ fn seq_shape(index: &Index, ty: Item, dir: Dir) -> Shape {
         messages: vec![
             ShapeMsg {
                 name: "val".into(),
-                params: vec![ShapeMsgParam { item: ty, direction: DataMode { down: dir == Dir::Dn, up: dir == Dir::Up } }]
+                params: vec![ShapeMsgParam { item: ty, direction: dir }]
             }
         ],
     }

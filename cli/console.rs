@@ -1,6 +1,6 @@
 use std::io::prelude::*;
 use std::io;
-use signalspec::{ Handle, ShapeMsg, Value, Item, LeafItem };
+use signalspec::{ Handle, ShapeMsg, Value, Item, LeafItem, Dir };
 
 pub fn run(mut handle: Handle) -> Result<(), ()> {
     let stdout = ::std::io::stdout();
@@ -23,10 +23,9 @@ fn format_message<'a, 'b, 'c>(w: &mut dyn Write, values: &[Value], variant: &Sha
     write!(w, "{}(", variant.name)?;
     for (i, param) in variant.params.iter().enumerate() {
         if i > 0 { write!(w, ", ")?; }
-        if param.direction.up {
-            format_message_item(w, &mut iter, &param.item)?
-        } else {
-            write!(w, "_")?;
+        match param.direction {
+            Dir::Dn => format_message_item(w, &mut iter, &param.item)?,
+            Dir::Up => write!(w, "_")?,
         }
     }
     write!(w, ")")

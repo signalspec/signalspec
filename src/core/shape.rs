@@ -9,7 +9,7 @@ pub struct ShapeMsg {
 #[derive(Clone, Debug)]
 pub struct ShapeMsgParam {
     pub item: Item,
-    pub direction: DataMode,
+    pub direction: Dir,
 }
 
 impl ShapeMsg {
@@ -35,8 +35,8 @@ impl Shape {
 
     pub fn direction(&self) -> DataMode {
         DataMode {
-            up: self.messages.iter().flat_map(|m| m.params.iter()).any(|f| f.direction.up),
-            down: self.messages.iter().flat_map(|m| m.params.iter()).any(|f| f.direction.down)
+            up: self.messages.iter().flat_map(|m| m.params.iter()).any(|f| f.direction == Dir::Up),
+            down: self.messages.iter().flat_map(|m| m.params.iter()).any(|f| f.direction == Dir::Dn)
         }
     }
 }

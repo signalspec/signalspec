@@ -258,12 +258,9 @@ pub fn resolve_token(msg_def: &ShapeMsg, args: &[Item]) -> (Vec<ExprDn>, Vec<Exp
     let mut up = Vec::new();
 
     for (param, arg) in msg_def.params.iter().zip(args) {
-        let out = if param.direction.up {
-            &mut up
-        } else if param.direction.down {
-            &mut dn
-        } else {
-            unreachable!();
+        let out = match param.direction {
+            Dir::Up => &mut up,
+            Dir::Dn => &mut dn,
         };
 
         use crate::tree::Zip::*;
