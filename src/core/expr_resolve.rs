@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use crate::{syntax::{ast, Value}, tree::Tree, core::Dir, DataMode};
+use crate::{syntax::{ast, Value}, tree::Tree, core::Dir};
 use super::{ConcatElem, Expr, Func, FunctionDef, Item, Scope, ShapeMsg, ExprDn, VarId, LeafItem };
 
 fn resolve(scope: Option<&Scope>, var_handler: &mut dyn FnMut(&str) -> Expr, e: &ast::Expr) -> Expr {
@@ -185,11 +185,7 @@ pub fn on_expr_message(mut new_var: impl FnMut() -> VarId, scope: &mut Scope, ms
     let mut up = Vec::new();
 
     for (param, expr) in msg_def.params.iter().zip(exprs) {
-        let dir = match param.direction {
-            Dir::Up => DataMode { down: false, up: true },
-            Dir::Dn => DataMode { down: true, up: false },
-        };
-        let push_up = &mut |i: Expr| up.push(i.down());
+        let push_up = &mut |i: Expr| up.push(i.down().unwrap());
         let push_dn = &mut |i| dn.push(i);
         let push: &mut dyn FnMut(Expr) = match param.direction {
             Dir::Up => push_up,
@@ -201,8 +197,8 @@ pub fn on_expr_message(mut new_var: impl FnMut() -> VarId, scope: &mut Scope, ms
                 (&Item::Leaf(LeafItem::Value(ref v)), ast::Expr::Var(ref name)) => {
                     let ty = v.get_type();
                     let id = new_var();
-                    scope.bind(&name.name, Item::Leaf(LeafItem::Value(Expr::Variable(id, ty.clone(), dir))));
-                    push(Expr::Variable(id, ty, dir));
+                    scope.bind(&name.name, Item::Leaf(LeafItem::Value(Expr::Variable(id, ty.clone(), param.direction))));
+                    push(Expr::Variable(id, ty, param.direction.flip()));
                 }
                 (&Item::Leaf(LeafItem::Value(_)), _) => {
                     push(resolve(None, &mut |_| { panic!("Variable binding not allowed here") }, a));
@@ -216,8 +212,8 @@ pub fn on_expr_message(mut new_var: impl FnMut() -> VarId, scope: &mut Scope, ms
                             LeafItem::Value(ref v) => {
                                 let ty = v.get_type();
                                 let id = new_var();
-                                push(Expr::Variable(id, ty.clone(), dir));
-                                LeafItem::Value(Expr::Variable(id, ty, dir))
+                                push(Expr::Variable(id, ty.clone(), param.direction.flip()));
+                                LeafItem::Value(Expr::Variable(id, ty, param.direction))
                             }
                             _ => panic!("{:?} not allowed in shape", i)
                         }

@@ -35,4 +35,13 @@ pub enum Dir {
     Dn,
 }
 
+impl Dir {
+    pub fn flip(self) -> Dir {
+        match self {
+            Dir::Up => Dir::Dn,
+            Dir::Dn => Dir::Up,
+        }
+    }
+}
+
 entity_key!(pub VarId);

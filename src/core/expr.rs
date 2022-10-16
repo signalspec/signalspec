@@ -1,7 +1,7 @@
 use std::fmt;
 use num_complex::Complex;
-use crate::syntax::{ Value, BinOp };
-use super::{ Item, Type, VarId, DataMode, LeafItem };
+use crate::{syntax::{ Value, BinOp }, Dir};
+use super::{ Item, Type, VarId, LeafItem };
 
 /// Element of Expr::Concat
 #[derive(PartialEq, Debug, Clone)]
@@ -14,13 +14,6 @@ pub enum ConcatElem<E> {
 }
 
 impl<E> ConcatElem<E> {
-    fn map<T>(&self, f: impl FnOnce(&E) -> T) -> ConcatElem<T> {
-        match *self {
-            ConcatElem::Elem(ref e) => ConcatElem::Elem(f(e)),
-            ConcatElem::Slice(ref e, s) => ConcatElem::Slice(f(e), s),
-        }
-    }
-
     fn expr(&self) -> &E {
         match self {
             ConcatElem::Elem(e) | ConcatElem::Slice(e, _) => e,
@@ -98,7 +91,7 @@ impl UnaryOp {
 pub enum Expr {
     Ignored,
     Const(Value),
-    Variable(VarId, Type, DataMode),
+    Variable(VarId, Type, Dir),
 
     Range(f64, f64),
     RangeInt(i64, i64),
@@ -112,29 +105,6 @@ pub enum Expr {
 }
 
 impl Expr {
-    pub fn dir(&self) -> DataMode {
-        use self::Expr::*;
-        match *self {
-            Ignored => DataMode { down: false, up: true },
-            Range(..) | RangeInt(..) => DataMode { down: false, up: true },
-            Union(..) => DataMode { down: false, up: true },
-            Variable(_, _, dir) => dir,
-            Const(..) => DataMode { down: true, up: true },
-            Flip(ref d, ref u) => DataMode{ down: d.dir().down, up: u.dir().up },
-            Concat(ref e) => e.iter().fold(DataMode { down: true, up: true }, |d, x| {
-                match *x {
-                    ConcatElem::Elem(ref e) | ConcatElem::Slice(ref e, _) => {
-                        let dir = e.dir();
-                        DataMode { down: dir.down && d.down, up: dir.up && d.up}
-                    },
-                }
-            }),
-            Choose(ref expr, _)
-            | BinaryConst(ref expr, _, _)
-            | Unary(ref expr, _) => expr.dir(),
-        }
-    }
-
     /// Return the `Type` for the set of possible values this expression may down-evaluate to or
     /// match on up-evaluation.
     pub fn get_type(&self) -> Type {
@@ -204,23 +174,28 @@ impl Expr {
         }
     }
 
-    pub fn down(&self) -> ExprDn {
+    pub fn down(&self) -> Option<ExprDn> {
         match *self {
-            Expr::Ignored | Expr::Range(..) | Expr::RangeInt(..) | Expr::Union(..) => {
-                panic!("{:?} can't be down-evaluated", self)
-            }
-            Expr::Variable(id, ..) => ExprDn::Variable(id),
-            Expr::Const(ref v) => ExprDn::Const(v.clone()),
+            Expr::Ignored | Expr::Range(..) | Expr::RangeInt(..) | Expr::Union(..) | Expr::Variable(_, _, Dir::Up) => None,
+            Expr::Variable(id, _, Dir::Dn) => Some(ExprDn::Variable(id)),
+            Expr::Const(ref v) => Some(ExprDn::Const(v.clone())),
             Expr::Flip(ref d, _) => d.down(),
-            Expr::Choose(ref e, ref c) => ExprDn::Choose(Box::new(e.down()), c.clone()),
-            Expr::Concat(ref c) => ExprDn::Concat(c.iter().map(|l| l.map(Self::down)).collect()),
-            Expr::BinaryConst(ref e, op, ref c) => ExprDn::BinaryConst(Box::new(e.down()), op, c.clone()),
-            Expr::Unary(ref e, ref op) => ExprDn::Unary(Box::new(e.down()), op.clone()),
+            Expr::Choose(ref e, ref c) => Some(ExprDn::Choose(Box::new(e.down()?), c.clone())),
+            Expr::Concat(ref c) => Some(ExprDn::Concat(
+                c.iter().map(|l| {
+                    match *l {
+                        ConcatElem::Elem(ref e) => Some(ConcatElem::Elem(e.down()?)),
+                        ConcatElem::Slice(ref e, s) => Some(ConcatElem::Slice(e.down()?, s)),
+                    }
+                }).collect::<Option<Vec<_>>>()?
+            )),
+            Expr::BinaryConst(ref e, op, ref c) => Some(ExprDn::BinaryConst(Box::new(e.down()?), op, c.clone())),
+            Expr::Unary(ref e, ref op) => Some(ExprDn::Unary(Box::new(e.down()?), op.clone())),
         }
     }
 
     pub fn eval_const(&self) -> Value {
-        self.down().eval(&|_| panic!("Runtime variable not expected here"))
+        self.down().unwrap().eval(&|_| panic!("Runtime variable not expected here"))
     }
 
     /// Up-evaluate a value. This accepts a value and may write variables

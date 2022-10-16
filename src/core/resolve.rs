@@ -99,7 +99,7 @@ impl<'a> Builder<'a> {
 
                 self.add_step(match dir {
                     Dir::Up => Step::RepeatUp(count, inner),
-                    Dir::Dn => Step::RepeatDn(count.down(), inner),
+                    Dir::Dn => Step::RepeatDn(count.down().unwrap(), inner),
                 })
             }
 
@@ -113,7 +113,6 @@ impl<'a> Builder<'a> {
                 for &(ref name, ref expr) in &node.vars {
                     let e = value(sb.scope, expr);
                     let t = e.get_type();
-                    let dir = e.dir();
                     if let Type::Vector(c, ty) = t {
                         match count {
                             Some(count) => assert_eq!(count, c),
@@ -121,13 +120,16 @@ impl<'a> Builder<'a> {
                         }
 
                         let id = self.add_var();
-                        body_scope.bind(&name.name, Item::Leaf(LeafItem::Value(Expr::Variable(id, *ty, dir))));
-
-                        if dir.down {
-                            vars_dn.push((id, e.down()));
-                        } else if dir.up {
+                        
+                        let dir = if let Some(e_dn) = e.down() {
+                            vars_dn.push((id, e_dn));
+                            Dir::Dn
+                        } else {
                             vars_up.push((id, e));
-                        }
+                            Dir::Up
+                        };
+                        
+                        body_scope.bind(&name.name, Item::Leaf(LeafItem::Value(Expr::Variable(id, *ty, dir))));
                     } else {
                         panic!("Foreach must loop over vector type, not {:?}", t)
                     }
@@ -154,13 +156,13 @@ impl<'a> Builder<'a> {
                 self.add_step(match dir {
                      Dir::Up => {
                         let opts = v.into_iter().map(|(e, b)|
-                            (e.into_iter().map(|(l, r)| (l.down(), r)).collect(), b)
+                            (e.into_iter().map(|(l, r)| (l.down().unwrap(), r)).collect(), b)
                         ).collect();
                         Step::AltUp(opts)
                      }
                      Dir::Dn => {
                          let opts = v.into_iter().map(|(e, b)|
-                            (e.into_iter().map(|(l, r)| (l, r.down())).collect(), b)
+                            (e.into_iter().map(|(l, r)| (l, r.down().unwrap())).collect(), b)
                         ).collect();
                         Step::AltDn(opts)
                      }
@@ -273,7 +275,7 @@ pub fn resolve_token(msg_def: &ShapeMsg, args: &[Item]) -> (Vec<ExprDn>, Vec<Exp
         }})
     }
 
-    (dn.into_iter().map(|x| x.down()).collect(), up)
+    (dn.into_iter().map(|x| x.down().unwrap()).collect(), up)
 }
 
 pub struct ProcessChain {
