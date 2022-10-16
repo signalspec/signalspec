@@ -1,4 +1,5 @@
 @test(#both, (#a, #b, #a, #a))
+@test(#up_fail, (#a, #a, #a, #a))
 with Seq(#a|#b, dir)
 def main() = {
     for i = [#a, #b, #a, #a] {

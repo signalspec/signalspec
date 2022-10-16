@@ -35,7 +35,7 @@ fn resolve(scope: Option<&Scope>, var_handler: &mut dyn FnMut(&str) -> Expr, e: 
             if let Expr::Const(value) = head {
                 let re = node.choices.iter().find(|&(ref le, _)| {
                     let l = resolve(scope, var_handler, le);
-                    l.eval_up(&mut |_, _| panic!("Variable not expected here"), value.clone())
+                    l.eval_up(&mut |_, _, _| panic!("Variable not expected here"), value.clone())
                 }).map(|x| &x.1).unwrap_or_else(|| {
                     panic!("No match for {} at {:?}", value, &node.span);
                 });

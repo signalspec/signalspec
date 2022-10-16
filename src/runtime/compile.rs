@@ -450,6 +450,32 @@ pub struct ProgramExec {
 const INVALID_IP: InsnId = InsnId::from(u32::MAX);
 const INITIAL_TASK: TaskId = TaskId::from(0);
 
+impl EntityMap<VarId, Option<Value>> {
+    fn down_eval(&self, expr: &ExprDn) -> Value {
+        expr.eval(&|var| {
+            self[var].clone().unwrap()
+        })
+    }
+
+    fn up_eval(&mut self, expr: &Expr, v: Value) -> bool {
+        expr.eval_up(&mut |dir, var, val| {
+            match dir {
+                Dir::Up => { self[var] = Some(val); true },
+                Dir::Dn => { self[var].as_ref().unwrap() == &val },
+            }
+        }, v)
+    }
+
+    fn up_eval_test(&mut self, expr: &Expr, v: Value) -> bool {
+        expr.eval_up(&mut |dir, var, val| {
+            match dir {
+                Dir::Up => { true },
+                Dir::Dn => { self[var].as_ref().unwrap() == &val },
+            }
+        }, v)
+    }
+}
+
 impl ProgramExec {
     pub fn new(program: Arc<CompiledProgram>, channels_lo: SeqChannels, channels_hi: SeqChannels) -> ProgramExec {
         let mut channels = Vec::with_capacity(program.channels.len());
@@ -486,12 +512,6 @@ impl ProgramExec {
             Poll::Ready(Result::Ok(()))
         }
     }
-
-    fn down_eval(&self, expr: &ExprDn) -> Value {
-        expr.eval(&|var| {
-            self.registers[var].clone().unwrap()
-        })
-    }
     
     fn poll_task(&mut self, cx: &mut Context, task: TaskId) -> Poll<Result<(), ()>> {
         let p = &*self.program;
@@ -502,7 +522,7 @@ impl ProgramExec {
             match p.insns[ip] {
                 Insn::Send(chan, variant, ref expr) => {
                     let values = expr.iter().map(|e| {
-                        self.down_eval(e)
+                        self.registers.down_eval(e)
                     }).collect();
                     self.channels[chan].send(ChannelMessage { variant, values });
                 }
@@ -527,7 +547,7 @@ impl ProgramExec {
                     assert_eq!(rx.values.len(), exprs.len());
     
                     let matched = exprs.iter().zip(rx.values.into_iter()).all(|(e, v)| {
-                        e.eval_up(&mut |var, val| {self.registers[var] = Some(val); true }, v)
+                        self.registers.up_eval(e, v)
                     });
     
                     if !matched {
@@ -545,7 +565,7 @@ impl ProgramExec {
     
                         pat.iter().any(|p| {
                             p.variant == rx.variant && p.fields.iter().zip(rx.values.iter()).all(|(e, v)| {
-                                e.eval_up(&mut |_, _| true, v.clone())
+                                self.registers.up_eval_test(e, v.clone())
                             })
                         })
                     };
@@ -573,12 +593,12 @@ impl ProgramExec {
                 }
                 Insn::CounterUpEval(counter, ref expr) => {
                     let v = Value::Integer(self.counters[counter].into());
-                    if !expr.eval_up(&mut |var, val| { self.registers[var] = Some(val); true }, v) {
+                    if !self.registers.up_eval(expr, v) {
                         return Poll::Ready(Err(()))
                     }
                 }
                 Insn::CounterDownEval(counter, ref expr) => {
-                    let v = self.down_eval(expr);
+                    let v = self.registers.down_eval(expr);
                     self.counters[counter] = i64::try_from(v).unwrap().try_into().unwrap();
                 }
                 Insn::CounterDecrement(counter, if_zero) => {
@@ -592,7 +612,7 @@ impl ProgramExec {
                     self.counters[counter] += 1;
                 }
                 Insn::IterDnStart(var, ref expr) => {
-                    let mut v = Vec::<Value>::try_from(self.down_eval(expr)).unwrap();
+                    let mut v = Vec::<Value>::try_from(self.registers.down_eval(expr)).unwrap();
                     v.reverse();
                     self.iters[var] = Some(v);
                 }
@@ -606,17 +626,17 @@ impl ProgramExec {
                 }
                 Insn::IterUpExit(var, ref expr) => {
                     let v = self.iters[var].take().unwrap();
-                    expr.eval_up(&mut |var, val| { self.registers[var] = Some(val); true }, Value::Vector(v));
+                    self.registers.up_eval(expr, Value::Vector(v));
                 }
                 Insn::Assign(ref l, ref r) => {
-                    let v = self.down_eval(r);
-                    if !l.eval_up(&mut |var, val| { self.registers[var] = Some(val); true }, v) {
+                    let v = self.registers.down_eval(r);
+                    if !self.registers.up_eval(l, v) {
                         return Poll::Ready(Err(()));
                     }
                 }
                 Insn::TestAssign(ref l, ref r, if_false) => {
-                    let v = self.down_eval(r);
-                    if !l.eval_up(&mut |var, val| { self.registers[var] = Some(val); true }, v) {
+                    let v = self.registers.down_eval(r);
+                    if !self.registers.up_eval(l, v) {
                         next_ip = if_false;
                     }
                 }

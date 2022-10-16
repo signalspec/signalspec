@@ -200,7 +200,7 @@ impl Expr {
 
     /// Up-evaluate a value. This accepts a value and may write variables
     /// via the passed function. It returns whether the expression matched the value.
-    pub fn eval_up(&self, state: &mut dyn FnMut(VarId, Value) -> bool, v: Value) -> bool {
+    pub fn eval_up(&self, state: &mut dyn FnMut(Dir, VarId, Value) -> bool, v: Value) -> bool {
         match *self {
             Expr::Ignored => true,
             Expr::Range(a, b) => match v {
@@ -214,7 +214,7 @@ impl Expr {
             Expr::Union(ref u) => {
                 u.iter().any(|i| i.eval_up(state, v.clone()))
             }
-            Expr::Variable(id, _, _) => state(id, v),
+            Expr::Variable(id, _, dir) => state(dir, id, v),
             Expr::Const(ref p) => &v == p,
 
             Expr::Flip(_, ref u) => u.eval_up(state, v),
