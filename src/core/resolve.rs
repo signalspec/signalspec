@@ -4,7 +4,7 @@ use crate::syntax::ast;
 use super::index::FindDefError;
 use super::step::{Step, StepInfo, analyze_unambiguous};
 use super::{Expr, ExprDn, Item, Scope, Shape, Type, index::DefImpl, ShapeMsg, protocol};
-use super::{Dir, on_expr_message, pattern_match, rexpr, value, VarId, StepId, LeafItem};
+use super::{Dir, on_expr_message, rexpr, value, VarId, StepId, LeafItem, lexpr};
 
 #[derive(Clone, Copy)]
 struct ResolveCx<'a> {
@@ -148,7 +148,7 @@ impl<'a> Builder<'a> {
                 let v: Vec<_> = node.arms.iter().map(|arm| {
                     let mut body_scope = sb.scope.child();
                     let mut checks = Vec::new();
-                    pattern_match(&mut body_scope, &arm.discriminant, &r, &mut checks);
+                    lexpr(&mut body_scope, &arm.discriminant, &r, Some(&mut checks)).unwrap();
                     let step = self.resolve_seq(sb.with_scope(&body_scope), &arm.block);
                     (checks, step)
                 }).collect();

@@ -21,7 +21,7 @@ pub enum InstantiateProtocolError {
 pub fn instantiate(index: &Index, protocol_name: &str, args: Item) -> Result<Shape, InstantiateProtocolError> {
     let protocol = index.find_protocol(protocol_name).ok_or(InstantiateProtocolError::ProtocolNotFound)?;
     let mut protocol_def_scope = protocol.scope().child();
-    lexpr(&mut protocol_def_scope, &protocol.ast().param, args.clone()).map_err(InstantiateProtocolError::ArgsMismatch)?;
+    lexpr(&mut protocol_def_scope, &protocol.ast().param, &args, None).map_err(InstantiateProtocolError::ArgsMismatch)?;
 
     let dir = super::resolve::resolve_dir(value(&protocol_def_scope, &protocol.ast().dir));
 
@@ -60,7 +60,7 @@ pub(crate) fn match_protocol(scope: &mut Scope, protocol: &ast::ProtocolRef, sha
         return false;
     }
 
-    if let Err(e) = lexpr(scope, &protocol.param, shape.param.clone()) {
+    if let Err(e) = lexpr(scope, &protocol.param, &shape.param, None) {
         debug!("Failed to match protocol argument for `{}`: {:?}", protocol.name.name, e);
         return false;
     }
@@ -83,7 +83,7 @@ pub(crate) fn match_def_params(scope: &mut Scope, params: &[ast::DefParam], args
             ast::DefParam::Var(node) => &node.expr,
         };
 
-        if let Err(err) = lexpr(scope, param_expr, arg.clone()) {
+        if let Err(err) = lexpr(scope, param_expr, &arg, None) {
             debug!("Failed to match argument: {:?}", err);
             return false;
         }

@@ -34,7 +34,7 @@ pub struct Func {
 impl Func {
     pub fn apply(&self, arg: Item) -> Item {
         let mut scope = self.scope.child();
-        lexpr(&mut scope, &self.args, arg).expect("failed to match function argument");
+        lexpr(&mut scope, &self.args, &arg, None).expect("failed to match function argument");
         rexpr(&scope, &self.body)
     }
 }
