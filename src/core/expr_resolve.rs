@@ -3,108 +3,9 @@ use crate::{syntax::{ast, Value}, tree::Tree, core::Dir};
 use super::{ConcatElem, Expr, Func, FunctionDef, Item, Scope, ShapeMsg, ExprDn, VarId, LeafItem };
 
 pub fn value(scope: &Scope, e: &ast::Expr) -> Expr {
-    match e {
-        ast::Expr::Ignore(_) => Expr::Ignored,
-        ast::Expr::Value(ref node) => Expr::Const(node.value.clone()),
-
-        ast::Expr::Flip(ref node) => {
-            Expr::Flip(
-                Box::new(node.dn.as_ref().map_or(Expr::Ignored,  |dn| value(scope, dn))),
-                Box::new(node.up.as_ref().map_or(Expr::Ignored,  |up| value(scope, up))),
-            )
-        }
-
-        ast::Expr::Range(ref node) => {
-            let min = value(scope, &node.lo);
-            let max = value(scope, &node.hi);
-
-            match (min, max) {
-                (Expr::Const(Value::Number(l)), Expr::Const(Value::Number(h))) => Expr::Range(l, h),
-                (Expr::Const(Value::Integer(l)), Expr::Const(Value::Integer(h))) => Expr::RangeInt(l, h),
-                _ => panic!("Range expressions must be numeric constant")
-            }
-        }
-
-        ast::Expr::Union(ref node) => {
-            Expr::Union(node.items.iter().map(|i| value(scope, i)).collect())
-        }
-
-        ast::Expr::Choose(ref node) => {
-            let head = value(scope, &node.e);
-
-            if let Expr::Const(v) = head {
-                let re = node.choices.iter().find(|&(ref le, _)| {
-                    let l = value(scope, le);
-                    l.eval_up(&mut |_, _, _| panic!("Variable not expected here"), v.clone())
-                }).map(|x| &x.1).unwrap_or_else(|| {
-                    panic!("No match for {} at {:?}", v, &node.span);
-                });
-                value(scope, re)
-            } else {
-                let pairs: Vec<(Value, Value)> = node.choices.iter().map(|&(ref le, ref re)| {
-                    let l = value(scope, le);
-                    let r = value(scope, re);
-
-                    match (l, r) {
-                        (Expr::Const(lv), Expr::Const(rv)) => (lv, rv),
-                        _ => panic!("Choose expression arms must be constant, for now")
-                    }
-                }).collect();
-
-                Expr::Choose(Box::new(head), pairs)
-            }
-        }
-
-        ast::Expr::Concat(ref node) =>  {
-            let elems = node.elems.iter().map(|&(slice_width, ref e)| {
-                let expr = value(scope, e);
-                match slice_width {
-                    None => ConcatElem::Elem(expr),
-                    Some(w) => ConcatElem::Slice(expr, w as usize)
-                }
-            }).collect();
-
-            Expr::Concat(elems)
-        }
-
-        ast::Expr::Bin(ref node) => {
-            use self::Expr::Const;
-            let lhs = value(scope, &node.l);
-            let rhs = value(scope, &node.r);
-            let op = node.op;
-            match (lhs, rhs) {
-                (Const(Value::Number(a)),  Const(Value::Number(b))) => Const(Value::Number(op.eval(a, b))),
-                (Const(Value::Integer(a)), Const(Value::Integer(b))) => Const(Value::Integer(op.eval(a, b))),
-                (Const(Value::Complex(a)), Const(Value::Complex(b))) => Const(Value::Complex(op.eval(a, b))),
-                (Const(Value::Complex(a)), Const(Value::Number(b))) => Const(Value::Complex(op.eval(a, b))),
-                (Const(Value::Number(a)),  Const(Value::Complex(b))) => Const(Value::Complex(op.eval(a, b))),
-                (l, Const(b)) => Expr::BinaryConst(Box::new(l), op, b),
-                (Const(a), r) => Expr::BinaryConst(Box::new(r), op.swap(), a),
-                _ => panic!("One side of a binary operation must be constant")
-            }
-        }
-
-        ast::Expr::Var(ref name) => {
-            match scope.get(&name.name) {
-                Some(Item::Leaf(LeafItem::Value(v))) => v,
-                Some(..) => panic!("Variable {} is not a value expression", name.name),
-                None => panic!("Undefined variable {}", name.name),
-            }
-        }
-
-        ast::Expr::Call(ref node) => {
-            match resolve_call(scope, &node.func, &node.arg) {
-                Item::Leaf(LeafItem::Value(v)) => v,
-                other => panic!("Expcted value item, but function evaluated to {:?}", other),
-            }
-        }
-
-        ast::Expr::Tup(t) if t.items.len() == 1 => { value(scope, &t.items[0]) }
-
-        ast::Expr::Tup(..) => panic!("Tuple not allowed here"),
-        ast::Expr::String(..) => panic!("String not allowed here"),
-        ast::Expr::Func{..} => panic!("Function not allowed here"),
-        ast::Expr::Error(_) => panic!("Syntax error"),
+    match rexpr(scope, e) {
+        Item::Leaf(LeafItem::Value(v)) => v,
+        _ => panic!("Expected a value"),
     }
 }
 
@@ -137,21 +38,97 @@ pub fn rexpr(scope: &Scope, e: &ast::Expr) -> Item {
         }
 
         ast::Expr::Call(ref node) => {
-            resolve_call(scope, &node.func, &node.arg)
+            let func = rexpr(scope, &node.func);
+            let arg = rexpr_tup(scope, &node.arg);
+
+            if let Item::Leaf(LeafItem::Func(func)) = func {
+                func.apply(arg)
+            } else {
+                panic!("{:?} is not a function", func)
+            }
         }
 
-        _ => Item::Leaf(LeafItem::Value(value(scope, e)))
-    }
-}
+        ast::Expr::Ignore(_) => Item::Leaf(LeafItem::Value(Expr::Ignored)),
+        ast::Expr::Value(ref node) => Item::Leaf(LeafItem::Value(Expr::Const(node.value.clone()))),
 
-fn resolve_call(scope: &Scope, func: &ast::Expr, arg: &ast::ExprTup) -> Item {
-    let func = rexpr(scope, func);
-    let arg = rexpr_tup(scope, arg);
+        ast::Expr::Flip(ref node) => {
+            Item::Leaf(LeafItem::Value(Expr::Flip(
+                Box::new(node.dn.as_ref().map_or(Expr::Ignored,  |dn| value(scope, dn))),
+                Box::new(node.up.as_ref().map_or(Expr::Ignored,  |up| value(scope, up))),
+            )))
+        }
 
-    if let Item::Leaf(LeafItem::Func(func)) = func {
-        func.apply(arg)
-    } else {
-        panic!("{:?} is not a function", func)
+        ast::Expr::Range(ref node) => {
+            let min = value(scope, &node.lo);
+            let max = value(scope, &node.hi);
+
+            Item::Leaf(LeafItem::Value(match (min, max) {
+                (Expr::Const(Value::Number(l)), Expr::Const(Value::Number(h))) => Expr::Range(l, h),
+                (Expr::Const(Value::Integer(l)), Expr::Const(Value::Integer(h))) => Expr::RangeInt(l, h),
+                _ => panic!("Range expressions must be numeric constant")
+            }))
+        }
+
+        ast::Expr::Union(ref node) => {
+            Item::Leaf(LeafItem::Value(Expr::Union(node.items.iter().map(|i| value(scope, i)).collect())))
+        }
+
+        ast::Expr::Choose(ref node) => {
+            let head = value(scope, &node.e);
+
+            if let Expr::Const(v) = head {
+                let re = node.choices.iter().find(|&(ref le, _)| {
+                    let l = value(scope, le);
+                    l.eval_up(&mut |_, _, _| panic!("Variable not expected here"), v.clone())
+                }).map(|x| &x.1).unwrap_or_else(|| {
+                    panic!("No match for {} at {:?}", v, &node.span);
+                });
+                Item::Leaf(LeafItem::Value(value(scope, re)))
+            } else {
+                let pairs: Vec<(Value, Value)> = node.choices.iter().map(|&(ref le, ref re)| {
+                    let l = value(scope, le);
+                    let r = value(scope, re);
+
+                    match (l, r) {
+                        (Expr::Const(lv), Expr::Const(rv)) => (lv, rv),
+                        _ => panic!("Choose expression arms must be constant, for now")
+                    }
+                }).collect();
+
+                Item::Leaf(LeafItem::Value(Expr::Choose(Box::new(head), pairs)))
+            }
+        }
+
+        ast::Expr::Concat(ref node) =>  {
+            let elems = node.elems.iter().map(|&(slice_width, ref e)| {
+                let expr = value(scope, e);
+                match slice_width {
+                    None => ConcatElem::Elem(expr),
+                    Some(w) => ConcatElem::Slice(expr, w as usize)
+                }
+            }).collect();
+
+            Item::Leaf(LeafItem::Value(Expr::Concat(elems)))
+        }
+
+        ast::Expr::Bin(ref node) => {
+            use self::Expr::Const;
+            let lhs = value(scope, &node.l);
+            let rhs = value(scope, &node.r);
+            let op = node.op;
+            Item::Leaf(LeafItem::Value( match (lhs, rhs) {
+                (Const(Value::Number(a)),  Const(Value::Number(b))) => Const(Value::Number(op.eval(a, b))),
+                (Const(Value::Integer(a)), Const(Value::Integer(b))) => Const(Value::Integer(op.eval(a, b))),
+                (Const(Value::Complex(a)), Const(Value::Complex(b))) => Const(Value::Complex(op.eval(a, b))),
+                (Const(Value::Complex(a)), Const(Value::Number(b))) => Const(Value::Complex(op.eval(a, b))),
+                (Const(Value::Number(a)),  Const(Value::Complex(b))) => Const(Value::Complex(op.eval(a, b))),
+                (l, Const(b)) => Expr::BinaryConst(Box::new(l), op, b),
+                (Const(a), r) => Expr::BinaryConst(Box::new(r), op.swap(), a),
+                _ => panic!("One side of a binary operation must be constant")
+            }))
+        }
+
+        ast::Expr::Error(_) => panic!("Syntax error"),
     }
 }
 
