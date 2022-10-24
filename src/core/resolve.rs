@@ -1,4 +1,5 @@
 use crate::entitymap::{ EntityMap };
+use crate::tree::Tree;
 use crate::{Value, Index, DiagnosticHandler, DiagnosticKind, Label};
 use crate::syntax::ast;
 use super::index::FindDefError;
@@ -266,9 +267,8 @@ pub fn resolve_token(msg_def: &ShapeMsg, args: &[Item]) -> (Vec<ExprDn>, Vec<Exp
         };
 
         use crate::tree::Zip::*;
-        param.item.zip(arg, &mut |m| { match m {
-            Both(&Item::Leaf(LeafItem::Value(Expr::Const(_))), _) => (),
-            Both(&Item::Leaf(LeafItem::Value(_)), &Item::Leaf(LeafItem::Value(ref v))) => {
+        param.ty.zip(arg, &mut |m| { match m {
+            Both(&Tree::Leaf(_), &Item::Leaf(LeafItem::Value(ref v))) => {
                 out.push(v.clone());
             },
             _ => panic!("Invalid pattern")

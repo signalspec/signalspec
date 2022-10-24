@@ -1,4 +1,4 @@
-use super::{DataMode, Dir, Item, ProtocolRef};
+use super::{DataMode, Dir, Item, ProtocolRef, TypeTree};
 
 #[derive(Clone, Debug)]
 pub struct ShapeMsg {
@@ -8,7 +8,7 @@ pub struct ShapeMsg {
 
 #[derive(Clone, Debug)]
 pub struct ShapeMsgParam {
-    pub item: Item,
+    pub ty: TypeTree,
     pub direction: Dir,
 }
 

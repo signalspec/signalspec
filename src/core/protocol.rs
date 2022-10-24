@@ -33,13 +33,13 @@ pub fn instantiate(index: &Index, protocol_name: &str, args: Item) -> Result<Sha
                 let params = params.iter().map(|p| {
                     match &p {
                         ast::DefParam::Const(node) => {
-                            let item = rexpr(&protocol_def_scope, &node.expr);
-                            ShapeMsgParam { item, direction: Dir::Dn } // TODO: allow const here at all?
+                            let ty = rexpr(&protocol_def_scope, &node.expr).as_type_tree().expect("not a type");
+                            ShapeMsgParam { ty, direction: Dir::Dn } // TODO: allow const here at all?
                         }
                         ast::DefParam::Var(node) => {
-                            let item = rexpr(&protocol_def_scope, &node.expr);
+                            let ty = rexpr(&protocol_def_scope, &node.expr).as_type_tree().expect("not a type");
                             let direction = resolve_dir(value(&protocol_def_scope, &node.direction));
-                            ShapeMsgParam { item, direction }
+                            ShapeMsgParam { ty, direction }
                         }
                     }
                 }).collect();

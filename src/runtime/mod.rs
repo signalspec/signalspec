@@ -121,18 +121,20 @@ fn base_shape(index: &Index) -> Shape {
     }
 }
 
-fn seq_shape(index: &Index, ty: Item, dir: Dir) -> Shape {
+fn seq_shape(index: &Index, ty_item: Item, dir: Dir) -> Shape {
     let base = index.find_protocol("Seq").cloned().expect("No `Seq` protocol found in prelude");
+
+    let ty = ty_item.as_type_tree().expect("not a type");
+
     Shape {
         def: base,
-        param: Item::Tuple(vec![ty.clone(), Item::symbol(match dir { Dir::Dn => "dn", Dir::Up => "up"})]),
+        param: Item::Tuple(vec![ty_item, Item::symbol(match dir { Dir::Dn => "dn", Dir::Up => "up"})]),
         dir,
         messages: vec![
             ShapeMsg {
                 name: "val".into(),
-                params: vec![ShapeMsgParam { item: ty, direction: dir }]
+                params: vec![ShapeMsgParam { ty, direction: dir }]
             }
         ],
     }
 }
-

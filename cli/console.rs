@@ -1,6 +1,6 @@
 use std::io::prelude::*;
 use std::io;
-use signalspec::{ Handle, ShapeMsg, Value, Item, LeafItem, Dir };
+use signalspec::{ Handle, ShapeMsg, Value, Dir, TypeTree };
 
 pub fn run(mut handle: Handle) -> Result<(), ()> {
     let stdout = ::std::io::stdout();
@@ -24,7 +24,7 @@ fn format_message<'a, 'b, 'c>(w: &mut dyn Write, values: &[Value], variant: &Sha
     for (i, param) in variant.params.iter().enumerate() {
         if i > 0 { write!(w, ", ")?; }
         match param.direction {
-            Dir::Dn => format_message_item(w, &mut iter, &param.item)?,
+            Dir::Dn => format_message_item(w, &mut iter, &param.ty)?,
             Dir::Up => write!(w, "_")?,
         }
     }
@@ -32,9 +32,9 @@ fn format_message<'a, 'b, 'c>(w: &mut dyn Write, values: &[Value], variant: &Sha
            
 }
 
-fn format_message_item<'a, I: Iterator<Item=&'a Value>>(w: &mut dyn Write, values: &mut I, shape_msg: &Item) -> io::Result<()> {
+fn format_message_item<'a, I: Iterator<Item=&'a Value>>(w: &mut dyn Write, values: &mut I, shape_msg: &TypeTree) -> io::Result<()> {
     match shape_msg {
-        Item::Tuple(ref t) => {
+        TypeTree::Tuple(ref t) => {
             write!(w, "(")?;
             for (i, v) in t.iter().enumerate() {
                 if i > 0 { write!(w, ", ")?; }
@@ -42,11 +42,10 @@ fn format_message_item<'a, I: Iterator<Item=&'a Value>>(w: &mut dyn Write, value
             }
             write!(w, ")")?;
         }
-        Item::Leaf(LeafItem::Value(_)) => {
+        TypeTree::Leaf(_) => {
             let v = values.next().expect("message doesn't match shape");
             write!(w, "{}", v)?;
         }
-        ref e => panic!("Don't know how to format {:?}", e)
     }
     Ok(())
 }

@@ -165,31 +165,23 @@ pub fn on_expr_message(mut new_var: impl FnMut() -> VarId, scope: &mut Scope, ms
             Dir::Dn => push_dn,
         };
 
-        zip_ast(expr, &param.item, &mut |a, e| {
+        zip_ast(expr, &param.ty, &mut |a, e| {
             match (e, &a) {
-                (&Item::Leaf(LeafItem::Value(ref v)), ast::Expr::Var(ref name)) => {
-                    let ty = v.get_type();
+                (Tree::Leaf(ty), ast::Expr::Var(ref name)) => {
                     let id = new_var();
                     scope.bind(&name.name, Item::Leaf(LeafItem::Value(Expr::Variable(id, ty.clone(), param.direction))));
-                    push(Expr::Variable(id, ty, param.direction.flip()));
+                    push(Expr::Variable(id, ty.clone(), param.direction.flip()));
                 }
-                (&Item::Leaf(LeafItem::Value(_)), _) => {
+                (Tree::Leaf(_), _) => {
                     push(value(scope, a));
                 }
-                (t @ &Item::Tuple(_), ast::Expr::Var(ref name)) => {
+                (t @ &Tree::Tuple(_), ast::Expr::Var(ref name)) => {
                     // Capture a tuple by recursively building a tuple Item containing each of the
                     // captured variables
-                    let v = t.map_leaf(&mut |i| {
-                        match i {
-                            LeafItem::Value(Expr::Const(ref c)) => LeafItem::Value(Expr::Const(c.clone())),
-                            LeafItem::Value(ref v) => {
-                                let ty = v.get_type();
-                                let id = new_var();
-                                push(Expr::Variable(id, ty.clone(), param.direction.flip()));
-                                LeafItem::Value(Expr::Variable(id, ty, param.direction))
-                            }
-                            _ => panic!("{:?} not allowed in shape", i)
-                        }
+                    let v = t.map_leaf(&mut |ty| {
+                        let id = new_var();
+                        push(Expr::Variable(id, ty.clone(), param.direction.flip()));
+                        LeafItem::Value(Expr::Variable(id, ty.clone(), param.direction))
                     });
                     scope.bind(&name.name, v);
                 }

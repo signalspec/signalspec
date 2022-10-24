@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 use std::cmp::{min, max};
 use crate::syntax::Value;
+use crate::tree::Tree;
 
 impl Value {
     pub fn get_type(&self) -> Type {
@@ -77,6 +78,8 @@ impl Type {
         }
     }
 }
+
+pub type TypeTree = Tree<Type>;
 
 /// Flags indicating the directions data flows
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]

@@ -20,6 +20,15 @@ impl<T> Tree<T> {
         }
     }
 
+    pub fn try_map_leaf<U, E>(&self, f: &mut impl FnMut(&T) -> Result<U, E>) -> Result<Tree<U>, E> {
+        match self {
+            Tree::Leaf(i) => Ok(Tree::Leaf(f(i)?)),
+            Tree::Tuple(t) => {
+                Ok(Tree::Tuple(t.iter().map(|s| s.try_map_leaf(f)).collect::<Result<_,_>>()?))
+            }
+        }
+    }
+
     pub fn zip<U>(&self, other: &Tree<U>, f: &mut impl FnMut(Zip<T, U>)) {
         match (self, other) {
             (Tree::Tuple(ref l), Tree::Tuple(ref r)) => {
