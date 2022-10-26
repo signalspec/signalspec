@@ -12,11 +12,11 @@ pub use self::test_runner::run as run_tests_in_file;
 pub use self::primitives::{ PrimitiveProcess, add_primitives };
 use crate::diagnostic::DiagnosticHandler;
 use crate::{ Scope, ShapeMsg };
-use crate::syntax::{ SourceFile, parse_process_chain, ast };
+use crate::syntax::{ SourceFile, parse_process, ast };
 pub use channel::{ Channel, ChannelMessage };
 use futures_lite::ready;
 
-use crate::core::{ Dir, Index, Item, Shape, compile_process_chain, ShapeMsgParam};
+use crate::core::{ Dir, Index, Item, Shape, compile_process, ShapeMsgParam};
 
 pub struct Handle<'a> {
     shape: Option<Shape>,
@@ -51,9 +51,9 @@ impl<'a> Handle<'a> {
         self.shape.as_ref()
     }
 
-    pub fn compile_run<'x: 'a>(&'x mut self, ui: &dyn DiagnosticHandler, index: &Index, scope: &Scope, processes: &[ast::Process]) -> Result<Handle<'x>, ()> {
+    pub fn compile_run<'x: 'a>(&'x mut self, ui: &dyn DiagnosticHandler, index: &Index, scope: &Scope, process: &ast::Process) -> Result<Handle<'x>, ()> {
         let shape = self.shape.as_ref().expect("no shape");
-        let program = compile_process_chain(ui, index, scope, shape.clone(), processes);
+        let program = compile_process(ui, index, scope, shape.clone(), process);
         let compiled = Arc::new(compile::compile(&program));
         let channels_hi = program.shape_up.as_ref().map_or(SeqChannels::null(), SeqChannels::for_shape);
         let future = compile::ProgramExec::new(compiled, self.channels.clone(), channels_hi.clone() );
@@ -63,13 +63,10 @@ impl<'a> Handle<'a> {
     pub fn parse_compile_run<'x: 'a>(&'x mut self, ui: &dyn DiagnosticHandler, index: &Index, call: &str) -> Result<Handle<'x>, ()> {
         let file = Arc::new(SourceFile::new("<process>".into(),  call.into()));
         let scope = Scope::new(file.clone());
-        let ast = parse_process_chain(file.source()).expect("parser failed");
-        for n in &ast {
-            if crate::diagnostic::report_parse_errors(ui, &file, n) {
-                return Err(())
-            }
+        let ast = parse_process(file.source()).expect("parser failed");
+        if crate::diagnostic::report_parse_errors(ui, &file, &ast) {
+            return Err(())
         }
-
         self.compile_run(ui, index, &scope, &ast)
     }
 

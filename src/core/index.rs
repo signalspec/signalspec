@@ -18,7 +18,7 @@ struct Def {
 }
 
 pub (crate) enum DefImpl {
-    Code(Vec<ast::Process>),
+    Code(ast::Process),
     Primitive(PrimitiveDef, Option<ast::ProtocolRef>)
  }
 
@@ -82,7 +82,7 @@ impl Index {
                 name: def.name.clone(),
                 scope: file.scope.clone(),
                 params: def.params.iter().map(|x| x.clone()).collect(),
-                implementation: DefImpl::Code(def.processes.clone())
+                implementation: DefImpl::Code(def.process.clone())
             });
         }
     }

@@ -56,9 +56,9 @@ peg::parser!(pub grammar signalspec() for str {
       = start:pos()
         attributes:attribute()*
         tok_with:KW("with") _ bottom:protocol_ref() _
-        tok_def:KW("def") _ name:IDENTIFIER() _  params:def_params() _ "=" _ processes:process_chain()
+        tok_def:KW("def") _ name:IDENTIFIER() _  params:def_params() _ "=" _ process:process()
         end:pos()
-        { ast::Def { span:FileSpan{start, end}, attributes, bottom, name, params, processes } }
+        { ast::Def { span:FileSpan{start, end}, attributes, bottom, name, params, process } }
 
     rule protocol() -> ast::Protocol
       = start:pos()
@@ -101,8 +101,8 @@ peg::parser!(pub grammar signalspec() for str {
           { ast::Action::For(ast::ActionFor{ span: FileSpan{start, end}, vars, block }) }
         / start:pos() KW("alt") _ dir:expr() _ expr:expr() _ "{" _ arms:alt_arm()**__ _ "}" end:pos()
           { ast::Action::Alt(ast::ActionAlt{ span: FileSpan{start, end}, dir, expr, arms }) }
-        / start:pos() processes:process_chain() end:pos()
-          { ast::Action::Process(ast::ProcessChain { span: FileSpan{start, end}, processes }) }
+        / start:pos() process:process() end:pos()
+          { ast::Action::Process(process) }
         / e:skip_recover("action", <action_recovery_set()>) { e.into() }
 
           rule alt_arm() -> ast::AltArm
@@ -173,12 +173,17 @@ peg::parser!(pub grammar signalspec() for str {
         = u:$(['a'..='z' | 'A'..='Z']+) { u.to_string() }
         / "" { "".to_string() }
 
-  pub rule process_chain() -> Vec<ast::Process>
-    = process() ++ (_ "|" _)
-
-    rule process() -> ast::Process
-      = start:pos() "^" _ top:protocol_ref() _ block:block() end:pos() { ast::Process::Seq(ast::ProcessSeq { span: FileSpan { start, end }, top, block }) }
-      / start:pos() name:IDENTIFIER() _ args:expr_tup() end:pos() { ast::Process::Call(ast::ProcessCall { span: FileSpan { start, end }, name, args }) }
+  #[cache_left_rec]
+  pub rule process() -> ast::Process
+      = start:pos() lower:process() _ "|" _ upper:process() end:pos() {
+          ast::Process::Stack(ast::ProcessStack{ span: FileSpan { start, end }, lower: Box::new(lower), upper: Box::new(upper) })
+      }
+      / start:pos() "^" _ top:protocol_ref() _ block:block() end:pos() {
+          ast::Process::Seq(ast::ProcessSeq { span: FileSpan { start, end }, top, block })
+      }
+      / start:pos() name:IDENTIFIER() _ args:expr_tup() end:pos() {
+          ast::Process::Call(ast::ProcessCall { span: FileSpan { start, end }, name, args })
+      }
       / block:block() { ast::Process::InferSeq(block) }
 
   // Lexer

@@ -201,7 +201,7 @@ ast_node! {
         pub bottom: ProtocolRef,
         pub name: Identifier,
         pub params: Vec<DefParam>,
-        pub processes: Vec<Process>,
+        pub process: Process,
     }
 }
 
@@ -248,7 +248,7 @@ ast_node!{
 
 ast_node!{
     pub enum Action {
-        Process(ProcessChain),
+        Process(Process),
         Repeat(ActionRepeat),
         On(ActionOn),
         For(ActionFor),
@@ -304,6 +304,7 @@ ast_node!{
         Call(ProcessCall),
         Seq(ProcessSeq),
         InferSeq(Block),
+        Stack(ProcessStack),
     }
 }
 
@@ -324,9 +325,10 @@ ast_node!{
 }
 
 ast_node!{
-    pub struct ProcessChain {
+    pub struct ProcessStack {
         pub span: FileSpan,
-        pub processes: Vec<Process>,
+        pub lower: Box<Process>,
+        pub upper: Box<Process>,
     }
 }
 

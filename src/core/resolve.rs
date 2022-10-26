@@ -59,7 +59,7 @@ impl<'a> Builder<'a> {
     fn resolve_action(&mut self, sb: ResolveCx<'_>, action: &ast::Action) -> StepId {
         match action {
             ast::Action::Process(ref node) => {
-                let (step, shape_up) = self.resolve_processes(sb, &node.processes);
+                let (step, shape_up) = self.resolve_process(sb, &node);
                 assert!(shape_up.is_none());
                 step
             }
@@ -173,19 +173,6 @@ impl<'a> Builder<'a> {
         }
     }
 
-    fn resolve_processes(&mut self, sb: ResolveCx<'_>, processes: &[ast::Process]) -> (StepId, Option<Shape>) {
-        let (mut res, mut top_shape) = self.resolve_process(sb, &processes[0]);
-
-        for process_ast in &processes[1..] {
-            let shape = top_shape.unwrap();
-            let (step, shape_up) = self.resolve_process(sb.with_lower(sb.scope, &shape), process_ast);
-            res = self.add_step(Step::Stack { lo: res, shape, hi: step });
-            top_shape = shape_up;
-        }
-
-         (res, top_shape)
-    }
-
     fn resolve_process(&mut self, sb: ResolveCx<'_>, process_ast: &ast::Process) -> (StepId, Option<Shape>) {
         match process_ast {
             ast::Process::Call(node) => {
@@ -208,7 +195,7 @@ impl<'a> Builder<'a> {
                     };
                     match *imp {
                         DefImpl::Code(ref callee_ast) => {
-                            self.resolve_processes(sb.with_scope(&scope), callee_ast)
+                            self.resolve_process(sb.with_scope(&scope), callee_ast)
                         }
                         DefImpl::Primitive(ref primitive, ref shape_up_ast) => {
                             let shape_up = shape_up_ast.as_ref().map(|s| protocol::resolve(self.index, &scope, s));
@@ -228,6 +215,14 @@ impl<'a> Builder<'a> {
             ast::Process::InferSeq(ref block) => {
                 let block = self.resolve_seq(sb.with_upper(sb.scope, None), block);
                 (block, None)
+            }
+
+            ast::Process::Stack(node) => {
+                let (lo, shape) = self.resolve_process(sb, &node.lower);
+                let shape = shape.unwrap();
+                let (hi, shape_up) = self.resolve_process(sb.with_lower(sb.scope, &shape), &node.upper);
+                let stack = self.add_step(Step::Stack { lo, shape, hi });
+                (stack, shape_up)
             }
         }
     }
@@ -287,10 +282,10 @@ pub struct ProcessChain {
     pub shape_up: Option<Shape>,
 }
 
-pub fn compile_process_chain(ui: &dyn DiagnosticHandler, index: &Index, scope: &Scope, shape_dn: Shape, ast: &[ast::Process]) -> ProcessChain {
+pub fn compile_process(ui: &dyn DiagnosticHandler, index: &Index, scope: &Scope, shape_dn: Shape, ast: &ast::Process) -> ProcessChain {
     let mut builder = Builder::new(ui, index);
     let sb = ResolveCx { scope, shape_up: None, shape_down: &shape_dn };
-    let (step, shape_up) = builder.resolve_processes(sb, ast);
+    let (step, shape_up) = builder.resolve_process(sb, ast);
 
     let step_info = analyze_unambiguous(&builder.steps);
 

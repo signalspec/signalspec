@@ -94,7 +94,7 @@ pub fn run_test(ui: &dyn DiagnosticHandler, index: &Index, file: &FileScope, def
 
     let run_dn = || -> Result<Vec<ChannelMessage>, ()> {
         let (channel, mut handle) = Handle::seq_dn(index, seq_ty.clone());
-        handle.compile_run(ui, index, &file.scope, &def.processes).expect("failed to compile").finish()?;
+        handle.compile_run(ui, index, &file.scope, &def.process).expect("failed to compile").finish()?;
 
         let mut read = channel.read();
         Ok(std::iter::from_fn(|| read.pop()).collect())
@@ -104,7 +104,7 @@ pub fn run_test(ui: &dyn DiagnosticHandler, index: &Index, file: &FileScope, def
         let (channel, mut handle) = Handle::seq_up(index, seq_ty.clone());
         for m in messages { channel.send(m); }
         channel.set_closed(true);
-        handle.compile_run(ui, index, &file.scope, &def.processes).expect("failed to compile").finish()
+        handle.compile_run(ui, index, &file.scope, &def.process).expect("failed to compile").finish()
     };
 
     match (test_mode, test_data.map(item_to_msgs)) {
