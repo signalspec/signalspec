@@ -100,7 +100,7 @@ impl Expr {
     /// match on up-evaluation.
     pub fn get_type(&self) -> Type {
         match *self {
-            Expr::Ignored => Type::Bottom,
+            Expr::Ignored => Type::Ignored,
             Expr::Range(lo, hi) => Type::Number(lo, hi),
             Expr::Union(ref u) => Type::union_iter(u.iter().map(Expr::get_type)),
             Expr::Variable(_, ref ty, _) => ty.clone(),
@@ -488,7 +488,7 @@ fn exprs() {
     assert_eq!(two_two_i.get_type(), Type::Complex);
 
     let ignore = expr("_");
-    assert_eq!(ignore.get_type(), Type::Bottom);
+    assert_eq!(ignore.get_type(), Type::Ignored);
 
     let down = expr("<: #h");
     assert_eq!(down.get_type(), Type::Symbol(Some("h".to_string()).into_iter().collect()));

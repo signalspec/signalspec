@@ -11,7 +11,7 @@ impl Value {
             Value::Complex(_) => Type::Complex,
             Value::Symbol(ref v) => Type::Symbol(Some(v.clone()).into_iter().collect()),
             Value::Vector(ref n) => Type::Vector(n.len() as u32,
-                Box::new(n.first().map_or(Type::Bottom, Value::get_type))),
+                Box::new(n.first().map_or(Type::Ignored, Value::get_type))),
         }
     }
 }
@@ -23,15 +23,16 @@ pub enum Type {
     Number(Number, Number),
     Complex, // TODO: bounds?
     Vector(u32, Box<Type>),
-    /// Type containing no values. No-op union with any type
-    Bottom,
+
+    /// The type of the Ignore expression `_`. No-op union with any type.
+    Ignored,
 }
 
 impl Type {
     pub fn union(t1: Type, t2: Type) -> Type {
         use self::Type::*;
         match (t1, t2) {
-            (Bottom, x) | (x, Bottom) => x,
+            (Ignored, x) | (x, Ignored) => x,
             (Symbol(a), Symbol(b)) => Symbol(a.union(&b).cloned().collect()),
             (Vector(n1, t1), Vector(n2, t2)) => {
                 assert_eq!(n1, n2);
@@ -44,7 +45,7 @@ impl Type {
     }
 
     pub fn union_iter<T: Iterator<Item=Type>>(i: T) -> Type {
-        i.fold(Type::Bottom, Type::union)
+        i.fold(Type::Ignored, Type::union)
     }
 }
 
