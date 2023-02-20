@@ -3,7 +3,7 @@ use crate::tree::Tree;
 use crate::{Value, Index, DiagnosticHandler, DiagnosticKind, Label};
 use crate::syntax::ast;
 use super::index::FindDefError;
-use super::step::{Step, StepInfo, analyze_unambiguous};
+use super::step::{Step, StepInfo, analyze_unambiguous, AltUpArm, AltDnArm};
 use super::{Expr, ExprDn, Item, Scope, Shape, Type, index::DefImpl, ShapeMsg, protocol};
 use super::{Dir, on_expr_message, rexpr, value, VarId, StepId, LeafItem, lexpr};
 
@@ -156,15 +156,17 @@ impl<'a> Builder<'a> {
 
                 self.add_step(match dir {
                      Dir::Up => {
-                        let opts = v.into_iter().map(|(e, b)|
-                            (e.into_iter().map(|(l, r)| (l.down().unwrap(), r)).collect(), b)
-                        ).collect();
+                        let opts = v.into_iter().map(|(e, body)| {
+                            let checks = e.into_iter().map(|(l, r)| (l.down().unwrap(), r)).collect();
+                            AltUpArm { vals: checks, body }
+                        }).collect();
                         Step::AltUp(opts)
                      }
                      Dir::Dn => {
-                         let opts = v.into_iter().map(|(e, b)|
-                            (e.into_iter().map(|(l, r)| (l, r.down().unwrap())).collect(), b)
-                        ).collect();
+                         let opts = v.into_iter().map(|(e, body)| {
+                            let checks = e.into_iter().map(|(l, r)| (l, r.down().unwrap())).collect();
+                            AltDnArm { vals: checks, body }
+                        }).collect();
                         Step::AltDn(opts)
                      }
                 })

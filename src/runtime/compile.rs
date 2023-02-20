@@ -1,6 +1,6 @@
 use crate::{Shape, PrimitiveProcess};
 use crate::entitymap::{EntityMap, entity_key};
-use crate::core::{ExprDn, Expr, ProcessChain, MatchSet, MessagePatternSet, StepId, Step, VarId, Dir};
+use crate::core::{ExprDn, Expr, ProcessChain, MatchSet, MessagePatternSet, StepId, Step, AltUpArm, AltDnArm, VarId, Dir};
 
 type VariantId = usize;
 entity_key!(pub TaskId);
@@ -331,11 +331,11 @@ impl Compiler<'_> {
             Step::AltUp(ref opts) => {
                 let mut jumps_to_final = vec![];
 
-                for &(ref vals, inner) in opts {
-                    let inner_info = &self.program.step_info[inner];
+                for &AltUpArm { ref vals, body } in opts {
+                    let inner_info = &self.program.step_info[body];
                     let test = self.emit_placeholder();
 
-                    self.compile_step(inner, channels);
+                    self.compile_step(body, channels);
 
                     for &(ref l, ref r) in vals {
                         self.emit(Insn::Assign(r.clone(), l.clone()));
@@ -356,12 +356,12 @@ impl Compiler<'_> {
             Step::AltDn(ref opts) => {
                 let mut jumps_to_final = vec![];
 
-                for &(ref vals, inner) in opts {
-                    let inner_info = &self.program.step_info[inner];
+                for &AltDnArm { ref vals, body } in opts {
+                    let inner_info = &self.program.step_info[body];
                     let jumps_to_next: Vec<_> = vals.iter().map(|_| self.emit_placeholder()).collect();
 
                     self.seq_prep(channels, &None, &inner_info.first);
-                    self.compile_step(inner, channels);
+                    self.compile_step(body, channels);
 
                     jumps_to_final.push(self.emit_placeholder());
 

@@ -8,6 +8,18 @@ use super::{Expr, ExprDn, MatchSet, Shape, Type, VarId, Dir};
 entity_key!(pub StepId);
 
 #[derive(Debug)]
+pub struct AltDnArm {
+    pub vals: Vec<(Expr, ExprDn)>,
+    pub body: StepId,
+}
+
+#[derive(Debug)]
+pub struct AltUpArm {
+    pub vals: Vec<(ExprDn, Expr)>,
+    pub body: StepId,
+}
+
+#[derive(Debug)]
 pub enum Step {
     Invalid,
     Stack { lo: StepId, shape: Shape, hi: StepId },
@@ -18,8 +30,8 @@ pub enum Step {
     RepeatDn(ExprDn, StepId),
     RepeatUp(Expr, StepId),
     Foreach { iters: u32, vars_dn: Vec<(VarId, ExprDn)>, vars_up: Vec<(VarId, Expr)>, inner: StepId },
-    AltDn(Vec<(Vec<(Expr, ExprDn)>, StepId)>),
-    AltUp(Vec<(Vec<(ExprDn, Expr)>, StepId)>),
+    AltDn(Vec<AltDnArm>),
+    AltUp(Vec<AltUpArm>),
 }
 
 pub fn write_tree(f: &mut dyn Write, indent: u32, steps: &[Step], step: StepId) -> IoResult<()> {
@@ -64,16 +76,16 @@ pub fn write_tree(f: &mut dyn Write, indent: u32, steps: &[Step], step: StepId) 
         }
         Step::AltDn(ref arms) => {
             writeln!(f, "{}Alt[{:?}]:", i, Dir::Dn)?;
-            for &(ref cond, inner) in arms {
-                writeln!(f, "{} {:?} =>", i, cond)?;
-                write_tree(f, indent + 2, steps, inner)?;
+            for arm in arms {
+                writeln!(f, "{} {:?} =>", i, arm.vals)?;
+                write_tree(f, indent + 2, steps, arm.body)?;
             }
         }
         Step::AltUp(ref arms) => {
             writeln!(f, "{}Alt[{:?}]:", i, Dir::Up)?;
-            for &(ref cond, inner) in arms {
-                writeln!(f, "{} {:?} =>", i, cond)?;
-                write_tree(f, indent + 2, steps, inner)?;
+            for arm in arms {
+                writeln!(f, "{} {:?} =>", i, arm.vals)?;
+                write_tree(f, indent + 2, steps, arm.body)?;
             }
         }
     }
@@ -226,8 +238,8 @@ pub fn analyze_unambiguous(steps: &EntityMap<StepId, Step>) -> EntityMap<StepId,
 
             },
             Step::AltDn(ref opts) => {
-                let nullable = opts.iter().any(|&(_, s)| get(s).nullable);
-                let followlast = MatchSet::merge_followlast(opts.iter().map(|x| &get(x.1).followlast));
+                let nullable = opts.iter().any(|arm| get(arm.body).nullable);
+                let followlast = MatchSet::merge_followlast(opts.iter().map(|x| &get(x.body).followlast));
 
                 StepInfo {
                     first: MatchSet::proc(),
@@ -236,9 +248,9 @@ pub fn analyze_unambiguous(steps: &EntityMap<StepId, Step>) -> EntityMap<StepId,
                 }
             },
             Step::AltUp(ref opts) => {
-                let first = MatchSet::merge_first(opts.iter().map(|x| &get(x.1).first));
-                let followlast = MatchSet::merge_followlast(opts.iter().map(|x| &get(x.1).followlast));
-                let nullable = opts.iter().all(|x| get(x.1).nullable);
+                let first = MatchSet::merge_first(opts.iter().map(|x| &get(x.body).first));
+                let followlast = MatchSet::merge_followlast(opts.iter().map(|x| &get(x.body).followlast));
+                let nullable = opts.iter().all(|x| get(x.body).nullable);
 
                 StepInfo { first, nullable, followlast }
             },
