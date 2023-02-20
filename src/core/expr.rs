@@ -1,5 +1,6 @@
 use std::fmt;
 use num_complex::Complex;
+use num_traits::cast::ToPrimitive;
 use crate::{syntax::{ Value, BinOp }, Dir};
 use super::{ Item, Type, VarId, LeafItem };
 
@@ -10,7 +11,7 @@ pub enum ConcatElem<E> {
     Elem(E),
 
     /// An `Expr` for a `Vector` value whose elements are included in a concatenation (`[8:a]`)
-    Slice(E, usize),
+    Slice(E, u32),
 }
 
 impl<E> ConcatElem<E> {
@@ -36,7 +37,7 @@ impl ConcatElem<Expr> {
         }
     }
 
-    fn elem_count(&self) -> usize {
+    fn elem_count(&self) -> u32 {
         match *self {
             ConcatElem::Elem(..) => 1,
             ConcatElem::Slice(_, s) => s,
@@ -53,8 +54,8 @@ pub enum SignMode {
 #[derive(PartialEq, Debug, Clone)]
 pub enum UnaryOp {
     FloatToInt,
-    IntToBits { width: usize, signed: SignMode },
-    Chunks { width: usize },
+    IntToBits { width: u32, signed: SignMode },
+    Chunks { width: u32 },
 }
 
 impl UnaryOp {
@@ -77,7 +78,7 @@ impl UnaryOp {
             UnaryOp::Chunks { width } => {
                 match v {
                     Value::Vector(i) => {
-                        Value::Vector(i.chunks(width).map(|s| Value::Vector(s.to_vec())).collect())
+                        Value::Vector(i.chunks(width as usize).map(|s| Value::Vector(s.to_vec())).collect())
                     }
                     e => panic!("Invalid value {} in Chunks", e)
                 }
@@ -239,7 +240,7 @@ impl Expr {
                 components.iter().all(|component| {
                     match *component {
                         ConcatElem::Elem(ref e) => e.eval_up(state, elems.next().expect("not enough elements in slice")),
-                        ConcatElem::Slice(ref e, w) => e.eval_up(state, Value::Vector(elems.by_ref().take(w).collect()))
+                        ConcatElem::Slice(ref e, w) => e.eval_up(state, Value::Vector(elems.by_ref().take(w as usize).collect()))
                     }
                 })
             }
@@ -262,7 +263,7 @@ impl Expr {
             Expr::Unary(ref expr, UnaryOp::IntToBits { width, signed }) => {
                 match v {
                     Value::Vector(bits) => {
-                        assert_eq!(bits.len(), width);
+                        assert_eq!(bits.len(), width as usize);
 
                         let v = bits.iter().fold(0, |acc, x| {
                             match *x {
@@ -459,7 +460,7 @@ fn fn_signed_unsigned(arg: Item, sign_mode: SignMode) -> Result<Item, &'static s
             match (t.pop(), t.pop()) { //TODO: cleaner way to move out of vec without reversing order?
                 (Some(Item::Leaf(LeafItem::Value(v))), Some(Item::Leaf(LeafItem::Value(Expr::Const(Value::Integer(width)))))) => {
                     Ok(Item::Leaf(LeafItem::Value(Expr::Unary(Box::new(v), UnaryOp::IntToBits {
-                        width: width as usize,
+                        width: width.to_u32().ok_or("signed() width must be integer")?,
                         signed: sign_mode,
                     }))))
                 }
@@ -476,7 +477,7 @@ fn fn_chunks(arg: Item) -> Result<Item, &'static str> {
             match (t.pop(), t.pop()) { //TODO: cleaner way to move out of vec without reversing order?
                 (Some(Item::Leaf(LeafItem::Value(v))), Some(Item::Leaf(LeafItem::Value(Expr::Const(Value::Integer(width)))))) => {
                     Ok(Item::Leaf(LeafItem::Value(Expr::Unary(Box::new(v), UnaryOp::Chunks {
-                        width: width as usize,
+                        width: width.to_u32().ok_or("chunks() width must be integer")?,
                     }))))
                 }
                 _ => Err("Invalid arguments to chunks()")

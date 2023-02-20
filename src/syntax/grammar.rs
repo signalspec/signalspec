@@ -144,7 +144,7 @@ peg::parser!(pub grammar signalspec() for str {
     e:expr_tup() { e.into() }
   } / e:recover("expression", <action_recovery_set() / [',' | ')' | ']' | '}'] {}>) { e.into() }
 
-  rule concat_elem() -> (Option<u32>, ast::Expr) = w:(w:INTEGER() ":" {w as u32})? e:expr() { (w, e) }
+  rule concat_elem() -> (Option<u32>, ast::Expr) = w:(w:INTEGER() ":" {w})? e:expr() { (w, e) }
 
   pub rule literal() -> ast::Value
     = "#" i:IDENTIFIER() { ast::Value::Symbol(i.name) }
@@ -215,7 +215,7 @@ peg::parser!(pub grammar signalspec() for str {
     }}
     / expected!("identifier")
   
-  rule INTEGER() -> i64
+  rule INTEGER<T: std::str::FromStr>() -> T
     = quiet!{ i:$("-"?['0'..='9']+) {? i.parse().map_err(|e| "valid integer") } }
     / expected!("integer")
   

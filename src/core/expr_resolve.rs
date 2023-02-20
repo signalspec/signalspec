@@ -104,7 +104,7 @@ pub fn rexpr(scope: &Scope, e: &ast::Expr) -> Item {
                 let expr = value(scope, e);
                 match slice_width {
                     None => ConcatElem::Elem(expr),
-                    Some(w) => ConcatElem::Slice(expr, w as usize)
+                    Some(w) => ConcatElem::Slice(expr, w)
                 }
             }).collect();
 
