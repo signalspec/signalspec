@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 use std::cmp::{min, max};
-use crate::syntax::Value;
+
+use crate::syntax::{Value, Number};
 use crate::tree::Tree;
 
 impl Value {
@@ -8,7 +9,6 @@ impl Value {
         match *self {
             Value::Number(v) => Type::Number(v, v),
             Value::Complex(_) => Type::Complex,
-            Value::Integer(v) => Type::Integer(v, v),
             Value::Symbol(ref v) => Type::Symbol(Some(v.clone()).into_iter().collect()),
             Value::Vector(ref n) => Type::Vector(n.len() as u32,
                 Box::new(n.first().map_or(Type::Bottom, Value::get_type))),
@@ -20,8 +20,7 @@ impl Value {
 #[derive(Debug, PartialEq, Clone)]
 pub enum Type {
     Symbol(HashSet<String>),
-    Integer(i64, i64),
-    Number(f64, f64),
+    Number(Number, Number),
     Complex, // TODO: bounds?
     Vector(u32, Box<Type>),
     /// Type containing no values. No-op union with any type
@@ -38,8 +37,7 @@ impl Type {
                 assert_eq!(n1, n2);
                 Vector(n1, Box::new(Type::union(*t1, *t2)))
             }
-            (Integer(l1, h1), Integer(l2, h2)) => Integer(min(l1, l2), max(h1, h2)),
-            (Number (l1, h1), Number (l2, h2)) => Number (f64::min(l1, l2), f64::max(h1, h2)),
+            (Number (l1, h1), Number (l2, h2)) => Number (min(l1, l2), max(h1, h2)),
             (Complex, Complex) => Complex,
             (a, b) => panic!("Incompatible types: {:?} and {:?}", a, b)
         }

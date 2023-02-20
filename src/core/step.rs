@@ -196,7 +196,7 @@ pub fn analyze_unambiguous(steps: &EntityMap<StepId, Step>) -> EntityMap<StepId,
                 let inner = get(inner);
 
                 let count_includes_zero = match count.get_type() {
-                    Type::Integer(lo, hi) => lo <= 0 && hi >= 0,
+                    Type::Number(lo, hi) if lo.is_integer() && hi.is_integer() => lo <= 0.into() && hi >= 0.into(),
                     count_type => {
                         warn!("Loop count type is {:?} not int", count_type);
                         false

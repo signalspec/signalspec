@@ -1,4 +1,6 @@
 use std::sync::Arc;
+use num_complex::Complex;
+
 use crate::{syntax::{ast, Value}, tree::Tree, core::Dir};
 use super::{ConcatElem, Expr, Func, FunctionDef, Item, Scope, ShapeMsg, ExprDn, VarId, LeafItem };
 
@@ -64,7 +66,6 @@ pub fn rexpr(scope: &Scope, e: &ast::Expr) -> Item {
 
             Item::Leaf(LeafItem::Value(match (min, max) {
                 (Expr::Const(Value::Number(l)), Expr::Const(Value::Number(h))) => Expr::Range(l, h),
-                (Expr::Const(Value::Integer(l)), Expr::Const(Value::Integer(h))) => Expr::RangeInt(l, h),
                 _ => panic!("Range expressions must be numeric constant")
             }))
         }
@@ -118,10 +119,9 @@ pub fn rexpr(scope: &Scope, e: &ast::Expr) -> Item {
             let op = node.op;
             Item::Leaf(LeafItem::Value( match (lhs, rhs) {
                 (Const(Value::Number(a)),  Const(Value::Number(b))) => Const(Value::Number(op.eval(a, b))),
-                (Const(Value::Integer(a)), Const(Value::Integer(b))) => Const(Value::Integer(op.eval(a, b))),
                 (Const(Value::Complex(a)), Const(Value::Complex(b))) => Const(Value::Complex(op.eval(a, b))),
-                (Const(Value::Complex(a)), Const(Value::Number(b))) => Const(Value::Complex(op.eval(a, b))),
-                (Const(Value::Number(a)),  Const(Value::Complex(b))) => Const(Value::Complex(op.eval(a, b))),
+                (Const(Value::Complex(a)), Const(Value::Number(b))) => Const(Value::Complex(op.eval(a, Complex::from(b)))),
+                (Const(Value::Number(a)),  Const(Value::Complex(b))) => Const(Value::Complex(op.eval(Complex::from(a), b))),
                 (l, Const(b)) => Expr::BinaryConst(Box::new(l), op, b),
                 (Const(a), r) => Expr::BinaryConst(Box::new(r), op.swap(), a),
                 _ => panic!("One side of a binary operation must be constant")

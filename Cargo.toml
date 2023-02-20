@@ -13,6 +13,7 @@ num-complex = "0.4"
 peg = "0.8"
 futures-lite = "1.12.0"
 async-fs = "1.5.0"
+num-rational = { version = "0.4.1", default_features = false }
 num-traits = "0.2.15"
 
 [dev-dependencies]

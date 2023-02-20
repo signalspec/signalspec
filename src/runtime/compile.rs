@@ -592,7 +592,7 @@ impl ProgramExec {
                     self.counters[counter] = val;
                 }
                 Insn::CounterUpEval(counter, ref expr) => {
-                    let v = Value::Integer(self.counters[counter].into());
+                    let v = self.counters[counter].into();
                     if !self.registers.up_eval(expr, v) {
                         return Poll::Ready(Err(()))
                     }

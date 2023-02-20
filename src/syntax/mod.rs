@@ -8,7 +8,7 @@ mod test;
 
 pub use ast_node::{ AstNode, enclosing, dump_tree };
 pub use self::binop::BinOp;
-pub use self::value::Value;
+pub use self::value::{ Value, Number };
 pub use self::span::{ SourceFile, FilePos, FileSpan, Spanned };
 
 pub type ParseError = peg::error::ParseError<peg::str::LineCol>;

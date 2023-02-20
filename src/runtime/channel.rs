@@ -110,8 +110,8 @@ impl<'a> AsyncRead for ReadBytes<'a> {
                 debug!("rx {:?}", v);
                 assert_eq!(v.variant, 0);
                 assert_eq!(v.values.len(), 1);
-                match v.values[0] {
-                    Value::Integer(b) => { *dst = b as u8; }
+                match u8::try_from(&v.values[0]) {
+                    Ok(b) => { *dst = b; }
                     ref x => panic!("Byte connection received {:?}", x)
                 }
                 num_read += 1;
@@ -127,8 +127,8 @@ impl<'a> AsyncRead for ReadBytes<'a> {
 pub struct WriteBytes<'a>(&'a mut Channel);
 impl<'a> AsyncWrite for WriteBytes<'a> {
     fn poll_write(self: Pin<&mut Self>, _cx: &mut Context<'_>, buf: &[u8]) -> Poll<io::Result<usize>> {
-        for b in buf.iter() {
-            let m = ChannelMessage::one(Value::Integer(*b as i64));
+        for &b in buf.iter() {
+            let m = ChannelMessage::one(b.into());
             self.0.send(m);
         }
 

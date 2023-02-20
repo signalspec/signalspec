@@ -1,7 +1,7 @@
 use std::fmt;
 use num_complex::Complex;
 use num_traits::cast::ToPrimitive;
-use crate::{syntax::{ Value, BinOp }, Dir};
+use crate::{syntax::{ Value, BinOp, Number }, Dir};
 use super::{ Item, Type, VarId, LeafItem };
 
 /// Element of Expr::Concat
@@ -53,7 +53,6 @@ pub enum SignMode {
 
 #[derive(PartialEq, Debug, Clone)]
 pub enum UnaryOp {
-    FloatToInt,
     IntToBits { width: u32, signed: SignMode },
     Chunks { width: u32 },
 }
@@ -61,16 +60,10 @@ pub enum UnaryOp {
 impl UnaryOp {
     pub fn eval(&self, v: Value) -> Value {
         match *self {
-            UnaryOp::FloatToInt => {
-                match v {
-                    Value::Number(n) => Value::Integer(n as i64),
-                    e => panic!("Invalid value {} in FloatToInt", e)
-                }
-            }
             UnaryOp::IntToBits { width, .. } => {
                 match v {
-                    Value::Integer(i) => {
-                        Value::Vector((0..width).rev().map(|bit| Value::Integer((((i as u64) >> bit) & 1) as i64) ).collect())
+                    Value::Number(i) => {
+                        Value::Vector((0..width).rev().map(|bit| Value::Number((((i.to_i64().unwrap()) >> bit) & 1).into()) ).collect())
                     }
                     e => panic!("Invalid value {} in IntToBits", e)
                 }
@@ -93,10 +86,7 @@ pub enum Expr {
     Ignored,
     Const(Value),
     Variable(VarId, Type, Dir),
-
-    Range(f64, f64),
-    RangeInt(i64, i64),
-
+    Range(Number, Number),
     Union(Vec<Expr>),
     Flip(Box<Expr>, Box<Expr>),
     Choose(Box<Expr>, Vec<(Value, Value)>),
@@ -112,7 +102,6 @@ impl Expr {
         match *self {
             Expr::Ignored => Type::Bottom,
             Expr::Range(lo, hi) => Type::Number(lo, hi),
-            Expr::RangeInt(lo, hi) => Type::Integer(lo, hi),
             Expr::Union(ref u) => Type::union_iter(u.iter().map(Expr::get_type)),
             Expr::Variable(_, ref ty, _) => ty.clone(),
             Expr::Const(ref v) => v.get_type(),
@@ -138,31 +127,13 @@ impl Expr {
                             Type::Number(a, b)
                         }
                     }
-                    (Type::Integer(min, max), &Value::Integer(c)) => {
-                        assert!(min <= max);
-                        let (a, b) = (op.eval(min, c), op.eval(max, c));
-                        if op == BinOp::SubSwap || op == BinOp::DivSwap {
-                            assert!(b <= a);
-                            Type::Integer(b, a)
-                        } else {
-                            assert!(a <= b);
-                            Type::Integer(a, b)
-                        }
-                    }
                     (Type::Complex, &Value::Number(..)) => Type::Complex,
                     (Type::Number(..), &Value::Complex(..)) => Type::Complex,
                     _ => panic!("Arithmetic type error {} {:?} {}", e, op, c)
                 }
             }
-
-            Expr::Unary(ref expr, UnaryOp::FloatToInt) => {
-                match expr.get_type() {
-                    Type::Number(min, max) => Type::Integer(min as i64, max as i64),
-                    _ => panic!("int() requires float argument")
-                }
-            }
             Expr::Unary(_, UnaryOp::IntToBits { width, .. }) => {
-                Type::Vector(width, Box::new(Type::Integer(0, 1)))
+                Type::Vector(width, Box::new(Type::Number(0.into(), 1.into())))
             }
 
             Expr::Unary(ref expr, UnaryOp::Chunks { width }) => {
@@ -177,7 +148,7 @@ impl Expr {
 
     pub fn down(&self) -> Option<ExprDn> {
         match *self {
-            Expr::Ignored | Expr::Range(..) | Expr::RangeInt(..) | Expr::Union(..) | Expr::Variable(_, _, Dir::Up) => None,
+            Expr::Ignored | Expr::Range(..) | Expr::Union(..) | Expr::Variable(_, _, Dir::Up) => None,
             Expr::Variable(id, _, Dir::Dn) => Some(ExprDn::Variable(id)),
             Expr::Const(ref v) => Some(ExprDn::Const(v.clone())),
             Expr::Flip(ref d, _) => d.down(),
@@ -205,11 +176,7 @@ impl Expr {
         match *self {
             Expr::Ignored => true,
             Expr::Range(a, b) => match v {
-                Value::Number(n) => n>a && n<b,
-                _ => false,
-            },
-            Expr::RangeInt(a, b) => match v {
-                Value::Integer(n) => n>=a && n<=b,
+                Value::Number(n) => n>=a && n<b,
                 _ => false,
             },
             Expr::Union(ref u) => {
@@ -248,15 +215,7 @@ impl Expr {
             Expr::BinaryConst(ref e, op, ref c) => {
                 match (v, c) {
                     (Value::Number(v), &Value::Number(c)) => e.eval_up(state, Value::Number(op.invert().eval(v, c))),
-                    (Value::Integer(v), &Value::Integer(c)) => e.eval_up(state, Value::Integer(op.invert().eval(v, c))),
                     _ => false, // TODO: or type error
-                }
-            }
-
-            Expr::Unary(ref e, UnaryOp::FloatToInt) => {
-                match v {
-                    Value::Integer(n) => e.eval_up(state, Value::Number(n as f64)),
-                    e => panic!("Invalid value {} up-evaluating FloatToInt", e)
                 }
             }
 
@@ -267,7 +226,7 @@ impl Expr {
 
                         let v = bits.iter().fold(0, |acc, x| {
                             match *x {
-                                Value::Integer(bit) => (acc << 1) | (bit as u64),
+                                Value::Number(bit) => ((acc << 1) | (bit.to_i64().unwrap())).into(),
                                 _ => panic!("Expected bit")
                             }
                         });
@@ -277,7 +236,7 @@ impl Expr {
                             SignMode::None => v as i64
                         };
 
-                        expr.eval_up(state, Value::Integer(v))
+                        expr.eval_up(state, Value::Number(v.into()))
                     }
                     e => panic!("Invalid value {} up-evaluating IntToBits", e)
                 }
@@ -301,7 +260,6 @@ impl Expr {
         match (self, other) {
             (Expr::Const(v1), Expr::Const(v2)) => v1 != v2,
             (Expr::Range(lo1, hi1), Expr::Range(lo2, hi2)) => hi1 < lo2 || hi2 < lo1,
-            (Expr::RangeInt(lo1, hi1), Expr::RangeInt(lo2, hi2)) =>  hi1 < lo2 || hi2 < lo1,
             (Expr::Union(u), e2) => u.iter().all(|e1| e1.excludes(e2)),
             (e1, Expr::Union(u)) => u.iter().all(|e2| e1.excludes(e2)),
             (e1, Expr::Flip(_, e2)) => e1.excludes(e2),
@@ -316,7 +274,6 @@ impl Expr {
             Expr::Const(_) => true,
             Expr::Variable(_, _, _) => false,
             Expr::Range(_, _) => true,
-            Expr::RangeInt(_, _) => true,
             Expr::Union(u) => u.iter().all(|e| e.refutable()),
             Expr::Flip(_, u) => u.refutable(),
             Expr::Choose(_, _) => true,
@@ -366,7 +323,6 @@ impl ExprDn {
             ExprDn::BinaryConst(ref e, op, ref c) => {
                 match (e.eval(state), c) {
                     (Value::Number(l), &Value::Number(r)) => Value::Number(op.eval(l, r)),
-                    (Value::Integer(l), &Value::Integer(r)) => Value::Integer(op.eval(l, r)),
                     (l, r) => panic!("Invalid types {} {} in BinaryConst", l, r)
                 }
             }
@@ -391,7 +347,6 @@ impl fmt::Display for Expr {
         match self {
             Expr::Ignored => write!(f, "_"),
             Expr::Range(a, b) => write!(f, "{}..{}", a, b),
-            Expr::RangeInt(a, b) => write!(f, "#{}..#{}", a, b),
             Expr::Variable(id, _, _) => write!(f, "${}", u32::from(*id)),
             Expr::Const(ref p) => write!(f, "{}", p),
             Expr::Flip(ref d, ref u) if **d == Expr::Ignored => write!(f, ":> {}", u),
@@ -425,24 +380,12 @@ impl fmt::Display for Expr {
                 }
             }
 
-            Expr::Unary(ref e, UnaryOp::FloatToInt) =>
-                write!(f, "int({})", e),
-
             Expr::Unary(ref expr, UnaryOp::IntToBits { width, signed }) =>
                 write!(f, "convert({:?}, {}, {})", signed, width, expr),
 
             Expr::Unary(ref expr, UnaryOp::Chunks { width }) =>
                 write!(f, "chunks({}, {})", width, expr),
         }
-    }
-}
-
-fn fn_int(arg: Item) -> Result<Item, &'static str> {
-    match arg {
-        Item::Leaf(LeafItem::Value(v)) => {
-            Ok(Item::Leaf(LeafItem::Value(Expr::Unary(Box::new(v), UnaryOp::FloatToInt))))
-        }
-        _ => Err("Invalid arguments to chunks()")
     }
 }
 
@@ -458,7 +401,7 @@ fn fn_signed_unsigned(arg: Item, sign_mode: SignMode) -> Result<Item, &'static s
     match arg {
         Item::Tuple(mut t) => {
             match (t.pop(), t.pop()) { //TODO: cleaner way to move out of vec without reversing order?
-                (Some(Item::Leaf(LeafItem::Value(v))), Some(Item::Leaf(LeafItem::Value(Expr::Const(Value::Integer(width)))))) => {
+                (Some(Item::Leaf(LeafItem::Value(v))), Some(Item::Leaf(LeafItem::Value(Expr::Const(Value::Number(width)))))) => {
                     Ok(Item::Leaf(LeafItem::Value(Expr::Unary(Box::new(v), UnaryOp::IntToBits {
                         width: width.to_u32().ok_or("signed() width must be integer")?,
                         signed: sign_mode,
@@ -475,7 +418,7 @@ fn fn_chunks(arg: Item) -> Result<Item, &'static str> {
     match arg {
         Item::Tuple(mut t) => {
             match (t.pop(), t.pop()) { //TODO: cleaner way to move out of vec without reversing order?
-                (Some(Item::Leaf(LeafItem::Value(v))), Some(Item::Leaf(LeafItem::Value(Expr::Const(Value::Integer(width)))))) => {
+                (Some(Item::Leaf(LeafItem::Value(v))), Some(Item::Leaf(LeafItem::Value(Expr::Const(Value::Number(width)))))) => {
                     Ok(Item::Leaf(LeafItem::Value(Expr::Unary(Box::new(v), UnaryOp::Chunks {
                         width: width.to_u32().ok_or("chunks() width must be integer")?,
                     }))))
@@ -503,7 +446,6 @@ fn fn_complex(arg: Item) -> Result<Item, &'static str> {
 }
 
 pub fn add_primitive_fns(loader: &mut super::Index) {
-    loader.add_primitive_fn("int", fn_int);
     loader.add_primitive_fn("signed", fn_signed);
     loader.add_primitive_fn("unsigned", fn_unsigned);
     loader.add_primitive_fn("chunks", fn_chunks);
@@ -529,19 +471,20 @@ fn exprs() {
         value(&scope, &ast)
     };
 
-    let two = expr("2.");
-    assert_eq!(two.get_type(), Type::Number(2.0, 2.0));
+    let two = expr("2");
+    assert_eq!(two.get_type(), Type::Number(2.into(), 2.into()));
 
-    let four = expr("2. + 2.");
-    assert_eq!(four.get_type(), Type::Number(4.0, 4.0));
+    let decimal = expr("1.023");
+    let decimal_val = Number::new(1023, 1000);
+    assert_eq!(decimal.get_type(), Type::Number(decimal_val, decimal_val));
 
-    let fiveint = expr("2 + 3");
-    assert_eq!(fiveint.get_type(), Type::Integer(5, 5));
+    let four = expr("2 + 2");
+    assert_eq!(four.get_type(), Type::Number(4.into(), 4.into()));
 
-    let one_one_i = expr("complex(1., 0.) + complex(0., 1.)");
+    let one_one_i = expr("complex(1.0, 0.0) + complex(0, 1)");
     assert_eq!(one_one_i.get_type(), Type::Complex);
 
-    let two_two_i = expr("complex(1., 1.) * 2.");
+    let two_two_i = expr("complex(1, 1) * 2");
     assert_eq!(two_two_i.get_type(), Type::Complex);
 
     let ignore = expr("_");
@@ -551,8 +494,8 @@ fn exprs() {
     assert_eq!(down.get_type(), Type::Symbol(Some("h".to_string()).into_iter().collect()));
 
     let range = expr("0.0..5.0");
-    assert_eq!(range.get_type(), Type::Number(0.0, 5.0));
+    assert_eq!(range.get_type(), Type::Number(0.into(), 5.into()));
 
     let fncall = expr("((a) => a+3.0)(2.0)");
-    assert_eq!(fncall.get_type(), Type::Number(5., 5.));
+    assert_eq!(fncall.get_type(), Type::Number(5.into(), 5.into()));
 }

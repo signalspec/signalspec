@@ -1,4 +1,4 @@
-use super::{ ast, BinOp, FilePos, FileSpan, Spanned };
+use super::{ ast, BinOp, FilePos, FileSpan, Spanned, Number };
 use std::char;
 
 const FAKE_SPAN: FileSpan = FileSpan { start: FilePos(0), end: FilePos(0) };
@@ -148,19 +148,17 @@ peg::parser!(pub grammar signalspec() for str {
 
   pub rule literal() -> ast::Value
     = "#" i:IDENTIFIER() { ast::Value::Symbol(i.name) }
-    / v:FLOAT() u:unit() { ast::Value::Number(v) }
-    / n:INTEGER() { ast::Value::Integer(n) }
+    / v:NUMBER() u:unit() { ast::Value::Number(v) }
     / bitsliteral()
 
     rule bitsliteral() -> ast::Value
         = "'h" v:(hexchar()+) {
             ast::Value::Vector(v.iter().flat_map(|&i| {
-              (0..4).map(move |b|
-                ast::Value::Integer(((i & 1<<(3-b)) != 0) as i64))
+              (0..4).map(move |b| (((i & 1<<(3-b)) != 0) as u8).into())
             }).collect())
         }
         / "'" "b"? v:(binbit()+)
-            { ast::Value::Vector(v.iter().map(|&b| ast::Value::Integer(b as i64)).collect()) }
+            { ast::Value::Vector(v.iter().map(|&b| (b as u8).into()).collect()) }
 
         rule hexchar() -> u8
             = c:$(['0'..='9' | 'a'..='f' | 'A'..='F'])
@@ -219,9 +217,14 @@ peg::parser!(pub grammar signalspec() for str {
     = quiet!{ i:$("-"?['0'..='9']+) {? i.parse().map_err(|e| "valid integer") } }
     / expected!("integer")
   
-  rule FLOAT() -> f64
-    = quiet!{ i:$("-"?['0'..='9']+ "." !"." ['0'..='9']*) { i.parse().unwrap() } }
-    / expected!("float")
+  rule NUMBER() -> Number
+    = quiet!{ int:$("-"?['0'..='9']+) frac:("." !"." f:$(['0'..='9']*) {f})? {?
+      let int: i64 = int.parse().map_err(|_|"number")?;
+      let pow: i64 = frac.map_or(1, |s| 10i64.pow(s.len() as u32));
+      let frac: i64 = frac.map_or(Ok(0), |s| s.parse()).map_err(|_|"number")?;
+      Ok(Number::new(int * pow + frac, pow))
+    } }
+    / expected!("number")
 
   rule STRING() -> String
     = quiet!{ "\"" s:doubleQuotedCharacter()* "\"" { s.into_iter().collect() } }

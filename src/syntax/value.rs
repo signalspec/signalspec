@@ -1,11 +1,13 @@
 use std::fmt;
 use num_complex::Complex;
+use num_traits::ToPrimitive;
+
+pub type Number = num_rational::Rational64;
 
 #[derive(PartialEq, Clone)]
 pub enum Value {
-    Number(f64),
-    Integer(i64),
-    Complex(Complex<f64>),
+    Number(Number),
+    Complex(Complex<Number>),
     Symbol(String),
     Vector(Vec<Value>),
 }
@@ -15,7 +17,6 @@ impl fmt::Display for Value {
         match *self {
             Value::Number(n) => write!(f, "{}", n),
             Value::Complex(c) => write!(f, "{}+{}i", c.re, c.im),
-            Value::Integer(n) => write!(f, "#{}", n),
             Value::Symbol(ref s) => write!(f, "#{}", *s),
             Value::Vector(ref n) => write!(f, "{:?}", n),
         }
@@ -33,9 +34,43 @@ impl TryFrom<Value> for i64 {
 
     fn try_from(value: Value) -> Result<Self, Self::Error> {
         match value {
-            Value::Integer(i) => Ok(i),
+            Value::Number(i) => i.to_i64().ok_or(()),
             _ => Err(())
         }
+    }
+}
+
+impl TryFrom<&Value> for u8 {
+    type Error = ();
+
+    fn try_from(value: &Value) -> Result<Self, Self::Error> {
+        match value {
+            Value::Number(i) => i.to_u8().ok_or(()),
+            _ => Err(())
+        }
+    }
+}
+
+impl From<u8> for Value {
+    fn from(value: u8) -> Self {
+        Value::Number((value as i64).into())
+    }
+}
+
+impl TryFrom<&Value> for u32 {
+    type Error = ();
+
+    fn try_from(value: &Value) -> Result<Self, Self::Error> {
+        match value {
+            Value::Number(i) => i.to_u32().ok_or(()),
+            _ => Err(())
+        }
+    }
+}
+
+impl From<u32> for Value {
+    fn from(value: u32) -> Self {
+        Value::Number((value as i64).into())
     }
 }
 
