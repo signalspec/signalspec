@@ -122,7 +122,7 @@ pub fn analyze_unambiguous(steps: &EntityMap<StepId, Step>) -> EntityMap<StepId,
             },
             Step::Token { variant, ref send, ref receive } => {
                 StepInfo {
-                    first: MatchSet::lower(variant, send.clone(), receive.clone()),
+                    first: MatchSet::lower(variant, send.clone(), receive.iter().map(|e| e.predicate().expect("not a predicate")).collect()),
                     followlast: None,
                     nullable: false,
                 }
@@ -139,7 +139,7 @@ pub fn analyze_unambiguous(steps: &EntityMap<StepId, Step>) -> EntityMap<StepId,
                     },
                     Dir::Dn => {
                         StepInfo {
-                            first: MatchSet::upper(variant, send.clone()),
+                            first: MatchSet::upper(variant, send.iter().map(|e| e.predicate().expect("not a predicate")).collect()),
                             followlast: inner.followlast.clone(),
                             nullable: false,
                         }

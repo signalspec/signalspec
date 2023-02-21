@@ -1,4 +1,4 @@
-use super::{Expr, ExprDn};
+use super::{ExprDn, Predicate};
 
 #[derive(Clone, Debug)]
 pub enum MatchSet {
@@ -10,7 +10,7 @@ pub enum MatchSet {
 #[derive(Clone, Debug)]
 pub struct MessagePattern {
     pub variant: usize,
-    pub fields: Vec<Expr>,
+    pub fields: Vec<Predicate>,
 }
 
 #[derive(Clone, Debug)]
@@ -52,14 +52,14 @@ impl MessagePatternSet {
 
 impl MatchSet {
     pub fn proc() -> MatchSet { MatchSet::Process }
-    pub fn lower(variant: usize, dn: Vec<ExprDn>, up: Vec<Expr>) -> MatchSet {
+    pub fn lower(variant: usize, dn: Vec<ExprDn>, up: Vec<Predicate>) -> MatchSet {
         MatchSet::MessageDn {
             variant,
             send: dn,
             receive: MessagePatternSet::one(MessagePattern { variant, fields: up })
         }
     }
-    pub fn upper(variant: usize, dn: Vec<Expr>) -> MatchSet {
+    pub fn upper(variant: usize, dn: Vec<Predicate>) -> MatchSet {
         MatchSet::MessageUp {
             receive: MessagePatternSet::one(MessagePattern { variant, fields: dn }),
         }

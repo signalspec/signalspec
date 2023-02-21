@@ -1,6 +1,6 @@
 use crate::{Shape, PrimitiveProcess};
 use crate::entitymap::{EntityMap, entity_key};
-use crate::core::{ExprDn, Expr, ProcessChain, MatchSet, MessagePatternSet, StepId, Step, AltUpArm, AltDnArm, VarId, Dir};
+use crate::core::{ExprDn, Expr, ProcessChain, MatchSet, MessagePatternSet, StepId, Step, AltUpArm, AltDnArm, VarId, Dir, Predicate};
 
 type VariantId = usize;
 entity_key!(pub TaskId);
@@ -466,13 +466,8 @@ impl EntityMap<VarId, Option<Value>> {
         }, v)
     }
 
-    fn up_eval_test(&mut self, expr: &Expr, v: Value) -> bool {
-        expr.eval_up(&mut |dir, var, val| {
-            match dir {
-                Dir::Up => { true },
-                Dir::Dn => { self[var].as_ref().unwrap() == &val },
-            }
-        }, v)
+    fn up_eval_test(&mut self, p: &Predicate, v: &Value) -> bool {
+        p.test(v, &|var| self[var].clone().unwrap())
     }
 }
 
@@ -564,8 +559,8 @@ impl ProgramExec {
                         let rx = read.peek().unwrap();
     
                         pat.iter().any(|p| {
-                            p.variant == rx.variant && p.fields.iter().zip(rx.values.iter()).all(|(e, v)| {
-                                self.registers.up_eval_test(e, v.clone())
+                            p.variant == rx.variant && p.fields.iter().zip(rx.values.iter()).all(|(p, v)| {
+                                self.registers.up_eval_test(p, v)
                             })
                         })
                     };

@@ -1,11 +1,11 @@
-use std::fmt;
+use std::{fmt, collections::HashSet};
 use num_complex::Complex;
 use num_traits::cast::ToPrimitive;
 use crate::{syntax::{ Value, BinOp, Number }, Dir};
-use super::{ Item, Type, VarId, LeafItem };
+use super::{ Item, Type, VarId, LeafItem, predicate::Predicate };
 
 /// Element of Expr::Concat
-#[derive(PartialEq, Debug, Clone)]
+#[derive(PartialEq, Eq, Hash, Debug, Clone)]
 pub enum ConcatElem<E> {
     /// An `Expr` included directly in a concatenation (`[a]`)
     Elem(E),
@@ -15,9 +15,17 @@ pub enum ConcatElem<E> {
 }
 
 impl<E> ConcatElem<E> {
-    fn expr(&self) -> &E {
-        match self {
-            ConcatElem::Elem(e) | ConcatElem::Slice(e, _) => e,
+    fn map_elem<T>(&self, f: impl FnOnce(&E) -> Option<T>) -> Option<ConcatElem<T>> {
+        match *self {
+            ConcatElem::Elem(ref e) => Some(ConcatElem::Elem(f(e)?)),
+            ConcatElem::Slice(ref e, w) => Some(ConcatElem::Slice(f(e)?, w)),
+        }
+    }
+
+    pub fn elem_count(&self) -> u32 {
+        match *self {
+            ConcatElem::Elem(..) => 1,
+            ConcatElem::Slice(_, s) => s,
         }
     }
 }
@@ -36,22 +44,15 @@ impl ConcatElem<Expr> {
             }
         }
     }
-
-    fn elem_count(&self) -> u32 {
-        match *self {
-            ConcatElem::Elem(..) => 1,
-            ConcatElem::Slice(_, s) => s,
-        }
-    }
 }
 
-#[derive(PartialEq, Eq, Debug, Clone, Copy)]
+#[derive(PartialEq, Eq, Hash, Debug, Clone, Copy)]
 pub enum SignMode {
     None,
     TwosComplement,
 }
 
-#[derive(PartialEq, Debug, Clone)]
+#[derive(PartialEq, Eq, Hash, Debug, Clone)]
 pub enum UnaryOp {
     IntToBits { width: u32, signed: SignMode },
     Chunks { width: u32 },
@@ -154,15 +155,47 @@ impl Expr {
             Expr::Flip(ref d, _) => d.down(),
             Expr::Choose(ref e, ref c) => Some(ExprDn::Choose(Box::new(e.down()?), c.clone())),
             Expr::Concat(ref c) => Some(ExprDn::Concat(
-                c.iter().map(|l| {
-                    match *l {
-                        ConcatElem::Elem(ref e) => Some(ConcatElem::Elem(e.down()?)),
-                        ConcatElem::Slice(ref e, s) => Some(ConcatElem::Slice(e.down()?, s)),
-                    }
-                }).collect::<Option<Vec<_>>>()?
+                c.iter().map(|l| l.map_elem(|e| e.down())).collect::<Option<Vec<_>>>()?
             )),
             Expr::BinaryConst(ref e, op, ref c) => Some(ExprDn::BinaryConst(Box::new(e.down()?), op, c.clone())),
             Expr::Unary(ref e, ref op) => Some(ExprDn::Unary(Box::new(e.down()?), op.clone())),
+        }
+    }
+
+    pub fn predicate(&self) -> Option<Predicate> {
+        match *self {
+            Expr::Ignored | Expr::Variable(_, _, Dir::Up) => Some(Predicate::Any),
+            Expr::Variable(id, _, Dir::Dn) => Some(Predicate::EqualToDn(ExprDn::Variable(id))),
+            Expr::Flip(_, ref up) => up.predicate(),
+            Expr::Const(ref v) => Predicate::from_value(v),
+            Expr::Range(lo, hi) => Some(Predicate::Range(lo, hi)),
+            Expr::Union(ref u) => {
+                let mut set = HashSet::new();
+                for e in u {
+                    match e.predicate()? {
+                        Predicate::SymbolSet(s) => set.extend(s),
+                        _ => return None,
+                    }
+                }
+                Some(Predicate::SymbolSet(set))
+            },
+            Expr::Concat(ref parts) => {
+                let mut predicates = Vec::with_capacity(parts.len());
+                for part in parts {
+                    match part.map_elem(|e| e.predicate())? {
+                        ConcatElem::Slice(Predicate::Vector(inner), _) => predicates.extend(inner),
+                        e => predicates.push(e),
+                    }
+                }
+                Some(Predicate::Vector(predicates))
+            }
+            Expr::Choose(ref e, _) | Expr::BinaryConst(ref e, _, _) | Expr::Unary(ref e, _) => {
+                match e.predicate() {
+                    Some(Predicate::Any) => Some(Predicate::Any),
+                    Some(Predicate::EqualToDn(..)) => e.down().map(Predicate::EqualToDn), // TODO: accidentally quadratic
+                    _ => None
+                }
+            },
         }
     }
 
@@ -255,33 +288,6 @@ impl Expr {
             }
         }
     }
-
-    pub fn excludes(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Expr::Const(v1), Expr::Const(v2)) => v1 != v2,
-            (Expr::Range(lo1, hi1), Expr::Range(lo2, hi2)) => hi1 < lo2 || hi2 < lo1,
-            (Expr::Union(u), e2) => u.iter().all(|e1| e1.excludes(e2)),
-            (e1, Expr::Union(u)) => u.iter().all(|e2| e1.excludes(e2)),
-            (e1, Expr::Flip(_, e2)) => e1.excludes(e2),
-            (Expr::Flip(_, e1), e2) => e1.excludes(e2),
-            _ => false
-        }
-    }
-
-    pub fn refutable(&self) -> bool {
-        match self {
-            Expr::Ignored => false,
-            Expr::Const(_) => true,
-            Expr::Variable(_, _, _) => false,
-            Expr::Range(_, _) => true,
-            Expr::Union(u) => u.iter().all(|e| e.refutable()),
-            Expr::Flip(_, u) => u.refutable(),
-            Expr::Choose(_, _) => true,
-            Expr::Concat(u) => u.iter().any(|e| e.expr().refutable()),
-            Expr::BinaryConst(e, _, _) => e.refutable(),
-            Expr::Unary(e, _) => e.refutable(),
-        }
-    }
 }
 
 /// An expression representing a runtime computation
@@ -340,7 +346,6 @@ fn eval_choose(v: &Value, choices: &[(Value, Value)]) -> Option<Value> {
         .find(|& &(ref a, _)|{ a == v })
         .map(|&(_, ref b)| b.clone())
 }
-
 
 impl fmt::Display for Expr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -452,50 +457,51 @@ pub fn add_primitive_fns(loader: &mut super::Index) {
     loader.add_primitive_fn("complex", fn_complex);
 }
 
-#[test]
-fn exprs() {
+#[cfg(test)]
+pub fn test_expr_parse(e: &str) -> Expr {
     use std::sync::Arc;
     use crate::syntax::{parse_expr, SourceFile};
     use crate::core::{Index, Scope, value};
 
     let mut index = Index::new();
+    add_primitive_fns(&mut index);
 
-    index.add_primitive_fn("complex", fn_complex);
     let scope = Scope { 
         file: Arc::new(SourceFile::new("<tests>".into(), "".into())),
         names: index.prelude().clone()
     };
 
-    let expr = |e: &str| {
-        let ast = parse_expr(e).unwrap();
-        value(&scope, &ast)
-    };
+    let ast = parse_expr(e).unwrap();
+    value(&scope, &ast)
+}
 
-    let two = expr("2");
+#[test]
+fn exprs() {
+    let two = test_expr_parse("2");
     assert_eq!(two.get_type(), Type::Number(2.into(), 2.into()));
 
-    let decimal = expr("1.023");
+    let decimal = test_expr_parse("1.023");
     let decimal_val = Number::new(1023, 1000);
     assert_eq!(decimal.get_type(), Type::Number(decimal_val, decimal_val));
 
-    let four = expr("2 + 2");
+    let four = test_expr_parse("2 + 2");
     assert_eq!(four.get_type(), Type::Number(4.into(), 4.into()));
 
-    let one_one_i = expr("complex(1.0, 0.0) + complex(0, 1)");
+    let one_one_i = test_expr_parse("complex(1.0, 0.0) + complex(0, 1)");
     assert_eq!(one_one_i.get_type(), Type::Complex);
 
-    let two_two_i = expr("complex(1, 1) * 2");
+    let two_two_i = test_expr_parse("complex(1, 1) * 2");
     assert_eq!(two_two_i.get_type(), Type::Complex);
 
-    let ignore = expr("_");
+    let ignore = test_expr_parse("_");
     assert_eq!(ignore.get_type(), Type::Ignored);
 
-    let down = expr("<: #h");
+    let down = test_expr_parse("<: #h");
     assert_eq!(down.get_type(), Type::Symbol(Some("h".to_string()).into_iter().collect()));
 
-    let range = expr("0.0..5.0");
+    let range = test_expr_parse("0.0..5.0");
     assert_eq!(range.get_type(), Type::Number(0.into(), 5.into()));
 
-    let fncall = expr("((a) => a+3.0)(2.0)");
+    let fncall = test_expr_parse("((a) => a+3.0)(2.0)");
     assert_eq!(fncall.get_type(), Type::Number(5.into(), 5.into()));
 }

@@ -7,7 +7,7 @@ pub trait EntityKey: Copy + Eq {
 
 macro_rules! entity_key {
     ($visibility:vis $entity:ident) => {
-        #[derive(Copy, Clone, PartialEq, Eq, Debug)]
+        #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
         $visibility struct $entity(u32);
 
         impl $crate::entitymap::EntityKey for $entity {

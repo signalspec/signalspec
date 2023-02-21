@@ -11,6 +11,7 @@ mod primitive;
 mod data;
 mod shape;
 mod resolve;
+mod predicate;
 
 use crate::entitymap::entity_key;
 
@@ -28,6 +29,7 @@ pub use self::resolve::{ resolve_token, compile_process, ProcessChain };
 pub use self::data::{ Type, TypeTree, DataMode };
 pub use self::shape::{ Shape, ShapeMsg, ShapeMsgParam };
 pub use self::matchset::{ MatchSet, MessagePatternSet };
+pub use self::predicate::Predicate;
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum Dir {

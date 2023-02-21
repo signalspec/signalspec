@@ -4,7 +4,7 @@ use num_traits::ToPrimitive;
 
 pub type Number = num_rational::Rational64;
 
-#[derive(PartialEq, Clone)]
+#[derive(PartialEq, Eq, Clone, Hash)]
 pub enum Value {
     Number(Number),
     Complex(Complex<Number>),
