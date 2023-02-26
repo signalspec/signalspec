@@ -4,7 +4,7 @@ def main() = ^Seq(0..10, dir) {
     on val(2) {}
     on val(a) {
         val(a)
-        val(a)
+        val(<: a)
     }
 }
 
@@ -15,15 +15,14 @@ with Seq((0..10, 0..10), dir)
 def tuple() = ^Seq((0..10, 0..10), dir) {
     on val((a, b)) {
         val((a, b))
-        val((a, b))
+        val((<: a, <: b))
     }
 
     on val(x) {
         val(x)
-        val(x)
     }
 }
 
-@test(#both, ((5, 6), (5, 6), (7, 8), (7, 8)))
+@test(#both, ((5, 6), (5, 6), (7, 8)))
 with Seq((0..10, 0..10), _) def test2() = { tuple() | { val((5, 6)); val((7, 8)) } }
 

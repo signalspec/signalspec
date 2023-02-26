@@ -10,7 +10,7 @@ with Seq((#l|#h, #l|#h, #l|#h), dir)
 def spi() = ^SPI(dir) {
   repeat dir <: 10 { val((#h, <: #l, <: #l)) }
   repeat {
-    repeat {
+    repeat #up 1..1000 {
       on data(byte) {
         for bit=byte {
           let b = bit[0=#l, 1=#h]

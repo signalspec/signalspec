@@ -40,6 +40,12 @@ impl TryFrom<Value> for i64 {
     }
 }
 
+impl From<i64> for Value {
+    fn from(value: i64) -> Self {
+        Value::Number(value.into())
+    }
+}
+
 impl TryFrom<&Value> for u8 {
     type Error = ();
 

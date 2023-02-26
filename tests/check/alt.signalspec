@@ -1,10 +1,10 @@
 with Seq(#a|#b, _)
 def bare() = {
-    alt #up _ {
-        _ => {
+    alt #up () {
+        () => {
             val(#a)
         }
-        _ => {
+        () => {
             val(#b)
         }
     }

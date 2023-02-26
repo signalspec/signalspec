@@ -1,6 +1,6 @@
 use crate::{Shape, PrimitiveProcess};
 use crate::entitymap::{EntityMap, entity_key};
-use crate::core::{ExprDn, Expr, ProcessChain, MatchSet, MessagePatternSet, StepId, Step, AltUpArm, AltDnArm, VarId, Dir, Predicate};
+use crate::core::{ExprDn, ProcessChain, MatchSet, MessagePatternSet, StepId, Step, AltUpArm, AltDnArm, Dir, Predicate, ValueSrcId};
 
 type VariantId = usize;
 entity_key!(pub TaskId);
@@ -17,8 +17,8 @@ pub enum Insn {
     /// Block waiting for data ready on a channel
     Receive(ChanId),
 
-    /// Consume received message from channel and up-evaluate it into expr
-    Consume(ChanId, VariantId, Vec<Expr>),
+    /// Consume received message from channel and set variables
+    Consume(ChanId, VariantId, Vec<(Predicate, ValueSrcId)>),
 
     /// Test received message from channel by up-evaluating expression, without
     /// consuming the message or writing variables. If not matched, jump.
@@ -29,21 +29,21 @@ pub enum Insn {
 
     Primitive(PrimitiveId, Vec<ChanId>),
 
-    CounterReset(CounterId, u32),
-    CounterUpEval(CounterId, Expr),
+    CounterReset(CounterId, i64),
+    CounterUpEval(CounterId, i64, Option<i64>, ValueSrcId),
     CounterDownEval(CounterId, ExprDn),
     CounterDecrement(CounterId, InsnId),
     CounterIncrement(CounterId),
 
-    IterDnStart(VarId, ExprDn),
-    IterDnStep(VarId),
-    IterUpStep(VarId),
-    IterUpExit(VarId, Expr),
+    IterDnStart(ValueSrcId, ExprDn),
+    IterDnStep(ValueSrcId),
+    IterUpStep(ValueSrcId, ExprDn),
+    IterUpExit(ValueSrcId),
 
-    Assign(Expr, ExprDn),
-    TestAssign(Expr, ExprDn, InsnId),
+    Assign(ValueSrcId, ExprDn),
+    TestVal(ExprDn, Predicate, InsnId),
 
-    /// Start a new thread of exxecution
+    /// Start a new thread of execution
     Fork(TaskId, InsnId),
 
     Join(TaskId),
@@ -216,20 +216,20 @@ impl Compiler<'_> {
                 self.emit(Insn::Primitive(id, chans));
             }
 
-            Step::Token { variant, ref receive, ..}=> {
+            Step::Token { variant, ref up, ..}=> {
                 if let Some(c) = channels.dn_rx {
-                    self.emit(Insn::Consume(c, variant, receive.clone()));
+                    self.emit(Insn::Consume(c, variant, up.clone()));
                 }
             }
 
-            Step::TokenTop { top_dir, variant, ref send, ref receive, inner } => {
+            Step::TokenTop { top_dir, variant, ref dn, ref up, inner } => {
                 let inner_info = &self.program.step_info[inner];
 
                 match top_dir {
                     Dir::Up => {},
                     Dir::Dn => {
                         if let Some(c) = channels.up_rx {
-                            self.emit(Insn::Consume(c, variant, send.clone()));
+                            self.emit(Insn::Consume(c, variant, dn.clone()));
                         }
 
                         self.seq_prep(channels.without_up(), &None, &inner_info.first);
@@ -239,7 +239,7 @@ impl Compiler<'_> {
                 self.compile_step(inner, channels.without_up());
 
                 if let Some(c) = channels.up_tx {
-                    self.emit(Insn::Send(c, variant, receive.clone()));
+                    self.emit(Insn::Send(c, variant, up.clone()));
                 }
             }
 
@@ -257,7 +257,7 @@ impl Compiler<'_> {
                 }
             }
 
-            Step::RepeatUp(ref count, inner) => {
+            Step::RepeatUp { min, max, inner, count } => {
                 let inner_info = &self.program.step_info[inner];
                 let counter = self.new_counter();
 
@@ -269,10 +269,10 @@ impl Compiler<'_> {
                 self.emit(Insn::Jump(test_ip));
 
                 self.backpatch(test_ip, self.test_matchset(channels, &inner_info.first, self.next_ip()));
-                self.emit(Insn::CounterUpEval(counter, count.clone()));
+                self.emit(Insn::CounterUpEval(counter, min, max, count));
             }
 
-            Step::RepeatDn(ref count, inner) => {
+            Step::RepeatDn{ ref count, inner } => {
                 let inner_info = &self.program.step_info[inner];
                 let counter = self.new_counter();
                 self.emit(Insn::CounterDownEval(counter, count.clone()));
@@ -285,37 +285,37 @@ impl Compiler<'_> {
                 self.backpatch(test_ip, Insn::CounterDecrement(counter, self.next_ip()));
             }
 
-            Step::Foreach { iters, ref vars_dn, ref vars_up, inner} => {
+            Step::Foreach { iters, ref dn, ref up, inner} => {
                 assert!(iters > 0);
 
                 let inner_info = &self.program.step_info[inner];
 
                 let counter = self.new_counter();
-                self.emit(Insn::CounterReset(counter, iters - 1)); // tested at end of loop
+                self.emit(Insn::CounterReset(counter, (iters - 1) as i64)); // tested at end of loop
 
-                for &(id, ref e) in vars_dn {
+                for &(ref e,  id) in dn {
                     self.emit(Insn::IterDnStart(id, e.clone()));
                 }
 
                 let loop_head = self.next_ip();
 
-                for &(id, _) in vars_dn {
+                for &(_, id) in dn {
                     self.emit(Insn::IterDnStep(id));
                 }
 
-                if !vars_dn.is_empty() {
+                if !dn.is_empty() {
                     self.seq_prep(channels, &None, &inner_info.first);
                 }
 
                 self.compile_step(inner, channels);
 
-                for &(id, _) in vars_up {
-                    self.emit(Insn::IterUpStep(id));
+                for &(ref e, id) in up {
+                    self.emit(Insn::IterUpStep(id, e.clone()));
                 }
 
                 let exit_check = self.emit_placeholder();
 
-                if vars_dn.is_empty() {
+                if dn.is_empty() {
                     self.seq_prep(channels, &inner_info.followlast, &inner_info.first);
                 }
 
@@ -323,12 +323,12 @@ impl Compiler<'_> {
 
                 self.backpatch(exit_check, Insn::CounterDecrement(counter, self.next_ip()));
 
-                for &(id, ref e) in vars_up {
-                    self.emit(Insn::IterUpExit(id, e.clone()));
+                for &(_, id) in up {
+                    self.emit(Insn::IterUpExit(id));
                 }
             }
 
-            Step::AltUp(ref opts) => {
+            Step::AltUp(ref opts, ref dests) => {
                 let mut jumps_to_final = vec![];
 
                 for &AltUpArm { ref vals, body } in opts {
@@ -337,8 +337,8 @@ impl Compiler<'_> {
 
                     self.compile_step(body, channels);
 
-                    for &(ref l, ref r) in vals {
-                        self.emit(Insn::Assign(r.clone(), l.clone()));
+                    for (&id, e) in dests.iter().zip(vals.iter()) {
+                        self.emit(Insn::Assign(id, e.clone()));
                     }
 
                     jumps_to_final.push(self.emit_placeholder());
@@ -353,7 +353,7 @@ impl Compiler<'_> {
                 }
             }
 
-            Step::AltDn(ref opts) => {
+            Step::AltDn(ref srcs, ref opts) => {
                 let mut jumps_to_final = vec![];
 
                 for &AltDnArm { ref vals, body } in opts {
@@ -365,8 +365,8 @@ impl Compiler<'_> {
 
                     jumps_to_final.push(self.emit_placeholder());
 
-                    for (&test_ip, &(ref l, ref r)) in jumps_to_next.iter().zip(vals) {
-                        self.backpatch(test_ip, Insn::TestAssign(l.clone(), r.clone(), self.next_ip()));
+                    for ((e, pred), &test_ip) in srcs.iter().zip(vals).zip(jumps_to_next.iter()) {
+                        self.backpatch(test_ip, Insn::TestVal(e.clone(), pred.clone(), self.next_ip()));
                     }
 
                 }
@@ -382,7 +382,7 @@ impl Compiler<'_> {
 
 pub struct CompiledProgram {
     insns: EntityMap<InsnId, Insn>,
-    vars: EntityMap<VarId, ()>,
+    vars: EntityMap<ValueSrcId, ()>,
     tasks: EntityMap<TaskId, ()>,
     counters: EntityMap<CounterId, ()>,
     channels: EntityMap<ChanId, ()>,
@@ -440,30 +440,21 @@ use super::channel::{Channel, ChannelMessage, SeqChannels};
 pub struct ProgramExec {
     program: Arc<CompiledProgram>,
     tasks: EntityMap<TaskId, InsnId>,
-    registers: EntityMap<VarId, Option<Value>>,
+    registers: EntityMap<ValueSrcId, Option<Value>>,
     channels: EntityMap<ChanId, Channel>,
-    counters: EntityMap<CounterId, u32>,
-    iters: EntityMap<VarId, Option<Vec<Value>>>,
+    counters: EntityMap<CounterId, i64>,
+    iters: EntityMap<ValueSrcId, Option<Vec<Value>>>,
     primitives: EntityMap<PrimitiveId, Option<Pin<Box<dyn Future<Output = Result<(), ()>>>>>>,
 }
 
 const INVALID_IP: InsnId = InsnId::from(u32::MAX);
 const INITIAL_TASK: TaskId = TaskId::from(0);
 
-impl EntityMap<VarId, Option<Value>> {
+impl EntityMap<ValueSrcId, Option<Value>> {
     fn down_eval(&self, expr: &ExprDn) -> Value {
         expr.eval(&|var| {
             self[var].clone().unwrap()
         })
-    }
-
-    fn up_eval(&mut self, expr: &Expr, v: Value) -> bool {
-        expr.eval_up(&mut |dir, var, val| {
-            match dir {
-                Dir::Up => { self[var] = Some(val); true },
-                Dir::Dn => { self[var].as_ref().unwrap() == &val },
-            }
-        }, v)
     }
 
     fn up_eval_test(&mut self, p: &Predicate, v: &Value) -> bool {
@@ -541,14 +532,13 @@ impl ProgramExec {
     
                     assert_eq!(rx.values.len(), exprs.len());
     
-                    let matched = exprs.iter().zip(rx.values.into_iter()).all(|(e, v)| {
-                        self.registers.up_eval(e, v)
-                    });
-    
-                    if !matched {
-                        debug!("  failed to match");
-                        return Poll::Ready(Err(()))
-                    }
+                    for ((p, id), v) in exprs.iter().zip(rx.values.into_iter()) {
+                        if !self.registers.up_eval_test(p, &v) {
+                            debug!("  failed to match");
+                            return Poll::Ready(Err(()));
+                        }
+                        self.registers[*id] = Some(v);
+                    };
                 }
                 Insn::Test(chan, ref pat, if_false) => {
                     let read = self.channels[chan].read();
@@ -586,11 +576,12 @@ impl ProgramExec {
                 Insn::CounterReset(counter, val) => {
                     self.counters[counter] = val;
                 }
-                Insn::CounterUpEval(counter, ref expr) => {
-                    let v = self.counters[counter].into();
-                    if !self.registers.up_eval(expr, v) {
+                Insn::CounterUpEval(counter, min, max, id) => {
+                    let v = self.counters[counter];
+                    if v < min || v > max.unwrap_or(i64::MAX) {
                         return Poll::Ready(Err(()))
                     }
+                    self.registers[id] = Some(v.into());
                 }
                 Insn::CounterDownEval(counter, ref expr) => {
                     let v = self.registers.down_eval(expr);
@@ -615,23 +606,21 @@ impl ProgramExec {
                     let v = self.iters[var].as_mut().unwrap().pop().unwrap();
                     self.registers[var] = Some(v);
                 }
-                Insn::IterUpStep(var) => {
-                    let v = self.registers[var].take().unwrap();
+                Insn::IterUpStep(var, ref expr) => {
+                    let v = self.registers.down_eval(expr);
                     self.iters[var].get_or_insert_with(Vec::new).push(v);
                 }
-                Insn::IterUpExit(var, ref expr) => {
+                Insn::IterUpExit(var) => {
                     let v = self.iters[var].take().unwrap();
-                    self.registers.up_eval(expr, Value::Vector(v));
+                    self.registers[var] = Some(Value::Vector(v));
                 }
-                Insn::Assign(ref l, ref r) => {
+                Insn::Assign(l, ref r) => {
                     let v = self.registers.down_eval(r);
-                    if !self.registers.up_eval(l, v) {
-                        return Poll::Ready(Err(()));
-                    }
+                    self.registers[l] = Some(v);
                 }
-                Insn::TestAssign(ref l, ref r, if_false) => {
-                    let v = self.registers.down_eval(r);
-                    if !self.registers.up_eval(l, v) {
+                Insn::TestVal(ref e, ref pred, if_false) => {
+                    let v = self.registers.down_eval(e);
+                    if !self.registers.up_eval_test(pred, &v) {
                         next_ip = if_false;
                     }
                 }

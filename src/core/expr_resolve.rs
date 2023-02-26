@@ -1,8 +1,8 @@
 use std::sync::Arc;
 use num_complex::Complex;
 
-use crate::{syntax::{ast, Value}, tree::Tree, core::Dir};
-use super::{ConcatElem, Expr, Func, FunctionDef, Item, Scope, ShapeMsg, ExprDn, VarId, LeafItem };
+use crate::{syntax::{ast, Value}, tree::Tree};
+use super::{ConcatElem, Expr, Func, FunctionDef, Item, Scope, LeafItem };
 
 pub fn value(scope: &Scope, e: &ast::Expr) -> Expr {
     match rexpr(scope, e) {
@@ -79,8 +79,8 @@ pub fn rexpr(scope: &Scope, e: &ast::Expr) -> Item {
 
             if let Expr::Const(v) = head {
                 let re = node.choices.iter().find(|&(ref le, _)| {
-                    let l = value(scope, le);
-                    l.eval_up(&mut |_, _, _| panic!("Variable not expected here"), v.clone())
+                    let l = value(scope, le).eval_const();
+                    l == v
                 }).map(|x| &x.1).unwrap_or_else(|| {
                     panic!("No match for {} at {:?}", v, &node.span);
                 });
@@ -150,59 +150,32 @@ fn zip_ast<T>(ast: &ast::Expr, tree: &Tree<T>, f: &mut impl FnMut(&ast::Expr, &T
     Ok(())
 }
 
-/// Resolve expressions as used in the arguments of an `on` block, defining variables
-pub fn on_expr_message(mut new_var: impl FnMut() -> VarId, scope: &mut Scope, msg_def: &ShapeMsg, exprs: &[ast::Expr]) -> (Vec<Expr>, Vec<ExprDn>) {
-    assert_eq!(msg_def.params.len(), exprs.len());
-
-    let mut dn = Vec::new();
-    let mut up = Vec::new();
-
-    for (param, expr) in msg_def.params.iter().zip(exprs) {
-        let push_up = &mut |i: Expr| up.push(i.down().unwrap());
-        let push_dn = &mut |i| dn.push(i);
-        let push: &mut dyn FnMut(Expr) = match param.direction {
-            Dir::Up => push_up,
-            Dir::Dn => push_dn,
-        };
-
-        zip_ast(expr, &param.ty, &mut |a, e| {
-            match (e, &a) {
-                (Tree::Leaf(ty), ast::Expr::Var(ref name)) => {
-                    let id = new_var();
-                    scope.bind(&name.name, Item::Leaf(LeafItem::Value(Expr::Variable(id, ty.clone(), param.direction))));
-                    push(Expr::Variable(id, ty.clone(), param.direction.flip()));
-                }
-                (Tree::Leaf(_), _) => {
-                    push(value(scope, a));
-                }
-                (t @ &Tree::Tuple(_), ast::Expr::Var(ref name)) => {
-                    // Capture a tuple by recursively building a tuple Item containing each of the
-                    // captured variables
-                    let v = t.map_leaf(&mut |ty| {
-                        let id = new_var();
-                        push(Expr::Variable(id, ty.clone(), param.direction.flip()));
-                        LeafItem::Value(Expr::Variable(id, ty.clone(), param.direction))
-                    });
-                    scope.bind(&name.name, v);
-                }
-                _ => return Err("invalid pattern")
+/// Resolve an expression in an `on` block, defining variables
+pub fn bind_tree_fields<T, S>(expr: &ast::Expr, t: &Tree<T>, scope: &mut Scope, mut s: S, mut variable: impl FnMut(&mut S, &T) -> Expr, mut pattern: impl FnMut(&mut S, Expr)) {
+    zip_ast(expr, t, &mut |a, e| {
+        match (e, &a) {
+            (Tree::Leaf(t), ast::Expr::Var(ref name)) => {
+                scope.bind(&name.name, Item::Leaf(LeafItem::Value(variable(&mut s, t))));
             }
-            Ok(())
-        }).unwrap();
-    }
-
-    (dn, up)
+            (Tree::Leaf(_), a) => {
+                pattern(&mut s, value(scope, a));
+            }
+            (t @ &Tree::Tuple(_), ast::Expr::Var(ref name)) => {
+                // Capture a tuple by recursively building a tuple Item containing each of the
+                // captured variables
+                let v = t.map_leaf(&mut |t| {
+                    LeafItem::Value(variable(&mut s, t))
+                });
+                scope.bind(&name.name, v);
+            }
+            _ => return Err("invalid pattern")
+        }
+        Ok(())
+    }).unwrap();
 }
 
-#[derive(Clone, Debug)]
-pub struct PatternError {
-    msg: &'static str,
-}
-
-/// Destructures an item into left-hand-side binding, such as a function argument, returning
-/// whether the pattern matched. If `checks` is not None, runtime checks are enabled
-/// and collected.
-pub fn lexpr(scope: &mut Scope, pat: &ast::Expr, r: &Item, mut checks: Option<&mut Vec<(Expr, Expr)>>) -> Result<(), PatternError> {
+/// Destructures an item into left-hand-side binding, such as a `let` or function argument
+pub fn lexpr(scope: &mut Scope, pat: &ast::Expr, r: &Item) -> Result<(), &'static str> {
     zip_ast(pat, r, &mut move |pat, r| {
         let pat = match pat {
             ast::Expr::Tup(t) if t.items.len() == 1 => &t.items[0],
@@ -223,10 +196,6 @@ pub fn lexpr(scope: &mut Scope, pat: &ast::Expr, r: &Item, mut checks: Option<&m
                 if let Item::Leaf(LeafItem::Value(ref rv)) = r {
                     if &lv == rv {
                         Ok(())
-                    } else if let Some(checks) = &mut checks {
-                        // TODO: check overlap
-                        checks.push((lv, rv.clone()));
-                        Ok(())
                     } else {
                         Err("expected tuple, variable, or ignore")
                     }
@@ -235,5 +204,5 @@ pub fn lexpr(scope: &mut Scope, pat: &ast::Expr, r: &Item, mut checks: Option<&m
                 }
             }
         }
-    }).map_err(|msg| PatternError { msg })
+    })
 }

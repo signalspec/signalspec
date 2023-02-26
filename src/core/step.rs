@@ -3,19 +3,19 @@ use std::sync::Arc;
 
 use crate::entitymap::{entity_key, EntityMap};
 use crate::{PrimitiveProcess};
-use super::{Expr, ExprDn, MatchSet, Shape, Type, VarId, Dir};
+use super::{ExprDn, MatchSet, Shape, Dir, Predicate, ValueSrcId};
 
 entity_key!(pub StepId);
 
 #[derive(Debug)]
 pub struct AltDnArm {
-    pub vals: Vec<(Expr, ExprDn)>,
+    pub vals: Vec<Predicate>,
     pub body: StepId,
 }
 
 #[derive(Debug)]
 pub struct AltUpArm {
-    pub vals: Vec<(ExprDn, Expr)>,
+    pub vals: Vec<ExprDn>,
     pub body: StepId,
 }
 
@@ -23,15 +23,34 @@ pub struct AltUpArm {
 pub enum Step {
     Invalid,
     Stack { lo: StepId, shape: Shape, hi: StepId },
-    Token { variant: usize, send: Vec<ExprDn>, receive: Vec<Expr> },
-    TokenTop { top_dir: Dir, variant: usize, send: Vec<Expr>, receive: Vec<ExprDn>, inner: StepId },
+    Token { variant: usize, dn: Vec<ExprDn>, up: Vec<(Predicate, ValueSrcId)> },
+    TokenTop { top_dir: Dir, variant: usize, dn: Vec<(Predicate, ValueSrcId)>, up: Vec<ExprDn>, inner: StepId },
     Primitive(Arc<dyn PrimitiveProcess + 'static>),
     Seq(Vec<StepId>),
-    RepeatDn(ExprDn, StepId),
-    RepeatUp(Expr, StepId),
-    Foreach { iters: u32, vars_dn: Vec<(VarId, ExprDn)>, vars_up: Vec<(VarId, Expr)>, inner: StepId },
-    AltDn(Vec<AltDnArm>),
-    AltUp(Vec<AltUpArm>),
+    RepeatDn {
+        count: ExprDn,
+        inner: StepId,
+    },
+    RepeatUp {
+        min: i64,
+        max: Option<i64>,
+        inner: StepId,
+        count: ValueSrcId,
+    },
+    Foreach {
+        /// Number of iterations = length of input and output vectors
+        iters: u32,
+
+        /// Evaluated at entry to produce vectors that are iterated in the loop
+        dn: Vec<(ExprDn, ValueSrcId)>,
+
+        /// Evaluated after each iteration to produce an element for each output vector
+        up: Vec<(ExprDn, ValueSrcId)>,
+
+        inner: StepId
+    },
+    AltDn(Vec<ExprDn>, Vec<AltDnArm>),
+    AltUp(Vec<AltUpArm>, Vec<ValueSrcId>),
 }
 
 pub fn write_tree(f: &mut dyn Write, indent: u32, steps: &[Step], step: StepId) -> IoResult<()> {
@@ -46,11 +65,11 @@ pub fn write_tree(f: &mut dyn Write, indent: u32, steps: &[Step], step: StepId) 
         Step::Primitive(_) => {
             writeln!(f, "{}Primitive", i)?
         }
-        Step::Token { variant, ref send, ref receive } => {
-            writeln!(f, "{}Token: {:?} {:?} {:?}", i, variant, send, receive)?
+        Step::Token { variant, ref dn, ref up } => {
+            writeln!(f, "{}Token: {:?} {:?} {:?}", i, variant, dn, up)?
         }
-        Step::TokenTop { variant, ref send, ref receive, inner, .. } => {
-            writeln!(f, "{}Up: {:?} {:?} {:?}", i, variant, send, receive)?;
+        Step::TokenTop { variant, ref dn, ref up, inner, .. } => {
+            writeln!(f, "{}Up: {:?} {:?} {:?}", i, variant, dn, up)?;
             write_tree(f, indent+1, steps, inner)?;
         }
         Step::Seq(ref inner) => {
@@ -59,30 +78,30 @@ pub fn write_tree(f: &mut dyn Write, indent: u32, steps: &[Step], step: StepId) 
                 write_tree(f, indent+1, steps, c)?;
             }
         }
-        Step::RepeatDn(ref count, inner) => {
+        Step::RepeatDn { ref count, inner } => {
             writeln!(f, "{}Repeat[Dn]: {:?}", i, count)?;
             write_tree(f, indent + 1, steps, inner)?;
         }
-        Step::RepeatUp(ref count, inner) => {
-            writeln!(f, "{}Repeat[Up]: {:?}", i, count)?;
+        Step::RepeatUp { min, max, inner, count} => {
+            writeln!(f, "{i}Repeat[Up]: {min}..={max:?} => {count:?}")?;
             write_tree(f, indent + 1, steps, inner)?;
         }
-        Step::Foreach { iters, ref vars_dn, ref vars_up, inner } => {
+        Step::Foreach { iters, dn: ref dn_vecs, up: ref up_elems, inner } => {
             write!(f, "{}For: {} ", i, iters)?;
-            for &(id, ref expr) in vars_dn { write!(f, "{}<={:?}, ", u32::from(id), expr)?; }
-            for &(id, ref expr) in vars_up { write!(f, "{}=>{:?}, ", u32::from(id), expr)?; }
+            for expr in dn_vecs { write!(f, "<={:?}, ", expr)?; }
+            for expr in up_elems { write!(f, "=>{:?}, ", expr)?; }
             writeln!(f, "")?;
             write_tree(f, indent + 1, steps, inner)?;
         }
-        Step::AltDn(ref arms) => {
-            writeln!(f, "{}Alt[{:?}]:", i, Dir::Dn)?;
+        Step::AltDn(ref scrutinee, ref arms) => {
+            writeln!(f, "{}Alt #dn ({scrutinee:?}):", i)?;
             for arm in arms {
                 writeln!(f, "{} {:?} =>", i, arm.vals)?;
                 write_tree(f, indent + 2, steps, arm.body)?;
             }
         }
-        Step::AltUp(ref arms) => {
-            writeln!(f, "{}Alt[{:?}]:", i, Dir::Up)?;
+        Step::AltUp(ref arms, ref scrutinee) => {
+            writeln!(f, "{}Alt #up ({scrutinee:?}):", i)?;
             for arm in arms {
                 writeln!(f, "{} {:?} =>", i, arm.vals)?;
                 write_tree(f, indent + 2, steps, arm.body)?;
@@ -120,14 +139,14 @@ pub fn analyze_unambiguous(steps: &EntityMap<StepId, Step>) -> EntityMap<StepId,
                     nullable: false,
                 }
             },
-            Step::Token { variant, ref send, ref receive } => {
+            Step::Token { variant, ref dn, ref up } => {
                 StepInfo {
-                    first: MatchSet::lower(variant, send.clone(), receive.iter().map(|e| e.predicate().expect("not a predicate")).collect()),
+                    first: MatchSet::lower(variant, dn.clone(), up.iter().map(|(p, _)| p.clone()).collect()),
                     followlast: None,
                     nullable: false,
                 }
             },
-            Step::TokenTop { top_dir, variant, ref send, inner, .. } => {
+            Step::TokenTop { top_dir, variant, ref dn, inner, .. } => {
                 let inner = get(inner);
                 match top_dir {
                     Dir::Up => {
@@ -139,7 +158,7 @@ pub fn analyze_unambiguous(steps: &EntityMap<StepId, Step>) -> EntityMap<StepId,
                     },
                     Dir::Dn => {
                         StepInfo {
-                            first: MatchSet::upper(variant, send.iter().map(|e| e.predicate().expect("not a predicate")).collect()),
+                            first: MatchSet::upper(variant, dn.iter().map(|(p, _)| p.clone()).collect()),
                             followlast: inner.followlast.clone(),
                             nullable: false,
                         }
@@ -181,7 +200,7 @@ pub fn analyze_unambiguous(steps: &EntityMap<StepId, Step>) -> EntityMap<StepId,
                     nullable,
                 }
             },
-            Step::RepeatDn(ref _count, inner) => {
+            Step::RepeatDn { inner, .. } => {
                 let inner = get(inner);
 
                 MatchSet::check_compatible(&inner.followlast, &inner.first);
@@ -192,24 +211,18 @@ pub fn analyze_unambiguous(steps: &EntityMap<StepId, Step>) -> EntityMap<StepId,
                     nullable: inner.nullable,
                 }
             },
-            Step::RepeatUp(ref count, inner) => {
+            Step::RepeatUp { min, inner, .. } => {
                 let inner = get(inner);
-
-                let count_includes_zero = match count.get_type() {
-                    Type::Ignored => true,
-                    Type::Number(lo, hi) if lo.is_integer() && hi.is_integer() => lo <= 0.into() && hi >= 0.into(),
-                    count_type => panic!("Loop count type of {:?} is {:?} not int", count, count_type)
-                };
 
                 MatchSet::check_compatible(&inner.followlast, &inner.first);
 
                 StepInfo {
                     first: inner.first.clone(),
                     followlast: Some(inner.first.clone()),
-                    nullable: inner.nullable || count_includes_zero,
+                    nullable: inner.nullable || min == 0,
                 }
             },
-            Step::Foreach { inner, ref vars_dn, .. } => {
+            Step::Foreach { inner, dn: ref dn_vecs, .. } => {
                 let inner = get(inner);
 
                 MatchSet::check_compatible(&inner.followlast, &inner.first);
@@ -220,7 +233,7 @@ pub fn analyze_unambiguous(steps: &EntityMap<StepId, Step>) -> EntityMap<StepId,
                 // since those couldn't use the variable.
                 // TODO: is testing vars_dn the right condition or should we more specifically
                 // look at whether `first` contains a send with inner variables.
-                if vars_dn.is_empty() {
+                if dn_vecs.is_empty() {
                     StepInfo {
                         first: inner.first.clone(),
                         followlast: inner.followlast.clone(),
@@ -235,7 +248,7 @@ pub fn analyze_unambiguous(steps: &EntityMap<StepId, Step>) -> EntityMap<StepId,
                 }
 
             },
-            Step::AltDn(ref opts) => {
+            Step::AltDn(_, ref opts) => {
                 let nullable = opts.iter().any(|arm| get(arm.body).nullable);
                 let followlast = MatchSet::merge_followlast(opts.iter().map(|x| &get(x.body).followlast));
 
@@ -245,7 +258,7 @@ pub fn analyze_unambiguous(steps: &EntityMap<StepId, Step>) -> EntityMap<StepId,
                     nullable,
                 }
             },
-            Step::AltUp(ref opts) => {
+            Step::AltUp(ref opts, _) => {
                 let first = MatchSet::merge_first(opts.iter().map(|x| &get(x.body).first));
                 let followlast = MatchSet::merge_followlast(opts.iter().map(|x| &get(x.body).followlast));
                 let nullable = opts.iter().all(|x| get(x.body).nullable);

@@ -11,6 +11,21 @@ pub enum Zip<'a, T, U> {
 }
 
 impl<T> Tree<T> {
+    pub fn for_each(&self, f: &mut impl FnMut(&T)) {
+        match self {
+            Tree::Leaf(i) => f(i),
+            Tree::Tuple(t) => {
+                t.iter().for_each(|s| s.for_each(f))
+            }
+        }
+    }
+
+    pub fn flatten<U>(&self, f: &mut impl FnMut(&T) -> U) -> Vec<U> {
+        let mut r = Vec::new();
+        self.for_each(&mut |e| r.push(f(e)));
+        r
+    }
+
     pub fn map_leaf<U>(&self, f: &mut impl FnMut(&T) -> U) -> Tree<U> {
         match self {
             Tree::Leaf(i) => Tree::Leaf(f(i)),

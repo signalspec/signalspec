@@ -1,7 +1,7 @@
 
 use std::collections::HashSet;
 use crate::syntax::{Value, Number};
-use super::{ExprDn, VarId, ConcatElem};
+use super::{ExprDn, ConcatElem, ValueSrcId};
 
 #[derive(Clone, PartialEq, Debug)]
 pub enum Predicate {
@@ -37,7 +37,7 @@ impl Predicate {
         }
     }
 
-    pub fn test(&self, v: &Value, state: &dyn Fn(VarId)->Value) -> bool {
+    pub fn test(&self, v: &Value, state: &dyn Fn(ValueSrcId)->Value) -> bool {
         match (self, v) {
             (Predicate::Any, _) => true,
             (Predicate::Range(lo, hi), Value::Number(n)) => n>=lo && n<hi,

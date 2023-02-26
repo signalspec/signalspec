@@ -1,8 +1,8 @@
 use std::{fmt, collections::HashSet};
 use num_complex::Complex;
 use num_traits::cast::ToPrimitive;
-use crate::{syntax::{ Value, BinOp, Number }, Dir};
-use super::{ Item, Type, VarId, LeafItem, predicate::Predicate };
+use crate::syntax::{ Value, BinOp, Number };
+use super::{ Item, Type, LeafItem, predicate::Predicate, resolve::ValueSinkId, ValueSrcId };
 
 /// Element of Expr::Concat
 #[derive(PartialEq, Eq, Hash, Debug, Clone)]
@@ -55,7 +55,9 @@ pub enum SignMode {
 #[derive(PartialEq, Eq, Hash, Debug, Clone)]
 pub enum UnaryOp {
     IntToBits { width: u32, signed: SignMode },
+    BitsToInt { width: u32, signed: SignMode },
     Chunks { width: u32 },
+    Merge { width: u32 },
 }
 
 impl UnaryOp {
@@ -69,6 +71,29 @@ impl UnaryOp {
                     e => panic!("Invalid value {} in IntToBits", e)
                 }
             },
+            UnaryOp::BitsToInt { width, signed } => {
+                match v {
+                    Value::Vector(bits) => {
+                        assert_eq!(bits.len(), width as usize);
+
+                        let v = bits.iter().fold(0, |acc, x| {
+                            match *x {
+                                Value::Number(bit) => ((acc << 1) | (bit.to_i64().unwrap())).into(),
+                                _ => panic!("Expected bit")
+                            }
+                        });
+
+                        let v = match signed {
+                            SignMode::TwosComplement => ((v << (64-width)) as i64) >> (64-width), // sign-extend
+                            SignMode::None => v as i64
+                        };
+
+                        Value::Number(v.into())
+                    }
+                    e => panic!("Invalid value {} in BitsToInt", e)
+                }
+
+            }
             UnaryOp::Chunks { width } => {
                 match v {
                     Value::Vector(i) => {
@@ -77,6 +102,58 @@ impl UnaryOp {
                     e => panic!("Invalid value {} in Chunks", e)
                 }
             },
+            UnaryOp::Merge { .. } => {
+                match v {
+                    Value::Vector(chunks) => {
+                        Value::Vector(chunks.into_iter().flat_map(|c| {
+                            match c {
+                                Value::Vector(cv) => cv.into_iter(),
+                                e => panic!("Expected vector in merge, found {}", e)
+                            }
+                        }).collect())
+                    }
+                    e => panic!("Expected outer vector in Merge {}", e)
+                }
+            }
+        }
+    }
+
+    pub fn invert(&self) -> UnaryOp {
+        match *self {
+            UnaryOp::IntToBits { width, signed } => UnaryOp::BitsToInt { width, signed },
+            UnaryOp::BitsToInt { width, signed } => UnaryOp::IntToBits { width, signed },
+            UnaryOp::Chunks { width } => UnaryOp::Merge { width },
+            UnaryOp::Merge { width } => UnaryOp::Chunks { width },
+        }
+    }
+
+    pub fn get_type(&self, input: Type) -> Type {
+        match *self {
+            UnaryOp::IntToBits { width, .. } => Type::Vector(width, Box::new(Type::Number(0.into(), 1.into()))),
+            UnaryOp::BitsToInt { width, signed } => {
+                match signed {
+                    SignMode::None => Type::Number(0.into(), (1 << width).into()),
+                    SignMode::TwosComplement => Type::Number((1 << width - 1).into(), (1 << width - 1).into()),
+                }
+            }
+            UnaryOp::Chunks { width } => {
+                if let Type::Vector(c, t) = input {
+                    Type::Vector(c/width, Box::new(Type::Vector(width, t)))
+                } else {
+                    panic!("Chunks argument must be a vector");
+                }
+            }
+            UnaryOp::Merge { width } => {
+                if let Type::Vector(c1, t1) = input {
+                    if let Type::Vector(c2, t) = *t1 {
+                        Type::Vector(c1 * c2, Box::new(Type::Vector(width, t)))
+                    } else {
+                        panic!("Merge argument must be a vector of vector");
+                    }
+                } else {
+                    panic!("Merge argument must be a vector");
+                }
+            }
         }
     }
 }
@@ -86,7 +163,8 @@ impl UnaryOp {
 pub enum Expr {
     Ignored,
     Const(Value),
-    Variable(VarId, Type, Dir),
+    VarDn(ValueSrcId, Type),
+    VarUp(ValueSinkId, Type),
     Range(Number, Number),
     Union(Vec<Expr>),
     Flip(Box<Expr>, Box<Expr>),
@@ -104,7 +182,7 @@ impl Expr {
             Expr::Ignored => Type::Ignored,
             Expr::Range(lo, hi) => Type::Number(lo, hi),
             Expr::Union(ref u) => Type::union_iter(u.iter().map(Expr::get_type)),
-            Expr::Variable(_, ref ty, _) => ty.clone(),
+            Expr::VarDn(_, ref ty) | Expr::VarUp(_, ref ty) => ty.clone(),
             Expr::Const(ref v) => v.get_type(),
             Expr::Flip(ref d, ref u) => Type::union(d.get_type(), u.get_type()),
             Expr::Choose(_, ref choices) => {
@@ -133,39 +211,62 @@ impl Expr {
                     _ => panic!("Arithmetic type error {} {:?} {}", e, op, c)
                 }
             }
-            Expr::Unary(_, UnaryOp::IntToBits { width, .. }) => {
-                Type::Vector(width, Box::new(Type::Number(0.into(), 1.into())))
-            }
-
-            Expr::Unary(ref expr, UnaryOp::Chunks { width }) => {
-                if let Type::Vector(c, t) = expr.get_type() {
-                    Type::Vector(c/width, Box::new(Type::Vector(width, t)))
-                } else {
-                    panic!("Chunks argument must be a vector");
-                }
-            }
+            Expr::Unary(ref v, ref op) => op.get_type(v.get_type()),
         }
     }
 
     pub fn down(&self) -> Option<ExprDn> {
         match *self {
-            Expr::Ignored | Expr::Range(..) | Expr::Union(..) | Expr::Variable(_, _, Dir::Up) => None,
-            Expr::Variable(id, _, Dir::Dn) => Some(ExprDn::Variable(id)),
+            Expr::Ignored | Expr::Range(..) | Expr::Union(..) | Expr::VarUp(..) => None,
+            Expr::VarDn(id, _) => Some(ExprDn::Variable(id)),
             Expr::Const(ref v) => Some(ExprDn::Const(v.clone())),
             Expr::Flip(ref d, _) => d.down(),
             Expr::Choose(ref e, ref c) => Some(ExprDn::Choose(Box::new(e.down()?), c.clone())),
             Expr::Concat(ref c) => Some(ExprDn::Concat(
                 c.iter().map(|l| l.map_elem(|e| e.down())).collect::<Option<Vec<_>>>()?
             )),
-            Expr::BinaryConst(ref e, op, ref c) => Some(ExprDn::BinaryConst(Box::new(e.down()?), op, c.clone())),
+            Expr::BinaryConst(ref e, op, Value::Number(c)) => Some(ExprDn::BinaryConstNumber(Box::new(e.down()?), op, c.clone())),
+            Expr::BinaryConst(_, _, _) => None,
             Expr::Unary(ref e, ref op) => Some(ExprDn::Unary(Box::new(e.down()?), op.clone())),
+        }
+    }
+
+    pub fn up(&self, v: ExprDn, sink: &mut dyn FnMut(ValueSinkId, ExprDn)) {
+        match *self {
+            Expr::Ignored | Expr::Const(_) | Expr::VarDn(..) | Expr::Range(_, _) => (),
+            Expr::VarUp(id, _) => sink(id, v),
+            Expr::Union(ref u) => {
+                for i in u {
+                    i.up(v.clone(), sink)
+                }
+            }
+            Expr::Flip(_, ref up) => up.up(v, sink),
+            Expr::Choose(ref e, ref c) => {
+                let mapping = c.iter().map(|(v1,v2)| (v2.clone(), v1.clone())).collect();
+                e.up(ExprDn::Choose(Box::new(v), mapping), sink)
+            }
+            Expr::Concat(ref concat) => {
+                let mut offset = 0;
+                for c in concat {
+                    match c {
+                        ConcatElem::Elem(e) => e.up(ExprDn::Index(Box::new(v.clone()), offset), sink),
+                        ConcatElem::Slice(e, width) => e.up(ExprDn::Slice(Box::new(v.clone()), offset, offset + width), sink),
+                    };
+                    offset += c.elem_count();
+                }
+            }
+            Expr::BinaryConst(ref e, op, Value::Number(c)) => {
+                e.up(ExprDn::BinaryConstNumber(Box::new(v), op.invert(), c.clone()), sink)
+            }
+            Expr::BinaryConst(..) => (),
+            Expr::Unary(ref e, ref op) => e.up(ExprDn::Unary(Box::new(v), op.invert()), sink),
         }
     }
 
     pub fn predicate(&self) -> Option<Predicate> {
         match *self {
-            Expr::Ignored | Expr::Variable(_, _, Dir::Up) => Some(Predicate::Any),
-            Expr::Variable(id, _, Dir::Dn) => Some(Predicate::EqualToDn(ExprDn::Variable(id))),
+            Expr::Ignored | Expr::VarUp(..) => Some(Predicate::Any),
+            Expr::VarDn(id, _) => Some(Predicate::EqualToDn(ExprDn::Variable(id))),
             Expr::Flip(_, ref up) => up.predicate(),
             Expr::Const(ref v) => Predicate::from_value(v),
             Expr::Range(lo, hi) => Some(Predicate::Range(lo, hi)),
@@ -202,108 +303,24 @@ impl Expr {
     pub fn eval_const(&self) -> Value {
         self.down().unwrap().eval(&|_| panic!("Runtime variable not expected here"))
     }
-
-    /// Up-evaluate a value. This accepts a value and may write variables
-    /// via the passed function. It returns whether the expression matched the value.
-    pub fn eval_up(&self, state: &mut dyn FnMut(Dir, VarId, Value) -> bool, v: Value) -> bool {
-        match *self {
-            Expr::Ignored => true,
-            Expr::Range(a, b) => match v {
-                Value::Number(n) => n>=a && n<b,
-                _ => false,
-            },
-            Expr::Union(ref u) => {
-                u.iter().any(|i| i.eval_up(state, v.clone()))
-            }
-            Expr::Variable(id, _, dir) => state(dir, id, v),
-            Expr::Const(ref p) => &v == p,
-
-            Expr::Flip(_, ref u) => u.eval_up(state, v),
-            Expr::Choose(ref e, ref choices) => {
-                let r = choices.iter()
-                    .find(|& &(_, ref b)|{ *b == v })
-                    .map(|&(ref a, _)| a.clone());
-
-                if let Some(v) = r {
-                    e.eval_up(state, v)
-                } else {
-                    false
-                }
-            },
-
-            Expr::Concat(ref components) => {
-                let mut elems = match v {
-                    Value::Vector(e) => e.into_iter(),
-                    other => panic!("Concat expected a vector, found {}", other)
-                };
-
-                components.iter().all(|component| {
-                    match *component {
-                        ConcatElem::Elem(ref e) => e.eval_up(state, elems.next().expect("not enough elements in slice")),
-                        ConcatElem::Slice(ref e, w) => e.eval_up(state, Value::Vector(elems.by_ref().take(w as usize).collect()))
-                    }
-                })
-            }
-
-            Expr::BinaryConst(ref e, op, ref c) => {
-                match (v, c) {
-                    (Value::Number(v), &Value::Number(c)) => e.eval_up(state, Value::Number(op.invert().eval(v, c))),
-                    _ => false, // TODO: or type error
-                }
-            }
-
-            Expr::Unary(ref expr, UnaryOp::IntToBits { width, signed }) => {
-                match v {
-                    Value::Vector(bits) => {
-                        assert_eq!(bits.len(), width as usize);
-
-                        let v = bits.iter().fold(0, |acc, x| {
-                            match *x {
-                                Value::Number(bit) => ((acc << 1) | (bit.to_i64().unwrap())).into(),
-                                _ => panic!("Expected bit")
-                            }
-                        });
-
-                        let v = match signed {
-                            SignMode::TwosComplement => ((v << (64-width)) as i64) >> (64-width), // sign-extend
-                            SignMode::None => v as i64
-                        };
-
-                        expr.eval_up(state, Value::Number(v.into()))
-                    }
-                    e => panic!("Invalid value {} up-evaluating IntToBits", e)
-                }
-            }
-
-            Expr::Unary(ref expr, UnaryOp::Chunks {.. }) => {
-                match v {
-                    Value::Vector(chunks) => {
-                        let concat = chunks.into_iter().flat_map(|c| {
-                            match c { Value::Vector(cv) => cv.into_iter(), e => panic!("Expected vector in chunks {}", e)}
-                        }).collect();
-                        expr.eval_up(state, Value::Vector(concat))
-                    }
-                    e => panic!("Expected outer vector in Chunks {}", e)
-                }
-            }
-        }
-    }
 }
 
 /// An expression representing a runtime computation
 #[derive(PartialEq, Debug, Clone)]
 pub enum ExprDn {
     Const(Value),
-    Variable(VarId),
+    Variable(ValueSrcId),
     Choose(Box<ExprDn>, Vec<(Value, Value)>),
     Concat(Vec<ConcatElem<ExprDn>>),
-    BinaryConst(Box<ExprDn>, BinOp, Value),
+    Index(Box<ExprDn>, u32),
+    Slice(Box<ExprDn>, u32, u32),
+    BinaryConstNumber(Box<ExprDn>, BinOp, Number),
     Unary(Box<ExprDn>, UnaryOp),
 }
 
 impl ExprDn {
     /// Down-evaluate the expression with variables from the given value function.
-    pub fn eval(&self, state: &dyn Fn(VarId)->Value) -> Value {
+    pub fn eval(&self, state: &dyn Fn(ValueSrcId)->Value) -> Value {
         match *self {
             ExprDn::Variable(id) => state(id),
             ExprDn::Const(ref v) => v.clone(),
@@ -326,9 +343,23 @@ impl ExprDn {
                 Value::Vector(result)
             },
 
-            ExprDn::BinaryConst(ref e, op, ref c) => {
+            ExprDn::Index(ref e, i) => {
+                match e.eval(state) {
+                    Value::Vector(v) if v.len() >= i as usize => v[i as usize].clone(),
+                    other => panic!("Slice expected vector of at least length {i}, found {}", other)
+                }
+            }
+
+            ExprDn::Slice(ref e, a, b) => {
+                match e.eval(state) {
+                    Value::Vector(v) if v.len() >= b as usize => Value::Vector(v[a as usize..b as usize].to_vec()),
+                    other => panic!("Slice expected vector of at least length {b}, found {}", other)
+                }
+            }
+
+            ExprDn::BinaryConstNumber(ref e, op, ref c) => {
                 match (e.eval(state), c) {
-                    (Value::Number(l), &Value::Number(r)) => Value::Number(op.eval(l, r)),
+                    (Value::Number(l), r) => Value::Number(op.eval(l, r)),
                     (l, r) => panic!("Invalid types {} {} in BinaryConst", l, r)
                 }
             }
@@ -352,7 +383,8 @@ impl fmt::Display for Expr {
         match self {
             Expr::Ignored => write!(f, "_"),
             Expr::Range(a, b) => write!(f, "{}..{}", a, b),
-            Expr::Variable(id, _, _) => write!(f, "${}", u32::from(*id)),
+            Expr::VarDn(id, _) => write!(f, "${}", u32::from(*id)),
+            Expr::VarUp(id, _) => write!(f, ">>{}", u32::from(*id)),
             Expr::Const(ref p) => write!(f, "{}", p),
             Expr::Flip(ref d, ref u) if **d == Expr::Ignored => write!(f, ":> {}", u),
             Expr::Flip(ref d, ref u) if **u == Expr::Ignored => write!(f, "<: {}", d),
@@ -385,11 +417,7 @@ impl fmt::Display for Expr {
                 }
             }
 
-            Expr::Unary(ref expr, UnaryOp::IntToBits { width, signed }) =>
-                write!(f, "convert({:?}, {}, {})", signed, width, expr),
-
-            Expr::Unary(ref expr, UnaryOp::Chunks { width }) =>
-                write!(f, "chunks({}, {})", width, expr),
+            Expr::Unary(ref expr, op) => write!(f, "unary({expr}, {op:?})")
         }
     }
 }
