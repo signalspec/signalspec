@@ -1,9 +1,10 @@
 use num_traits::Signed;
 
 use crate::core::expr_resolve::bind_tree_fields;
+use crate::diagnostic::Span;
 use crate::entitymap::{ EntityMap, entity_key };
 use crate::tree::Tree;
-use crate::{Value, Index, DiagnosticHandler, DiagnosticKind, Label};
+use crate::{Value, Index, DiagnosticHandler, Diagnostic};
 use crate::syntax::ast;
 use super::index::FindDefError;
 use super::step::{Step, StepInfo, analyze_unambiguous, AltUpArm, AltDnArm};
@@ -372,12 +373,11 @@ impl<'a> Builder<'a> {
                     let (scope, imp) = match self.index.find_def(sb.shape_down, &node.name.name, args) {
                         Ok(res) => res,
                         Err(FindDefError::NoDefinitionWithName) => {
-                            self.ui.report(DiagnosticKind::NoDefNamed {
+                            self.ui.report(Diagnostic::NoDefNamed {
+                                span: Span::new(&sb.scope.file, node.name.span),
                                 protocol_name: sb.shape_down.def.ast().name.name.to_owned(),
                                 def_name: node.name.name.to_owned(),
-                            }, vec![
-                                Label { file: sb.scope.file.clone(), span: node.name.span, label: "not found".into() }
-                            ]);
+                            });
                             return (self.add_step(Step::Invalid), None)
                         }
                     };

@@ -3,7 +3,7 @@ use crossbeam_channel::Sender;
 
 use lsp_server::{ Connection, Message };
 use lsp_types::{ ServerCapabilities, InitializeParams, TextDocumentSyncCapability, TextDocumentSyncOptions, TextDocumentSyncKind, OneOf, Url };
-use signalspec::{ SourceFile, FileSpan, syntax::FilePos };
+use signalspec::{ SourceFile, syntax::FilePos, diagnostic::Span };
 
 mod dispatch;
 use dispatch::DispatchNotification;
@@ -99,10 +99,10 @@ fn pos_to_lsp(file: &Arc<SourceFile>, pos: FilePos) -> lsp_types::Position {
     lsp_types::Position { line: line as u32, character: col as u32 }
 }
 
-fn span_to_lsp(file: &Arc<SourceFile>, span: FileSpan) -> lsp_types::Range {
+fn span_to_lsp(span: &Span) -> lsp_types::Range {
     lsp_types::Range {
-        start: pos_to_lsp(file, span.start),
-        end: pos_to_lsp(file, span.end),
+        start: pos_to_lsp(&span.file, span.span.start),
+        end: pos_to_lsp(&span.file, span.span.end),
     }
 }
 
@@ -133,15 +133,16 @@ impl LspState {
         let collector = signalspec::diagnostic::Collector::new();
         doc.file.report_parse_errors(&collector);
 
-        let diagnostics = collector.diagnostics().into_iter().map(|(kind, labels)| {
+        let diagnostics = collector.diagnostics().into_iter().map(|d| {
+            let labels = d.labels();
             let primary_label = labels.first().unwrap();
             lsp_types::Diagnostic {
-                range: span_to_lsp(&primary_label.file, primary_label.span),
+                range: span_to_lsp(&primary_label.span),
                 severity: None,
                 code: None,
                 code_description: None,
                 source: Some("signalspec".to_owned()),
-                message: kind.to_string(),
+                message: d.message(),
                 related_information: None,
                 tags: None,
                 data: None,

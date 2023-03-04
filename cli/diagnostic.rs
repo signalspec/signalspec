@@ -1,17 +1,20 @@
-use codespan_reporting::{diagnostic::Diagnostic, term::termcolor::StandardStream, term::termcolor::ColorChoice};
-use signalspec::{DiagnosticHandler, DiagnosticKind, Label, SourceFile};
+use codespan_reporting::{
+    diagnostic::{
+        Diagnostic as ReportingDiagnostic,
+        Label as ReportingLabel,
+    },
+    term::termcolor::{ColorChoice, StandardStream}
+};
+use signalspec::{DiagnosticHandler, Diagnostic, SourceFile};
 
 pub struct CliHandler;
 
 impl DiagnosticHandler for CliHandler {
-    fn report(&self,
-        error: DiagnosticKind,
-        labels: Vec<Label>,
-    ) {
-        let d = Diagnostic::error()
-            .with_message(format!("{error}"))
-            .with_labels(labels.iter().map(|l|{ 
-            codespan_reporting::diagnostic::Label::primary(&*l.file, l.span).with_message(l.label.clone())
+    fn report(&self, d: Diagnostic) {
+        let d = ReportingDiagnostic::error()
+            .with_message(d.message())
+            .with_labels(d.labels().into_iter().map(|l|{
+                ReportingLabel::primary(&*l.span.file, l.span.span).with_message(l.label)
             }).collect());
 
         let writer = StandardStream::stderr(ColorChoice::Always);
