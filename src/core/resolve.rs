@@ -5,7 +5,7 @@ use crate::diagnostic::Span;
 use crate::entitymap::{ EntityMap, entity_key };
 use crate::tree::Tree;
 use crate::{Value, Index, DiagnosticHandler, Diagnostic};
-use crate::syntax::ast;
+use crate::syntax::ast::{self, AstNode};
 use super::index::FindDefError;
 use super::step::{Step, StepInfo, analyze_unambiguous, AltUpArm, AltDnArm};
 use super::{Expr, ExprDn, Item, Scope, Shape, Type, index::DefImpl, ShapeMsg, protocol};
@@ -365,11 +365,11 @@ impl<'a> Builder<'a> {
     fn resolve_process(&mut self, sb: ResolveCx<'_>, process_ast: &ast::Process) -> (StepId, Option<Shape>) {
         match process_ast {
             ast::Process::Call(node) => {
-                let args: Vec<Item> = node.args.items.iter().map(|a| rexpr(self.ui, sb.scope, a)).collect();
                 if let Some((variant, msg_def)) = sb.shape_down.variant_named(&node.name.name) {
-                    let (dn, up) = self.resolve_token(msg_def, &args);
+                    let (dn, up) = self.resolve_token(msg_def, sb.scope, &node);
                     (self.add_step(Step::Token { variant, dn, up }), None)
                 } else {
+                    let args: Vec<Item> = node.args.items.iter().map(|a| rexpr(self.ui, sb.scope, a)).collect();
                     let (scope, imp) = match self.index.find_def(sb.shape_down, &node.name.name, args) {
                         Ok(res) => res,
                         Err(FindDefError::NoDefinitionWithName) => {
@@ -417,25 +417,45 @@ impl<'a> Builder<'a> {
         }
     }
 
-    pub fn resolve_token(&mut self, msg_def: &ShapeMsg, args: &[Item]) -> (Vec<ExprDn>, Vec<(Predicate, ValueSrcId)>) {
-        assert_eq!(args.len(), msg_def.params.len(), "wrong number of arguments to message {:?} {:?} {:?}", msg_def.name, msg_def.params, args);
+    pub fn resolve_token(&mut self, msg_def: &ShapeMsg, scope: &Scope, node: &ast::ProcessCall) -> (Vec<ExprDn>, Vec<(Predicate, ValueSrcId)>) {
+        if node.args.items.len() != msg_def.params.len() {
+            self.ui.report(Diagnostic::ArgsMismatchCount {
+                span: Span::new(&scope.file, node.args.span),
+                def_name: node.name.name.clone(),
+                expected: msg_def.params.len(),
+                found: node.args.items.len(),
+            })
+        }
 
         let mut dn = Vec::new();
         let mut up = Vec::new();
 
-        for (param, arg) in msg_def.params.iter().zip(args) {
+        for (param, arg_ast) in msg_def.params.iter().zip(node.args.items.iter()) {
+            let arg = rexpr(self.ui, scope, arg_ast);
             let out = match param.direction {
                 Dir::Up => &mut up,
                 Dir::Dn => &mut dn,
             };
 
             use crate::tree::Zip::*;
-            param.ty.zip(arg, &mut |m| { match m {
+            let mut valid = true;
+            param.ty.zip(&arg, &mut |m| { match m {
                 Both(&Tree::Leaf(_), &Item::Leaf(LeafItem::Value(ref v))) => {
                     out.push(v.clone());
                 },
-                _ => panic!("Invalid pattern")
-            }})
+                _ => {
+                    valid = false;
+                }
+            }});
+
+            if !valid {
+                self.ui.report(Diagnostic::ArgMismatchType {
+                    span: Span::new(&scope.file, arg_ast.span()),
+                    def_name: node.name.name.clone(),
+                    expected: format!("{:?}", param.ty),
+                    found: format!("{:?}", arg)
+                })
+            }
         }
 
         let dn = dn.into_iter().map(|x| x.down().unwrap()).collect();

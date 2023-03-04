@@ -106,6 +106,24 @@ diagnostic_kinds!{
     } => "undefined variable `{name}`" {
         error "not found" at span
     }
+
+    ArgsMismatchCount {
+        span: Span,
+        def_name: String,
+        expected: usize,
+        found: usize
+    } => "wrong number of arguments to `{def_name}`" {
+        error "expected {expected} arguments, but found {found}" at span
+    }
+
+    ArgMismatchType {
+        span: Span,
+        def_name: String,
+        expected: String,
+        found: String
+    } => "incorrect argument on `{def_name}`" {
+        error "expected `{expected}`, found `{found}`" at span
+    }
 }
 
 pub struct SimplePrintHandler;
