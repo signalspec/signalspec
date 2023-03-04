@@ -488,6 +488,7 @@ pub fn add_primitive_fns(loader: &mut super::Index) {
 #[cfg(test)]
 pub fn test_expr_parse(e: &str) -> Expr {
     use std::sync::Arc;
+    use crate::diagnostic::Collector;
     use crate::syntax::{parse_expr, SourceFile};
     use crate::core::{Index, Scope, value};
 
@@ -500,7 +501,8 @@ pub fn test_expr_parse(e: &str) -> Expr {
     };
 
     let ast = parse_expr(e).unwrap();
-    value(&scope, &ast)
+    let mut ctx = Collector::new();
+    value(&mut ctx, &scope, &ast)
 }
 
 #[test]

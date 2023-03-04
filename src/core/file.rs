@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::DiagnosticHandler;
+use crate::diagnostic::{Diagnostic, Collector};
 use crate::syntax::{ ast, parse_module, SourceFile };
 use crate::core::Scope;
 use std::fmt::Debug;
@@ -10,6 +10,7 @@ use super::scope::ScopeNames;
 pub struct FileScope {
     pub(crate) scope: Scope,
     pub(crate) ast: ast::Module,
+    pub errors: Vec<Diagnostic>,
 }
 
 impl FileScope {
@@ -17,16 +18,19 @@ impl FileScope {
         let ast = parse_module(file.source()).expect("parser failed");
         let mut scope = Scope { file, names: prelude.clone() };
 
+        let ctx = Collector::new();
+        crate::diagnostic::report_parse_errors(&ctx, &scope.file, &ast);
+
         for entry in &ast.entries {
             match entry {
                 ast::ModuleEntry::Let(letdef) => {
-                    super::resolve::resolve_letdef(&mut scope, &letdef);
+                    super::resolve::resolve_letdef(&ctx, &mut scope, &letdef);
                 }
                 _ => {}
             }
         }
 
-        FileScope { scope, ast }
+        FileScope { scope, ast, errors: ctx.diagnostics() }
     }
 
     pub fn protocols<'a>(self: &'a Arc<Self>) -> impl Iterator<Item=(ProtocolRef, &'a ast::Protocol)> + 'a {
@@ -41,10 +45,6 @@ impl FileScope {
             ast::ModuleEntry::WithDef(d) => Some(d),
             _ => None
         })
-    }
-
-    pub fn report_parse_errors(&self, ui: &dyn DiagnosticHandler) -> bool {
-        crate::diagnostic::report_parse_errors(ui, &self.scope.file, &self.ast)
     }
 
     pub fn source(&self) -> &Arc<SourceFile> { &self.scope.file }

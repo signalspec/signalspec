@@ -133,7 +133,7 @@ impl<'a> Builder<'a> {
                 for (param, expr) in msg_def.params.iter().zip(&node.args.items) {
                     match param.direction {
                         Dir::Dn => {
-                            bind_tree_fields(expr, &param.ty, &mut body_scope, (&mut *self, &mut dn),
+                            bind_tree_fields(self.ui, expr, &param.ty, &mut body_scope, (&mut *self, &mut dn),
                                 |(slf, dn), ty| {
                                     let id = slf.add_value_src();
                                     dn.push((Predicate::Any, id));
@@ -145,7 +145,7 @@ impl<'a> Builder<'a> {
                             );
                         }
                         Dir::Up => {
-                            bind_tree_fields(expr, &param.ty, &mut body_scope, (&mut *self, &mut up_inner),
+                            bind_tree_fields(self.ui, expr, &param.ty, &mut body_scope, (&mut *self, &mut up_inner),
                                 |(slf, up_inner), ty| {
                                     let id = slf.add_value_sink();
                                     up_inner.push(UpInner::Var(id));
@@ -178,8 +178,8 @@ impl<'a> Builder<'a> {
             ast::Action::Repeat(ref node) => {
                 let (dir, count) = match &node.dir_count {
                     Some((dir_ast, count_ast)) => {
-                        let count = value(sb.scope, count_ast);
-                        let dir = resolve_dir(value(sb.scope, dir_ast));
+                        let count = value(self.ui, sb.scope, count_ast);
+                        let dir = resolve_dir(value(self.ui, sb.scope, dir_ast));
                         (dir, count)
                     }
                     None => (Dir::Up, Expr::Ignored)
@@ -218,7 +218,7 @@ impl<'a> Builder<'a> {
                 let mut vars_up_inner:Vec<(ValueSinkId, Expr)> = Vec::new();
                 
                 for &(ref name, ref expr) in &node.vars {
-                    let e = value(sb.scope, expr);
+                    let e = value(self.ui, sb.scope, expr);
                     let t = e.get_type();
                     if let Type::Vector(c, ty) = t {
                         match count {
@@ -266,8 +266,8 @@ impl<'a> Builder<'a> {
             }
 
             ast::Action::Alt(ref node) => {
-                let dir = resolve_dir(value(sb.scope, &node.dir));
-                let scrutinee = rexpr(sb.scope, &node.expr);
+                let dir = resolve_dir(value(self.ui, sb.scope, &node.dir));
+                let scrutinee = rexpr(self.ui, sb.scope, &node.expr);
 
                 match dir {
                     Dir::Dn => {
@@ -281,7 +281,7 @@ impl<'a> Builder<'a> {
                             let mut body_scope = sb.scope.child();
                             let mut vals = Vec::new();
 
-                            bind_tree_fields(&arm.discriminant, &scrutinee, &mut body_scope, &mut vals,
+                            bind_tree_fields(self.ui, &arm.discriminant, &scrutinee, &mut body_scope, &mut vals,
                                 |vals, t| {
                                     vals.push(Predicate::Any);
                                     match t {
@@ -320,7 +320,7 @@ impl<'a> Builder<'a> {
                             }
                             
                             let mut up_inner = Vec::new();
-                            bind_tree_fields(&arm.discriminant, &scrutinee, &mut body_scope, (&mut *self, &mut up_inner),
+                            bind_tree_fields(self.ui,&arm.discriminant, &scrutinee, &mut body_scope, (&mut *self, &mut up_inner),
                                 |(slf, up_inner), t| {
                                     let ty = match t {
                                         LeafItem::Value(v) => v.get_type(),
@@ -365,7 +365,7 @@ impl<'a> Builder<'a> {
     fn resolve_process(&mut self, sb: ResolveCx<'_>, process_ast: &ast::Process) -> (StepId, Option<Shape>) {
         match process_ast {
             ast::Process::Call(node) => {
-                let args: Vec<Item> = node.args.items.iter().map(|a| rexpr(sb.scope, a)).collect();
+                let args: Vec<Item> = node.args.items.iter().map(|a| rexpr(self.ui, sb.scope, a)).collect();
                 if let Some((variant, msg_def)) = sb.shape_down.variant_named(&node.name.name) {
                     let (dn, up) = self.resolve_token(msg_def, &args);
                     (self.add_step(Step::Token { variant, dn, up }), None)
@@ -386,7 +386,9 @@ impl<'a> Builder<'a> {
                             self.resolve_process(sb.with_scope(&scope), callee_ast)
                         }
                         DefImpl::Primitive(ref primitive, ref shape_up_ast) => {
-                            let shape_up = shape_up_ast.as_ref().map(|s| protocol::resolve(self.index, &scope, s));
+                            let shape_up = shape_up_ast.as_ref().map(|s| {
+                                protocol::resolve(self.ui, self.index, &scope, s)
+                            });
                             let prim = primitive.instantiate(&scope);
                             (self.add_step(Step::Primitive(prim)), shape_up)
                         }
@@ -395,7 +397,7 @@ impl<'a> Builder<'a> {
             }
 
             ast::Process::Seq(node) => {
-                let top_shape = protocol::resolve(self.index, sb.scope, &node.top);
+                let top_shape = protocol::resolve(self.ui, self.index, sb.scope, &node.top);
                 let block = self.resolve_seq(sb.with_upper(sb.scope, Some(&top_shape)), &node.block);
                 (block, Some(top_shape))
             }
@@ -450,7 +452,7 @@ impl<'a> Builder<'a> {
         let mut scope = sb.scope.child();
 
         for ld in &block.lets {
-            resolve_letdef(&mut scope, &ld);
+            resolve_letdef(self.ui,&mut scope, &ld);
         }
 
         let steps = block.actions.iter().map(|action| {
@@ -462,9 +464,9 @@ impl<'a> Builder<'a> {
 }
 
 
-pub fn resolve_letdef(scope: &mut Scope, ld: &ast::LetDef) {
+pub fn resolve_letdef(ui: &dyn DiagnosticHandler, scope: &mut Scope, ld: &ast::LetDef) {
     let &ast::LetDef { ref name, ref expr, .. } = ld;
-    let item = rexpr(scope, expr);
+    let item = rexpr(ui, scope, expr);
     scope.bind(&name.name, item);
 }
 

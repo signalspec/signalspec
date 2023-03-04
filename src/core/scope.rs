@@ -62,6 +62,9 @@ pub enum LeafItem {
 
     /// Sequence of Unicode code points. Not a Value because it is not of constant size.
     String(String),
+
+    /// An error was previously reported
+    Invalid,
 }
 
 pub type Item = Tree<LeafItem>;
@@ -130,6 +133,7 @@ impl fmt::Debug for LeafItem {
             LeafItem::Value(ref v) => write!(f, "{:?}", v),
             LeafItem::Func(..) => write!(f, "<function>"),
             LeafItem::String(ref s) => write!(f, "{:?}", s),
+            LeafItem::Invalid => write!(f, "<error>"),
         }
     }
 }

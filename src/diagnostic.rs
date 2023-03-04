@@ -3,6 +3,9 @@ use crate::{SourceFile, FileSpan, syntax::{AstNode, ast}};
 
 pub trait DiagnosticHandler {
     fn report(&self, error: Diagnostic);
+    fn report_all(&self, iter: impl IntoIterator<Item = Diagnostic>) where Self: Sized {
+        for i in iter { self.report(i) }
+    }
 }
 
 #[derive(Clone)]
@@ -94,6 +97,13 @@ diagnostic_kinds!{
         protocol_name: String,
         def_name: String
     } => "no definition `{def_name}` found for protocol `{protocol_name}`" {
+        error "not found" at span
+    }
+
+    UndefinedVariable {
+        span: Span,
+        name: String
+    } => "undefined variable `{name}`" {
         error "not found" at span
     }
 }

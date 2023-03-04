@@ -46,7 +46,8 @@ pub fn run_file(fname: &Path) -> bool {
 
     let module = index.parse_module(file);
 
-    if module.report_parse_errors(ui) {
+    if !module.errors.is_empty() {
+        ui.report_all(module.errors.iter().cloned());
         return false;
     }
 
@@ -83,11 +84,11 @@ pub fn run_test(ui: &dyn DiagnosticHandler, index: &Index, file: &FileScope, def
     assert!(def.params.is_empty(), "Test def must not have parameters");
 
     let seq_ty = match &def.bottom.param {
-        ast::Expr::Tup(t) if t.items.len() == 2 => rexpr(&file.scope, &t.items[0]),
+        ast::Expr::Tup(t) if t.items.len() == 2 => rexpr(ui, &file.scope, &t.items[0]),
         _ => panic!("Invalid seq args")
     };
 
-    let test_args = rexpr_tup(&file.scope, &attr.args);
+    let test_args = rexpr_tup(ui, &file.scope, &attr.args);
     let test_args = test_args.as_tuple();
     let test_mode = test_args.first().and_then(|i| i.as_symbol());
     let test_data = test_args.get(1);

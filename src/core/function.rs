@@ -1,4 +1,4 @@
-use crate::syntax::ast;
+use crate::{syntax::ast, DiagnosticHandler};
 use super::{ rexpr, lexpr, Item, Scope };
 
 pub enum FunctionDef {
@@ -10,13 +10,13 @@ pub enum FunctionDef {
 }
 
 impl FunctionDef {
-    pub fn apply(&self, arg: Item) -> Item {
+    pub fn apply(&self, ctx: &dyn DiagnosticHandler, arg: Item) -> Item {
         match *self {
             FunctionDef::Primitive(f) => {
                 (f)(arg).unwrap()
             },
             FunctionDef::Code(ref func) => {
-                func.apply(arg)
+                func.apply(ctx, arg)
             }
         }
     }
@@ -32,9 +32,9 @@ pub struct Func {
 }
 
 impl Func {
-    pub fn apply(&self, arg: Item) -> Item {
+    pub fn apply(&self, ctx: &dyn DiagnosticHandler, arg: Item) -> Item {
         let mut scope = self.scope.child();
-        lexpr(&mut scope, &self.args, &arg).expect("failed to match function argument");
-        rexpr(&scope, &self.body)
+        lexpr(ctx, &mut scope, &self.args, &arg).expect("failed to match function argument");
+        rexpr(ctx, &scope, &self.body)
     }
 }

@@ -7,6 +7,7 @@ use std::sync::Arc;
 use std::{ process, fs };
 
 use argparse::{ArgumentParser, Collect, StoreOption, Store};
+use signalspec::DiagnosticHandler;
 
 fn main() {
     env_logger::init();
@@ -51,7 +52,7 @@ fn main() {
             fs::File::open(&source_fname).unwrap().read_to_string(&mut source).unwrap();
             let file = Arc::new(signalspec::SourceFile::new(source_fname, source));
             let m = index.parse_module(file);
-            m.report_parse_errors(ui);
+            ui.report_all(m.errors.iter().cloned());
         }
 
 
