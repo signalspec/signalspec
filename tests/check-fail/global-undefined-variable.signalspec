@@ -1,0 +1,3 @@
+//# undefined variable `zzzz`
+let y = zzzz
+//      ^^^^ not found

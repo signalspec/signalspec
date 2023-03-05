@@ -1,0 +1,10 @@
+@test(#up, (9))
+with Seq(1..10, _) def main() = {
+//# wrong number of arguments to `val`
+    val(0, 0)
+//     ^^^^^^ expected 1 arguments, but found 2
+
+//# wrong number of arguments to `val`
+    val()
+//     ^^ expected 1 arguments, but found 0
+}

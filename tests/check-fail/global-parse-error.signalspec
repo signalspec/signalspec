@@ -1,0 +1,3 @@
+//# parse error
+//^* expected expression
+let y=

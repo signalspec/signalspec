@@ -2,7 +2,7 @@ mod console;
 mod diagnostic;
 
 use std::io::prelude::*;
-use std::path::PathBuf;
+use std::path::{PathBuf, Path};
 use std::sync::Arc;
 use std::{ process, fs };
 
@@ -33,16 +33,17 @@ fn main() {
         ap.parse_args_or_exit();
     }
 
+    let ui = &diagnostic::CliHandler;
+
     if let Some(dump_ast) = dump_ast {
         let file = signalspec::syntax::SourceFile::load(&dump_ast).unwrap();
         let ast = signalspec::syntax::parse_module(file.source()).unwrap();
         signalspec::syntax::dump_tree(&mut std::io::stdout(), &file, &ast, 0).unwrap();
         process::exit(0);
     } if let Some(path) = test {
-        let success = signalspec::run_tests_in_file(&*path);
+        let success = signalspec::runtime::run_tests(ui, &Path::new(&path));
         process::exit( if success { 0 } else { 1 } );
     } else {
-        let ui = &diagnostic::CliHandler;
         let mut index = signalspec::Index::new();
 
         signalspec::add_primitives(&mut index);
@@ -52,12 +53,15 @@ fn main() {
             fs::File::open(&source_fname).unwrap().read_to_string(&mut source).unwrap();
             let file = Arc::new(signalspec::SourceFile::new(source_fname, source));
             let m = index.parse_module(file);
-            ui.report_all(m.errors.iter().cloned());
+            ui.report_all(m.errors.clone());
         }
 
 
         let mut handle = signalspec::Handle::base(&index);
-        let inner_handle = handle.parse_compile_run(ui, &index, &cmd).unwrap();
+        let Ok(inner_handle) = handle.parse_compile_run(ui, &index, &cmd) else {
+            eprintln!("Exiting due to previous errors");
+            process::exit(2);
+        };
 
         let success = console::run(inner_handle).is_ok();
 

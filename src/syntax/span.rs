@@ -1,6 +1,6 @@
 use std::iter;
 use std::{io, fs, path::Path};
-use std::ops::Range;
+use std::ops::{Range, Add, Sub};
 
 /// Byte index into a source file
 ///
@@ -17,6 +17,22 @@ impl From<FilePos> for usize {
 impl From<usize> for FilePos {
     fn from(p: usize) -> Self {
         FilePos(p as u32)
+    }
+}
+
+impl Add<u32> for FilePos {
+    type Output = FilePos;
+
+    fn add(self, rhs: u32) -> Self::Output {
+        FilePos(self.0 + rhs)
+    }
+}
+
+impl Sub<FilePos> for FilePos {
+    type Output = u32;
+
+    fn sub(self, rhs: FilePos) -> Self::Output {
+        self.0.checked_sub(rhs.0).unwrap()
     }
 }
 
@@ -43,6 +59,11 @@ impl FileSpan {
 
     pub fn to(self, other: FileSpan) -> FileSpan {
         FileSpan { start: self.start, end: other.end }
+    }
+
+    pub fn subspan(self, p1: u32, p2: u32) -> FileSpan {
+        assert!(p1 <= p2);
+        FileSpan { start: self.start + p1, end: self.end.min(self.start + p2) }
     }
 }
 

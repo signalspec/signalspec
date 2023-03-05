@@ -8,9 +8,10 @@ use std::task::Poll;
 use std::future::poll_fn;
 
 use self::channel::SeqChannels;
-pub use self::test_runner::run as run_tests_in_file;
+pub use self::test_runner::run as run_tests;
+pub use self::test_runner::run_file as run_tests_in_file;
 pub use self::primitives::{ PrimitiveProcess, add_primitives };
-use crate::diagnostic::DiagnosticHandler;
+use crate::diagnostic::{DiagnosticHandler, Collector};
 use crate::{ Scope, ShapeMsg };
 use crate::syntax::{ SourceFile, parse_process, ast };
 pub use channel::{ Channel, ChannelMessage };
@@ -53,7 +54,15 @@ impl<'a> Handle<'a> {
 
     pub fn compile_run<'x: 'a>(&'x mut self, ui: &dyn DiagnosticHandler, index: &Index, scope: &Scope, process: &ast::Process) -> Result<Handle<'x>, ()> {
         let shape = self.shape.as_ref().expect("no shape");
-        let program = compile_process(ui, index, scope, shape.clone(), process);
+        let errors = Collector::new();
+        let program = compile_process(&errors, index, scope, shape.clone(), process);
+
+        let errors = errors.diagnostics();
+        if !errors.is_empty() {
+            ui.report_all(errors);
+            return Err(())
+        }
+
         let compiled = Arc::new(compile::compile(&program));
         let channels_hi = program.shape_up.as_ref().map_or(SeqChannels::null(), SeqChannels::for_shape);
         let future = compile::ProgramExec::new(compiled, self.channels.clone(), channels_hi.clone() );

@@ -1,0 +1,6 @@
+//# incorrect argument on `val`
+@test(#up, (9))
+with Seq(1..10, _) def main() = {
+    val((9, 9))
+//      ^^^^^^ expected
+}

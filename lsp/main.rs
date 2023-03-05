@@ -131,7 +131,7 @@ impl LspState {
         let doc = self.open_documents.get(&uri).unwrap();
 
         let collector = signalspec::diagnostic::Collector::new();
-        collector.report_all(doc.file.errors.iter().cloned());
+        collector.report_all(doc.file.errors.clone());
 
         let diagnostics = collector.diagnostics().into_iter().map(|d| {
             let labels = d.labels();

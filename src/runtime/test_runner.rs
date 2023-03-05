@@ -1,3 +1,4 @@
+use std::fmt::Display;
 use std::sync::Arc;
 use std::fs;
 use std::path::Path;
@@ -7,16 +8,26 @@ use crate::runtime::channel::item_to_msgs;
 use crate::syntax::{ ast, SourceFile };
 use crate::core::{ Index, FileScope, rexpr, rexpr_tup };
 
-pub fn run(fname: &str) -> bool {
+pub fn run(ui: &dyn DiagnosticHandler, fname: &Path) -> bool {
     let fname = Path::new(fname);
     match fs::metadata(fname) {
-        Ok(ref meta) if meta.is_file() => run_file(fname),
+        Ok(ref meta) if meta.is_file() => {
+            println!("Running tests for {}", fname.to_string_lossy());
+            let file = match SourceFile::load(fname) {
+                Ok(file) => Arc::new(file),
+                Err(err) => {
+                    println!("\tCould not open '{}': {}", fname.display(), err);
+                    return false;
+                }
+            };
+            run_file(ui, file, false)
+        },
         Ok(ref meta) if meta.is_dir() => {
             let mut success = true;
             for entry in fs::read_dir(fname).unwrap() {
                 let path = entry.unwrap().path();
                 if path.to_str().unwrap().ends_with(".signalspec") {
-                    success &= run_file(&path);
+                    success &= run(ui,&path);
                 }
             }
             success
@@ -28,26 +39,14 @@ pub fn run(fname: &str) -> bool {
     }
 }
 
-pub fn run_file(fname: &Path) -> bool {
-    println!("Running tests for {}", fname.to_string_lossy());
-
-    let ui = &crate::diagnostic::SimplePrintHandler;
-
+pub fn run_file(ui: &dyn DiagnosticHandler, file: Arc<SourceFile>, compile_only: bool) -> bool {
     let mut index = Index::new();
     super::primitives::add_primitives(&mut index);
-    
-    let file = match SourceFile::load(fname) {
-        Ok(file) => Arc::new(file),
-        Err(err) => {
-            println!("\tCould not open '{}': {}", fname.display(), err);
-            return false;
-        }
-    };
 
     let module = index.parse_module(file);
 
     if !module.errors.is_empty() {
-        ui.report_all(module.errors.iter().cloned());
+        ui.report_all(module.errors.clone());
         return false;
     }
 
@@ -55,18 +54,26 @@ pub fn run_file(fname: &Path) -> bool {
 
     for def in module.defs() {
         for (count, attr) in def.attributes.iter().filter(|a| a.name.name == "test").enumerate() {
-            print!("\tTest {} #{}:", def.name.name, count+1);
-            let res = run_test(ui, &index, &module, def, attr);
+            if !compile_only {
+                print!("\tTest {} #{}:", def.name.name, count+1);
+            }
+            let res = run_test(ui, &index, &module, def, attr, compile_only);
     
             if let Some(r) = res.down{
-                print!(" down:{}", if r { "ok" } else { "FAIL" });
-                success &= r;
+                if !compile_only {
+                    print!(" down:{r}");
+                }
+                success &= r.success();
             }
             if let Some(r) = res.up {
-                print!(" up:{}", if r { "ok" } else { "FAIL" });
-                success &= r;
+                if !compile_only {
+                    print!(" up:{r}");
+                }
+                success &= r.success();
             }
-            println!("");
+            if !compile_only{
+                println!("");
+            }
         }
     }
 
@@ -74,12 +81,42 @@ pub fn run_file(fname: &Path) -> bool {
 }
 
 
-pub struct TestResult {
-    pub up: Option<bool>,
-    pub down: Option<bool>
+enum TestState {
+    CompileError,
+    CompileSuccess,
+    Pass,
+    Fail,
 }
 
-pub fn run_test(ui: &dyn DiagnosticHandler, index: &Index, file: &FileScope, def: &ast::Def, attr: &ast::Attribute) -> TestResult {
+impl Display for TestState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            TestState::CompileError => "ERR",
+            TestState::CompileSuccess => "compiled",
+            TestState::Pass => "ok",
+            TestState::Fail => "FAIL",
+        };
+        Display::fmt(s, f)
+    }
+}
+
+impl TestState {
+    fn success(&self) -> bool {
+        match self {
+            TestState::CompileError => false,
+            TestState::CompileSuccess => true,
+            TestState::Pass => true,
+            TestState::Fail => false,
+        }
+    }
+}
+
+struct TestResult {
+    up: Option<TestState>,
+    down: Option<TestState>
+}
+
+fn run_test(ui: &dyn DiagnosticHandler, index: &Index, file: &FileScope, def: &ast::Def, attr: &ast::Attribute, compile_only: bool) -> TestResult {
     assert!(def.bottom.name.name == "Seq", "Test def must use Seq");
     assert!(def.params.is_empty(), "Test def must not have parameters");
 
@@ -93,48 +130,74 @@ pub fn run_test(ui: &dyn DiagnosticHandler, index: &Index, file: &FileScope, def
     let test_mode = test_args.first().and_then(|i| i.as_symbol());
     let test_data = test_args.get(1);
 
-    let run_dn = || -> Result<Vec<ChannelMessage>, ()> {
+    let run_dn = || {
         let (channel, mut handle) = Handle::seq_dn(index, seq_ty.clone());
-        handle.compile_run(ui, index, &file.scope, &def.process).expect("failed to compile").finish()?;
+        let Ok(h) = handle.compile_run(ui, index, &file.scope, &def.process) else { return (None, TestState::CompileError); };
 
-        let mut read = channel.read();
-        Ok(std::iter::from_fn(|| read.pop()).collect())
+        if compile_only {
+            return (None, TestState::CompileSuccess);
+        }
+
+        match h.finish() {
+            Ok(()) => {
+                let mut read = channel.read();
+                let data = std::iter::from_fn(|| read.pop()).collect();
+                (Some(data), TestState::Pass)
+            },
+            Err(()) => {
+                (None, TestState::Fail)
+            },
+        }
     };
 
-    let run_up = |messages: Vec<ChannelMessage>| -> Result<(), ()> {
+    let run_up = |messages: Vec<ChannelMessage>| -> TestState {
         let (channel, mut handle) = Handle::seq_up(index, seq_ty.clone());
         for m in messages { channel.send(m); }
         channel.set_closed(true);
-        handle.compile_run(ui, index, &file.scope, &def.process).expect("failed to compile").finish()
+        let Ok(h) = handle.compile_run(ui, index, &file.scope, &def.process) else { return TestState::CompileError; };
+
+        if compile_only {
+            return TestState::CompileSuccess;
+        }
+        
+        match h.finish() {
+            Ok(_) => TestState::Pass,
+            Err(_) => TestState::Fail,
+        }
     };
 
     match (test_mode, test_data.map(item_to_msgs)) {
         (Some("up"), Some(data)) => {
-            let up = run_up(data).is_ok();
+            let up = run_up(data);
             TestResult { down: None, up: Some(up) }
         }
 
         (Some("up_fail"), Some(data)) => {
-            let up = run_up(data).is_err();
+            let up = match run_up(data) {
+                TestState::Pass => TestState::Fail,
+                TestState::Fail => TestState::Pass,
+                e => e,
+            };
             TestResult { down: None, up: Some(up) }
         }
 
         (Some("dn"), Some(data)) => {
-            let down = run_dn() == Ok(data);
+            let (res, down) = run_dn();
+            let down = res.map(|x| if x == data { TestState::Pass } else { TestState::Fail }).unwrap_or(down);
             TestResult { down: Some(down), up: None }
         }
 
         (Some("both"), Some(data)) => {
-            let down = run_dn().as_ref() == Ok(&data);
-            let up = run_up(data).is_ok();
+            let (res, down) = run_dn();
+            let down = res.map(|x| if x == data { TestState::Pass } else { TestState::Fail }).unwrap_or(down);
+            let up = run_up(data);
             TestResult { down: Some(down), up: Some(up) }
         }
 
         (Some("roundtrip"), None)  => {
-            let down_res = run_dn();
-            let down = Some(down_res.is_ok());
-            let up = down_res.ok().map(|msgs| run_up(msgs).is_ok());
-            TestResult { down, up }
+            let (res, down) = run_dn();
+            let up = res.map(|msgs| run_up(msgs));
+            TestResult { down: Some(down), up }
         }
 
         _ => panic!("Invalid test args {:?}", test_args)
