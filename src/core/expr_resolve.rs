@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use num_complex::Complex;
 
-use crate::{syntax::{ast, Value}, tree::Tree, diagnostic::{DiagnosticHandler, Diagnostic, Span}};
+use crate::{syntax::{ast, Value}, tree::Tree, diagnostic::{DiagnosticHandler, Diagnostic, Span, ErrorReported}};
 use super::{ConcatElem, Expr, Func, FunctionDef, Item, Scope, LeafItem };
 
 pub fn value(ctx: &dyn DiagnosticHandler, scope: &Scope, e: &ast::Expr) -> Expr {
@@ -25,11 +25,10 @@ pub fn rexpr(ctx: &dyn DiagnosticHandler, scope: &Scope, e: &ast::Expr) -> Item 
     match e {
         ast::Expr::Var(ref name) => {
             if let Some(s) = scope.get(&name.name) { s } else {
-                ctx.report(Diagnostic::UndefinedVariable {
+                Tree::Leaf(ctx.report(Diagnostic::UndefinedVariable {
                     span: Span::new(&scope.file, name.span),
                     name: name.name.clone()
-                });
-                Item::Leaf(LeafItem::Invalid)
+                }).into())
             }
         }
 
@@ -134,7 +133,7 @@ pub fn rexpr(ctx: &dyn DiagnosticHandler, scope: &Scope, e: &ast::Expr) -> Item 
             }))
         }
 
-        ast::Expr::Error(_) => Item::Leaf(LeafItem::Invalid),
+        ast::Expr::Error(e) => Item::Leaf(LeafItem::Invalid(ErrorReported::from_ast(e))),
     }
 }
 

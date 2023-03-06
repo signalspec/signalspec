@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::default::Default;
 use std::sync::Arc;
 
-use crate::{syntax::Value, tree::Tree, SourceFile, TypeTree};
+use crate::{syntax::Value, tree::Tree, SourceFile, TypeTree, diagnostic::ErrorReported};
 use super::{ Expr, FunctionDef };
 
 pub type ScopeNames = HashMap<String, Item>;
@@ -64,7 +64,7 @@ pub enum LeafItem {
     String(String),
 
     /// An error was previously reported
-    Invalid,
+    Invalid(ErrorReported),
 }
 
 pub type Item = Tree<LeafItem>;
@@ -133,7 +133,7 @@ impl fmt::Display for LeafItem {
             LeafItem::Value(ref v) => write!(f, "{}", v),
             LeafItem::Func(..) => write!(f, "<function>"),
             LeafItem::String(ref s) => write!(f, "{}", s),
-            LeafItem::Invalid => write!(f, "<error>"),
+            LeafItem::Invalid(_) => write!(f, "<error>"),
         }
     }
 }
@@ -142,5 +142,11 @@ impl fmt::Display for LeafItem {
 impl fmt::Debug for LeafItem {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self)
+    }
+}
+
+impl From<ErrorReported> for LeafItem {
+    fn from(value: ErrorReported) -> Self {
+        LeafItem::Invalid(value)
     }
 }

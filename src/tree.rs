@@ -24,6 +24,12 @@ impl<T> Display for Tree<T> where T: Display {
     }
 }
 
+impl<T> From<T> for Tree<T> {
+    fn from(value: T) -> Self {
+        Tree::Leaf(value)
+    }
+}
+
 pub enum Zip<'a, T, U> {
     Both(&'a Tree<T>, &'a Tree<U>),
     Left(&'a Tree<T>),

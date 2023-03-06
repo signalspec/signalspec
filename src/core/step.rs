@@ -1,6 +1,7 @@
 use std::io::{Write, Result as IoResult};
 use std::sync::Arc;
 
+use crate::diagnostic::ErrorReported;
 use crate::entitymap::{entity_key, EntityMap};
 use crate::{PrimitiveProcess};
 use super::{ExprDn, MatchSet, Shape, Dir, Predicate, ValueSrcId};
@@ -21,7 +22,7 @@ pub struct AltUpArm {
 
 #[derive(Debug)]
 pub enum Step {
-    Invalid,
+    Invalid(ErrorReported),
     Stack { lo: StepId, shape: Shape, hi: StepId },
     Token { variant: usize, dn: Vec<ExprDn>, up: Vec<(Predicate, ValueSrcId)> },
     TokenTop { top_dir: Dir, variant: usize, dn: Vec<(Predicate, ValueSrcId)>, up: Vec<ExprDn>, inner: StepId },
@@ -56,7 +57,7 @@ pub enum Step {
 pub fn write_tree(f: &mut dyn Write, indent: u32, steps: &[Step], step: StepId) -> IoResult<()> {
     let i: String = " ".repeat(indent as usize);
     match steps[step.0 as usize] {
-        Step::Invalid => writeln!(f, "{}Invalid", i)?,
+        Step::Invalid(_) => writeln!(f, "{}Invalid", i)?,
         Step::Stack{ lo, hi, ..} => {
             writeln!(f, "{}Stack:", i)?;
             write_tree(f, indent+2, steps, lo)?;
@@ -125,7 +126,7 @@ pub fn analyze_unambiguous(steps: &EntityMap<StepId, Step>) -> EntityMap<StepId,
         let get = |id: StepId| -> &StepInfo {&res[id]};
 
         let info = match *step {
-            Step::Invalid => {
+            Step::Invalid(_) => {
                 StepInfo {
                     first: MatchSet::proc(),
                     followlast: None,

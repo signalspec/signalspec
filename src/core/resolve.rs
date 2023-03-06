@@ -373,12 +373,12 @@ impl<'a> Builder<'a> {
                     let (scope, imp) = match self.index.find_def(sb.shape_down, &node.name.name, args) {
                         Ok(res) => res,
                         Err(FindDefError::NoDefinitionWithName) => {
-                            self.ui.report(Diagnostic::NoDefNamed {
+                            let r = self.ui.report(Diagnostic::NoDefNamed {
                                 span: Span::new(&sb.scope.file, node.name.span),
                                 protocol_name: sb.shape_down.def.ast().name.name.to_owned(),
                                 def_name: node.name.name.to_owned(),
                             });
-                            return (self.add_step(Step::Invalid), None)
+                            return (self.add_step(Step::Invalid(r)), None)
                         }
                     };
                     match *imp {
@@ -424,7 +424,7 @@ impl<'a> Builder<'a> {
                 def_name: node.name.name.clone(),
                 expected: msg_def.params.len(),
                 found: node.args.items.len(),
-            })
+            });
         }
 
         let mut dn = Vec::new();

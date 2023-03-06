@@ -5,12 +5,13 @@ use codespan_reporting::{
     },
     term::termcolor::{ColorChoice, StandardStream}
 };
-use signalspec::{DiagnosticHandler, Diagnostic, SourceFile};
+use signalspec::SourceFile;
+use signalspec::diagnostic::{DiagnosticHandler, Diagnostic, ErrorReported};
 
 pub struct CliHandler;
 
 impl DiagnosticHandler for CliHandler {
-    fn report(&self, d: Diagnostic) {
+    fn report(&self, d: Diagnostic) -> ErrorReported {
         let d = ReportingDiagnostic::error()
             .with_message(d.message())
             .with_labels(d.labels().into_iter().map(|l|{
@@ -21,6 +22,7 @@ impl DiagnosticHandler for CliHandler {
         let config = codespan_reporting::term::Config::default();
 
         codespan_reporting::term::emit(&mut writer.lock(), &config, &Files, &d).unwrap();
+        ErrorReported::error_reported()
     }
 }
 

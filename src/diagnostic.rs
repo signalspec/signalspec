@@ -1,10 +1,30 @@
 use std::{sync::Arc, fmt::{Display, Debug}, cell::RefCell};
 use crate::{SourceFile, FileSpan, syntax::{AstNode, ast}};
 
+/// Sentinel value returned by `report` to serve as a type-system check that an error was already reported
+#[derive(Clone)]
+pub struct ErrorReported(());
+
+impl ErrorReported {
+    /// Provide evidence that an error has been reported
+    pub fn error_reported() -> Self { ErrorReported(()) }
+
+    /// It can be assumed that AST error nodes have been reported
+    pub fn from_ast(_: &ast::Error) -> Self {
+        Self::error_reported()
+    }
+}
+
+impl Debug for ErrorReported {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Error previously reported")
+    }
+}
+
 pub trait DiagnosticHandler {
-    fn report(&self, error: Diagnostic);
+    fn report(&self, error: Diagnostic) -> ErrorReported;
     fn report_all(&self, errors: Vec<Diagnostic>) {
-        for i in errors { self.report(i) }
+        for i in errors { self.report(i); }
     }
 }
 
@@ -129,12 +149,13 @@ diagnostic_kinds!{
 pub struct SimplePrintHandler;
 
 impl DiagnosticHandler for SimplePrintHandler {
-    fn report(&self, d: Diagnostic) {
+    fn report(&self, d: Diagnostic) -> ErrorReported {
         eprintln!("{d}");
         for l in d.labels() {
             let start_line = l.span.file.byte_to_line(l.span.span.start);
             eprintln!("\t{}:{} {}", l.span.file.name(), start_line + 1, l.label);
         }
+        ErrorReported::error_reported()
     }
 }
 
@@ -163,7 +184,8 @@ impl Collector {
 }
 
 impl DiagnosticHandler for Collector {
-    fn report(&self, error: Diagnostic) {
+    fn report(&self, error: Diagnostic) -> ErrorReported {
         self.diagnostics.borrow_mut().push(error);
+        ErrorReported::error_reported()
     }
 }
