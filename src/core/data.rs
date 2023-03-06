@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 use std::cmp::{min, max};
+use std::fmt::Display;
 
 use crate::syntax::{Value, Number};
 use crate::tree::Tree;
@@ -46,6 +47,26 @@ impl Type {
 
     pub fn union_iter<T: Iterator<Item=Type>>(i: T) -> Type {
         i.fold(Type::Ignored, Type::union)
+    }
+}
+
+impl Display for Type {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Type::Symbol(symbols) => {
+                for (i, s) in symbols.iter().enumerate() {
+                    if i != 0 {
+                        write!(f, " | ")?;
+                    }
+                    write!(f, "{s}")?;
+                }
+                Ok(())
+            },
+            Type::Number(lo, hi) => write!(f, "{lo}..{hi}"),
+            Type::Complex => write!(f, "<complex>"),
+            Type::Vector(l, t) => write!(f, "[{t}; {l}]"),
+            Type::Ignored => write!(f, "_"),
+        }
     }
 }
 

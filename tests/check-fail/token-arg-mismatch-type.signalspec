@@ -2,5 +2,5 @@
 @test(#up, (9))
 with Seq(1..10, _) def main() = {
     val((9, 9))
-//      ^^^^^^ expected
+//      ^^^^^^ expected `1..10`, found `(9, 9)`
 }

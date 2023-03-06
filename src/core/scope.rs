@@ -127,13 +127,20 @@ impl Default for Item {
     }
 }
 
-impl fmt::Debug for LeafItem {
+impl fmt::Display for LeafItem {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
-            LeafItem::Value(ref v) => write!(f, "{:?}", v),
+            LeafItem::Value(ref v) => write!(f, "{}", v),
             LeafItem::Func(..) => write!(f, "<function>"),
-            LeafItem::String(ref s) => write!(f, "{:?}", s),
+            LeafItem::String(ref s) => write!(f, "{}", s),
             LeafItem::Invalid => write!(f, "<error>"),
         }
+    }
+}
+
+
+impl fmt::Debug for LeafItem {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self)
     }
 }

@@ -1,7 +1,27 @@
+use std::fmt::Display;
+
 #[derive(Clone)]
 pub enum Tree<T> {
     Leaf(T),
     Tuple(Vec<Tree<T>>),
+}
+
+impl<T> Display for Tree<T> where T: Display {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Tree::Leaf(t) => t.fmt(f),
+            Tree::Tuple(items) => {
+                write!(f, "(")?;
+                for (i, e) in items.iter().enumerate() {
+                    if i != 0 {
+                        write!(f, ", ")?;
+                    }
+                    e.fmt(f)?;
+                }
+                write!(f, ")")
+            },
+        }
+    }
 }
 
 pub enum Zip<'a, T, U> {

@@ -452,9 +452,9 @@ impl<'a> Builder<'a> {
                 self.ui.report(Diagnostic::ArgMismatchType {
                     span: Span::new(&scope.file, arg_ast.span()),
                     def_name: node.name.name.clone(),
-                    expected: format!("{:?}", param.ty),
-                    found: format!("{:?}", arg)
-                })
+                    expected: format!("{}", param.ty),
+                    found: format!("{arg}")
+                });
             }
         }
 
