@@ -144,6 +144,13 @@ diagnostic_kinds!{
     } => "incorrect argument on `{def_name}`" {
         error "expected `{expected}`, found `{found}`" at span
     }
+
+    InvalidDirectionExpression {
+        span: Span,
+        found: String
+    } => "invalid expression for direction" {
+        error "expected constant `#up` or `#dn`, found {found}" at span
+    }
 }
 
 pub struct SimplePrintHandler;

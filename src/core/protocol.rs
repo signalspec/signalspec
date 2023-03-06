@@ -1,4 +1,3 @@
-use crate::core::value;
 use crate::diagnostic::Collector;
 use crate::syntax::ast;
 use crate::{Index, Dir, DiagnosticHandler};
@@ -23,7 +22,7 @@ pub fn instantiate(ctx: &dyn DiagnosticHandler, index: &Index, protocol_name: &s
     let mut protocol_def_scope = protocol.scope().child();
     lexpr(ctx, &mut protocol_def_scope, &protocol.ast().param, &args).map_err(InstantiateProtocolError::ArgsMismatch)?;
 
-    let dir = super::resolve::resolve_dir(value(ctx, &protocol_def_scope, &protocol.ast().dir));
+    let dir = super::resolve::resolve_dir(ctx, &protocol_def_scope, &protocol.ast().dir).unwrap();
 
     let mut messages = vec![];
 
@@ -38,7 +37,7 @@ pub fn instantiate(ctx: &dyn DiagnosticHandler, index: &Index, protocol_name: &s
                         }
                         ast::DefParam::Var(node) => {
                             let ty = rexpr(ctx, &protocol_def_scope, &node.expr).as_type_tree().expect("not a type");
-                            let direction = resolve_dir(value(ctx,&protocol_def_scope, &node.direction));
+                            let direction = resolve_dir(ctx, &protocol_def_scope, &node.direction).unwrap();
                             ShapeMsgParam { ty, direction }
                         }
                     }

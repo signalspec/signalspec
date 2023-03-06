@@ -1,7 +1,7 @@
 use num_traits::Signed;
 
 use crate::core::expr_resolve::bind_tree_fields;
-use crate::diagnostic::Span;
+use crate::diagnostic::{Span, ErrorReported};
 use crate::entitymap::{ EntityMap, entity_key };
 use crate::tree::Tree;
 use crate::{Value, Index, DiagnosticHandler, Diagnostic};
@@ -34,11 +34,19 @@ impl<'a> ResolveCx<'a> {
 
 entity_key!(pub ValueSinkId);
 
-pub fn resolve_dir(e: Expr) -> Dir {
-    match e.eval_const() {
-        Value::Symbol(s) if s == "up" => Dir::Up,
-        Value::Symbol(s) if s == "dn" => Dir::Dn,
-        e => panic!("Invalid direction: {}", e)
+pub fn resolve_dir(ctx: &dyn DiagnosticHandler, scope: &Scope, ast: &ast::Expr) -> Result<Dir, ErrorReported> {
+    match rexpr(ctx, scope, ast) {
+        Item::Leaf(LeafItem::Value(Expr::Const(Value::Symbol(s)))) if s == "up" => Ok(Dir::Up),
+        Item::Leaf(LeafItem::Value(Expr::Const(Value::Symbol(s)))) if s == "dn" => Ok(Dir::Dn),
+        Item::Leaf(LeafItem::Invalid(r)) => Err(r),
+        item => {
+            Err(ctx.report(
+                Diagnostic::InvalidDirectionExpression {
+                    span: Span::new(&scope.file, ast.span()),
+                    found: item.to_string(),
+                }
+            ))
+        }
     }
 }
 
@@ -179,7 +187,10 @@ impl<'a> Builder<'a> {
                 let (dir, count) = match &node.dir_count {
                     Some((dir_ast, count_ast)) => {
                         let count = value(self.ui, sb.scope, count_ast);
-                        let dir = resolve_dir(value(self.ui, sb.scope, dir_ast));
+                        let dir = match resolve_dir(self.ui, sb.scope, dir_ast) {
+                            Ok(dir) => dir,
+                            Err(r) => return self.add_step(Step::Invalid(r)),
+                        };
                         (dir, count)
                     }
                     None => (Dir::Up, Expr::Ignored)
@@ -266,11 +277,11 @@ impl<'a> Builder<'a> {
             }
 
             ast::Action::Alt(ref node) => {
-                let dir = resolve_dir(value(self.ui, sb.scope, &node.dir));
+                let dir = resolve_dir(self.ui, sb.scope, &node.dir);
                 let scrutinee = rexpr(self.ui, sb.scope, &node.expr);
 
                 match dir {
-                    Dir::Dn => {
+                    Ok(Dir::Dn) => {
                         let scrutinee_dn = scrutinee.flatten(&mut |e| {
                             match e {
                                 LeafItem::Value(v) => v.down().expect("can't be down-evaluated"),
@@ -304,7 +315,7 @@ impl<'a> Builder<'a> {
                         }).collect();
                         self.add_step(Step::AltDn(scrutinee_dn, arms))
                     }
-                    Dir::Up => {
+                    Ok(Dir::Up) => {
                         let scrutinee_src = scrutinee.flatten(&mut |e| {
                             match e {
                                 LeafItem::Value(v) => self.up_value_src(&v),
@@ -355,6 +366,9 @@ impl<'a> Builder<'a> {
                             AltUpArm { vals, body }
                         }).collect();
                         self.add_step(Step::AltUp(arms, scrutinee_src))
+                    }
+                    Err(r) => {
+                        return self.add_step(Step::Invalid(r));
                     }
                 }
             }
