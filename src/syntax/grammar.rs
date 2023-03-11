@@ -219,10 +219,12 @@ peg::parser!(pub grammar signalspec() for str {
   
   rule NUMBER() -> Number
     = quiet!{ int:$("-"?['0'..='9']+) frac:("." !"." f:$(['0'..='9']*) {f})? {?
-      let int: i64 = int.parse().map_err(|_|"number")?;
-      let pow: i64 = frac.map_or(1, |s| 10i64.pow(s.len() as u32));
-      let frac: i64 = frac.map_or(Ok(0), |s| s.parse()).map_err(|_|"number")?;
-      Ok(Number::new(int * pow + frac, pow))
+      const EXPECTED: &'static str = "number that fits in a 64-bit fraction";
+      let int: i64 = int.parse().map_err(|_| EXPECTED)?;
+      let pow: i64 = frac.map_or(Some(1), |s| 10i64.checked_pow(s.len() as u32)).ok_or(EXPECTED)?;
+      let frac: i64 = frac.map_or(Ok(0), |s| s.parse()).map_err(|_| EXPECTED)?;
+      let num = int.checked_mul(pow).and_then(|n| n.checked_add(frac)).ok_or(EXPECTED)?;
+      Ok(Number::new(num, pow))
     } }
     / expected!("number")
 
