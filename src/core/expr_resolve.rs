@@ -25,10 +25,10 @@ pub fn rexpr(ctx: &dyn DiagnosticHandler, scope: &Scope, e: &ast::Expr) -> Item 
     match e {
         ast::Expr::Var(ref name) => {
             if let Some(s) = scope.get(&name.name) { s } else {
-                Tree::Leaf(ctx.report(Diagnostic::UndefinedVariable {
+                ctx.report(Diagnostic::UndefinedVariable {
                     span: Span::new(&scope.file, name.span),
                     name: name.name.clone()
-                }).into())
+                }).into()
             }
         }
 
@@ -47,11 +47,13 @@ pub fn rexpr(ctx: &dyn DiagnosticHandler, scope: &Scope, e: &ast::Expr) -> Item 
         ast::Expr::Call(ref node) => {
             let func = rexpr(ctx, scope, &node.func);
             let arg = rexpr_tup(ctx, scope, &node.arg);
-
-            if let Item::Leaf(LeafItem::Func(func)) = func {
-                func.apply(ctx, arg)
-            } else {
-                panic!("{:?} is not a function", func)
+            match func {
+                Item::Leaf(LeafItem::Func(func)) => func.apply(ctx, arg),
+                e @ Item::Leaf(LeafItem::Invalid(_)) => e,
+                _ => ctx.report(Diagnostic::NotAFunction {
+                    span: Span::new(&scope.file, node.span),
+                    found: format!("{}", func)
+                }).into()
             }
         }
 

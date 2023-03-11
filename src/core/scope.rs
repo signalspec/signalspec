@@ -150,3 +150,9 @@ impl From<ErrorReported> for LeafItem {
         LeafItem::Invalid(value)
     }
 }
+
+impl From<ErrorReported> for Item {
+    fn from(value: ErrorReported) -> Self {
+        Item::Leaf(LeafItem::Invalid(value))
+    }
+}

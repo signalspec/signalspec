@@ -1,0 +1,8 @@
+//# called an item that is not a function
+let f = (1, 2)
+let y = f()
+//      ^^^ expected a function, but found `(1, 2)`
+
+//# undefined variable `undefined`
+let u = undefined()
+//      ^^^^^^^^^ not found

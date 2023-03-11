@@ -127,6 +127,13 @@ diagnostic_kinds!{
         error "not found" at span
     }
 
+    NotAFunction {
+        span: Span,
+        found: String
+    } => "called an item that is not a function" {
+        error "expected a function, but found `{found}`" at span
+    }
+
     ArgsMismatchCount {
         span: Span,
         def_name: String,
