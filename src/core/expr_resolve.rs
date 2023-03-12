@@ -145,15 +145,47 @@ pub fn rexpr(ctx: &dyn DiagnosticHandler, scope: &Scope, e: &ast::Expr) -> Item 
         }
 
         ast::Expr::Concat(ref node) =>  {
-            let elems = unwrap_or_return_invalid!(node.elems.iter().map(|&(slice_width, ref e)| {
-                let expr = value(ctx, scope, e)?;
-                Ok(match slice_width {
-                    None => ConcatElem::Elem(expr),
-                    Some(w) => ConcatElem::Slice(expr, w)
-                })
-            }).collect());
+            let mut const_part = Vec::new();
+            let mut concat = Vec::new();
+            let mut err = None;
 
-            Item::Leaf(LeafItem::Value(Expr::Concat(elems)))
+            for &(slice_width, ref e) in &node.elems {
+                match (slice_width, value(ctx, scope, e)) {
+                    // Normalize constants
+                    (None, Ok(Expr::Const(c))) => const_part.push(c),
+                    (Some(w), Ok(Expr::Const(Value::Vector(s)))) if s.len() == w as usize => const_part.extend(s.into_iter()),
+
+                    // Flatten nested concat
+                    (Some(w), Ok(Expr::Concat(mut es))) if es.len() == w as usize => {
+                        concat.extend(const_part.drain(..).map(|c| ConcatElem::Elem(Expr::Const(c))));
+                        concat.append(&mut es);
+                    }
+
+                    (_, Ok(expr)) => {
+                        concat.extend(const_part.drain(..).map(|c| ConcatElem::Elem(Expr::Const(c))));
+
+                        match slice_width {
+                            None => concat.push(ConcatElem::Elem(expr)),
+                            Some(w) => concat.push(ConcatElem::Slice(expr, w)),
+                        }
+                    }
+
+                    (_, Err(r)) => {
+                        err = Some(r)
+                    }
+                }
+            }
+            
+            if let Some(r) = err {
+                return r.into()
+            }
+
+            if !concat.is_empty() {
+                concat.extend(const_part.drain(..).map(|c| ConcatElem::Elem(Expr::Const(c))));
+                Item::Leaf(LeafItem::Value(Expr::Concat(concat)))
+            } else {
+                Item::Leaf(LeafItem::Value(Expr::Const(Value::Vector(const_part))))
+            }
         }
 
         ast::Expr::Bin(ref node) => {

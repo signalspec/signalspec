@@ -404,7 +404,17 @@ impl fmt::Display for Expr {
                 }
                 write!(f, "]")
             },
-            Expr::Concat(_) => unimplemented!(),
+            Expr::Concat(elems) => {
+                write!(f, "[")?;
+                for (i, e) in elems.iter().enumerate()  {
+                    if i != 0 { write!(f, ", ")?; }
+                    match e {
+                        ConcatElem::Elem(inner) => write!(f, "{inner}")?,
+                        ConcatElem::Slice(inner, width) => write!(f, "{width}:{inner}")?,
+                    }
+                }
+                write!(f, "]")
+            },
 
             Expr::BinaryConst(ref e, op, ref c) => {
                 match op {
@@ -533,4 +543,17 @@ fn exprs() {
 
     let fncall = test_expr_parse("((a) => a+3.0)(2.0)");
     assert_eq!(fncall.get_type(), Type::Number(5.into(), 5.into()));
+}
+
+#[test]
+fn vec_const_fold() {
+    assert_eq!(
+        test_expr_parse("[1, 2, 2:[3, 1:[4]], 5]"),
+        Expr::Const(Value::Vector(vec![1i64.into(), 2i64.into(), 3i64.into(), 4i64.into(), 5i64.into()])),
+    );
+
+    assert_eq!(
+        test_expr_parse("[1, 2:[2, _], 3]"),
+        test_expr_parse("[1, 2, _, 3]")
+    );
 }
