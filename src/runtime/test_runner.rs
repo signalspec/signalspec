@@ -57,7 +57,14 @@ pub fn run_file(ui: &dyn DiagnosticHandler, file: Arc<SourceFile>, compile_only:
             if !compile_only {
                 print!("\tTest {} #{}:", def.name.name, count+1);
             }
-            let res = run_test(ui, &index, &module, def, attr, compile_only);
+            let res = match run_test(ui, &index, &module, def, attr, compile_only) {
+                Ok(res) => res,
+                Err(msg) => {
+                    println!(" ERR: {msg}");
+                    success = false;
+                    continue;
+                },
+            };
     
             if let Some(r) = res.down{
                 if !compile_only {
@@ -116,13 +123,18 @@ struct TestResult {
     down: Option<TestState>
 }
 
-fn run_test(ui: &dyn DiagnosticHandler, index: &Index, file: &FileScope, def: &ast::Def, attr: &ast::Attribute, compile_only: bool) -> TestResult {
-    assert!(def.bottom.name.name == "Seq", "Test def must use Seq");
-    assert!(def.params.is_empty(), "Test def must not have parameters");
+fn run_test(ui: &dyn DiagnosticHandler, index: &Index, file: &FileScope, def: &ast::Def, attr: &ast::Attribute, compile_only: bool) -> Result<TestResult, &'static str> {
+    if def.bottom.name.name != "Seq" {
+        return Err("Test def must use Seq");
+    }
+
+    if !def.params.is_empty() {
+        return Err("Test def must not have parameters");
+    }
 
     let seq_ty = match &def.bottom.param {
         ast::Expr::Tup(t) if t.items.len() == 2 => rexpr(ui, &file.scope, &t.items[0]),
-        _ => panic!("Invalid seq args")
+        _ => return Err("Seq takes two arguments"),
     };
 
     let test_args = rexpr_tup(ui, &file.scope, &attr.args);
@@ -166,40 +178,46 @@ fn run_test(ui: &dyn DiagnosticHandler, index: &Index, file: &FileScope, def: &a
         }
     };
 
-    match (test_mode, test_data.map(item_to_msgs)) {
-        (Some("up"), Some(data)) => {
+    match (test_mode, test_data.map(|d| item_to_msgs(&seq_ty, d))) {
+        (Some("up"), Some(Ok(data))) => {
             let up = run_up(data);
-            TestResult { down: None, up: Some(up) }
+            Ok(TestResult { down: None, up: Some(up) })
         }
 
-        (Some("up_fail"), Some(data)) => {
+        (Some("up_fail"), Some(Ok(data))) => {
             let up = match run_up(data) {
                 TestState::Pass => TestState::Fail,
                 TestState::Fail => TestState::Pass,
                 e => e,
             };
-            TestResult { down: None, up: Some(up) }
+            Ok(TestResult { down: None, up: Some(up) })
         }
 
-        (Some("dn"), Some(data)) => {
+        (Some("dn"), Some(Ok(data))) => {
             let (res, down) = run_dn();
             let down = res.map(|x| if x == data { TestState::Pass } else { TestState::Fail }).unwrap_or(down);
-            TestResult { down: Some(down), up: None }
+            Ok(TestResult { down: Some(down), up: None })
         }
 
-        (Some("both"), Some(data)) => {
+        (Some("both"), Some(Ok(data))) => {
             let (res, down) = run_dn();
             let down = res.map(|x| if x == data { TestState::Pass } else { TestState::Fail }).unwrap_or(down);
             let up = run_up(data);
-            TestResult { down: Some(down), up: Some(up) }
+            Ok(TestResult { down: Some(down), up: Some(up) })
         }
 
         (Some("roundtrip"), None)  => {
             let (res, down) = run_dn();
             let up = res.map(|msgs| run_up(msgs));
-            TestResult { down: Some(down), up }
+            Ok(TestResult { down: Some(down), up })
         }
 
-        _ => panic!("Invalid test args {:?}", test_args)
+        (_, Some(Err(()))) => {
+            Err("Sequence in @test doesn't match sequence type")
+        }
+
+        _ => {
+            Err("Invalid test args")
+        }
     }
 }

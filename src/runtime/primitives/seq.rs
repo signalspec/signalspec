@@ -11,15 +11,15 @@ use super::super::channel::item_to_msgs;
 pub fn add_primitives(index: &mut Index) {
     index.define_primitive("with Base() def seq(const ty, const #up, const seq): Seq(ty, #up)", PrimitiveDef {
         id: "const_seq_up",
-        instantiate: primitive_args!(|seq: &Item| {
-            Ok(Arc::new(SeqUpProcess(item_to_msgs(seq))))
+        instantiate: primitive_args!(|ty: &Item, seq: &Item| {
+            Ok(Arc::new(SeqUpProcess(item_to_msgs(ty, seq)?)))
         })
     });
 
     index.define_primitive("with Base() def seq(const ty, const #dn, const seq): Seq(ty, #dn)", PrimitiveDef {
         id: "const_seq_down",
-        instantiate: primitive_args!(|seq: &Item| {
-            Ok(Arc::new(SeqDownProcess(item_to_msgs(seq))))
+        instantiate: primitive_args!(|ty: &Item, seq: &Item| {
+            Ok(Arc::new(SeqDownProcess(item_to_msgs(ty, seq)?)))
         })
     });
 }

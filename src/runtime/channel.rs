@@ -1,7 +1,7 @@
 use std::{cell::{RefCell, RefMut}, rc::Rc, task::{Poll, Context, Waker}, collections::VecDeque, future::Future, io, pin::Pin};
 use futures_lite::{ ready, AsyncRead, AsyncWrite };
 
-use crate::{Value, Shape, Item, LeafItem};
+use crate::{Value, Shape, Item, LeafItem, core::Expr, tree::Zip};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ChannelMessage {
@@ -164,20 +164,21 @@ impl SeqChannels {
     }
 }
 
-pub(crate) fn item_to_msgs(item: &Item) -> Vec<ChannelMessage> {
-    let items = item.as_tuple();
-
-    fn inner(m: &mut Vec<Value>, i: &Item) {
-        match i {
-            Item::Leaf(LeafItem::Value(e)) => m.push(e.eval_const()),
-            Item::Tuple(t) => for e in t { inner(m, e) },
-            _ => panic!("Item {:?} not allowed in seq literal", i)
-        }
-    }
-
-    items.iter().map(|i| {
+pub(crate) fn item_to_msgs(ty: &Item, seq: &Item) -> Result<Vec<ChannelMessage>, ()> {
+    seq.as_tuple().iter().map(|i| {
         let mut msg = Vec::new();
-        inner(&mut msg, i);
-        ChannelMessage { variant: 0, values: msg }
+        let mut valid = true;
+
+        ty.zip(i, &mut |m| match m {
+            Zip::Both(_, &Item::Leaf(LeafItem::Value(Expr::Const(ref c)))) => {
+                msg.push(c.clone());
+            },
+            _ => {
+                valid = false;
+            }
+        });
+
+        if !valid { return Err(()) }
+        Ok(ChannelMessage { variant: 0, values: msg })
     }).collect()
 }
