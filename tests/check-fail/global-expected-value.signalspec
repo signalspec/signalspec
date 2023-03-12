@@ -1,0 +1,17 @@
+//# expected a value
+let x = () + 2
+//      ^^ expected a single value, found ()
+
+//# undefined variable `missing`
+let y = missing + 2
+//      ^^^^^^^ not found
+
+//# expected a constant number
+let r1 = 1..()
+//          ^^ expected a constant number, found ()
+
+//# expected a constant number
+//# expected a constant number
+let r2 = #x..#y
+//       ^^ expected a constant number, found #x
+//           ^^ expected a constant number, found #y

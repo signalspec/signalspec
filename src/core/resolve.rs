@@ -187,13 +187,10 @@ impl<'a> Builder<'a> {
                 let (dir, count) = match &node.dir_count {
                     Some((dir_ast, count_ast)) => {
                         let count = value(self.ui, sb.scope, count_ast);
-                        let dir = match resolve_dir(self.ui, sb.scope, dir_ast) {
-                            Ok(dir) => dir,
-                            Err(r) => return self.add_step(Step::Invalid(r)),
-                        };
+                        let dir = resolve_dir(self.ui, sb.scope, dir_ast);
                         (dir, count)
                     }
-                    None => (Dir::Up, Expr::Ignored)
+                    None => (Ok(Dir::Up), Ok(Expr::Ignored))
                 };
 
                 let upvalues_scope = self.upvalues.len();
@@ -204,8 +201,13 @@ impl<'a> Builder<'a> {
                     panic!("Upvalues set in repeat loop");
                 }
 
+                let count = match count {
+                    Ok(count) => count,
+                    Err(r) => return self.add_step(Step::Invalid(r)),
+                };
+
                 match dir {
-                    Dir::Up => {
+                    Ok(Dir::Up) => {
                         let (min, max) = match count.predicate() {
                             Some(Predicate::Any) => (0, None),
                             Some(Predicate::Number(n)) if n.is_integer() && !n.is_negative() => (*n.numer(), Some(*n.numer() + 1)),
@@ -215,9 +217,10 @@ impl<'a> Builder<'a> {
                         let count_src = self.up_value_src(&count);
                         self.add_step(Step::RepeatUp { min, max, inner, count: count_src })
                     }
-                    Dir::Dn => {
+                    Ok(Dir::Dn) => {
                         self.add_step(Step::RepeatDn { count: count.down().unwrap(), inner })
                     }
+                    Err(r) => return self.add_step(Step::Invalid(r))
                 }
             }
 
@@ -229,7 +232,7 @@ impl<'a> Builder<'a> {
                 let mut vars_up_inner:Vec<(ValueSinkId, Expr)> = Vec::new();
                 
                 for &(ref name, ref expr) in &node.vars {
-                    let e = value(self.ui, sb.scope, expr);
+                    let Ok(e) = value(self.ui, sb.scope, expr) else { continue; };
                     let t = e.get_type();
                     if let Type::Vector(c, ty) = t {
                         match count {

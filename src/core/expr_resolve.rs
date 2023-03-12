@@ -1,13 +1,32 @@
 use std::sync::Arc;
 use num_complex::Complex;
 
-use crate::{syntax::{ast, Value}, tree::Tree, diagnostic::{DiagnosticHandler, Diagnostic, Span, ErrorReported}};
+use crate::{syntax::{ast::{self, AstNode}, Value, Number}, tree::Tree, diagnostic::{DiagnosticHandler, Diagnostic, Span, ErrorReported}};
 use super::{ConcatElem, Expr, Func, FunctionDef, Item, Scope, LeafItem };
 
-pub fn value(ctx: &dyn DiagnosticHandler, scope: &Scope, e: &ast::Expr) -> Expr {
+pub fn value(ctx: &dyn DiagnosticHandler, scope: &Scope, e: &ast::Expr) -> Result<Expr, ErrorReported> {
     match rexpr(ctx, scope, e) {
-        Item::Leaf(LeafItem::Value(v)) => v,
-        _ => panic!("Expected a value"),
+        Item::Leaf(LeafItem::Value(v)) => Ok(v),
+        Item::Leaf(LeafItem::Invalid(r)) => Err(r),
+        other => Err(ctx.report(
+            Diagnostic::ExpectedValue {
+                span: Span::new(&scope.file, e.span()),
+                found: other.to_string()
+            }
+        )),
+    }
+}
+
+pub fn constant_number(ctx: &dyn DiagnosticHandler, scope: &Scope, e: &ast::Expr) -> Result<Number, ErrorReported> {
+    match rexpr(ctx, scope, e) {
+        Item::Leaf(LeafItem::Value(Expr::Const(Value::Number(v)))) => Ok(v),
+        Item::Leaf(LeafItem::Invalid(r)) => Err(r),
+        other => Err(ctx.report(
+            Diagnostic::ExpectedConstNumber {
+                span: Span::new(&scope.file, e.span()),
+                found: other.to_string()
+            }
+        )),
     }
 }
 
@@ -17,6 +36,15 @@ pub fn rexpr_tup(ctx: &dyn DiagnosticHandler, scope: &Scope, node: &ast::ExprTup
         values.into_iter().next().unwrap()
     } else {
         Item::Tuple(values)
+    }
+}
+
+macro_rules! unwrap_or_return_invalid {
+    ($e:expr) => {
+        match $e {
+            Ok(e) => e,
+            Err(r) => return LeafItem::Invalid(r).into()
+        }
     }
 }
 
@@ -61,60 +89,69 @@ pub fn rexpr(ctx: &dyn DiagnosticHandler, scope: &Scope, e: &ast::Expr) -> Item 
         ast::Expr::Value(ref node) => Item::Leaf(LeafItem::Value(Expr::Const(node.value.clone()))),
 
         ast::Expr::Flip(ref node) => {
+            let dn = node.dn.as_ref().map_or(Ok(Expr::Ignored),  |dn| value(ctx, scope, dn));
+            let up = node.up.as_ref().map_or(Ok(Expr::Ignored),  |up| value(ctx, scope, up));
+
+            let dn = unwrap_or_return_invalid!(dn);
+            let up = unwrap_or_return_invalid!(up);
+
             Item::Leaf(LeafItem::Value(Expr::Flip(
-                Box::new(node.dn.as_ref().map_or(Expr::Ignored,  |dn| value(ctx, scope, dn))),
-                Box::new(node.up.as_ref().map_or(Expr::Ignored,  |up| value(ctx, scope, up))),
+                Box::new(dn),
+                Box::new(up),
             )))
         }
 
         ast::Expr::Range(ref node) => {
-            let min = value(ctx, scope, &node.lo);
-            let max = value(ctx, scope, &node.hi);
+            let min = constant_number(ctx, scope, &node.lo);
+            let max = constant_number(ctx, scope, &node.hi);
 
-            Item::Leaf(LeafItem::Value(match (min, max) {
-                (Expr::Const(Value::Number(l)), Expr::Const(Value::Number(h))) => Expr::Range(l, h),
-                _ => panic!("Range expressions must be numeric constant")
-            }))
+            let min = unwrap_or_return_invalid!(min);
+            let max = unwrap_or_return_invalid!(max);
+
+            Item::Leaf(LeafItem::Value(Expr::Range(min, max)))
         }
 
         ast::Expr::Union(ref node) => {
-            Item::Leaf(LeafItem::Value(Expr::Union(node.items.iter().map(|i| value(ctx, scope, i)).collect())))
+            let opts = unwrap_or_return_invalid!(node.items.iter().map(|i| value(ctx, scope, i)).collect());
+            Item::Leaf(LeafItem::Value(Expr::Union(opts)))
         }
 
         ast::Expr::Choose(ref node) => {
-            let head = value(ctx, scope, &node.e);
+            match value(ctx, scope, &node.e) {
+                Ok(Expr::Const(v)) => {
+                    let re = node.choices.iter().find(|&(ref le, _)| {
+                        let l = value(ctx, scope, le).unwrap().eval_const();
+                        l == v
+                    }).map(|x| &x.1).unwrap_or_else(|| {
+                        panic!("No match for {} at {:?}", v, &node.span);
+                    });
+                    Item::Leaf(LeafItem::Value(value(ctx, scope, re).unwrap()))
+                }
+                Ok(head) => {
+                    let pairs: Vec<(Value, Value)> = node.choices.iter().map(|&(ref le, ref re)| {
+                        let l = value(ctx, scope, le).unwrap();
+                        let r = value(ctx, scope, re).unwrap();
 
-            if let Expr::Const(v) = head {
-                let re = node.choices.iter().find(|&(ref le, _)| {
-                    let l = value(ctx, scope, le).eval_const();
-                    l == v
-                }).map(|x| &x.1).unwrap_or_else(|| {
-                    panic!("No match for {} at {:?}", v, &node.span);
-                });
-                Item::Leaf(LeafItem::Value(value(ctx, scope, re)))
-            } else {
-                let pairs: Vec<(Value, Value)> = node.choices.iter().map(|&(ref le, ref re)| {
-                    let l = value(ctx, scope, le);
-                    let r = value(ctx, scope, re);
+                        match (l, r) {
+                            (Expr::Const(lv), Expr::Const(rv)) => (lv, rv),
+                            _ => panic!("Choose expression arms must be constant, for now")
+                        }
+                    }).collect();
 
-                    match (l, r) {
-                        (Expr::Const(lv), Expr::Const(rv)) => (lv, rv),
-                        _ => panic!("Choose expression arms must be constant, for now")
-                    }
-                }).collect();
-
-                Item::Leaf(LeafItem::Value(Expr::Choose(Box::new(head), pairs)))
+                    Item::Leaf(LeafItem::Value(Expr::Choose(Box::new(head), pairs)))
+                }
+                Err(r) => Item::Leaf(LeafItem::Invalid(r))
             }
         }
 
         ast::Expr::Concat(ref node) =>  {
-            let elems = node.elems.iter().map(|&(slice_width, ref e)| {
-                let expr = value(ctx, scope, e);
-                match slice_width {
+            let elems = unwrap_or_return_invalid!(node.elems.iter().map(|&(slice_width, ref e)| {
+                let expr = value(ctx, scope, e)?;
+                Ok(match slice_width {
                     None => ConcatElem::Elem(expr),
                     Some(w) => ConcatElem::Slice(expr, w)
-                }
-            }).collect();
+                })
+            }).collect());
 
             Item::Leaf(LeafItem::Value(Expr::Concat(elems)))
         }
@@ -123,6 +160,10 @@ pub fn rexpr(ctx: &dyn DiagnosticHandler, scope: &Scope, e: &ast::Expr) -> Item 
             use self::Expr::Const;
             let lhs = value(ctx, scope, &node.l);
             let rhs = value(ctx, scope, &node.r);
+
+            let lhs = unwrap_or_return_invalid!(lhs);
+            let rhs = unwrap_or_return_invalid!(rhs);
+
             let op = node.op;
             Item::Leaf(LeafItem::Value( match (lhs, rhs) {
                 (Const(Value::Number(a)),  Const(Value::Number(b))) => Const(Value::Number(op.eval(a, b))),
@@ -165,7 +206,7 @@ pub fn bind_tree_fields<T, S>(ctx: &dyn DiagnosticHandler, expr: &ast::Expr, t: 
                 scope.bind(&name.name, Item::Leaf(LeafItem::Value(variable(&mut s, t))));
             }
             (Tree::Leaf(_), a) => {
-                pattern(&mut s, value(ctx, scope, a));
+                pattern(&mut s, value(ctx, scope, a).unwrap());
             }
             (t @ &Tree::Tuple(_), ast::Expr::Var(ref name)) => {
                 // Capture a tuple by recursively building a tuple Item containing each of the
@@ -198,7 +239,7 @@ pub fn lexpr(ctx: &dyn DiagnosticHandler, scope: &mut Scope, pat: &ast::Expr, r:
             }
 
             pat => {
-                let lv = value(ctx, scope, pat); //TODO: disallow variable references?
+                let lv = value(ctx, scope, pat).unwrap(); //TODO: disallow variable references?
 
                 if let Item::Leaf(LeafItem::Value(ref rv)) = r {
                     if &lv == rv {

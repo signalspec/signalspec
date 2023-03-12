@@ -158,6 +158,20 @@ diagnostic_kinds!{
     } => "invalid expression for direction" {
         error "expected constant `#up` or `#dn`, found {found}" at span
     }
+
+    ExpectedValue {
+        span: Span,
+        found: String
+    } => "expected a value" {
+        error "expected a single value, found {found}" at span
+    }
+
+    ExpectedConstNumber {
+        span: Span,
+        found: String
+    } => "expected a constant number" {
+        error "expected a constant number, found {found}" at span
+    }
 }
 
 pub struct SimplePrintHandler;

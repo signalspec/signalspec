@@ -1,0 +1,8 @@
+@test(#up, ())
+with Seq(#x, _) def main() = {
+//# expected a value
+    repeat #up (1, 2) {
+//             ^^^^^^ expected a single value, found (1, 2)
+
+    }
+}
