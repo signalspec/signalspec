@@ -1,0 +1,13 @@
+
+with Seq(_, _) def do_nothing() = {}
+
+@test(#up, ())
+with Seq(#x, _) def main() = {
+//# stacked process without base signal
+    do_nothing() | do_nothing()
+//  ^^^^^^^^^^^^ does not provide an upper signal
+
+//# no definition `no_exist` found for protocol `Seq`
+    no_exist() | do_nothing()
+//  ^^^^^^^^ not found
+}

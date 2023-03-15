@@ -426,7 +426,18 @@ impl<'a> Builder<'a> {
 
             ast::Process::Stack(node) => {
                 let (lo, shape) = self.resolve_process(sb, &node.lower);
-                let shape = shape.unwrap();
+
+                let Some(shape) = shape else {
+                    if let Step::Invalid(_) = &self.steps[lo] {
+                        return (lo, shape);
+                    } else {
+                        let r = self.ui.report(Diagnostic::StackWithoutBaseSignal {
+                            span: Span::new(&sb.scope.file, node.lower.span()),
+                        });
+                        return (self.add_step(Step::Invalid(r)), None)
+                    }
+                };
+
                 let (hi, shape_up) = self.resolve_process(sb.with_lower(sb.scope, &shape), &node.upper);
                 let stack = self.add_step(Step::Stack { lo, shape, hi });
                 (stack, shape_up)

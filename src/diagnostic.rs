@@ -120,6 +120,12 @@ diagnostic_kinds!{
         error "not found" at span
     }
 
+    StackWithoutBaseSignal {
+        span: Span
+    } => "stacked process without base signal" {
+        error "does not provide an upper signal" at span
+    }
+
     UndefinedVariable {
         span: Span,
         name: String
