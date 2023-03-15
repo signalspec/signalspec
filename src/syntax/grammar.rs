@@ -10,6 +10,13 @@ peg::parser!(pub grammar signalspec() for str {
     = start:position!() node:inner() end:position!()
     { Spanned { node, span: FileSpan::new(start, end) } }
 
+  rule tok_node(s: &str) -> ast::Token
+    = span: TOK(s) { ast::Token { span } }
+
+  rule tok_node_or_err(s: &'static str) -> Result<ast::Token, ast::Error>
+    = n:tok_node(s) { Ok(n) }
+    / p:pos() { Err(ast::Error { span: FileSpan{ start: p, end: p }, expected: s }) }
+
   rule recover(expected: &'static str, skip_until: rule<()>) -> ast::Error
     = start:pos() (!("//" / skip_until()) [_])* end:pos()
     { ast::Error { span: FileSpan{ start, end }, expected } }
@@ -63,12 +70,11 @@ peg::parser!(pub grammar signalspec() for str {
     rule protocol() -> ast::Protocol
       = start:pos()
         attributes:attribute()*
-        tok_protocol:KW("protocol") _ name:IDENTIFIER() _ param:expr_tup() _ dir:expr() _ entries:protocol_block()
+        tok_protocol:KW("protocol") _ name:IDENTIFIER() _ param:expr_tup() _ dir:expr() _
+        open:tok_node("{") _ entries:protocol_entry() ** (_ "," _) _ ","? _ close:tok_node_or_err("}")
         end:pos()
-        { ast::Protocol { span:FileSpan{start, end}, attributes, name, param: param.into(), dir, entries }}
+        { ast::Protocol { span:FileSpan{start, end}, attributes, name, param: param.into(), dir, open, entries, close }}
       
-      rule protocol_block() -> Vec<ast::ProtocolEntry> = "{" _ e:protocol_entry() ** (_ "," _) _ ","? _ "}" { e }
-
       rule protocol_entry() -> ast::ProtocolEntry
         = start:pos() name:IDENTIFIER() _ params:def_params() end:pos() 
         { ast::ProtocolEntry::Message( ast::ProtocolMessageDef { span: FileSpan{start, end}, name, params }) }
@@ -89,8 +95,11 @@ peg::parser!(pub grammar signalspec() for str {
         { ast::DefParam::Var(ast::ParamVar{ span: FileSpan{start, end}, direction, expr}) }
 
   rule block() -> ast::Block
-      = start:pos() "{" _ lets:letstmt()**_ _ actions:(!['}'] a:action() {a})**(_ (";" _)?) _ "}" end:pos()
-      { ast::Block{ span: FileSpan{start, end}, lets, actions } }
+      = start:pos() open:tok_node("{") _
+        lets:letstmt()**_ _
+        actions:(!['}'] a:action() {a})**(_ (";" _)?) _
+        close:tok_node_or_err("}") end:pos()
+      { ast::Block{ span: FileSpan{start, end}, open, lets, actions, close } }
 
       rule action() -> ast::Action
         = start:pos() KW("repeat") _ dir_count:(!['{'] dir:expr() _ count:expr() { (dir, count) })? _ block:block() end:pos()
@@ -99,7 +108,7 @@ peg::parser!(pub grammar signalspec() for str {
           { ast::Action::On(ast::ActionOn{ span: FileSpan{start, end}, name, args, block }) }
         / start:pos() KW("for") _ vars:(l:IDENTIFIER() _ "=" _ r:expr() { (l,r) })**__ _ block:block() end:pos()
           { ast::Action::For(ast::ActionFor{ span: FileSpan{start, end}, vars, block }) }
-        / start:pos() KW("alt") _ dir:expr() _ expr:expr() _ "{" _ arms:alt_arm()**__ _ "}" end:pos()
+        / start:pos() KW("alt") _ dir:expr() _ expr:expr() _ open:tok_node("{") _ arms:alt_arm()**__ _ close:tok_node_or_err("}") end:pos()
           { ast::Action::Alt(ast::ActionAlt{ span: FileSpan{start, end}, dir, expr, arms }) }
         / start:pos() process:process() end:pos()
           { ast::Action::Process(process) }
@@ -111,8 +120,8 @@ peg::parser!(pub grammar signalspec() for str {
 
   // Expressions
   rule expr_tup() -> ast::ExprTup
-      = start:pos() "(" items:COMMASEP(<(![')'] e:expr() {e})>) ")" end:pos()
-        { ast::ExprTup { span: FileSpan{start, end}, items }}
+      = start:pos() open:tok_node("(") items:COMMASEP(<(![')'] e:expr() {e})>) close:tok_node_or_err(")") end:pos()
+        { ast::ExprTup { span: FileSpan{start, end}, open, items, close }}
 
   pub rule expr() -> ast::Expr = precedence! {
     start:position!() e:@ end:position!() { let e:ast::Expr = e; e.with_span(FileSpan::from(start..end)) }

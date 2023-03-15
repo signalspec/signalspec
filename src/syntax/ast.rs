@@ -147,6 +147,12 @@ macro_rules! ast_node {
 }
 
 ast_node! {
+    pub struct Token {
+        pub span: FileSpan,
+    }
+}
+
+ast_node! {
     pub struct Error {
         pub span: FileSpan,
         pub expected: &'static str,
@@ -212,7 +218,9 @@ ast_node! {
         pub name: Identifier,
         pub param: Expr,
         pub dir: Expr,
+        pub open: Token,
         pub entries: Vec<ProtocolEntry>,
+        pub close: Result<Token, Error>,
     }
 }
 
@@ -241,8 +249,10 @@ ast_node!{
 ast_node!{
     pub struct Block {
         pub span: FileSpan,
+        pub open: Token,
         pub lets: Vec<LetDef>,
         pub actions: Vec<Action>,
+        pub close: Result<Token, Error>,
     }
 }
 
@@ -412,7 +422,9 @@ ast_node!{
 ast_node!{
     pub struct ExprTup {
         pub span: FileSpan,
+        pub open: Token,
         pub items: Vec<Expr>,
+        pub close: Result<Token, Error>,
     }
 }
 

@@ -1,0 +1,19 @@
+//# unclosed delimiter
+let x = (1, 2
+//      ^ unclosed
+//           ^- expected )
+
+//# unclosed delimiter
+protocol Foo() #up {
+//                 ^ unclosed
+// ^* expected }
+
+//# unclosed delimiter
+with Foo() def bar() = {
+//                     ^ unclosed
+// ^* expected }
+
+//# unclosed delimiter
+    repeat {
+//         ^ unclosed
+// ^* expected }

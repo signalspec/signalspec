@@ -41,6 +41,22 @@ impl dyn AstNode {
             })
         })
     }
+
+    pub fn walk_preorder_with_parent(&self) -> impl Iterator<Item = (&dyn AstNode, &dyn AstNode)> {
+        let mut children = Vec::new();
+        self.children(&mut children);
+        let mut remaining: Vec<(_, _)> = children.iter().rev().map(|&c| (self, c)).collect();
+
+        std::iter::from_fn(move || {
+            let next = remaining.pop();
+            next.map(|(parent, node)| {
+                children.clear();
+                node.children(&mut children);
+                remaining.extend(children.iter().rev().map(|&c| (node, c)));
+                (parent, node)
+            })
+        })
+    }
 }
 
 /// Get the AstNodes that enclose the specified position, innermost last

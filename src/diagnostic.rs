@@ -1,4 +1,4 @@
-use std::{sync::Arc, fmt::{Display, Debug}, cell::RefCell};
+use std::{sync::Arc, fmt::{Display, Debug}, cell::RefCell, ptr};
 use crate::{SourceFile, FileSpan, syntax::{AstNode, ast}};
 
 /// Sentinel value returned by `report` to serve as a type-system check that an error was already reported
@@ -112,6 +112,15 @@ diagnostic_kinds!{
         error "expected {expected}" at span
     }
 
+    UnclosedDelimiter {
+        span: Span,
+        open: Span,
+        expected: &'static str
+    } => "unclosed delimiter" {
+        error "unclosed" at open
+        error "expected {expected}" at span
+    }
+
     NoDefNamed {
         span: Span,
         protocol_name: String,
@@ -193,12 +202,40 @@ impl DiagnosticHandler for SimplePrintHandler {
     }
 }
 
+/// If the error is an unclosed delimiter, get the span of the opening delimiter
+fn find_unclosed_delimiter(parent: &dyn AstNode, err: &ast::Error) -> Option<FileSpan> {
+    if let Some(parent) = parent.downcast::<ast::ExprTup>() {
+        //TODO: use `is_err_and` once stable
+        if parent.close.as_ref().err().filter(|&e| ptr::eq(err, e)).is_some() {
+            return Some(parent.open.span)
+        }
+    } else if let Some(parent) = parent.downcast::<ast::Block>() {
+        if parent.close.as_ref().err().filter(|&e| ptr::eq(err, e)).is_some() {
+            return Some(parent.open.span)
+        }
+    } else if let Some(parent) = parent.downcast::<ast::Protocol>() {
+        if parent.close.as_ref().err().filter(|&e| ptr::eq(err, e)).is_some() {
+            return Some(parent.open.span)
+        }
+    }
+    None
+}
+
 pub fn report_parse_errors(ui: &dyn DiagnosticHandler, file: &Arc<SourceFile>, ast: &dyn AstNode) -> bool{
     let mut has_errors = false;
-    for err in ast.walk_preorder().filter_map(|n| n.downcast::<ast::Error>()) {
-        ui.report(
-            Diagnostic::ParseError { span: Span::new(file, err.span), expected: err.expected },
-        );
+    for (parent, err) in ast.walk_preorder_with_parent().filter_map(|(p, n)| n.downcast::<ast::Error>().map(|n| (p, n))) {
+        if let Some(open) = find_unclosed_delimiter(parent, err) {
+            ui.report(Diagnostic::UnclosedDelimiter {
+                span: Span::new(file, err.span),
+                open: Span::new(file, open),
+                expected: err.expected
+            });
+        } else {
+            ui.report(Diagnostic::ParseError {
+                span: Span::new(file, err.span),
+                expected: err.expected
+            });
+        }
         has_errors = true;
     }
     has_errors
