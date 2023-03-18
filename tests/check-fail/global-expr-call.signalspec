@@ -1,0 +1,9 @@
+//# function argument mismatch: pattern mismatch
+let f = (#x) => #x
+//      ^^^^ definition
+let t1 = f(1)
+//       ^^^^ call site
+
+//# function error: invalid arguments to signed()
+let t2 = unsigned(#not_number)
+//       ^^^^^^^^^^^^^^^^^^^^^ call site

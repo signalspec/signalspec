@@ -75,14 +75,7 @@ pub fn rexpr(ctx: &dyn DiagnosticHandler, scope: &Scope, e: &ast::Expr) -> Item 
         ast::Expr::Call(ref node) => {
             let func = rexpr(ctx, scope, &node.func);
             let arg = rexpr_tup(ctx, scope, &node.arg);
-            match func {
-                Item::Leaf(LeafItem::Func(func)) => func.apply(ctx, arg),
-                e @ Item::Leaf(LeafItem::Invalid(_)) => e,
-                _ => ctx.report(Diagnostic::NotAFunction {
-                    span: Span::new(&scope.file, node.span),
-                    found: format!("{}", func)
-                }).into()
-            }
+            resolve_function_call(ctx, || Span::new(&scope.file, node.span), func, arg)
         }
 
         ast::Expr::Ignore(_) => Item::Leaf(LeafItem::Value(Expr::Ignored)),
@@ -212,6 +205,39 @@ pub fn rexpr(ctx: &dyn DiagnosticHandler, scope: &Scope, e: &ast::Expr) -> Item 
     }
 }
 
+fn resolve_function_call(ctx: &dyn DiagnosticHandler, call_site_span: impl FnOnce() -> Span, func: Item, arg: Item) -> Item {
+    match func {
+        Item::Leaf(LeafItem::Func(func_def)) => {
+            match *func_def {
+                FunctionDef::Code(ref func) => {
+                    let mut inner_scope = func.scope.child();
+                    if let Err(msg) = lexpr(ctx, &mut inner_scope, &func.args, &arg) {
+                        return ctx.report(Diagnostic::FunctionArgumentMismatch {
+                            span: call_site_span(),
+                            def: Span::new(&func.scope.file, func.args.span()),
+                            msg: msg.into(),
+                        }).into()
+                    }
+                    rexpr(ctx, &inner_scope, &func.body)
+                }
+                FunctionDef::Primitive(primitive) => {
+                    primitive(arg).unwrap_or_else(|msg| {
+                        ctx.report(Diagnostic::ErrorInPrimitiveFunction {
+                            span: call_site_span(),
+                            msg: msg.into(),
+                        }).into()
+                    })
+                },
+            }
+        }
+        e @ Item::Leaf(LeafItem::Invalid(_)) => e,
+        _ => ctx.report(Diagnostic::NotAFunction {
+            span: call_site_span(),
+            found: format!("{}", func)
+        }).into()
+    }
+}
+
 fn zip_ast<T>(ast: &ast::Expr, tree: &Tree<T>, f: &mut impl FnMut(&ast::Expr, &Tree<T>) -> Result<(), &'static str>) -> Result<(), &'static str> {
     match (&ast, tree) {
         (ast::Expr::Tup(a), Tree::Tuple(t)) => {
@@ -271,13 +297,16 @@ pub fn lexpr(ctx: &dyn DiagnosticHandler, scope: &mut Scope, pat: &ast::Expr, r:
             }
 
             pat => {
-                let lv = value(ctx, scope, pat).unwrap(); //TODO: disallow variable references?
+                //TODO: disallow variable references?
+                let Ok(lv) = value(ctx, scope, pat) else {
+                    return Err("pattern must be a value")
+                };
 
                 if let Item::Leaf(LeafItem::Value(ref rv)) = r {
                     if &lv == rv {
                         Ok(())
                     } else {
-                        Err("expected tuple, variable, or ignore")
+                        Err("pattern mismatch")
                     }
                 } else {
                     Err("item cannot be matched")

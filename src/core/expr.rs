@@ -450,10 +450,10 @@ fn fn_signed_unsigned(arg: Item, sign_mode: SignMode) -> Result<Item, &'static s
                         signed: sign_mode,
                     }))))
                 }
-                _ => Err("Invalid arguments to signed()")
+                _ => Err("invalid arguments to signed()")
             }
         }
-        _ => Err("Invalid arguments to signed()")
+        _ => Err("invalid arguments to signed()")
     }
 }
 
@@ -466,25 +466,27 @@ fn fn_chunks(arg: Item) -> Result<Item, &'static str> {
                         width: width.to_u32().ok_or("chunks() width must be integer")?,
                     }))))
                 }
-                _ => Err("Invalid arguments to chunks()")
+                _ => Err("invalid arguments to chunks()")
             }
         }
-        _ => Err("Invalid arguments to chunks()")
+        _ => Err("invalid arguments to chunks()")
     }
 }
 
 fn fn_complex(arg: Item) -> Result<Item, &'static str> {
     match arg {
         Item::Tuple(t) => {
-            assert_eq!(t.len(), 2, "complex(re, im) requires two arguments");
-            match (&t[0], &t[1]) {
-                (&Item::Leaf(LeafItem::Value(Expr::Const(Value::Number(re)))), &Item::Leaf(LeafItem::Value(Expr::Const(Value::Number(im))))) => {
+            match t[..] {
+                [
+                    Item::Leaf(LeafItem::Value(Expr::Const(Value::Number(re)))),
+                    Item::Leaf(LeafItem::Value(Expr::Const(Value::Number(im))))
+                 ] => {
                     Ok(Item::Leaf(LeafItem::Value(Expr::Const(Value::Complex(Complex::new(re, im))))))
                 }
-                _ => Err("Invalid arguments to complex()")
+                _ => Err("invalid arguments to complex(re, im): expected two number constants")
             }
         }
-        _ => Err("Invalid arguments to complex()")
+        _ => Err("invalid arguments to complex()")
     }
 }
 

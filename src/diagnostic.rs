@@ -149,6 +149,22 @@ diagnostic_kinds!{
         error "expected a function, but found `{found}`" at span
     }
 
+    ErrorInPrimitiveFunction {
+        span: Span,
+        msg: String
+    } => "function error: {msg}" {
+        error "call site" at span
+    }
+
+    FunctionArgumentMismatch {
+        span: Span,
+        def: Span,
+        msg: String
+    } => "function argument mismatch: {msg}" {
+        error "call site" at span
+        error "definition" at def
+    }
+
     ArgsMismatchCount {
         span: Span,
         def_name: String,
