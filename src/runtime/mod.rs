@@ -36,16 +36,16 @@ impl<'a> Handle<'a> {
         }
     }
 
-    pub fn seq_dn(index: &Index, ty: Item) -> (Channel, Handle) {
-        let shape = seq_shape(index, ty, Dir::Dn);
+    pub fn seq_dn(index: &Index, ty: Item) -> Result<(Channel, Handle), ()> {
+        let shape = seq_shape(index, ty, Dir::Dn)?;
         let channels = SeqChannels::for_shape(&shape);
-        (channels.dn.as_ref().unwrap().clone(), Handle { shape: Some(shape), channels, future: None , parent: None})
+        Ok((channels.dn.as_ref().unwrap().clone(), Handle { shape: Some(shape), channels, future: None , parent: None}))
     }
 
-    pub fn seq_up(index: &Index, ty: Item) -> (Channel, Handle) {
-        let shape = seq_shape(index, ty, Dir::Up);
+    pub fn seq_up(index: &Index, ty: Item) -> Result<(Channel, Handle), ()> {
+        let shape = seq_shape(index, ty, Dir::Up)?;
         let channels = SeqChannels::for_shape(&shape);
-        (channels.up.as_ref().unwrap().clone(), Handle { shape: Some(shape), channels, future: None , parent: None})
+        Ok((channels.up.as_ref().unwrap().clone(), Handle { shape: Some(shape), channels, future: None , parent: None}))
     }
 
     pub fn shape(&self) -> Option<&Shape> {
@@ -127,12 +127,12 @@ fn base_shape(index: &Index) -> Shape {
     }
 }
 
-fn seq_shape(index: &Index, ty_item: Item, dir: Dir) -> Shape {
+fn seq_shape(index: &Index, ty_item: Item, dir: Dir) -> Result<Shape, ()> {
     let base = index.find_protocol("Seq").cloned().expect("No `Seq` protocol found in prelude");
 
-    let ty = ty_item.as_type_tree().expect("not a type");
+    let ty = ty_item.as_type_tree().ok_or(())?;
 
-    Shape {
+    Ok(Shape {
         def: base,
         param: Item::Tuple(vec![ty_item, Item::symbol(match dir { Dir::Dn => "dn", Dir::Up => "up"})]),
         dir,
@@ -142,5 +142,5 @@ fn seq_shape(index: &Index, ty_item: Item, dir: Dir) -> Shape {
                 params: vec![ShapeMsgParam { ty, direction: dir }]
             }
         ],
-    }
+    })
 }

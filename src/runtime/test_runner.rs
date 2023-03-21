@@ -143,7 +143,11 @@ fn run_test(ui: &dyn DiagnosticHandler, index: &Index, file: &FileScope, def: &a
     let test_data = test_args.get(1);
 
     let run_dn = || {
-        let (channel, mut handle) = Handle::seq_dn(index, seq_ty.clone());
+        let Ok((channel, mut handle)) = Handle::seq_dn(index, seq_ty.clone()) else {
+            eprintln!("Bad type for Seq(): {seq_ty}");
+            return (None, TestState::CompileError);
+        };
+
         let Ok(h) = handle.compile_run(ui, index, &file.scope, &def.process) else { return (None, TestState::CompileError); };
 
         if compile_only {
@@ -163,7 +167,10 @@ fn run_test(ui: &dyn DiagnosticHandler, index: &Index, file: &FileScope, def: &a
     };
 
     let run_up = |messages: Vec<ChannelMessage>| -> TestState {
-        let (channel, mut handle) = Handle::seq_up(index, seq_ty.clone());
+        let Ok((channel, mut handle)) = Handle::seq_up(index, seq_ty.clone()) else {
+            eprintln!("Bad type for Seq(): {seq_ty}");
+            return TestState::CompileError;
+        };
         for m in messages { channel.send(m); }
         channel.set_closed(true);
         let Ok(h) = handle.compile_run(ui, index, &file.scope, &def.process) else { return TestState::CompileError; };
