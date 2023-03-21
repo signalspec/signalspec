@@ -129,6 +129,24 @@ diagnostic_kinds!{
         error "not found" at span
     }
 
+    NoProtocolNamed {
+        span: Span,
+        protocol_name: String
+    } => "no protocol named `{protocol_name}`" {
+        error "not found" at span
+    }
+
+    ProtocolArgumentMismatch {
+        span: Span,
+        protocol_name: String,
+        msg: String,
+        found: String,
+        def: Span
+    } => "invalid arguments to protocol `{protocol_name}`: {msg}" {
+        error "found `{found}`" at span
+        error "definition site" at def
+    }
+
     StackWithoutBaseSignal {
         span: Span
     } => "stacked process without base signal" {

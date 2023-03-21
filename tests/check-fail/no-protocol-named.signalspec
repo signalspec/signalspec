@@ -1,0 +1,5 @@
+//# no protocol named `Noexist`
+@test(#up, ())
+with Seq(_, _) def main() = ^Noexist() {}
+//                           ^^^^^^^ not found
+

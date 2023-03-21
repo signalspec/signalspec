@@ -418,9 +418,12 @@ impl<'a> Builder<'a> {
                             self.resolve_process(sb.with_scope(&scope), callee_ast)
                         }
                         DefImpl::Primitive(ref primitive, ref shape_up_ast) => {
-                            let shape_up = shape_up_ast.as_ref().map(|s| {
-                                protocol::resolve(self.ui, self.index, &scope, s)
-                            });
+                            let shape_up = if let Some(shape_up_ast) = shape_up_ast.as_ref() {
+                                match protocol::resolve(self.ui, self.index, &scope, shape_up_ast) {
+                                    Ok(shape) => Some(shape),
+                                    Err(r) => return (self.add_step(Step::Invalid(r)), None),
+                                }
+                            } else { None };
                             let prim = primitive.instantiate(&scope);
                             (self.add_step(Step::Primitive(prim)), shape_up)
                         }
@@ -429,7 +432,10 @@ impl<'a> Builder<'a> {
             }
 
             ast::Process::Seq(node) => {
-                let top_shape = protocol::resolve(self.ui, self.index, sb.scope, &node.top);
+                let top_shape = match protocol::resolve(self.ui, self.index, sb.scope, &node.top) {
+                    Ok(shape) => shape,
+                    Err(r) => return (self.add_step(Step::Invalid(r)), None),
+                };
                 let block = self.resolve_seq(sb.with_upper(sb.scope, Some(&top_shape)), &node.block);
                 (block, Some(top_shape))
             }

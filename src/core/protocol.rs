@@ -1,32 +1,60 @@
-use crate::diagnostic::Collector;
-use crate::syntax::ast;
-use crate::{Index, Dir, DiagnosticHandler};
+use crate::diagnostic::{Collector, ErrorReported, Span};
+use crate::syntax::ast::{self, AstNode};
+use crate::{Index, Dir, DiagnosticHandler, Diagnostic};
 use super::resolve::resolve_dir;
 use super::{ Scope, Shape, ShapeMsg, ShapeMsgParam };
 use super::{ lexpr, rexpr, Item };
 
-pub fn resolve(ctx: &dyn DiagnosticHandler, index: &Index, scope: &Scope, ast: &ast::ProtocolRef) -> Shape {
+pub fn resolve(ctx: &dyn DiagnosticHandler, index: &Index, scope: &Scope, ast: &ast::ProtocolRef) -> Result<Shape, ErrorReported> {
     let args = rexpr(ctx, scope, &ast.param);
-    instantiate(ctx, index, &ast.name.name, args).unwrap()
+    match instantiate(ctx, index, &ast.name.name, args) {
+        Ok(shape) => Ok(shape),
+        Err(InstantiateProtocolError::ProtocolNotFound) => {
+            Err(ctx.report(Diagnostic::NoProtocolNamed {
+                span: Span::new(&scope.file, ast.name.span),
+                protocol_name: ast.name.name.clone(),
+            }))
+        },
+        Err(InstantiateProtocolError::ArgsMismatch { msg, found, protocol_def_span }) => {
+            Err(ctx.report(Diagnostic::ProtocolArgumentMismatch {
+                span: Span::new(&scope.file, ast.param.span()),
+                protocol_name: ast.name.name.clone(),
+                msg: msg.to_string(),
+                found: format!("{found}"),
+                def: protocol_def_span,
+            }))
+        }
+    }
 }
 
 #[derive(Debug)]
 pub enum InstantiateProtocolError {
     ProtocolNotFound,
-    ArgsMismatch(&'static str),
+    ArgsMismatch {
+        msg: &'static str,
+        found: Item,
+        protocol_def_span: Span,
+    },
 }
 
 /// Instantiates a protocol with passed arguments, creating a Shape.
 pub fn instantiate(ctx: &dyn DiagnosticHandler, index: &Index, protocol_name: &str, args: Item) -> Result<Shape, InstantiateProtocolError> {
     let protocol = index.find_protocol(protocol_name).ok_or(InstantiateProtocolError::ProtocolNotFound)?;
+    let protocol_ast = protocol.ast();
     let mut protocol_def_scope = protocol.scope().child();
-    lexpr(ctx, &mut protocol_def_scope, &protocol.ast().param, &args).map_err(InstantiateProtocolError::ArgsMismatch)?;
+    if let Err(msg) = lexpr(ctx, &mut protocol_def_scope, &protocol_ast.param, &args) {
+        return Err(InstantiateProtocolError::ArgsMismatch {
+            msg,
+            found: args,
+            protocol_def_span: Span::new(&protocol_def_scope.file, protocol_ast.param.span())
+        });
+    }
 
-    let dir = super::resolve::resolve_dir(ctx, &protocol_def_scope, &protocol.ast().dir).unwrap();
+    let dir = super::resolve::resolve_dir(ctx, &protocol_def_scope, &protocol_ast.dir).unwrap();
 
     let mut messages = vec![];
 
-    for entry in &protocol.ast().entries {
+    for entry in &protocol_ast.entries {
         match *entry {
             ast::ProtocolEntry::Message(ast::ProtocolMessageDef { ref name, ref params, .. }) => {
                 let params = params.iter().map(|p| {

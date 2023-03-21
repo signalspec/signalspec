@@ -1,0 +1,5 @@
+//# invalid arguments to protocol `Seq`: mismatched tuples
+@test(#up, ())
+with Seq(_, _) def main() = ^Seq(9, 9, 9) {}
+//                              ^^^^^^^^^ found `(9, 9, 9)`
+// ^* definition site
