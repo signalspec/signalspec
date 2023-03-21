@@ -257,11 +257,18 @@ fn zip_ast<T>(ast: &ast::Expr, tree: &Tree<T>, f: &mut impl FnMut(&ast::Expr, &T
 }
 
 /// Resolve an expression in an `on` block, defining variables
-pub fn bind_tree_fields<T, S>(ctx: &dyn DiagnosticHandler, expr: &ast::Expr, t: &Tree<T>, scope: &mut Scope, mut s: S, mut variable: impl FnMut(&mut S, &T) -> Expr, mut pattern: impl FnMut(&mut S, Expr)) {
+pub fn bind_tree_fields<T, S>(
+    ctx: &dyn DiagnosticHandler,
+    expr: &ast::Expr, t: &Tree<T>,
+    scope: &mut Scope,
+    mut s: S,
+    mut variable: impl FnMut(&mut S, &T, &ast::Identifier) -> Expr,
+    mut pattern: impl FnMut(&mut S, Expr)
+) {
     zip_ast(expr, t, &mut |a, e| {
         match (e, &a) {
             (Tree::Leaf(t), ast::Expr::Var(ref name)) => {
-                scope.bind(&name.name, Item::Leaf(LeafItem::Value(variable(&mut s, t))));
+                scope.bind(&name.name, Item::Leaf(LeafItem::Value(variable(&mut s, t, name))));
             }
             (Tree::Leaf(_), a) => {
                 pattern(&mut s, value(ctx, scope, a).unwrap());
@@ -270,7 +277,7 @@ pub fn bind_tree_fields<T, S>(ctx: &dyn DiagnosticHandler, expr: &ast::Expr, t: 
                 // Capture a tuple by recursively building a tuple Item containing each of the
                 // captured variables
                 let v = t.map_leaf(&mut |t| {
-                    LeafItem::Value(variable(&mut s, t))
+                    LeafItem::Value(variable(&mut s, t, name))
                 });
                 scope.bind(&name.name, v);
             }

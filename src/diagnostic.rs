@@ -135,6 +135,19 @@ diagnostic_kinds!{
         error "does not provide an upper signal" at span
     }
 
+    UpValueNotProvided {
+        span: Span
+    } => "no value for up-direction variable provided" {
+        error "must be up-evaluated exactly once in this block" at span
+    }
+
+    UpValueMultiplyProvided {
+        span: Span
+    } => "value for up-direction variable provided multiple times" {
+        error "must be up-evaluated exactly once in this block" at span
+        // TODO: spans for each of the up-evaluation sites
+    }
+
     UndefinedVariable {
         span: Span,
         name: String

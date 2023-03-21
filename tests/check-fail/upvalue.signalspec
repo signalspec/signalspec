@@ -1,0 +1,37 @@
+@test(#up, (9))
+with Seq(1..10, _) def main() = ^Seq(#x, #up) {
+//# value for up-direction variable provided multiple times
+    on val(v) {
+//         ^ must be up-evaluated exactly once in this block
+        val(v)
+        val(v)
+    }
+
+//# no value for up-direction variable provided
+    on val(v) {
+//         ^ must be up-evaluated exactly once in this block
+
+    }
+}
+
+@test(#up, (9))
+with Seq(1..10, _) def main() = {
+//# value for up-direction variable provided multiple times
+    for xyz = [_, _] {
+//      ^^^ must be up-evaluated exactly once in this block
+        val(xyz)
+        val(xyz)
+    }
+}
+
+@test(#up, (9))
+with Seq(1..10, _) def main() = {
+//# no value for up-direction variable provided
+    alt #up _ {
+        a => {
+//      ^ must be up-evaluated exactly once in this block
+
+        }
+    }
+}
+

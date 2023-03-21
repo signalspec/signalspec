@@ -1,10 +1,12 @@
+use std::sync::Arc;
+
 use num_traits::Signed;
 
 use crate::core::expr_resolve::bind_tree_fields;
 use crate::diagnostic::{Span, ErrorReported};
 use crate::entitymap::{ EntityMap, entity_key };
 use crate::tree::Tree;
-use crate::{Value, Index, DiagnosticHandler, Diagnostic};
+use crate::{Value, Index, DiagnosticHandler, Diagnostic, SourceFile, FileSpan};
 use crate::syntax::ast::{self, AstNode};
 use super::index::FindDefError;
 use super::step::{Step, StepInfo, analyze_unambiguous, AltUpArm, AltDnArm};
@@ -93,20 +95,33 @@ impl<'a> Builder<'a> {
         self.upvalues.push((snk, val))
     }
 
-    pub fn take_upvalue(&mut self, snk: ValueSinkId) -> ExprDn {
+    pub fn take_upvalue(&mut self, snk: ValueSinkId, file: &Arc<SourceFile>, span: FileSpan) -> ExprDn {
         let mut i = 0;
         let mut ret = None;
+        let mut multiple = false;
         while i < self.upvalues.len() {
             if self.upvalues[i].0 == snk {
                 if ret.is_some() {
-                    panic!("Upvalue {snk:?} was set multiple times");
+                    multiple = true;
                 }
                 ret = Some(self.upvalues.remove(i).1);
             } else {
                 i += 1;
             }
         }
-        ret.expect("Upvalue was not set")
+
+        if multiple {
+            self.ui.report(Diagnostic::UpValueMultiplyProvided {
+                span: Span::new(file, span),
+            });
+        }
+
+        ret.unwrap_or_else(|| {
+            self.ui.report(Diagnostic::UpValueNotProvided {
+                span: Span::new(file, span),
+            });
+            ExprDn::Variable(ValueSrcId(u32::MAX))
+        })
     }
 
     fn resolve_action(&mut self, sb: ResolveCx<'_>, action: &ast::Action) -> StepId {
@@ -132,7 +147,7 @@ impl<'a> Builder<'a> {
 
                 enum UpInner {
                     Val(ExprDn),
-                    Var(ValueSinkId),
+                    Var(ValueSinkId, FileSpan),
                 }
 
                 let mut dn = Vec::new();
@@ -142,7 +157,7 @@ impl<'a> Builder<'a> {
                     match param.direction {
                         Dir::Dn => {
                             bind_tree_fields(self.ui, expr, &param.ty, &mut body_scope, (&mut *self, &mut dn),
-                                |(slf, dn), ty| {
+                                |(slf, dn), ty, _name| {
                                     let id = slf.add_value_src();
                                     dn.push((Predicate::Any, id));
                                     Expr::VarDn(id, ty.clone())
@@ -154,9 +169,9 @@ impl<'a> Builder<'a> {
                         }
                         Dir::Up => {
                             bind_tree_fields(self.ui, expr, &param.ty, &mut body_scope, (&mut *self, &mut up_inner),
-                                |(slf, up_inner), ty| {
+                                |(slf, up_inner), ty, name| {
                                     let id = slf.add_value_sink();
-                                    up_inner.push(UpInner::Var(id));
+                                    up_inner.push(UpInner::Var(id, name.span));
                                     Expr::VarUp(id, ty.clone())
                                 },
                                 |(_, up_inner), e| {
@@ -175,7 +190,7 @@ impl<'a> Builder<'a> {
 
                 let up = up_inner.into_iter().map(|v| {
                     match v {
-                        UpInner::Var(snk) => self.take_upvalue(snk),
+                        UpInner::Var(snk, span) => self.take_upvalue(snk, &sb.scope.file, span),
                         UpInner::Val(e) => e,
                     }
                 }).collect();
@@ -229,7 +244,7 @@ impl<'a> Builder<'a> {
                 let mut count = None;
 
                 let mut vars_dn: Vec<(ExprDn, ValueSrcId)> = Vec::new();
-                let mut vars_up_inner:Vec<(ValueSinkId, Expr)> = Vec::new();
+                let mut vars_up_inner:Vec<(ValueSinkId, Expr, FileSpan)> = Vec::new();
                 
                 for &(ref name, ref expr) in &node.vars {
                     let Ok(e) = value(self.ui, sb.scope, expr) else { continue; };
@@ -246,7 +261,7 @@ impl<'a> Builder<'a> {
                             Expr::VarDn(id, *ty)
                         } else {
                             let id = self.add_value_sink();
-                            vars_up_inner.push((id, e));
+                            vars_up_inner.push((id, e, name.span));
                             Expr::VarUp(id, *ty)
                         };
                         
@@ -260,8 +275,8 @@ impl<'a> Builder<'a> {
 
                 let inner = self.resolve_seq(sb.with_scope(&body_scope), &node.block);
 
-                let vars_up: Vec<_> = vars_up_inner.into_iter().map(|(snk, outer_expr)| {
-                    (self.take_upvalue(snk), outer_expr)
+                let vars_up: Vec<_> = vars_up_inner.into_iter().map(|(snk, outer_expr, span)| {
+                    (self.take_upvalue(snk, &sb.scope.file, span), outer_expr)
                 }).collect();
 
                 if self.upvalues.len() > upvalues_scope {
@@ -296,7 +311,7 @@ impl<'a> Builder<'a> {
                             let mut vals = Vec::new();
 
                             bind_tree_fields(self.ui, &arm.discriminant, &scrutinee, &mut body_scope, &mut vals,
-                                |vals, t| {
+                                |vals, t, _name| {
                                     vals.push(Predicate::Any);
                                     match t {
                                         LeafItem::Value(v) => v.clone(),
@@ -330,18 +345,18 @@ impl<'a> Builder<'a> {
 
                             enum UpInner {
                                 Val(ExprDn),
-                                Var(ValueSinkId),
+                                Var(ValueSinkId, FileSpan),
                             }
                             
                             let mut up_inner = Vec::new();
                             bind_tree_fields(self.ui,&arm.discriminant, &scrutinee, &mut body_scope, (&mut *self, &mut up_inner),
-                                |(slf, up_inner), t| {
+                                |(slf, up_inner), t, name| {
                                     let ty = match t {
                                         LeafItem::Value(v) => v.get_type(),
                                         t => panic!("{t:?} not allowed in alt")
                                     };
                                     let id = slf.add_value_sink();
-                                    up_inner.push(UpInner::Var(id));
+                                    up_inner.push(UpInner::Var(id, name.span));
                                     Expr::VarUp(id, ty)
                                 },
                                 |(_, up_inner), e| {
@@ -357,7 +372,7 @@ impl<'a> Builder<'a> {
 
                             let vals = up_inner.into_iter().map(|v| {
                                 match v {
-                                    UpInner::Var(snk) => self.take_upvalue(snk),
+                                    UpInner::Var(snk, span) => self.take_upvalue(snk, &sb.scope.file, span),
                                     UpInner::Val(e) => e,
                                 }
                             }).collect();
