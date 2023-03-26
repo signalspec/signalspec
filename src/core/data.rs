@@ -62,7 +62,13 @@ impl Display for Type {
                 }
                 Ok(())
             },
-            Type::Number(lo, hi) => write!(f, "{lo}..{hi}"),
+            Type::Number(lo, hi) => {
+                if lo == hi {
+                    write!(f, "{lo}")
+                } else {
+                    write!(f, "{lo}..{hi}")
+                }
+            }
             Type::Complex => write!(f, "<complex>"),
             Type::Vector(l, t) => write!(f, "[{t}; {l}]"),
             Type::Ignored => write!(f, "_"),

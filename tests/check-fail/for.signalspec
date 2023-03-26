@@ -2,7 +2,7 @@
 with Seq(#x, _) def main() = {
 //# expected a value
     for x = () {
-//          ^^ expected a single value, found ()
+//          ^^ expected a single value, found `()`
 
     }
 }

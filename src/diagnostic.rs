@@ -225,14 +225,14 @@ diagnostic_kinds!{
         span: Span,
         found: String
     } => "expected a value" {
-        error "expected a single value, found {found}" at span
+        error "expected a single value, found `{found}`" at span
     }
 
     ExpectedConstNumber {
         span: Span,
         found: String
     } => "expected a constant number" {
-        error "expected a constant number, found {found}" at span
+        error "expected a constant number, found `{found}`" at span
     }
 }
 
