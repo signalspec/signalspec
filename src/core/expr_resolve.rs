@@ -1,8 +1,7 @@
 use std::sync::Arc;
-use num_complex::Complex;
 
-use crate::{syntax::{ast::{self, AstNode}, Value, Number}, tree::Tree, diagnostic::{DiagnosticHandler, Diagnostic, Span, ErrorReported}};
-use super::{ConcatElem, Expr, Func, FunctionDef, Item, Scope, LeafItem };
+use crate::{syntax::{ast::{self, AstNode, BinOp}, Value, Number}, tree::Tree, diagnostic::{DiagnosticHandler, Diagnostic, Span, ErrorReported}, Type, core::ConcatElem};
+use super::{Expr, Func, FunctionDef, Item, Scope, LeafItem, expr::{ExprKind, eval_choose, eval_binary} };
 
 pub fn value(ctx: &dyn DiagnosticHandler, scope: &Scope, e: &ast::Expr) -> Result<Expr, ErrorReported> {
     match rexpr(ctx, scope, e) {
@@ -10,6 +9,19 @@ pub fn value(ctx: &dyn DiagnosticHandler, scope: &Scope, e: &ast::Expr) -> Resul
         Item::Leaf(LeafItem::Invalid(r)) => Err(r),
         other => Err(ctx.report(
             Diagnostic::ExpectedValue {
+                span: Span::new(&scope.file, e.span()),
+                found: other.to_string()
+            }
+        )),
+    }
+}
+
+pub fn constant(ctx: &dyn DiagnosticHandler, scope: &Scope, e: &ast::Expr) -> Result<Value, ErrorReported> {
+    match rexpr(ctx, scope, e) {
+        Item::Leaf(LeafItem::Value(Expr::Const(c))) => Ok(c),
+        Item::Leaf(LeafItem::Invalid(r)) => Err(r),
+        other => Err(ctx.report(
+            Diagnostic::ExpectedConst {
                 span: Span::new(&scope.file, e.span()),
                 found: other.to_string()
             }
@@ -30,6 +42,19 @@ pub fn constant_number(ctx: &dyn DiagnosticHandler, scope: &Scope, e: &ast::Expr
     }
 }
 
+/// Like iter.collect::<Result<..>>() but doesn't short-circuit so errors from
+/// all subtrees are reported
+pub fn collect_or_err<T, C: FromIterator<T>>(iter: impl Iterator<Item=Result<T, ErrorReported>>) -> Result<C, ErrorReported> {
+    let mut error = None;
+    let result = C::from_iter(iter.flat_map(|i| {
+        match i {
+            Ok(elem) => Some(elem),
+            Err(err) => { error = Some(err); None }
+        }
+    }));
+    if let Some(e) = error { Err(e) } else { Ok(result) }
+}
+
 pub fn rexpr_tup(ctx: &dyn DiagnosticHandler, scope: &Scope, node: &ast::ExprTup) -> Item {
     let values: Vec<Item> = node.items.iter().map(|i| rexpr(ctx, scope, i)).collect();
     if values.len() == 1 {
@@ -39,7 +64,7 @@ pub fn rexpr_tup(ctx: &dyn DiagnosticHandler, scope: &Scope, node: &ast::ExprTup
     }
 }
 
-macro_rules! unwrap_or_return_invalid {
+macro_rules! try_item {
     ($e:expr) => {
         match $e {
             Ok(e) => e,
@@ -78,131 +103,260 @@ pub fn rexpr(ctx: &dyn DiagnosticHandler, scope: &Scope, e: &ast::Expr) -> Item 
             resolve_function_call(ctx, || Span::new(&scope.file, node.span), func, arg)
         }
 
-        ast::Expr::Ignore(_) => Item::Leaf(LeafItem::Value(Expr::Ignored)),
-        ast::Expr::Value(ref node) => Item::Leaf(LeafItem::Value(Expr::Const(node.value.clone()))),
+        ast::Expr::Value(ref node) => Expr::Const(node.value.clone()).into(),
+        ast::Expr::Ignore(_) => Expr::ignored().into(),
 
-        ast::Expr::Flip(ref node) => {
-            let dn = node.dn.as_ref().map_or(Ok(Expr::Ignored),  |dn| value(ctx, scope, dn));
-            let up = node.up.as_ref().map_or(Ok(Expr::Ignored),  |up| value(ctx, scope, up));
-
-            let dn = unwrap_or_return_invalid!(dn);
-            let up = unwrap_or_return_invalid!(up);
-
-            Item::Leaf(LeafItem::Value(Expr::Flip(
-                Box::new(dn),
-                Box::new(up),
-            )))
-        }
-
-        ast::Expr::Range(ref node) => {
-            let min = constant_number(ctx, scope, &node.lo);
-            let max = constant_number(ctx, scope, &node.hi);
-
-            let min = unwrap_or_return_invalid!(min);
-            let max = unwrap_or_return_invalid!(max);
-
-            Item::Leaf(LeafItem::Value(Expr::Range(min, max)))
-        }
-
-        ast::Expr::Union(ref node) => {
-            let opts = unwrap_or_return_invalid!(node.items.iter().map(|i| value(ctx, scope, i)).collect());
-            Item::Leaf(LeafItem::Value(Expr::Union(opts)))
-        }
-
-        ast::Expr::Choose(ref node) => {
-            match value(ctx, scope, &node.e) {
-                Ok(Expr::Const(v)) => {
-                    let re = node.choices.iter().find(|&(ref le, _)| {
-                        let l = value(ctx, scope, le).unwrap().eval_const();
-                        l == v
-                    }).map(|x| &x.1).unwrap_or_else(|| {
-                        panic!("No match for {} at {:?}", v, &node.span);
-                    });
-                    Item::Leaf(LeafItem::Value(value(ctx, scope, re).unwrap()))
-                }
-                Ok(head) => {
-                    let pairs: Vec<(Value, Value)> = node.choices.iter().map(|&(ref le, ref re)| {
-                        let l = value(ctx, scope, le).unwrap();
-                        let r = value(ctx, scope, re).unwrap();
-
-                        match (l, r) {
-                            (Expr::Const(lv), Expr::Const(rv)) => (lv, rv),
-                            _ => panic!("Choose expression arms must be constant, for now")
-                        }
-                    }).collect();
-
-                    Item::Leaf(LeafItem::Value(Expr::Choose(Box::new(head), pairs)))
-                }
-                Err(r) => Item::Leaf(LeafItem::Invalid(r))
-            }
-        }
-
-        ast::Expr::Concat(ref node) =>  {
-            let mut const_part = Vec::new();
-            let mut concat = Vec::new();
-            let mut err = None;
-
-            for &(slice_width, ref e) in &node.elems {
-                match (slice_width, value(ctx, scope, e)) {
-                    // Normalize constants
-                    (None, Ok(Expr::Const(c))) => const_part.push(c),
-                    (Some(w), Ok(Expr::Const(Value::Vector(s)))) if s.len() == w as usize => const_part.extend(s.into_iter()),
-
-                    // Flatten nested concat
-                    (Some(w), Ok(Expr::Concat(mut es))) if es.len() == w as usize => {
-                        concat.extend(const_part.drain(..).map(|c| ConcatElem::Elem(Expr::Const(c))));
-                        concat.append(&mut es);
-                    }
-
-                    (_, Ok(expr)) => {
-                        concat.extend(const_part.drain(..).map(|c| ConcatElem::Elem(Expr::Const(c))));
-
-                        match slice_width {
-                            None => concat.push(ConcatElem::Elem(expr)),
-                            Some(w) => concat.push(ConcatElem::Slice(expr, w)),
-                        }
-                    }
-
-                    (_, Err(r)) => {
-                        err = Some(r)
-                    }
-                }
-            }
-            
-            if let Some(r) = err {
-                return r.into()
-            }
-
-            if !concat.is_empty() {
-                concat.extend(const_part.drain(..).map(|c| ConcatElem::Elem(Expr::Const(c))));
-                Item::Leaf(LeafItem::Value(Expr::Concat(concat)))
-            } else {
-                Item::Leaf(LeafItem::Value(Expr::Const(Value::Vector(const_part))))
-            }
-        }
-
-        ast::Expr::Bin(ref node) => {
-            use self::Expr::Const;
-            let lhs = value(ctx, scope, &node.l);
-            let rhs = value(ctx, scope, &node.r);
-
-            let lhs = unwrap_or_return_invalid!(lhs);
-            let rhs = unwrap_or_return_invalid!(rhs);
-
-            let op = node.op;
-            Item::Leaf(LeafItem::Value( match (lhs, rhs) {
-                (Const(Value::Number(a)),  Const(Value::Number(b))) => Const(Value::Number(op.eval(a, b))),
-                (Const(Value::Complex(a)), Const(Value::Complex(b))) => Const(Value::Complex(op.eval(a, b))),
-                (Const(Value::Complex(a)), Const(Value::Number(b))) => Const(Value::Complex(op.eval(a, Complex::from(b)))),
-                (Const(Value::Number(a)),  Const(Value::Complex(b))) => Const(Value::Complex(op.eval(Complex::from(a), b))),
-                (l, Const(b)) => Expr::BinaryConst(Box::new(l), op, b),
-                (Const(a), r) => Expr::BinaryConst(Box::new(r), op.swap(), a),
-                _ => panic!("One side of a binary operation must be constant")
-            }))
-        }
+        ast::Expr::Flip(ref node) => resolve_expr_flip(ctx, scope, node),
+        ast::Expr::Range(ref node) => resolve_expr_range(ctx, scope, node),
+        ast::Expr::Union(ref node) => resolve_expr_union(ctx, scope, node),
+        ast::Expr::Choose(ref node) => resolve_expr_choose(ctx, scope, node),
+        ast::Expr::Concat(ref node) => resolve_expr_concat(ctx, scope, node),
+        ast::Expr::Bin(ref node) => resolve_expr_binary(ctx, scope, node),
 
         ast::Expr::Error(e) => Item::Leaf(LeafItem::Invalid(ErrorReported::from_ast(e))),
     }
+}
+
+fn resolve_expr_flip(ctx: &dyn DiagnosticHandler, scope: &Scope, node: &ast::ExprFlip) -> Item {
+    let dn = node.dn.as_ref().map_or(Ok(Expr::ignored()),  |dn| value(ctx, scope, dn));
+    let up = node.up.as_ref().map_or(Ok(Expr::ignored()),  |up| value(ctx, scope, up));
+
+    let dn = try_item!(dn);
+    let up = try_item!(up);
+
+    let ty = Type::union(dn.get_type(), up.get_type())
+        .map_err(|err| err.report_at(ctx, Span::new(&scope.file, node.span)));
+    let ty = try_item!(ty);
+
+    Expr::Expr(ty, ExprKind::Flip(Box::new(dn.inner()), Box::new(up.inner()))).into()
+}
+
+fn resolve_expr_range(ctx: &dyn DiagnosticHandler, scope: &Scope, node: &ast::ExprRange) -> Item {
+    let min = constant_number(ctx, scope, &node.lo);
+    let max = constant_number(ctx, scope, &node.hi);
+
+    let min = try_item!(min);
+    let max = try_item!(max);
+
+    let ty = Type::Number(min, max);
+    Expr::Expr(ty, ExprKind::Range(min, max)).into()
+}
+
+fn resolve_expr_union(ctx: &dyn DiagnosticHandler, scope: &Scope, node: &ast::ExprUnion) -> Item {
+    let opts: Vec<_> = try_item!(
+        collect_or_err(node.items.iter().map(|i| value(ctx, scope, i)))
+    );
+
+    let ty = Type::union_iter(opts.iter().map(|x| x.get_type()));
+    let ty = try_item!(ty.map_err(|err| err.report_at(ctx, Span::new(&scope.file, node.span))));
+
+    Expr::Expr(ty, ExprKind::Union(opts.into_iter().map(|x| x.inner()).collect())).into()
+}
+
+fn resolve_expr_choose(ctx: &dyn DiagnosticHandler, scope: &Scope, node: &ast::ExprChoose) -> Item {
+    let e = value(ctx, scope, &node.e);
+    let pairs = collect_or_err(
+        node.choices.iter().map(|&(ref le, ref re)| {
+            let l = constant(ctx, scope, le);
+            let r = constant(ctx, scope, re);
+            Ok((l?, r?))
+        }
+    ));
+
+    let e = try_item!(e);
+    let pairs: Vec<_> = try_item!(pairs);
+
+    let span = || Span::new(&scope.file, node.span);
+
+    let lt = Type::union_iter(pairs.iter().map(|x| x.0.get_type()));
+    let rt = Type::union_iter(pairs.iter().map(|x| x.1.get_type()));
+
+    let lt = try_item!(lt.map_err(|err| err.report_at(ctx, span())));
+    let rt = try_item!(rt.map_err(|err| err.report_at(ctx, span())));
+
+    match e {
+        Expr::Const(c) => {
+            let Some(v) = eval_choose(&c, &pairs) else {
+                return ctx.report(crate::Diagnostic::ChooseNotCovered { span: span(), found: c.get_type() }).into();
+            };
+
+            Expr::Const(v)
+        }
+        Expr::Expr(ty, e) => {
+            //TODO: doesn't check coverage of full number range
+            if ty != lt {
+                return ctx.report(crate::Diagnostic::ChooseNotCovered { span: span(), found: ty }).into();
+            }
+
+            Expr::Expr(rt, ExprKind::Choose(Box::new(e), pairs))
+        }
+    }.into()
+}
+
+fn resolve_expr_concat(ctx: &dyn DiagnosticHandler, scope: &Scope, node: &ast::ExprConcat) -> Item {
+    enum ConcatBuilder {
+        Const(Vec<Value>),
+        Expr(Vec<ConcatElem<ExprKind>>),
+    }
+
+    impl ConcatBuilder {
+        fn push_const(&mut self, c: Value) {
+            use ConcatBuilder::*;
+            match self {
+                Const(v) => v.push(c),
+                Expr(v) => v.push(ConcatElem::Elem(ExprKind::Const(c))),
+            }
+        }
+
+        fn extend(&mut self, i: impl Iterator<Item = ConcatElem<ExprKind>>) {
+            use ConcatBuilder::*;
+            match self {
+                Const(v) => {
+                    *self = Expr(
+                        v.drain(..)
+                            .map(|c| ConcatElem::Elem(ExprKind::Const(c)))
+                            .chain(i)
+                            .collect()
+                    );
+                }
+                Expr(v) => v.extend(i),
+            }
+        }
+
+        fn push(&mut self, e: ConcatElem<ExprKind>) {
+            self.extend(std::iter::once(e))
+        }
+    }
+
+    let mut elem_ty = Type::Ignored;
+    let mut len: u32 = 0;
+    let mut elems = ConcatBuilder::Const(Vec::new());
+
+    let it = node.elems.iter().map(|&(width, ref e)| {
+        let elem = value(ctx, scope, e)?;
+        let span = || Span::new(&scope.file, node.span);
+
+        if let Some(w) = width {
+            match elem {
+                Expr::Const(Value::Vector(vs)) if w as usize == vs.len() => {
+                    for c in vs {
+                        elem_ty.union_with(c.get_type()).map_err(|err| err.report_at(ctx, span()))?;
+                        elems.push_const(c);
+                        len += 1;
+                    }
+                }
+
+                Expr::Expr(Type::Vector(w1, ty), e) if w == w1 => {
+                    len += w;
+                    elem_ty.union_with(*ty).map_err(|err| err.report_at(ctx, span()))?;
+
+                    match e {
+                        // Flatten nested slice
+                        ExprKind::Concat(es) => {
+                            elems.extend(es.into_iter());
+                        }
+                        e => {
+                            elems.push(ConcatElem::Slice(e, w))
+                        }
+                    }
+                }
+
+                Expr::Expr(Type::Ignored, e) => {
+                    len += w;
+                    elems.push(ConcatElem::Slice(e, w));
+                }
+
+                other => Err(ctx.report(Diagnostic::ConcatSpreadInvalidType {
+                    span: span(),
+                    expected_width: w,
+                    found: other.get_type(),
+                }))?
+            }
+            Ok(())
+        } else {
+            match elem {
+                Expr::Const(c) => {
+                    elem_ty.union_with(c.get_type()).map_err(|err| err.report_at(ctx, span()))?;
+                    len += 1;
+                    elems.push_const(c);
+                }
+                Expr::Expr(ty, e) => {
+                    elem_ty.union_with(ty).map_err(|err| err.report_at(ctx, span()))?;
+                    len += 1;
+                    elems.push(ConcatElem::Elem(e))
+                }
+            }
+            Ok(())
+        }
+    });
+    try_item!(collect_or_err(it));
+
+    match elems {
+        ConcatBuilder::Const(v) => Expr::Const(Value::Vector(v)),
+        ConcatBuilder::Expr(e) => Expr::Expr(
+            Type::Vector(len, Box::new(elem_ty)),
+            ExprKind::Concat(e)
+        ),
+    }.into()
+}
+
+fn resolve_expr_binary(ctx: &dyn DiagnosticHandler, scope: &Scope, node: &ast::ExprBin) -> Item {
+    let lhs = value(ctx, scope, &node.l);
+    let rhs = value(ctx, scope, &node.r);
+
+    let lhs = try_item!(lhs);
+    let rhs = try_item!(rhs);
+
+    let span = || Span::new(&scope.file, node.span);
+
+    // Swap constant operand to the right, or constant-fold and return
+    let (expr, expr_ty, expr_span, op, val, val_span) = match (lhs, rhs) {
+        (Expr::Const(l), Expr::Const(r)) => {
+            if let Some(v) = eval_binary(l.clone(), node.op, r.clone()) {
+                return Expr::Const(v).into()
+            } else {
+                return ctx.report(
+                Diagnostic::BinaryInvalidType {
+                    span1: Span::new(&scope.file, node.l.span()),
+                    ty1: l.get_type(),
+                    span2: Span::new(&scope.file, node.r.span()),
+                    ty2: r.get_type(),
+                 }
+                ).into()
+            }
+        }
+        (Expr::Expr(..), Expr::Expr(..)) => {
+            return ctx.report(Diagnostic::BinaryOneSideMustBeConst { span: span() }).into();
+        }
+        (Expr::Expr(l_ty, l), Expr::Const(r)) => (l, l_ty, node.l.span(), node.op, r, node.r.span()),
+        (Expr::Const(l), Expr::Expr(r_ty, r)) => (r, r_ty, node.r.span(), node.op.swap(), l, node.l.span()),
+    };
+
+    let ty = match (expr_ty, &val) {
+        (Type::Number(min, max), Value::Number(c)) => {
+            assert!(min <= max);
+            let (a, b) = (op.eval(min, c), op.eval(max, c));
+            if op == BinOp::SubSwap || op == BinOp::DivSwap {
+                assert!(b <= a);
+                Type::Number(b, a)
+            } else {
+                assert!(a <= b);
+                Type::Number(a, b)
+            }
+        }
+        (Type::Complex, Value::Number(..)) => Type::Complex,
+        (Type::Number(..), Value::Complex(..)) => Type::Complex,
+        (expr_ty, _) => return ctx.report(
+            Diagnostic::BinaryInvalidType {
+                span1: Span::new(&scope.file, expr_span),
+                ty1: expr_ty,
+                span2: Span::new(&scope.file, val_span),
+                ty2: val.get_type(),
+             }
+        ).into()
+    };
+    
+    Expr::Expr(ty, ExprKind::BinaryConst(Box::new(expr), op, val)).into()
 }
 
 fn resolve_function_call(ctx: &dyn DiagnosticHandler, call_site_span: impl FnOnce() -> Span, func: Item, arg: Item) -> Item {

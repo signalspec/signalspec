@@ -57,7 +57,7 @@ pub enum LeafItem {
     /// Expression for a (possibly runtime-variable) value
     Value(Expr),
 
-    // Function closure
+    /// Function closure
     Func(Arc<FunctionDef>),
 
     /// Sequence of Unicode code points. Not a Value because it is not of constant size.
@@ -154,5 +154,20 @@ impl From<ErrorReported> for LeafItem {
 impl From<ErrorReported> for Item {
     fn from(value: ErrorReported) -> Self {
         Item::Leaf(LeafItem::Invalid(value))
+    }
+}
+
+impl From<Expr> for Item {
+    fn from(value: Expr) -> Self {
+        Item::Leaf(LeafItem::Value(value))
+    }
+}
+
+impl<T: Into<Item>> From<Result<T, ErrorReported>> for Item {
+    fn from(value: Result<T, ErrorReported>) -> Self {
+        match value {
+            Ok(v) => v.into(),
+            Err(r) => r.into(),
+        }
     }
 }

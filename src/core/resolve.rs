@@ -160,7 +160,7 @@ impl<'a> Builder<'a> {
                                 |(slf, dn), ty, _name| {
                                     let id = slf.add_value_src();
                                     dn.push((Predicate::Any, id));
-                                    Expr::VarDn(id, ty.clone())
+                                    Expr::var_dn(id, ty.clone())
                                 },
                                 |&mut (ref mut slf, ref mut dn), e| {
                                     dn.push((e.predicate().expect("on field is not a predicate"), slf.add_value_src()))
@@ -172,7 +172,7 @@ impl<'a> Builder<'a> {
                                 |(slf, up_inner), ty, name| {
                                     let id = slf.add_value_sink();
                                     up_inner.push(UpInner::Var(id, name.span));
-                                    Expr::VarUp(id, ty.clone())
+                                    Expr::var_up(id, ty.clone())
                                 },
                                 |(_, up_inner), e| {
                                     up_inner.push(UpInner::Val(e.down().unwrap()));
@@ -205,7 +205,7 @@ impl<'a> Builder<'a> {
                         let dir = resolve_dir(self.ui, sb.scope, dir_ast);
                         (dir, count)
                     }
-                    None => (Ok(Dir::Up), Ok(Expr::Ignored))
+                    None => (Ok(Dir::Up), Ok(Expr::ignored()))
                 };
 
                 let upvalues_scope = self.upvalues.len();
@@ -258,11 +258,11 @@ impl<'a> Builder<'a> {
                         let value = if let Some(e_dn) = e.down() {
                             let id = self.add_value_src(); // The element of the vector inside the loop
                             vars_dn.push((e_dn, id));
-                            Expr::VarDn(id, *ty)
+                            Expr::var_dn(id, *ty)
                         } else {
                             let id = self.add_value_sink();
                             vars_up_inner.push((id, e, name.span));
-                            Expr::VarUp(id, *ty)
+                            Expr::var_up(id, *ty)
                         };
                         
                         body_scope.bind(&name.name, Item::Leaf(LeafItem::Value(value)));
@@ -357,7 +357,7 @@ impl<'a> Builder<'a> {
                                     };
                                     let id = slf.add_value_sink();
                                     up_inner.push(UpInner::Var(id, name.span));
-                                    Expr::VarUp(id, ty)
+                                    Expr::var_up(id, ty)
                                 },
                                 |(_, up_inner), e| {
                                     let Some(e) = e.down() else {

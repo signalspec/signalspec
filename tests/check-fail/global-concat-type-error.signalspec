@@ -1,0 +1,3 @@
+//# incompatible types
+let x = [#a, #b, 1, #c]
+//      ^^^^^^^^^^^^^^^ `#a | #b` and `1` cannot be combined

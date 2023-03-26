@@ -2,6 +2,9 @@ use std::cmp::{min, max};
 use std::fmt::Display;
 
 use indexmap::IndexSet;
+
+use crate::{DiagnosticHandler, Diagnostic};
+use crate::diagnostic::{Span, ErrorReported};
 use crate::syntax::{Value, Number};
 use crate::tree::Tree;
 
@@ -30,23 +33,31 @@ pub enum Type {
 }
 
 impl Type {
-    pub fn union(t1: Type, t2: Type) -> Type {
+    pub fn union_with(&mut self, other: Self) -> Result<(), IncompatibleTypes> {
+        *self = Type::union(self.clone(), other)?;
+        Ok(())
+    }
+
+    pub fn union(t1: Type, t2: Type) -> Result<Type, IncompatibleTypes> {
         use self::Type::*;
         match (t1, t2) {
-            (Ignored, x) | (x, Ignored) => x,
-            (Symbol(a), Symbol(b)) => Symbol(a.union(&b).cloned().collect()),
+            (Ignored, x) | (x, Ignored) => Ok(x),
+            (Symbol(a), Symbol(b)) => Ok(Symbol(a.union(&b).cloned().collect())),
             (Vector(n1, t1), Vector(n2, t2)) => {
-                assert_eq!(n1, n2);
-                Vector(n1, Box::new(Type::union(*t1, *t2)))
+                if n1 == n2 {
+                    Ok(Vector(n1, Box::new(Type::union(*t1, *t2)?)))
+                } else {
+                    Err(IncompatibleTypes(*t1, *t2))
+                }
             }
-            (Number (l1, h1), Number (l2, h2)) => Number (min(l1, l2), max(h1, h2)),
-            (Complex, Complex) => Complex,
-            (a, b) => panic!("Incompatible types: {:?} and {:?}", a, b)
+            (Number (l1, h1), Number (l2, h2)) => Ok(Number (min(l1, l2), max(h1, h2))),
+            (Complex, Complex) => Ok(Complex),
+            (t1, t2) => Err(IncompatibleTypes(t1, t2))
         }
     }
 
-    pub fn union_iter<T: Iterator<Item=Type>>(i: T) -> Type {
-        i.fold(Type::Ignored, Type::union)
+    pub fn union_iter<T: Iterator<Item=Type>>(mut i: T) -> Result<Type, IncompatibleTypes> {
+        i.try_fold(Type::Ignored, Type::union)
     }
 }
 
@@ -73,6 +84,14 @@ impl Display for Type {
             Type::Vector(l, t) => write!(f, "[{t}; {l}]"),
             Type::Ignored => write!(f, "_"),
         }
+    }
+}
+
+pub struct IncompatibleTypes(Type, Type);
+
+impl IncompatibleTypes {
+    pub fn report_at(self, ctx: &dyn DiagnosticHandler, span: Span) -> ErrorReported {
+        ctx.report(Diagnostic::IncompatibleTypes { span, t1: self.0, t2: self.1 })
     }
 }
 

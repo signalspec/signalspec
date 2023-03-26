@@ -1,0 +1,7 @@
+//# undefined variable `undef`
+//# expected a constant
+//# expected a constant
+let x = #x[#x = #y, undef = #x, _ = _]
+//                  ^^^^^ not found
+//                              ^ expected a constant, found `_`
+//                                  ^ expected a constant, found `_`

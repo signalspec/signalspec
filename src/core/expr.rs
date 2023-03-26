@@ -30,22 +30,6 @@ impl<E> ConcatElem<E> {
     }
 }
 
-impl ConcatElem<Expr> {
-    fn elem_type(&self) -> Type {
-        match *self {
-            ConcatElem::Elem(ref v) => v.get_type(),
-            ConcatElem::Slice(ref e, count) => {
-                if let Type::Vector(c, t) = e.get_type() {
-                    assert!(c == count);
-                    (*t).clone()
-                } else {
-                    panic!("Concatenated slice is not a vector")
-                }
-            }
-        }
-    }
-}
-
 #[derive(PartialEq, Eq, Hash, Debug, Clone, Copy)]
 pub enum SignMode {
     None,
@@ -65,9 +49,7 @@ impl UnaryOp {
         match *self {
             UnaryOp::IntToBits { width, .. } => {
                 match v {
-                    Value::Number(i) => {
-                        Value::Vector((0..width).rev().map(|bit| Value::Number((((i.to_i64().unwrap()) >> bit) & 1).into()) ).collect())
-                    }
+                    Value::Number(i) => eval_int_to_bits(width, i),
                     e => panic!("Invalid value {} in IntToBits", e)
                 }
             },
@@ -96,9 +78,7 @@ impl UnaryOp {
             }
             UnaryOp::Chunks { width } => {
                 match v {
-                    Value::Vector(i) => {
-                        Value::Vector(i.chunks(width as usize).map(|s| Value::Vector(s.to_vec())).collect())
-                    }
+                    Value::Vector(i) => eval_chunks(width, i),
                     e => panic!("Invalid value {} in Chunks", e)
                 }
             },
@@ -126,126 +106,133 @@ impl UnaryOp {
             UnaryOp::Merge { width } => UnaryOp::Chunks { width },
         }
     }
+}
 
-    pub fn get_type(&self, input: Type) -> Type {
-        match *self {
-            UnaryOp::IntToBits { width, .. } => Type::Vector(width, Box::new(Type::Number(0.into(), 1.into()))),
-            UnaryOp::BitsToInt { width, signed } => {
-                match signed {
-                    SignMode::None => Type::Number(0.into(), (1 << width).into()),
-                    SignMode::TwosComplement => Type::Number((1 << width - 1).into(), (1 << width - 1).into()),
-                }
-            }
-            UnaryOp::Chunks { width } => {
-                if let Type::Vector(c, t) = input {
-                    Type::Vector(c/width, Box::new(Type::Vector(width, t)))
-                } else {
-                    panic!("Chunks argument must be a vector");
-                }
-            }
-            UnaryOp::Merge { width } => {
-                if let Type::Vector(c1, t1) = input {
-                    if let Type::Vector(c2, t) = *t1 {
-                        Type::Vector(c1 * c2, Box::new(Type::Vector(width, t)))
-                    } else {
-                        panic!("Merge argument must be a vector of vector");
-                    }
-                } else {
-                    panic!("Merge argument must be a vector");
-                }
-            }
-        }
-    }
+fn eval_chunks(width: u32, i: Vec<Value>) -> Value {
+    Value::Vector(i.chunks(width as usize).map(|s| Value::Vector(s.to_vec())).collect())
+}
+
+fn eval_int_to_bits(width: u32, i: Number) -> Value {
+    Value::Vector((0..width).rev().map(|bit| Value::Number((((i.to_i64().unwrap()) >> bit) & 1).into()) ).collect())
+}
+
+pub fn eval_choose(v: &Value, choices: &[(Value, Value)]) -> Option<Value> {
+    choices.iter()
+        .find(|& &(ref a, _)|{ a == v })
+        .map(|&(_, ref b)| b.clone())
+}
+
+pub fn eval_binary(l: Value, op: BinOp, r: Value) -> Option<Value> {
+    Some(match (l, r) {
+        (Value::Number(a),  Value::Number(b)) => Value::Number(op.eval(a, b)),
+        (Value::Complex(a), Value::Complex(b)) => Value::Complex(op.eval(a, b)),
+        (Value::Complex(a), Value::Number(b)) => Value::Complex(op.eval(a, Complex::from(b))),
+        (Value::Number(a),  Value::Complex(b)) => Value::Complex(op.eval(Complex::from(a), b)),
+        _ => return None
+    })
+}
+
+#[derive(PartialEq, Debug, Clone)]
+pub enum Expr {
+    Const(Value),
+    Expr(Type, ExprKind),
 }
 
 /// An expression representing a runtime computation
 #[derive(PartialEq, Debug, Clone)]
-pub enum Expr {
+pub enum ExprKind {
     Ignored,
     Const(Value),
-    VarDn(ValueSrcId, Type),
-    VarUp(ValueSinkId, Type),
+    VarDn(ValueSrcId),
+    VarUp(ValueSinkId),
     Range(Number, Number),
-    Union(Vec<Expr>),
-    Flip(Box<Expr>, Box<Expr>),
-    Choose(Box<Expr>, Vec<(Value, Value)>),
-    Concat(Vec<ConcatElem<Expr>>),
-    BinaryConst(Box<Expr>, BinOp, Value),
-    Unary(Box<Expr>, UnaryOp),
+    Union(Vec<ExprKind>),
+    Flip(Box<ExprKind>, Box<ExprKind>),
+    Choose(Box<ExprKind>, Vec<(Value, Value)>),
+    Concat(Vec<ConcatElem<ExprKind>>),
+    BinaryConst(Box<ExprKind>, BinOp, Value),
+    Unary(Box<ExprKind>, UnaryOp),
 }
 
 impl Expr {
     /// Return the `Type` for the set of possible values this expression may down-evaluate to or
     /// match on up-evaluation.
     pub fn get_type(&self) -> Type {
-        match *self {
-            Expr::Ignored => Type::Ignored,
-            Expr::Range(lo, hi) => Type::Number(lo, hi),
-            Expr::Union(ref u) => Type::union_iter(u.iter().map(Expr::get_type)),
-            Expr::VarDn(_, ref ty) | Expr::VarUp(_, ref ty) => ty.clone(),
-            Expr::Const(ref v) => v.get_type(),
-            Expr::Flip(ref d, ref u) => Type::union(d.get_type(), u.get_type()),
-            Expr::Choose(_, ref choices) => {
-                Type::union_iter(choices.iter().map(|&(_, ref r)| r.get_type()))
-            },
-            Expr::Concat(ref elems) => {
-                let t = Box::new(Type::union_iter(elems.iter().map(ConcatElem::elem_type)));
-                let c = elems.iter().map(ConcatElem::elem_count).sum();
-                Type::Vector(c, t)
-            },
-            Expr::BinaryConst(ref e, op, ref c) => {
-                match (e.get_type(), c) {
-                    (Type::Number(min, max), &Value::Number(c)) => {
-                        assert!(min <= max);
-                        let (a, b) = (op.eval(min, c), op.eval(max, c));
-                        if op == BinOp::SubSwap || op == BinOp::DivSwap {
-                            assert!(b <= a);
-                            Type::Number(b, a)
-                        } else {
-                            assert!(a <= b);
-                            Type::Number(a, b)
-                        }
-                    }
-                    (Type::Complex, &Value::Number(..)) => Type::Complex,
-                    (Type::Number(..), &Value::Complex(..)) => Type::Complex,
-                    _ => panic!("Arithmetic type error {} {:?} {}", e, op, c)
-                }
-            }
-            Expr::Unary(ref v, ref op) => op.get_type(v.get_type()),
+        match self {
+            Expr::Const(c) => c.get_type(),
+            Expr::Expr(t, _) => t.clone(),
         }
     }
 
     pub fn down(&self) -> Option<ExprDn> {
+        match self {
+            Expr::Const(c) => Some(ExprDn::Const(c.clone())),
+            Expr::Expr(_, e) => e.down()
+        }
+    }
+
+    pub fn up(&self, v: ExprDn, sink: &mut dyn FnMut(ValueSinkId, ExprDn)) {
+        match self {
+            Expr::Const(_) => {}
+            Expr::Expr(_, e) => e.up(v, sink)
+        }
+    }
+
+    pub(super) fn inner(self) -> ExprKind {
+        match self {
+            Expr::Const(v) => ExprKind::Const(v),
+            Expr::Expr(_, k) => k,
+        }
+    }
+
+    pub fn predicate(&self) -> Option<Predicate> {
+        match self {
+            Expr::Const(c) => Predicate::from_value(c),
+            Expr::Expr(_, e) => e.predicate(),
+        }
+    }
+
+    pub fn ignored() -> Self {
+        Expr::Expr(Type::Ignored, ExprKind::Ignored)
+    }
+
+    pub fn var_dn(id: ValueSrcId, ty: Type) -> Self {
+        Expr::Expr(ty, ExprKind::VarDn(id))
+    }
+
+    pub fn var_up(id: ValueSinkId, ty: Type) -> Self {
+        Expr::Expr(ty, ExprKind::VarUp(id))
+    }
+}
+
+impl ExprKind {
+    pub fn down(&self) -> Option<ExprDn> {
         match *self {
-            Expr::Ignored | Expr::Range(..) | Expr::Union(..) | Expr::VarUp(..) => None,
-            Expr::VarDn(id, _) => Some(ExprDn::Variable(id)),
-            Expr::Const(ref v) => Some(ExprDn::Const(v.clone())),
-            Expr::Flip(ref d, _) => d.down(),
-            Expr::Choose(ref e, ref c) => Some(ExprDn::Choose(Box::new(e.down()?), c.clone())),
-            Expr::Concat(ref c) => Some(ExprDn::Concat(
+            ExprKind::Ignored | ExprKind::Range(..) | ExprKind::Union(..) | ExprKind::VarUp(..) => None,
+            ExprKind::VarDn(id) => Some(ExprDn::Variable(id)),
+            ExprKind::Const(ref v) => Some(ExprDn::Const(v.clone())),
+            ExprKind::Flip(ref d, _) => d.down(),
+            ExprKind::Choose(ref e, ref c) => Some(ExprDn::Choose(Box::new(e.down()?), c.clone())),
+            ExprKind::Concat(ref c) => Some(ExprDn::Concat(
                 c.iter().map(|l| l.map_elem(|e| e.down())).collect::<Option<Vec<_>>>()?
             )),
-            Expr::BinaryConst(ref e, op, Value::Number(c)) => Some(ExprDn::BinaryConstNumber(Box::new(e.down()?), op, c.clone())),
-            Expr::BinaryConst(_, _, _) => None,
-            Expr::Unary(ref e, ref op) => Some(ExprDn::Unary(Box::new(e.down()?), op.clone())),
+            ExprKind::BinaryConst(ref e, op, Value::Number(c)) => Some(ExprDn::BinaryConstNumber(Box::new(e.down()?), op, c.clone())),
+            ExprKind::BinaryConst(_, _, _) => None,
+            ExprKind::Unary(ref e, ref op) => Some(ExprDn::Unary(Box::new(e.down()?), op.clone())),
         }
     }
 
     pub fn up(&self, v: ExprDn, sink: &mut dyn FnMut(ValueSinkId, ExprDn)) {
         match *self {
-            Expr::Ignored | Expr::Const(_) | Expr::VarDn(..) | Expr::Range(_, _) => (),
-            Expr::VarUp(id, _) => sink(id, v),
-            Expr::Union(ref u) => {
-                for i in u {
-                    i.up(v.clone(), sink)
-                }
-            }
-            Expr::Flip(_, ref up) => up.up(v, sink),
-            Expr::Choose(ref e, ref c) => {
+            ExprKind::Ignored | ExprKind::Const(_) | ExprKind::VarDn(..)
+             | ExprKind::Range(_, _) | ExprKind::Union(..) => (),
+            ExprKind::VarUp(id) => sink(id, v),
+            ExprKind::Flip(_, ref up) => up.up(v, sink),
+            ExprKind::Choose(ref e, ref c) => {
                 let mapping = c.iter().map(|(v1,v2)| (v2.clone(), v1.clone())).collect();
                 e.up(ExprDn::Choose(Box::new(v), mapping), sink)
             }
-            Expr::Concat(ref concat) => {
+            ExprKind::Concat(ref concat) => {
                 let mut offset = 0;
                 for c in concat {
                     match c {
@@ -255,22 +242,22 @@ impl Expr {
                     offset += c.elem_count();
                 }
             }
-            Expr::BinaryConst(ref e, op, Value::Number(c)) => {
+            ExprKind::BinaryConst(ref e, op, Value::Number(c)) => {
                 e.up(ExprDn::BinaryConstNumber(Box::new(v), op.invert(), c.clone()), sink)
             }
-            Expr::BinaryConst(..) => (),
-            Expr::Unary(ref e, ref op) => e.up(ExprDn::Unary(Box::new(v), op.invert()), sink),
+            ExprKind::BinaryConst(..) => (),
+            ExprKind::Unary(ref e, ref op) => e.up(ExprDn::Unary(Box::new(v), op.invert()), sink),
         }
     }
 
     pub fn predicate(&self) -> Option<Predicate> {
         match *self {
-            Expr::Ignored | Expr::VarUp(..) => Some(Predicate::Any),
-            Expr::VarDn(id, _) => Some(Predicate::EqualToDn(ExprDn::Variable(id))),
-            Expr::Flip(_, ref up) => up.predicate(),
-            Expr::Const(ref v) => Predicate::from_value(v),
-            Expr::Range(lo, hi) => Some(Predicate::Range(lo, hi)),
-            Expr::Union(ref u) => {
+            ExprKind::Ignored | ExprKind::VarUp(..) => Some(Predicate::Any),
+            ExprKind::VarDn(id) => Some(Predicate::EqualToDn(ExprDn::Variable(id))),
+            ExprKind::Flip(_, ref up) => up.predicate(),
+            ExprKind::Const(ref v) => Predicate::from_value(v),
+            ExprKind::Range(lo, hi) => Some(Predicate::Range(lo, hi)),
+            ExprKind::Union(ref u) => {
                 let mut set = HashSet::new();
                 for e in u {
                     match e.predicate()? {
@@ -280,7 +267,7 @@ impl Expr {
                 }
                 Some(Predicate::SymbolSet(set))
             },
-            Expr::Concat(ref parts) => {
+            ExprKind::Concat(ref parts) => {
                 let mut predicates = Vec::with_capacity(parts.len());
                 for part in parts {
                     match part.map_elem(|e| e.predicate())? {
@@ -290,7 +277,7 @@ impl Expr {
                 }
                 Some(Predicate::Vector(predicates))
             }
-            Expr::Choose(ref e, _) | Expr::BinaryConst(ref e, _, _) | Expr::Unary(ref e, _) => {
+            ExprKind::Choose(ref e, _) | ExprKind::BinaryConst(ref e, _, _) | ExprKind::Unary(ref e, _) => {
                 match e.predicate() {
                     Some(Predicate::Any) => Some(Predicate::Any),
                     Some(Predicate::EqualToDn(..)) => e.down().map(Predicate::EqualToDn), // TODO: accidentally quadratic
@@ -298,10 +285,6 @@ impl Expr {
                 }
             },
         }
-    }
-
-    pub fn eval_const(&self) -> Value {
-        self.down().unwrap().eval(&|_| panic!("Runtime variable not expected here"))
     }
 }
 
@@ -371,32 +354,34 @@ impl ExprDn {
     }
 }
 
-
-fn eval_choose(v: &Value, choices: &[(Value, Value)]) -> Option<Value> {
-    choices.iter()
-        .find(|& &(ref a, _)|{ a == v })
-        .map(|&(_, ref b)| b.clone())
-}
-
 impl fmt::Display for Expr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Expr::Ignored => write!(f, "_"),
-            Expr::Range(a, b) => write!(f, "{}..{}", a, b),
-            Expr::VarDn(id, _) => write!(f, "${}", u32::from(*id)),
-            Expr::VarUp(id, _) => write!(f, ">>{}", u32::from(*id)),
-            Expr::Const(ref p) => write!(f, "{}", p),
-            Expr::Flip(ref d, ref u) if **d == Expr::Ignored => write!(f, ":> {}", u),
-            Expr::Flip(ref d, ref u) if **u == Expr::Ignored => write!(f, "<: {}", d),
-            Expr::Flip(d, u) => write!(f, "{}!{}", d, u),
-            Expr::Union(ref t) => {
+            Expr::Const(c) => c.fmt(f),
+            Expr::Expr(_, e) => e.fmt(f),
+        }
+    }
+}
+
+impl fmt::Display for ExprKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ExprKind::Ignored => write!(f, "_"),
+            ExprKind::Range(a, b) => write!(f, "{}..{}", a, b),
+            ExprKind::VarDn(id) => write!(f, "${}", u32::from(*id)),
+            ExprKind::VarUp(id) => write!(f, ">>{}", u32::from(*id)),
+            ExprKind::Const(ref p) => write!(f, "{}", p),
+            ExprKind::Flip(ref d, ref u) if **d == ExprKind::Ignored => write!(f, ":> {}", u),
+            ExprKind::Flip(ref d, ref u) if **u == ExprKind::Ignored => write!(f, "<: {}", d),
+            ExprKind::Flip(d, u) => write!(f, "{}!{}", d, u),
+            ExprKind::Union(ref t) => {
                 for (k, i) in t.iter().enumerate() {
                     if k > 0 { write!(f, "|")? }
                     write!(f, "{}", i)?;
                 }
                 Ok(())
             }
-            Expr::Choose(e, choices) => {
+            ExprKind::Choose(e, choices) => {
                 write!(f, "{}[", e)?;
                 for (i, &(ref a, ref b)) in choices.iter().enumerate()  {
                     if i != 0 { write!(f, ", ")?; }
@@ -404,7 +389,7 @@ impl fmt::Display for Expr {
                 }
                 write!(f, "]")
             },
-            Expr::Concat(elems) => {
+            ExprKind::Concat(elems) => {
                 write!(f, "[")?;
                 for (i, e) in elems.iter().enumerate()  {
                     if i != 0 { write!(f, ", ")?; }
@@ -416,7 +401,7 @@ impl fmt::Display for Expr {
                 write!(f, "]")
             },
 
-            Expr::BinaryConst(ref e, op, ref c) => {
+            ExprKind::BinaryConst(ref e, op, ref c) => {
                 match op {
                     BinOp::Add => write!(f, "{} + {}", e, c),
                     BinOp::Sub => write!(f, "{} - {}", e, c),
@@ -427,7 +412,7 @@ impl fmt::Display for Expr {
                 }
             }
 
-            Expr::Unary(ref expr, op) => write!(f, "unary({expr}, {op:?})")
+            ExprKind::Unary(ref expr, op) => write!(f, "unary({expr}, {op:?})")
         }
     }
 }
@@ -440,15 +425,26 @@ fn fn_signed(arg: Item) -> Result<Item, &'static str> {
     fn_signed_unsigned(arg, SignMode::TwosComplement)
 }
 
-fn fn_signed_unsigned(arg: Item, sign_mode: SignMode) -> Result<Item, &'static str> {
+fn fn_signed_unsigned(arg: Item, signed: SignMode) -> Result<Item, &'static str> {
     match arg {
-        Item::Tuple(mut t) => {
-            match (t.pop(), t.pop()) { //TODO: cleaner way to move out of vec without reversing order?
-                (Some(Item::Leaf(LeafItem::Value(v))), Some(Item::Leaf(LeafItem::Value(Expr::Const(Value::Number(width)))))) => {
-                    Ok(Item::Leaf(LeafItem::Value(Expr::Unary(Box::new(v), UnaryOp::IntToBits {
-                        width: width.to_u32().ok_or("signed() width must be integer")?,
-                        signed: sign_mode,
-                    }))))
+        Item::Tuple(t) => {
+            match <[Item; 2]>::try_from(t) {
+                Ok([Item::Leaf(LeafItem::Value(Expr::Const(Value::Number(width)))), Item::Leaf(LeafItem::Value(v))]) => {
+                    let width = width.to_u32().ok_or("width must be a constant integer")?;
+
+                    match v {
+                        Expr::Const(Value::Number(i)) => {
+                            Ok(Expr::Const(eval_int_to_bits(width, i)).into())
+                        }
+
+                        Expr::Expr(Type::Number(..), e) => {
+                            let op = ExprKind::Unary(Box::new(e), UnaryOp::IntToBits {width, signed });
+                            let ty = Type::Vector(width, Box::new(Type::Number(0.into(), 1.into())));
+                            Ok(Expr::Expr(ty, op).into())
+                        }
+
+                        _ => Err("value must be a number")
+                    }
                 }
                 _ => Err("invalid arguments to signed()")
             }
@@ -459,12 +455,22 @@ fn fn_signed_unsigned(arg: Item, sign_mode: SignMode) -> Result<Item, &'static s
 
 fn fn_chunks(arg: Item) -> Result<Item, &'static str> {
     match arg {
-        Item::Tuple(mut t) => {
-            match (t.pop(), t.pop()) { //TODO: cleaner way to move out of vec without reversing order?
-                (Some(Item::Leaf(LeafItem::Value(v))), Some(Item::Leaf(LeafItem::Value(Expr::Const(Value::Number(width)))))) => {
-                    Ok(Item::Leaf(LeafItem::Value(Expr::Unary(Box::new(v), UnaryOp::Chunks {
-                        width: width.to_u32().ok_or("chunks() width must be integer")?,
-                    }))))
+        Item::Tuple(t) => {
+            match <[Item; 2]>::try_from(t) {
+                Ok([Item::Leaf(LeafItem::Value(Expr::Const(Value::Number(width)))), Item::Leaf(LeafItem::Value(v))]) => {
+                    let width = width.to_u32().ok_or("width must be a constant integer")?;
+
+                    match v {
+                        Expr::Const(Value::Vector(c)) => {
+                            Ok(Expr::Const(eval_chunks(width, c)).into())
+                        },
+                        Expr::Expr(Type::Vector(c, t), e) => {
+                            let op = ExprKind::Unary(Box::new(e), UnaryOp::Chunks { width });
+                            let ty = Type::Vector(c/width, Box::new(Type::Vector(width, t)));
+                            Ok(Expr::Expr(ty, op).into())
+                        },
+                        _ => Err("value must be a vector")
+                    }
                 }
                 _ => Err("invalid arguments to chunks()")
             }
@@ -525,8 +531,17 @@ fn exprs() {
     let decimal_val = Number::new(1023, 1000);
     assert_eq!(decimal.get_type(), Type::Number(decimal_val, decimal_val));
 
+    let range = test_expr_parse("0.0..5.0");
+    assert_eq!(range.get_type(), Type::Number(0.into(), 5.into()));
+
     let four = test_expr_parse("2 + 2");
     assert_eq!(four.get_type(), Type::Number(4.into(), 4.into()));
+
+    let sum = test_expr_parse("(0..10) + 5");
+    assert_eq!(sum.get_type(), Type::Number(5.into(), 15.into()));
+
+    let mul = test_expr_parse("(0..10) * 5");
+    assert_eq!(mul.get_type(), Type::Number(0.into(), 50.into()));
 
     let one_one_i = test_expr_parse("complex(1.0, 0.0) + complex(0, 1)");
     assert_eq!(one_one_i.get_type(), Type::Complex);
@@ -534,14 +549,19 @@ fn exprs() {
     let two_two_i = test_expr_parse("complex(1, 1) * 2");
     assert_eq!(two_two_i.get_type(), Type::Complex);
 
+    let choose = test_expr_parse("(#a | #b)[#a = #x, #b = #y]");
+    assert_eq!(choose.get_type(), Type::Symbol(["x".into(), "y".into()].into_iter().collect()));
+
+    let concat = test_expr_parse("[(#a|#b), #c, _, 2:[(#a | #c), _], #a]");
+    assert_eq!(concat.get_type(), Type::Vector(6, Box::new(
+        Type::Symbol(["a".into(), "b".into(), "c".into()].into_iter().collect())
+    )));
+
     let ignore = test_expr_parse("_");
     assert_eq!(ignore.get_type(), Type::Ignored);
 
     let down = test_expr_parse("<: #h");
     assert_eq!(down.get_type(), Type::Symbol(Some("h".to_string()).into_iter().collect()));
-
-    let range = test_expr_parse("0.0..5.0");
-    assert_eq!(range.get_type(), Type::Number(0.into(), 5.into()));
 
     let fncall = test_expr_parse("((a) => a+3.0)(2.0)");
     assert_eq!(fncall.get_type(), Type::Number(5.into(), 5.into()));

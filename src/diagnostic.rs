@@ -1,5 +1,5 @@
 use std::{sync::Arc, fmt::{Display, Debug}, cell::RefCell, ptr};
-use crate::{SourceFile, FileSpan, syntax::{AstNode, ast}};
+use crate::{SourceFile, FileSpan, syntax::{AstNode, ast}, Type};
 
 /// Sentinel value returned by `report` to serve as a type-system check that an error was already reported
 #[derive(Clone)]
@@ -228,11 +228,57 @@ diagnostic_kinds!{
         error "expected a single value, found `{found}`" at span
     }
 
+    ExpectedConst {
+        span: Span,
+        found: String
+    } => "expected a constant" {
+        error "expected a constant, found `{found}`" at span
+    }
+
     ExpectedConstNumber {
         span: Span,
         found: String
     } => "expected a constant number" {
         error "expected a constant number, found `{found}`" at span
+    }
+
+    IncompatibleTypes {
+        span: Span,
+        t1: Type,
+        t2: Type
+    } => "incompatible types" {
+        error "`{t1}` and `{t2}` cannot be combined" at span
+    }
+
+    ChooseNotCovered {
+        span: Span,
+        found: Type
+    } => "choices do not cover all values of type `{found}`" {
+        error "additional cases required" at span
+    }
+
+    BinaryOneSideMustBeConst {
+        span: Span
+    } => "one side of a binary operator must be constant for bidirectional expressions" {
+        error "both sides are runtime values" at span
+    }
+
+    BinaryInvalidType {
+        span1: Span,
+        ty1: Type,
+        span2: Span,
+        ty2: Type
+    } => "invalid types for binary operator" {
+        error "found `{ty1}`" at span1
+        error "found `{ty2}`" at span2
+    }
+
+    ConcatSpreadInvalidType {
+        span: Span,
+        expected_width: u32,
+        found: Type
+    } => "invalid type for spread in vector literal" {
+        error "expected vector of width {expected_width}, found `{found}`" at span
     }
 }
 

@@ -1,0 +1,19 @@
+//# invalid types for binary operator
+let x = 2 + #x
+//      ^ found `2`
+//          ^^ found `#x`
+
+//# invalid types for binary operator
+let y = #x + 2
+//      ^^ found `#x`
+//           ^ found `2`
+
+//# invalid types for binary operator
+let a = (1..2) + #x
+//      ^^^^^^ found `1..2`
+//               ^^ found `#x`
+
+//# invalid types for binary operator
+let a = #y + (1..2)
+//           ^^^^^^ found `1..2`
+//      ^^ found `#y`
