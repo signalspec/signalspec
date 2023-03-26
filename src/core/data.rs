@@ -1,7 +1,7 @@
-use std::collections::HashSet;
 use std::cmp::{min, max};
 use std::fmt::Display;
 
+use indexmap::IndexSet;
 use crate::syntax::{Value, Number};
 use crate::tree::Tree;
 
@@ -20,7 +20,7 @@ impl Value {
 /// A type represents a set of possible values
 #[derive(Debug, PartialEq, Clone)]
 pub enum Type {
-    Symbol(HashSet<String>),
+    Symbol(IndexSet<String>),
     Number(Number, Number),
     Complex, // TODO: bounds?
     Vector(u32, Box<Type>),
@@ -58,7 +58,7 @@ impl Display for Type {
                     if i != 0 {
                         write!(f, " | ")?;
                     }
-                    write!(f, "{s}")?;
+                    write!(f, "#{s}")?;
                 }
                 Ok(())
             },
