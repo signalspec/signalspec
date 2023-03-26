@@ -2,7 +2,7 @@
 @test(#up, (#a, #b, #c, #d, #e))
 @test(#up, (#a, #b, #b, #c, #c, #c, #d, #b, #d, #e))
 @test(#up_fail, (#a, #b, #c))
-with Seq(#a|#b|#c|#d|#e, #up)
+with Seq(_:#a|#b|#c|#d|#e, #up)
 def main() = {
     val(#a)
     repeat {

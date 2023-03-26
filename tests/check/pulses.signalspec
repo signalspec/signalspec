@@ -1,4 +1,4 @@
-with Seq(#h|#l, dir)
+with Seq(_:#h|#l, dir)
 def pulses() = ^Seq(1..10, dir) {
     repeat {
         on val(len) {
@@ -14,4 +14,4 @@ def pulses() = ^Seq(1..10, dir) {
 
 @test(#both, (#l, #h, #h, #l, #h, #h, #h))
 @test(#up, (#l, #h, #h, #l, #l, #l, #h, #h, #h))
-with Seq(#h|#l, _) def test1() = { pulses() | { val(2); val(3) } }
+with Seq(_:#h|#l, _) def test1() = { pulses() | { val(2); val(3) } }

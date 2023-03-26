@@ -250,6 +250,14 @@ diagnostic_kinds!{
         error "`{t1}` and `{t2}` cannot be combined" at span
     }
 
+    TypeConstraint {
+        span: Span,
+        found: Type,
+        bound: Type
+    } => "type error" {
+        error "`{found}` does not match type `{bound}`" at span
+    }
+
     ChooseNotCovered {
         span: Span,
         found: Type

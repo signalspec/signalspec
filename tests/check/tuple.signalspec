@@ -2,7 +2,7 @@ let t = #a|#b|#c|#d
 
 @test(#both, ((#a, #b), (#c, #d)))
 @test(#up_fail, ((#a, #d), (#c, #b)))
-with Seq((t, t), _)
+with Seq((_:t, _:t), _)
 def main() = {
     val((#a, #b))
     val((#c, #d))

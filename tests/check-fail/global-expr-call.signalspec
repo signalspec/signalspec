@@ -1,4 +1,4 @@
-//# function argument mismatch: pattern mismatch
+//# function argument mismatch: literal value mismatch
 let f = (#x) => #x
 //      ^^^^ definition
 let t1 = f(1)

@@ -1,6 +1,6 @@
 let x = #x
 
-with Seq(#x|#y|#z, dir)
+with Seq(_:#x|#y|#z, dir)
 def main(var(dir) a) = {
     let y = a
     let z = #z
@@ -10,8 +10,8 @@ def main(var(dir) a) = {
 }
 
 @test(#both, (#x, #y, #z))
-with Seq(#x|#y|#z, dir) def test1() = { main(#y) }
+with Seq(_:#x|#y|#z, dir) def test1() = { main(#y) }
 
 @test(#up_fail, (#x, #y, #z))
-with Seq(#x|#y|#z, dir) def test1() = { main(#z) }
+with Seq(_:#x|#y|#z, dir) def test1() = { main(#z) }
 

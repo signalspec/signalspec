@@ -382,6 +382,7 @@ ast_node!{
         Tup(ExprTup),
         Ignore(ExprIgnore),
     
+        Typed(ExprTyped),
         Union(ExprUnion),
         Flip(ExprFlip),
         Range(ExprRange),
@@ -431,6 +432,14 @@ ast_node!{
 ast_node!{
     pub struct ExprIgnore {
         pub span: FileSpan,
+    }
+}
+
+ast_node!{
+    pub struct ExprTyped {
+        pub span: FileSpan,
+        pub expr: Box<Expr>,
+        pub ty: Box<Expr>,
     }
 }
 

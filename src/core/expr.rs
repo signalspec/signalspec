@@ -563,6 +563,12 @@ fn exprs() {
     let down = test_expr_parse("<: #h");
     assert_eq!(down.get_type(), Type::Symbol(Some("h".to_string()).into_iter().collect()));
 
+    let bound1 = test_expr_parse("_ : (0..10)");
+    assert_eq!(bound1.get_type(), Type::Number(0.into(), 10.into()));
+
+    let bound2 = test_expr_parse("(0..2) : (0..10)");
+    assert_eq!(bound2.get_type(), Type::Number(0.into(), 2.into()));
+
     let fncall = test_expr_parse("((a) => a+3.0)(2.0)");
     assert_eq!(fncall.get_type(), Type::Number(5.into(), 5.into()));
 }

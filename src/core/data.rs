@@ -59,6 +59,45 @@ impl Type {
     pub fn union_iter<T: Iterator<Item=Type>>(mut i: T) -> Result<Type, IncompatibleTypes> {
         i.try_fold(Type::Ignored, Type::union)
     }
+
+    /// Test whether a value is a member of the type
+    pub fn test(&self, v: &Value) -> bool {
+        match (self, v) {
+            (Type::Ignored, _) => true,
+            (Type::Complex, Value::Number(_)) => true,
+            (Type::Complex, Value::Complex(_)) => true,
+            (Type::Number(lo, hi), Value::Number(n)) =>
+                lo <= n && n < hi,
+            (Type::Symbol(s), Value::Symbol(v)) =>
+                s.contains(v),
+            (Type::Vector(w, t), Value::Vector(v)) =>
+                v.len() == *w as usize && v.iter().all(|x| t.test(x)),
+            _ => false,
+        }
+    }
+
+    pub fn is_subtype(&self, other: &Type) -> bool {
+        match (self, other) {
+            (_, Type::Ignored) => true,
+            (Type::Symbol(s1), Type::Symbol(s2)) => s1.is_subset(s2),
+            (Type::Number(lo1, hi1), Type::Number(lo2, hi2)) =>
+                lo2 <= lo1 && hi1 <= hi2,
+            (Type::Number(_, _), Type::Complex) => true,
+            (Type::Complex, Type::Complex) => true,
+            (Type::Vector(w1, t1), Type::Vector(w2, t2)) => w1 == w2 && t1.is_subtype(t2),
+            _ => false,
+        }
+    }
+
+    pub fn bound(self, constraint: Type) -> Result<Type, (Type, Type)> {
+        match (self, constraint) {
+            (Type::Ignored, other) => Ok(other),
+            (Type::Vector(w, t), Type::Vector(wb, tb)) if w == wb =>
+                Ok(Type::Vector(w, Box::new(t.bound(*tb)?))),
+            (a, b) if a.is_subtype(&b) => Ok(a),
+            (a, b) => Err((a, b)),
+        }
+    }
 }
 
 impl Display for Type {

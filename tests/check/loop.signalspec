@@ -1,6 +1,6 @@
 let t = #a|#b|#c|#d
 
-with Seq(t, dir)
+with Seq(_:t, dir)
 def main(var(dir) x) = {
     val(#a)
     val(#b)
@@ -12,15 +12,15 @@ def main(var(dir) x) = {
 }
 
 @test(#both, (#a, #b, #a))
-with Seq(t, _) def test1() = { main(0) }
+with Seq(_:t, _) def test1() = { main(0) }
 
 @test(#up_fail, (#a, #b, #a))
 @test(#both, (#a, #b, #c, #d, #a))
-with Seq(t, _) def test2() = { main(1) }
+with Seq(_:t, _) def test2() = { main(1) }
 
 @test(#both, (#a, #b, #c, #d, #c, #d, #a))
-with Seq(t, _) def test2() = { main(2) }
+with Seq(_:t, _) def test2() = { main(2) }
 
 @test(#up_fail, (#a, #b, #c, #a))
 @test(#up_fail, (#a, #b, #c, #d))
-with Seq(t, _) def test2() = { main(_) }
+with Seq(_:t, _) def test2() = { main(_) }

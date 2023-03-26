@@ -1,7 +1,7 @@
 @test(#both, (#a, #b, #c))
 @test(#up_fail, (#a, #b, #a))
 @test(#up_fail, (#c, #c, #c))
-with Seq(#a|#b|#c, _)
+with Seq(_:#a|#b|#c, _)
 def main() = {
     val(#a)
     val(#b)

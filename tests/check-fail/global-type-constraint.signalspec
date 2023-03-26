@@ -1,0 +1,7 @@
+//# type error
+let x = 100 : (0..10)
+//      ^^^^^^^^^^^^^ `100` does not match type `0..10`
+
+//# type error
+let y = (0..100) : (0..10)
+//      ^^^^^^^^^^^^^^^^^^ `0..100` does not match type `0..10`

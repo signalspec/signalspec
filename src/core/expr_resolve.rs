@@ -106,6 +106,7 @@ pub fn rexpr(ctx: &dyn DiagnosticHandler, scope: &Scope, e: &ast::Expr) -> Item 
         ast::Expr::Value(ref node) => Expr::Const(node.value.clone()).into(),
         ast::Expr::Ignore(_) => Expr::ignored().into(),
 
+        ast::Expr::Typed(ref node) => resolve_expr_typed(ctx, scope, node),
         ast::Expr::Flip(ref node) => resolve_expr_flip(ctx, scope, node),
         ast::Expr::Range(ref node) => resolve_expr_range(ctx, scope, node),
         ast::Expr::Union(ref node) => resolve_expr_union(ctx, scope, node),
@@ -140,6 +141,33 @@ fn resolve_expr_range(ctx: &dyn DiagnosticHandler, scope: &Scope, node: &ast::Ex
 
     let ty = Type::Number(min, max);
     Expr::Expr(ty, ExprKind::Range(min, max)).into()
+}
+
+fn resolve_expr_typed(ctx: &dyn DiagnosticHandler, scope: &Scope, node: &ast::ExprTyped) -> Item {
+    let expr = value(ctx, scope, &node.expr);
+    let bound_expr = value(ctx, scope, &node.ty);
+
+    let expr = try_item!(expr);
+    let bound = try_item!(bound_expr).get_type();
+
+    let span = || Span::new(&scope.file, node.span);
+
+    match expr {
+        Expr::Const(c) => {
+            if bound.test(&c) {
+                Expr::Const(c).into()
+            } else {
+                ctx.report(Diagnostic::TypeConstraint { span: span(), found: c.get_type(), bound }).into()
+            }
+        },
+        Expr::Expr(t, e) => {
+            match t.bound(bound) {
+                Ok(new_t) => Expr::Expr(new_t, e).into(),
+                Err((t, bound)) =>
+                    ctx.report(Diagnostic::TypeConstraint { span: span(), found: t, bound }).into(),
+            }
+        },
+    }
 }
 
 fn resolve_expr_union(ctx: &dyn DiagnosticHandler, scope: &Scope, node: &ast::ExprUnion) -> Item {
@@ -457,22 +485,32 @@ pub fn lexpr(ctx: &dyn DiagnosticHandler, scope: &mut Scope, pat: &ast::Expr, r:
                 Ok(())
             }
 
-            pat => {
-                //TODO: disallow variable references?
-                let Ok(lv) = value(ctx, scope, pat) else {
-                    return Err("pattern must be a value")
+            ast::Expr::Typed(ref node) => {
+                let Ok(ty) = value(ctx, scope, &node.ty) else {
+                    return Err("failed to evaluate type constraint")
                 };
+                let ty = ty.get_type();
 
                 if let Item::Leaf(LeafItem::Value(ref rv)) = r {
-                    if &lv == rv {
-                        Ok(())
+                    if rv.get_type().is_subtype(&ty) {
+                        lexpr(ctx, scope, &node.expr, r)
                     } else {
-                        Err("pattern mismatch")
+                        Err("type mismatch")
                     }
                 } else {
-                    Err("item cannot be matched")
+                    Err("expected a single value to match type pattern")
                 }
             }
+
+            ast::Expr::Value(lv) => {
+                if let Item::Leaf(LeafItem::Value(Expr::Const(ref rv))) = r {
+                    (lv.value == *rv).then_some(()).ok_or("literal value mismatch")
+                } else {
+                    Err("expected a constant to match literal pattern")
+                }
+            }
+
+            _ => Err("invalid pattern")
         }
     })
 }

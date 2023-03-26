@@ -6,7 +6,7 @@ protocol SPI(dir) dir {
   end(),
 }
 
-with Seq((#l|#h, #l|#h, #l|#h), dir)
+with Seq((_:#l|#h, _:#l|#h, _:#l|#h), dir)
 def spi() = ^SPI(dir) {
   repeat dir <: 10 { val((#h, <: #l, <: #l)) }
   repeat {
@@ -29,6 +29,6 @@ def spi() = ^SPI(dir) {
 }
 
 @test(#roundtrip)
-with Seq((#l|#h, #l|#h, #l|#h), _) def test1() = {
+with Seq((_:#l|#h, _:#l|#h, _:#l|#h), _) def test1() = {
   spi() | { data('01011101); data('11110000); end(); data('00001000); end() }
 }

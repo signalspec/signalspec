@@ -1,4 +1,4 @@
-with Seq(#a|#b, dir)
+with Seq(_:#a|#b, dir)
 def main(var(dir) a, var(dir) b) = {
     val(a)
     val(b)
@@ -6,6 +6,6 @@ def main(var(dir) a, var(dir) b) = {
 
 @test(#both, (#a, #b))
 @test(#up_fail, (#a, #a))
-with Seq(#a|#b, dir) def test_main() = {
+with Seq(_:#a|#b, dir) def test_main() = {
     main(#a, #b)
 }

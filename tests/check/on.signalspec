@@ -1,4 +1,4 @@
-with Seq(0..10, dir)
+with Seq(_:0..10, dir)
 def main() = ^Seq(0..10, dir) {
     on val(1) {}
     on val(2) {}
@@ -9,9 +9,9 @@ def main() = ^Seq(0..10, dir) {
 }
 
 @test(#both, (5, 5))
-with Seq(0..10, _) def test1() = { main() | { val(1) ; val(2) ; val(5) } }
+with Seq(_:0..10, _) def test1() = { main() | { val(1) ; val(2) ; val(5) } }
 
-with Seq((0..10, 0..10), dir)
+with Seq((_:0..10, _:0..10), dir)
 def tuple() = ^Seq((0..10, 0..10), dir) {
     on val((a, b)) {
         val((a, b))
@@ -24,5 +24,5 @@ def tuple() = ^Seq((0..10, 0..10), dir) {
 }
 
 @test(#both, ((5, 6), (5, 6), (7, 8)))
-with Seq((0..10, 0..10), _) def test2() = { tuple() | { val((5, 6)); val((7, 8)) } }
+with Seq((_:0..10, _:0..10), _) def test2() = { tuple() | { val((5, 6)); val((7, 8)) } }
 
