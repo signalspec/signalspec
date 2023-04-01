@@ -6,3 +6,11 @@ def main() = {
         val(i)
     }
 }
+
+@test(#both, ((#a, #b), (#b, #a), (#a, #a)))
+with Seq((_:#a|#b, _:#a|#b), dir)
+def main() = {
+    for i = [#a, #b, #a], j = [#b, #a, #a] {
+        val((i, j))
+    }
+}
