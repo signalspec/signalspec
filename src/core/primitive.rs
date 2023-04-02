@@ -5,11 +5,11 @@ use crate::runtime::PrimitiveProcess;
 
 pub struct PrimitiveDef {
     pub id: &'static str,
-    pub instantiate: Box<dyn Fn(&Scope) -> Result<Arc<dyn PrimitiveProcess>, ()>>,
+    pub instantiate: Box<dyn Fn(&Scope) -> Result<Arc<dyn PrimitiveProcess>, String>>,
 }
 
 impl PrimitiveDef {
-    pub fn instantiate(&self, scope: &Scope) -> Arc<dyn PrimitiveProcess> {
-        (self.instantiate)(scope).expect("Failed to instantiate primitive")
+    pub fn instantiate(&self, scope: &Scope) -> Result<Arc<dyn PrimitiveProcess>, String> {
+        (self.instantiate)(scope)
     }
 }

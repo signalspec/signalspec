@@ -4,7 +4,8 @@ use std::{fmt::Debug, pin::Pin, future::Future};
 macro_rules! primitive_args {
     (|$($i:ident: $t:ty),*| $body:block) => {
         Box::new(|s: &$crate::Scope| {
-            $(let $i:$t = s.get_as(stringify!($i))?;)*
+            $(let $i:$t = s.get_as(stringify!($i))
+                .map_err(|()| format!("invalid value for primitive argument {}", stringify!($i)))?;)*
             $body
         })
     };

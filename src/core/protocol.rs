@@ -60,11 +60,11 @@ pub fn instantiate(ctx: &dyn DiagnosticHandler, index: &Index, protocol_name: &s
                 let params = params.iter().map(|p| {
                     match &p {
                         ast::DefParam::Const(node) => {
-                            let ty = rexpr(ctx, &protocol_def_scope, &node.expr).as_type_tree().expect("not a type");
+                            let ty = rexpr(ctx, &protocol_def_scope, &node.expr).as_type_tree().expect("todo: not a type");
                             ShapeMsgParam { ty, direction: Dir::Dn } // TODO: allow const here at all?
                         }
                         ast::DefParam::Var(node) => {
-                            let ty = rexpr(ctx, &protocol_def_scope, &node.expr).as_type_tree().expect("not a type");
+                            let ty = rexpr(ctx, &protocol_def_scope, &node.expr).as_type_tree().expect("todo: not a type");
                             let direction = resolve_dir(ctx, &protocol_def_scope, &node.direction).unwrap();
                             ShapeMsgParam { ty, direction }
                         }

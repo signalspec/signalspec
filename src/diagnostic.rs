@@ -187,6 +187,13 @@ diagnostic_kinds!{
         error "call site" at span
     }
 
+    ErrorInPrimitiveProcess{
+        span: Span,
+        msg: String
+    } => "primitive could not be instantiated: {msg}" {
+        error "call site" at span
+    }
+
     FunctionArgumentMismatch {
         span: Span,
         def: Span,

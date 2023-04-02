@@ -390,7 +390,7 @@ impl<'a> Builder<'a> {
                     }
                 }
             }
-            ast::Action::Error(_) => panic!("Syntax error"),
+            ast::Action::Error(r) => self.add_step(Step::Invalid(ErrorReported::from_ast(r))),
         }
     }
 
@@ -424,7 +424,17 @@ impl<'a> Builder<'a> {
                                     Err(r) => return (self.add_step(Step::Invalid(r)), None),
                                 }
                             } else { None };
-                            let prim = primitive.instantiate(&scope);
+                            let prim = match primitive.instantiate(&scope) {
+                                Ok(p) => p,
+                                Err(msg) => {
+                                    let r = self.ui.report(Diagnostic::ErrorInPrimitiveProcess {
+                                        span: Span::new(&sb.scope.file, node.span),
+                                        msg
+                                    });
+                                    return (self.add_step(Step::Invalid(r)), None);
+
+                                }
+                            };
                             (self.add_step(Step::Primitive(prim)), shape_up)
                         }
                     }
