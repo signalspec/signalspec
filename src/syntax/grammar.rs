@@ -173,7 +173,7 @@ peg::parser!(pub grammar signalspec() for str {
 
         rule hexchar() -> u8
             = c:$(['0'..='9' | 'a'..='f' | 'A'..='F'])
-            { u8::from_str_radix(c, 16).unwrap() }
+            {? u8::from_str_radix(c, 16).map_err(|_| "hex char") }
 
         rule binbit() -> bool
             = "0" {false} / "1" {true}
@@ -245,6 +245,6 @@ peg::parser!(pub grammar signalspec() for str {
 
     rule doubleQuotedCharacter() -> char
       = !("\"" / "\\" / TERM()) c:$([_]) { c.chars().next().unwrap() }
-      / "\\u{" value:$(['0'..='9' | 'a'..='f' | 'A'..='F']+) "}" { char::from_u32(u32::from_str_radix(value, 16).unwrap()).unwrap() }
+      / "\\u{" value:$(['0'..='9' | 'a'..='f' | 'A'..='F']+) "}" {? u32::from_str_radix(value, 16).ok().and_then(char::from_u32).ok_or("unicode codepoint in hex") }
       / expected!("valid escape sequence")
 });
