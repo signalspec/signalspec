@@ -14,13 +14,10 @@ pub enum Insn {
     /// Down-evaluate a message and send it on the specified channel
     Send(ChanId, VariantId, Vec<ExprDn>),
 
-    /// Block waiting for data ready on a channel
-    Receive(ChanId),
-
-    /// Consume received message from channel and set variables
+    /// Wait for data ready on channel, consume message from channel and set variables
     Consume(ChanId, VariantId, Vec<(Predicate, ValueSrcId)>),
 
-    /// Test received message from channel by up-evaluating expression, without
+    /// Wait for data ready on channel, test received message from channel by up-evaluating expression, without
     /// consuming the message or writing variables. If not matched, jump.
     Test(ChanId, MessagePatternSet, InsnId),
 
@@ -125,18 +122,10 @@ impl Compiler<'_> {
 
     fn seq_prep(&mut self, channels: ChannelIds, prev_followlast: &Option<MatchSet>, next_first: &MatchSet) {
         match (prev_followlast, next_first) {
-            (None, MatchSet::MessageUp { .. }) => {
-                if let Some(c) = channels.up_rx {
-                    self.emit(Insn::Receive(c))
-                }
-            },
+            (None, MatchSet::MessageUp { .. }) => { },
             (None, MatchSet::MessageDn { variant, send, .. }) => {
                 if let Some(c) = channels.dn_tx {
                     self.emit(Insn::Send(c, *variant, send.clone()));
-                }
-
-                if let Some(c) = channels.dn_rx {
-                    self.emit(Insn::Receive(c))
                 }
             }
             (None, MatchSet::Process) => {}
@@ -245,14 +234,23 @@ impl Compiler<'_> {
 
             Step::Seq(ref steps) => {
                 let mut prev_followlast = None;
-                for &step in steps {
+                let mut deferred_receive_start = 0;
+                for (i, &step) in steps.iter().enumerate() {
                     let inner_info = &self.program.step_info[step];
 
                     if let Some(prev_followlast) = prev_followlast {
                         self.seq_prep(channels, prev_followlast, &inner_info.first);
                     }
 
-                    self.compile_step(step, channels);
+                    // For a sequence of token nodes, reorder to coalesce all the downward sends before the upward receives
+                    // This allows asynchronous primitives below to see multiple tokens before needing to respond
+                    if !(matches!(self.program.steps[step], Step::Token { .. })) || i + 1 == steps.len() {
+                        for &step in &steps[deferred_receive_start..=i] {
+                            self.compile_step(step, channels);
+                        }
+                        deferred_receive_start = i + 1;
+                    }
+
                     prev_followlast = Some(&inner_info.followlast);
                 }
             }
@@ -512,10 +510,9 @@ impl ProgramExec {
                     }).collect();
                     self.channels[chan].send(ChannelMessage { variant, values });
                 }
-                Insn::Receive(chan) => {
-                    ready!(self.channels[chan].poll_receive(cx));
-                }
                 Insn::Consume(chan, variant, ref exprs) => {
+                    ready!(self.channels[chan].poll_receive(cx));
+
                     let mut rx = self.channels[chan].read();
 
                     if rx.is_end() {
@@ -541,6 +538,8 @@ impl ProgramExec {
                     };
                 }
                 Insn::Test(chan, ref pat, if_false) => {
+                    ready!(self.channels[chan].poll_receive(cx));
+
                     let read = self.channels[chan].read();
 
                     let matched = if read.is_end() {
