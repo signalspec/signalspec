@@ -384,6 +384,28 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2dffe52ecf27772e601905b7522cb4ef790d2cc203488bbd0e2fe85fcb74566d"
 
 [[package]]
+name = "memoffset"
+version = "0.6.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5aa361d4faea93603064a027415f07bd8e1d5c88c9fbf68bf56a285428fd79ce"
+dependencies = [
+ "autocfg",
+]
+
+[[package]]
+name = "nix"
+version = "0.23.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8f3790c00a0150112de0f4cd161e3d7fc4b2d8a5542ffc35f099a2562aecb35c"
+dependencies = [
+ "bitflags",
+ "cc",
+ "cfg-if",
+ "libc",
+ "memoffset",
+]
+
+[[package]]
 name = "num-complex"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -577,6 +599,7 @@ dependencies = [
  "num-rational",
  "num-traits",
  "peg",
+ "spidev",
 ]
 
 [[package]]
@@ -599,6 +622,17 @@ dependencies = [
  "env_logger 0.8.4",
  "log",
  "signalspec",
+]
+
+[[package]]
+name = "spidev"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5c43e891adf1abc1e09b10f80c8d91959ee20ec28425c6dadac78844ba4c709f"
+dependencies = [
+ "bitflags",
+ "libc",
+ "nix",
 ]
 
 [[package]]

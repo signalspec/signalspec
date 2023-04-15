@@ -14,6 +14,7 @@ macro_rules! primitive_args {
 
 mod file_io;
 mod seq;
+#[cfg(target_os = "linux")] mod linux;
 
 use crate::core::{ add_primitive_fns, Index };
 use super::Channel;
@@ -25,7 +26,8 @@ pub fn add_primitives(index: &mut Index) {
         val(var(dir) T)
     }
 
-    protocol Bytes(dir) dir { byte(var(dir) 0..255) }
+    let byte = 0..256
+    protocol Bytes(dir) dir { byte(var(dir) byte) }
     let Float32 = -1.0..1.0
     "#);
 
@@ -33,6 +35,9 @@ pub fn add_primitives(index: &mut Index) {
 
     seq::add_primitives(index);
     file_io::add_primitives(index);
+
+    #[cfg(target_os = "linux")]
+    linux::add_primitives(index);
 }
 
 pub trait PrimitiveProcess: Debug + Send + Sync {
