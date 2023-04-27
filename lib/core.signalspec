@@ -1,0 +1,13 @@
+protocol Base() #dn {
+
+}
+
+protocol Seq(T, dir) dir {
+    val(var(dir) T)
+}
+
+let byte = 0..256
+
+protocol Bytes(dir) dir {
+    byte(var(dir) byte)
+}

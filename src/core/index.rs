@@ -1,14 +1,22 @@
 use std::collections::{BTreeMap, HashMap};
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use crate::DiagnosticHandler;
 use crate::syntax::{ ast, SourceFile };
 use super::{ ProtocolRef, Item, PrimitiveDef, Scope, FunctionDef, PrimitiveFn, FileScope, Shape, scope::LeafItem };
 
+fn default_library_dir() -> Option<PathBuf> {
+    Some(std::env::current_exe().ok()?.parent()?.parent()?.join("lib/signalspec"))
+}
+
+#[derive(Clone)]
 pub struct Index {
     prelude: HashMap<String, Item>,
     protocols_by_name: BTreeMap<String, ProtocolRef>,
     defs: Vec<Def>,
 }
 
+#[derive(Clone)]
 struct Def {
     protocol: ast::ProtocolRef,
     name: ast::Identifier,
@@ -22,10 +30,19 @@ pub (crate) enum DefImpl {
     Primitive(PrimitiveDef, Option<ast::ProtocolRef>)
  }
 
+ impl Clone for DefImpl {
+    fn clone(&self) -> Self {
+        match self {
+            Self::Code(arg0) => Self::Code(arg0.clone()),
+            Self::Primitive(..) => unreachable!(),
+        }
+    }
+}
+
 impl Index {
     pub fn new() -> Index {
         Index {
-            prelude: HashMap::new(),
+            prelude: super::expr::expr_prelude(),
             protocols_by_name: BTreeMap::new(),
             defs: Vec::new(),
         }
@@ -35,10 +52,21 @@ impl Index {
         self.prelude.insert(name.to_owned(), Item::Leaf(LeafItem::Func(Arc::new(FunctionDef::Primitive(prim)))));
     }
 
-    pub fn define_prelude(&mut self, source: &str) {
-        let file = Arc::new(SourceFile::new("<prelude>".into(), source.into()));
-        let module = self.parse_module(file);
-        self.prelude = module.scope.names.clone();
+    /// Create an index and populate it with the libraries from the colon-separated
+    /// environment variable SIGNALSPEC_PATH. If not set or contains empty components,
+    /// the path <signalspec executable>/../../lib/signalspec is used.
+    pub fn from_env(ui: &dyn DiagnosticHandler) -> Result<Index, std::io::Error> {
+        let mut index = Self::new();
+        for path in std::env::var("SIGNALSPEC_PATH").unwrap_or_default().split(":") {
+            if path.is_empty() {
+                if let Some(dir) = default_library_dir() {
+                    index.load(ui, &dir)?;
+                }
+            } else {
+                index.load(ui, Path::new(path))?;
+            }
+        }
+        Ok(index)
     }
 
     pub fn define_primitive(&mut self, header_src: &str, implementation: PrimitiveDef) {
@@ -51,6 +79,29 @@ impl Index {
             params: header.params.iter().map(|x| x.clone()).collect(),
             implementation: DefImpl::Primitive(implementation, header.top),
         });
+    }
+
+    pub fn load(&mut self, ui: &dyn DiagnosticHandler, p: &Path) -> Result<(), std::io::Error> {
+        info!("Loading {}", p.display());
+        match std::fs::metadata(p) {
+            Ok(ref meta) if meta.is_dir() => {
+                for entry in std::fs::read_dir(p)? {
+                    let entry = entry?;
+                    let path = entry.path();
+                    let m = entry.metadata()?;
+                    if path.extension() == Some("signalspec".as_ref()) || m.is_dir() {
+                        self.load(ui, &path)?;
+                    }
+                }
+                Ok(())
+            }
+            Ok(_) => {
+                let module = self.parse_module(Arc::new(SourceFile::load(p)?));
+                ui.report_all(module.errors.clone());
+                Ok(())
+            }
+            Err(e) => Err(e)
+        }
     }
 
     pub fn find_protocol(&self, name: &str) -> Option<&ProtocolRef> {

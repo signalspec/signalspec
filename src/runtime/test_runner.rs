@@ -8,7 +8,7 @@ use crate::runtime::channel::item_to_msgs;
 use crate::syntax::{ ast, SourceFile };
 use crate::core::{ Index, FileScope, rexpr, rexpr_tup };
 
-pub fn run(ui: &dyn DiagnosticHandler, fname: &Path) -> bool {
+pub fn run(ui: &dyn DiagnosticHandler, index: &Index, fname: &Path) -> bool {
     let fname = Path::new(fname);
     match fs::metadata(fname) {
         Ok(ref meta) if meta.is_file() => {
@@ -20,14 +20,14 @@ pub fn run(ui: &dyn DiagnosticHandler, fname: &Path) -> bool {
                     return false;
                 }
             };
-            run_file(ui, file, false)
+            run_file(ui, index, file, false)
         },
         Ok(ref meta) if meta.is_dir() => {
             let mut success = true;
             for entry in fs::read_dir(fname).unwrap() {
                 let path = entry.unwrap().path();
                 if path.to_str().unwrap().ends_with(".signalspec") {
-                    success &= run(ui,&path);
+                    success &= run(ui, index, &path);
                 }
             }
             success
@@ -39,9 +39,8 @@ pub fn run(ui: &dyn DiagnosticHandler, fname: &Path) -> bool {
     }
 }
 
-pub fn run_file(ui: &dyn DiagnosticHandler, file: Arc<SourceFile>, compile_only: bool) -> bool {
-    let mut index = Index::new();
-    super::primitives::add_primitives(&mut index);
+pub fn run_file(ui: &dyn DiagnosticHandler, index: &Index, file: Arc<SourceFile>, compile_only: bool) -> bool {
+    let mut index = index.clone();
 
     let module = index.parse_module(file);
 

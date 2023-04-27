@@ -1,0 +1,2 @@
+[env]
+SIGNALSPEC_PATH = { value = "lib", relative = true }

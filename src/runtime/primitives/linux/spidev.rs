@@ -5,16 +5,6 @@ use crate::{Index, PrimitiveDef, PrimitiveProcess, Channel, ChannelMessage};
 use spidev::{Spidev, SpidevOptions, SpiModeFlags, SpidevTransfer};
 
 pub fn add_primitives(index: &mut Index) {
-    index.define_prelude(r#"
-    protocol Spi(mode: #controller | #async_controller | #monitor | #generate) mode[#controller = #dn, #async_controller = #dn, #monitor = #up, #generate=#dn] {
-        data(
-            var(mode[#controller = #dn, #async_controller = #dn, #monitor = #up, #generate = #dn]) byte,
-            var(mode[#controller = #up, #async_controller = #up, #monitor = #up, #generate = #dn]) byte,
-        ),
-        end(),
-    }
-    "#);
-
     index.define_primitive("with Base() def spidev(const devname): Spi(#async_controller)", PrimitiveDef {
         id: "spidev",
         instantiate: primitive_args!(|devname: &str| {

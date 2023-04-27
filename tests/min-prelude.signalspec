@@ -1,0 +1,3 @@
+protocol Seq(T, dir) dir {
+    val(var(dir) T)
+}

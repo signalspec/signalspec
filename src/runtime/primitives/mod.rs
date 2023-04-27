@@ -16,23 +16,10 @@ mod file_io;
 mod seq;
 #[cfg(target_os = "linux")] mod linux;
 
-use crate::core::{ add_primitive_fns, Index };
+use crate::core::Index;
 use super::Channel;
 
 pub fn add_primitives(index: &mut Index) {
-    index.define_prelude(r#"
-    protocol Base() #dn {}
-    protocol Seq(T, dir) dir {
-        val(var(dir) T)
-    }
-
-    let byte = 0..256
-    protocol Bytes(dir) dir { byte(var(dir) byte) }
-    let Float32 = -1.0..1.0
-    "#);
-
-    add_primitive_fns(index);
-
     seq::add_primitives(index);
     file_io::add_primitives(index);
 

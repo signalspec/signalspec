@@ -1,7 +1,7 @@
-use std::{fmt, collections::HashSet};
+use std::{fmt, collections::{HashSet, HashMap}, sync::Arc};
 use num_complex::Complex;
 use num_traits::cast::ToPrimitive;
-use crate::syntax::{ Value, BinOp, Number };
+use crate::{syntax::{ Value, BinOp, Number }, core::{PrimitiveFn, FunctionDef}};
 use super::{ Item, Type, LeafItem, predicate::Predicate, resolve::ValueSinkId, ValueSrcId };
 
 /// Element of Expr::Concat
@@ -496,26 +496,30 @@ fn fn_complex(arg: Item) -> Result<Item, &'static str> {
     }
 }
 
-pub fn add_primitive_fns(loader: &mut super::Index) {
-    loader.add_primitive_fn("signed", fn_signed);
-    loader.add_primitive_fn("unsigned", fn_unsigned);
-    loader.add_primitive_fn("chunks", fn_chunks);
-    loader.add_primitive_fn("complex", fn_complex);
+pub fn expr_prelude() -> HashMap<String, Item> {
+    let mut prelude = HashMap::new();
+
+    pub fn add_primitive_fn(prelude: &mut HashMap<String, Item>, name: &str, prim: PrimitiveFn) {
+        prelude.insert(name.to_owned(), Item::Leaf(LeafItem::Func(Arc::new(FunctionDef::Primitive(prim)))));
+    }
+
+    add_primitive_fn(&mut prelude, "signed", fn_signed);
+    add_primitive_fn(&mut prelude, "unsigned", fn_unsigned);
+    add_primitive_fn(&mut prelude, "chunks", fn_chunks);
+    add_primitive_fn(&mut prelude, "complex", fn_complex);
+
+    prelude
 }
 
 #[cfg(test)]
 pub fn test_expr_parse(e: &str) -> Expr {
-    use std::sync::Arc;
     use crate::diagnostic::SimplePrintHandler;
     use crate::syntax::{parse_expr, SourceFile};
-    use crate::core::{Index, Scope, value};
-
-    let mut index = Index::new();
-    add_primitive_fns(&mut index);
+    use crate::core::{Scope, value};
 
     let scope = Scope { 
         file: Arc::new(SourceFile::new("<tests>".into(), "".into())),
-        names: index.prelude().clone()
+        names: expr_prelude()
     };
 
     let ast = parse_expr(e).unwrap();

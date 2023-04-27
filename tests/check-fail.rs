@@ -1,4 +1,4 @@
-use signalspec::{self, SourceFile, Diagnostic, diagnostic::Collector, FileSpan, Label};
+use signalspec::{self, SourceFile, Diagnostic, diagnostic::Collector, FileSpan, Label, Index};
 use env_logger;
 use std::{process, fs, path::Path, sync::Arc};
 
@@ -28,7 +28,10 @@ fn check_file(fname: &Path) -> bool {
     };
     let errors = Collector::new();
 
-    signalspec::runtime::run_tests_in_file(&errors, file.clone(), true);
+    let mut index = Index::new();
+    index.load(&errors, Path::new("tests/min-prelude.signalspec")).unwrap();
+
+    signalspec::runtime::run_tests_in_file(&errors, &index, file.clone(), true);
 
     check_errors(&file,&errors.diagnostics())
 }
