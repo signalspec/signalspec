@@ -24,8 +24,8 @@ fn format_message<'a, 'b, 'c>(w: &mut dyn Write, values: &[Value], variant: &Sha
     for (i, param) in variant.params.iter().enumerate() {
         if i > 0 { write!(w, ", ")?; }
         match param.direction {
-            Dir::Dn => format_message_item(w, &mut iter, &param.ty)?,
-            Dir::Up => write!(w, "_")?,
+            Dir::Dn => write!(w, "_")?,
+            Dir::Up => format_message_item(w, &mut iter, &param.ty)?,
         }
     }
     write!(w, ")")
