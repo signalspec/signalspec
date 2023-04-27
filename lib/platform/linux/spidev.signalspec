@@ -1,0 +1,3 @@
+with Base() def spidev(const devname) = ^Spi(#async_controller) {
+    primitive spidev(devname)
+}

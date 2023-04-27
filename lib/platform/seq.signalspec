@@ -1,0 +1,7 @@
+with Base() def seq(const ty, const #up, const seq) = ^Seq(ty, #up) {
+    primitive seq_up(ty, seq)
+}
+
+with Base() def seq(const ty, const #dn, const seq) = ^Seq(ty, #up) {
+    primitive seq_dn(ty, seq)
+}

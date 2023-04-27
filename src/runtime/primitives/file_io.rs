@@ -3,28 +3,19 @@ use std::future::Future;
 use std::sync::Arc;
 use async_fs::File;
 
-use crate::core::{ Index, PrimitiveDef };
+use crate::{Item, Shape};
 use crate::runtime::channel::Channel;
 use crate::runtime::{ PrimitiveProcess };
 
-pub fn add_primitives(index: &mut Index) {
-    index.define_primitive("with Base() def file(const #r, const name): Bytes(#up)", PrimitiveDef {
-        id: "file_read",
-        instantiate: primitive_args!(|name: &str| {
-            Ok(Arc::new(ReaderProcess(PathBuf::from(name))))
-        })
-    });
+pub(crate) struct ReaderProcess(PathBuf);
 
-    index.define_primitive("with Base() def file(const #w, const name): Bytes(#dn)", PrimitiveDef {
-        id: "file_write",
-        instantiate: primitive_args!(|name: &str| {
-            Ok(Arc::new(WriterProcess(PathBuf::from(name))))
-        })
-    });
+impl ReaderProcess {
+    pub fn instantiate(args: Item, _shape_dn: &Shape, _shape_up: Option<&Shape>) -> Result<Arc<dyn PrimitiveProcess>, String> {
+        let name: String = args.try_into()?;
+        Ok(Arc::new(ReaderProcess(PathBuf::from(name))))
+    }
 }
 
-
-struct ReaderProcess(pub PathBuf);
 impl PrimitiveProcess for ReaderProcess {
     fn run(&self, chan: Vec<Channel>) -> std::pin::Pin<Box<dyn Future<Output = Result<(), ()>>>> {
         assert_eq!(chan.len(), 1);
@@ -45,7 +36,15 @@ impl ::std::fmt::Debug for ReaderProcess {
     }
 }
 
-struct WriterProcess(pub PathBuf);
+pub(crate) struct WriterProcess(PathBuf);
+
+impl WriterProcess {
+    pub fn instantiate(args: Item, _shape_dn: &Shape, _shape_up: Option<&Shape>) -> Result<Arc<dyn PrimitiveProcess>, String> {
+        let name: String = args.try_into()?;
+        Ok(Arc::new(WriterProcess(PathBuf::from(name))))
+    }
+}
+
 impl PrimitiveProcess for WriterProcess {
     fn run(&self, chan: Vec<Channel>) -> std::pin::Pin<Box<dyn Future<Output = Result<(), ()>>>> {
         assert_eq!(chan.len(), 1);

@@ -1,35 +1,23 @@
 use std::future::Future;
 use std::sync::Arc;
 
+use crate::{ Item, Shape };
 use crate::runtime::channel::Channel;
-use crate::core::{ Index, PrimitiveDef, Item };
 use crate::runtime::{ChannelMessage, PrimitiveProcess};
 use super::super::channel::item_to_msgs;
 
-// This wouldn't need to be a primitive if vectors could contain tuples -- could
-// be a simple `for` loop.
-pub fn add_primitives(index: &mut Index) {
-    index.define_primitive("with Base() def seq(const ty, const #up, const seq): Seq(ty, #up)", PrimitiveDef {
-        id: "const_seq_up",
-        instantiate: primitive_args!(|ty: &Item, seq: &Item| {
-            let msgs = item_to_msgs(ty, seq)
-                .map_err(|()| format!("argument can't be converted to values"))?;
-            Ok(Arc::new(SeqUpProcess(msgs)))
-        })
-    });
+#[derive(Debug)]
+pub(crate) struct SeqUpProcess(Vec<ChannelMessage>);
 
-    index.define_primitive("with Base() def seq(const ty, const #dn, const seq): Seq(ty, #dn)", PrimitiveDef {
-        id: "const_seq_down",
-        instantiate: primitive_args!(|ty: &Item, seq: &Item| {
-            let msgs = item_to_msgs(ty, seq)
+impl SeqUpProcess {
+    pub fn instantiate(args: Item, _shape_dn: &Shape, _shape_up: Option<&Shape>) -> Result<Arc<dyn PrimitiveProcess>, String> {
+        let (ty, seq) = args.try_into()?;
+        let msgs = item_to_msgs(&ty, &seq)
                 .map_err(|()| format!("argument can't be converted to values"))?;
-            Ok(Arc::new(SeqDownProcess(msgs)))
-        })
-    });
+        Ok(Arc::new(SeqUpProcess(msgs)))
+    }
 }
 
-#[derive(Debug)]
-struct SeqUpProcess(Vec<ChannelMessage>);
 impl PrimitiveProcess for SeqUpProcess {
     fn run(&self, chan: Vec<Channel>) -> std::pin::Pin<Box<dyn Future<Output = Result<(), ()>>>> {
         assert_eq!(chan.len(), 1);
@@ -46,7 +34,17 @@ impl PrimitiveProcess for SeqUpProcess {
 }
 
 #[derive(Debug)]
-struct SeqDownProcess(Vec<ChannelMessage>);
+pub(crate) struct SeqDownProcess(Vec<ChannelMessage>);
+
+impl SeqDownProcess {
+    pub fn instantiate(args: Item, _shape_dn: &Shape, _shape_up: Option<&Shape>) -> Result<Arc<dyn PrimitiveProcess>, String> {
+        let (ty, seq) = args.try_into()?;
+        let msgs = item_to_msgs(&ty, &seq)
+                .map_err(|()| format!("argument can't be converted to values"))?;
+        Ok(Arc::new(SeqDownProcess(msgs)))
+    }
+}
+
 impl PrimitiveProcess for SeqDownProcess {
     fn run(&self, chan: Vec<Channel>) -> std::pin::Pin<Box<dyn Future<Output = Result<(), ()>>>> {
         assert_eq!(chan.len(), 1);

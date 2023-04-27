@@ -1,0 +1,7 @@
+with Base() def file(const #r, const name) = ^Bytes(#up) {
+    primitive file_read(name)
+}
+
+with Base() def file(const #w, const name) = ^Bytes(#dn) {
+    primitive file_write(name)
+}

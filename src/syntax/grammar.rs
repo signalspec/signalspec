@@ -79,10 +79,6 @@ peg::parser!(pub grammar signalspec() for str {
         = start:pos() name:IDENTIFIER() _ params:def_params() end:pos() 
         { ast::ProtocolEntry::Message( ast::ProtocolMessageDef { span: FileSpan{start, end}, name, params }) }
 
-  pub rule primitive_header() -> ast::PrimitiveHeader
-    = start:pos() KW("with") _ bottom:protocol_ref() _ KW("def") _ name:IDENTIFIER() _ params:def_params() _ top:(":" _ p:protocol_ref() {p})? end:pos()
-      { ast::PrimitiveHeader { span: FileSpan{start, end}, bottom, name, params, top } }
-
   rule protocol_ref() -> ast::ProtocolRef
     = start:pos() name:IDENTIFIER() _ param:expr_tup() end:pos() { ast::ProtocolRef { span: FileSpan{ start, end }, name, param: param.into() } }
     
@@ -189,6 +185,9 @@ peg::parser!(pub grammar signalspec() for str {
       }
       / start:pos() "^" _ top:protocol_ref() _ block:block() end:pos() {
           ast::Process::Seq(ast::ProcessSeq { span: FileSpan { start, end }, top, block })
+      }
+      / start:pos() "primitive" _ name:IDENTIFIER() _ args:expr_tup() end:pos() {
+          ast::Process::Primitive(ast::ProcessPrimitive { span: FileSpan { start, end }, name, args })
       }
       / start:pos() name:IDENTIFIER() _ args:expr_tup() end:pos() {
           ast::Process::Call(ast::ProcessCall { span: FileSpan { start, end }, name, args })

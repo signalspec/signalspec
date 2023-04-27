@@ -1,19 +1,21 @@
 use std::{sync::Arc, path::PathBuf, future::Future};
 
-use crate::{Index, PrimitiveDef, PrimitiveProcess, Channel, ChannelMessage};
+use crate::{Channel, ChannelMessage, Item, Shape};
+use crate::runtime::PrimitiveProcess;
 
 use spidev::{Spidev, SpidevOptions, SpiModeFlags, SpidevTransfer};
 
-pub fn add_primitives(index: &mut Index) {
-    index.define_primitive("with Base() def spidev(const devname): Spi(#async_controller)", PrimitiveDef {
-        id: "spidev",
-        instantiate: primitive_args!(|devname: &str| {
-            Ok(Arc::new(SpiProcess{ devname: PathBuf::from(devname) }))
-        })
-    });
+pub(crate) struct SpiProcess{
+    devname: PathBuf
 }
 
-struct SpiProcess{ devname: PathBuf }
+impl SpiProcess {
+    pub fn instantiate(args: Item, _shape_dn: &Shape, _shape_up: Option<&Shape>) -> Result<Arc<dyn PrimitiveProcess>, String> {
+        let devname: String = args.try_into()?;
+        Ok(Arc::new(SpiProcess{ devname: PathBuf::from(devname) }))
+    }
+}
+
 impl PrimitiveProcess for SpiProcess {
     fn run(&self, chan: Vec<Channel>) -> std::pin::Pin<Box<dyn Future<Output = Result<(), ()>>>> {
         let [chan_up, chan_dn] = <[_; 2]>::try_from(chan).map_err(|_| "wrong channels").unwrap();

@@ -47,9 +47,6 @@ fn main() {
         let success = signalspec::runtime::run_tests(ui, &index, &Path::new(&path));
         process::exit( if success { 0 } else { 1 } );
     } else {
-
-        signalspec::add_primitives(&mut index);
-
         let mut handle = signalspec::Handle::base(&index);
         let Ok(inner_handle) = handle.parse_compile_run(ui, &index, &cmd) else {
             eprintln!("Exiting due to previous errors");

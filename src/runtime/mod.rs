@@ -10,7 +10,7 @@ use std::future::poll_fn;
 use self::channel::SeqChannels;
 pub use self::test_runner::run as run_tests;
 pub use self::test_runner::run_file as run_tests_in_file;
-pub use self::primitives::{ PrimitiveProcess, add_primitives };
+pub(crate) use self::primitives::{ PrimitiveProcess, instantiate_primitive };
 use crate::diagnostic::{DiagnosticHandler, Collector};
 use crate::{ Scope, ShapeMsg };
 use crate::syntax::{ SourceFile, parse_process, ast };

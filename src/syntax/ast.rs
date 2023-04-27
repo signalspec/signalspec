@@ -315,6 +315,7 @@ ast_node!{
         Seq(ProcessSeq),
         InferSeq(Block),
         Stack(ProcessStack),
+        Primitive(ProcessPrimitive),
     }
 }
 
@@ -339,6 +340,14 @@ ast_node!{
         pub span: FileSpan,
         pub lower: Box<Process>,
         pub upper: Box<Process>,
+    }
+}
+
+ast_node!{
+    pub struct ProcessPrimitive {
+        pub span: FileSpan,
+        pub name: Identifier,
+        pub args: ExprTup,
     }
 }
 

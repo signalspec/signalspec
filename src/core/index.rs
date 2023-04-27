@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use crate::DiagnosticHandler;
 use crate::syntax::{ ast, SourceFile };
-use super::{ ProtocolRef, Item, PrimitiveDef, Scope, FunctionDef, PrimitiveFn, FileScope, Shape, scope::LeafItem };
+use super::{ ProtocolRef, Item, Scope, FileScope, Shape };
 
 fn default_library_dir() -> Option<PathBuf> {
     Some(std::env::current_exe().ok()?.parent()?.parent()?.join("lib/signalspec"))
@@ -22,21 +22,7 @@ struct Def {
     name: ast::Identifier,
     params: Vec<ast::DefParam>,
     scope: Scope,
-    implementation: DefImpl
-}
-
-pub (crate) enum DefImpl {
-    Code(ast::Process),
-    Primitive(PrimitiveDef, Option<ast::ProtocolRef>)
- }
-
- impl Clone for DefImpl {
-    fn clone(&self) -> Self {
-        match self {
-            Self::Code(arg0) => Self::Code(arg0.clone()),
-            Self::Primitive(..) => unreachable!(),
-        }
-    }
+    implementation: ast::Process,
 }
 
 impl Index {
@@ -46,10 +32,6 @@ impl Index {
             protocols_by_name: BTreeMap::new(),
             defs: Vec::new(),
         }
-    }
-
-    pub fn add_primitive_fn(&mut self, name: &str, prim: PrimitiveFn) {
-        self.prelude.insert(name.to_owned(), Item::Leaf(LeafItem::Func(Arc::new(FunctionDef::Primitive(prim)))));
     }
 
     /// Create an index and populate it with the libraries from the colon-separated
@@ -67,18 +49,6 @@ impl Index {
             }
         }
         Ok(index)
-    }
-
-    pub fn define_primitive(&mut self, header_src: &str, implementation: PrimitiveDef) {
-        let file = Arc::new(SourceFile::new("<primitive>".into(), header_src.into()));
-        let header = crate::syntax::parse_primitive_header(file.source()).expect("failed to parse primitive header");
-        self.defs.push(Def {
-            protocol: header.bottom,
-            name: header.name.clone(),
-            scope: Scope { file, names: self.prelude.clone() },
-            params: header.params.iter().map(|x| x.clone()).collect(),
-            implementation: DefImpl::Primitive(implementation, header.top),
-        });
     }
 
     pub fn load(&mut self, ui: &dyn DiagnosticHandler, p: &Path) -> Result<(), std::io::Error> {
@@ -108,7 +78,7 @@ impl Index {
         self.protocols_by_name.get(name)
     }
 
-    pub(crate) fn find_def(&self, shape: &Shape, name: &str, args: Vec<Item>) -> Result<(Scope, &DefImpl), FindDefError> {
+    pub(crate) fn find_def(&self, shape: &Shape, name: &str, args: Vec<Item>) -> Result<(Scope, &ast::Process), FindDefError> {
         let mut found = None;
         for entry in &self.defs {
             if let Some(scope) = match_def(entry, shape, name, &args) {
@@ -133,7 +103,7 @@ impl Index {
                 name: def.name.clone(),
                 scope: file.scope.clone(),
                 params: def.params.iter().map(|x| x.clone()).collect(),
-                implementation: DefImpl::Code(def.process.clone())
+                implementation: def.process.clone()
             });
         }
     }

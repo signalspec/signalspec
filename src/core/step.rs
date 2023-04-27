@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use crate::diagnostic::ErrorReported;
 use crate::entitymap::{entity_key, EntityMap};
-use crate::{PrimitiveProcess};
+use crate::runtime::PrimitiveProcess;
 use super::{ExprDn, MatchSet, Shape, Dir, Predicate, ValueSrcId};
 
 entity_key!(pub StepId);

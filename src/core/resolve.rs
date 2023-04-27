@@ -5,13 +5,14 @@ use num_traits::Signed;
 use crate::core::expr_resolve::bind_tree_fields;
 use crate::diagnostic::{Span, ErrorReported};
 use crate::entitymap::{ EntityMap, entity_key };
+use crate::runtime::instantiate_primitive;
 use crate::tree::Tree;
 use crate::{Value, Index, DiagnosticHandler, Diagnostic, SourceFile, FileSpan};
 use crate::syntax::ast::{self, AstNode};
 use super::index::FindDefError;
 use super::step::{Step, StepInfo, analyze_unambiguous, AltUpArm, AltDnArm};
-use super::{Expr, ExprDn, Item, Scope, Shape, Type, index::DefImpl, ShapeMsg, protocol};
-use super::{Dir, rexpr, value, StepId, LeafItem, Predicate, ValueSrcId};
+use super::{Expr, ExprDn, Item, Scope, Shape, Type, ShapeMsg, protocol};
+use super::{Dir, rexpr, value, StepId, LeafItem, Predicate, ValueSrcId, rexpr_tup};
 
 #[derive(Clone, Copy)]
 struct ResolveCx<'a> {
@@ -413,32 +414,25 @@ impl<'a> Builder<'a> {
                             return (self.add_step(Step::Invalid(r)), None)
                         }
                     };
-                    match *imp {
-                        DefImpl::Code(ref callee_ast) => {
-                            self.resolve_process(sb.with_scope(&scope), callee_ast)
-                        }
-                        DefImpl::Primitive(ref primitive, ref shape_up_ast) => {
-                            let shape_up = if let Some(shape_up_ast) = shape_up_ast.as_ref() {
-                                match protocol::resolve(self.ui, self.index, &scope, shape_up_ast) {
-                                    Ok(shape) => Some(shape),
-                                    Err(r) => return (self.add_step(Step::Invalid(r)), None),
-                                }
-                            } else { None };
-                            let prim = match primitive.instantiate(&scope) {
-                                Ok(p) => p,
-                                Err(msg) => {
-                                    let r = self.ui.report(Diagnostic::ErrorInPrimitiveProcess {
-                                        span: Span::new(&sb.scope.file, node.span),
-                                        msg
-                                    });
-                                    return (self.add_step(Step::Invalid(r)), None);
-
-                                }
-                            };
-                            (self.add_step(Step::Primitive(prim)), shape_up)
-                        }
-                    }
+                    self.resolve_process(sb.with_scope(&scope), imp)
                 }
+            }
+
+            ast::Process::Primitive(node) => {
+                let arg = rexpr_tup(self.ui, sb.scope, &node.args);
+                debug!("instantiating primitive {} with {}", node.name.name, arg);
+                let prim = match instantiate_primitive(&node.name, arg, sb.shape_down, sb.shape_up) {
+                    Ok(p) => p,
+                    Err(msg) => {
+                        let r = self.ui.report(Diagnostic::ErrorInPrimitiveProcess {
+                            span: Span::new(&sb.scope.file, node.span),
+                            msg
+                        });
+                        return (self.add_step(Step::Invalid(r)), None);
+
+                    }
+                };
+                (self.add_step(Step::Primitive(prim)), None)
             }
 
             ast::Process::Seq(node) => {

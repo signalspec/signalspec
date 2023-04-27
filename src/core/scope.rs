@@ -35,13 +35,6 @@ impl Scope {
         self.names.get(name).cloned()
     }
 
-    pub fn get_as<'a, T: FromItem<'a>>(&'a self, name: &str) -> Result<T, ()> {
-        match self.names.get(name) {
-            Some(i) => T::try_from_item(i).ok_or(()),
-            None => Err(())
-        }
-    }
-
     /// Create a child scope for a lexically nested block
     pub fn child(&self) -> Scope {
         Scope {
@@ -68,20 +61,6 @@ pub enum LeafItem {
 }
 
 pub type Item = Tree<LeafItem>;
-
-pub trait FromItem<'a>: Sized { // TODO: use TryFrom once stable
-    fn try_from_item(_: &'a Item) -> Option<Self>;
-}
-
-impl<'a> FromItem<'a> for &'a str {
-    fn try_from_item(i: &'a Item) -> Option<Self> {
-        if let &Item::Leaf(LeafItem::String(ref s)) = i { Some(s) } else { None }
-    }
-}
-
-impl<'a> FromItem<'a> for &'a Item {
-    fn try_from_item(i: &'a Item) -> Option<Self> { Some(i) }
-}
 
 impl Item {
     pub fn value(v: Value) -> Item {
@@ -138,7 +117,6 @@ impl fmt::Display for LeafItem {
     }
 }
 
-
 impl fmt::Debug for LeafItem {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self)
@@ -168,6 +146,27 @@ impl<T: Into<Item>> From<Result<T, ErrorReported>> for Item {
         match value {
             Ok(v) => v.into(),
             Err(r) => r.into(),
+        }
+    }
+}
+
+impl<'a> TryFrom<Item> for String {
+    type Error = &'static str;
+    
+    fn try_from(i: Item) -> Result<Self, Self::Error> {
+        if let Item::Leaf(LeafItem::String(s)) = i { Ok(s) } else { Err("expected string") }
+    }
+}
+
+impl<'a> TryFrom<Item> for (Item, Item) {
+    type Error = &'static str;
+    
+    fn try_from(i: Item) -> Result<Self, Self::Error> {
+        if let Item::Tuple(t) = i {
+            let [i1, i2] = <[Item; 2]>::try_from(t).map_err(|_| "expected 2-tuple")?;
+            Ok((i1, i2))
+        } else {
+            Err("expected 2-tuple")
         }
     }
 }

@@ -1,6 +1,6 @@
-use crate::{Shape, PrimitiveProcess};
 use crate::entitymap::{EntityMap, entity_key};
-use crate::core::{ExprDn, ProcessChain, MatchSet, MessagePatternSet, StepId, Step, AltUpArm, AltDnArm, Dir, Predicate, ValueSrcId};
+use crate::core::{Shape, ExprDn, ProcessChain, MatchSet, MessagePatternSet, StepId, Step, AltUpArm, AltDnArm, Dir, Predicate, ValueSrcId};
+use super::PrimitiveProcess;
 
 type VariantId = usize;
 entity_key!(pub TaskId);
