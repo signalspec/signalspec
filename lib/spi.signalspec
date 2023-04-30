@@ -1,31 +1,35 @@
-protocol SPI(dir) dir {
-  data(var(dir) byte),
+protocol SPI(mode: #controller | #async_controller | #monitor | #generate) mode[#controller = #dn, #async_controller = #dn, #monitor = #up, #generate=#dn] {
+  data(
+    var(mode[#controller = #dn, #async_controller = #dn, #monitor = #up, #generate = #dn]) byte,
+    var(mode[#controller = #up, #async_controller = #up, #monitor = #up, #generate = #dn]) byte,
+  ),
   end(),
 }
 
-with Seq((_:#l|#h, _:#l|#h, _:#l|#h), dir)
-def spi() = ^SPI(dir) {
-  repeat dir <: 10 { val((#h, <: #l, <: #l)) }
+with Seq((_:#l|#h, _:#l|#h, _:#l|#h, _:#l|#h), dir)
+def spi() = ^SPI(dir[#up = #monitor, #dn = #generate]) {
+  repeat dir <: 10 { val((#h, <: #l, <: #l, <: #l)) }
   repeat {
     repeat #up 1..1000 {
-      on data(byte) {
-        for bit=byte {
-          let b = bit[0=#l, 1=#h]
-          val((#l, #l, <: b))
-          repeat dir <: 4 { val((#l, #l, <: b)) }
-          val((#l, #h, b))
-          repeat dir <: 4 { val((#l, #h, <: b)) }
+      on data(pico_byte, poci_byte) {
+        for pico_bit=pico_byte, poci_bit=poci_byte {
+          let pico_level = pico_bit[0=#l, 1=#h]
+          let poci_level = poci_bit[0=#l, 1=#h]
+          val((#l, #l, <: pico_level, <: poci_level))
+          repeat dir <: 4 { val((#l, #l, <: pico_level, <: poci_level)) }
+          val((#l, #h, pico_level, poci_level))
+          repeat dir <: 4 { val((#l, #h, <: pico_level, <: poci_level)) }
         }
       }
     }
     on end() {
-      val((#h, <: #l, <: #l))
+      val((#h, <: #l, <: #l, <: #l))
     }
-    repeat dir <: 9 { val((#h, <: #l, <: #l)) }
+    repeat dir <: 9 { val((#h, <: #l, <: #l, <: #l)) }
   }
 }
 
 @test(#roundtrip)
-with Seq((_:#l|#h, _:#l|#h, _:#l|#h), _) def test1() = {
-  spi() | { data('01011101); data('11110000); end(); data('00001000); end() }
+with Seq((_:#l|#h, _:#l|#h, _:#l|#h, _:#l|#h), _) def test1() = {
+  spi() | { data('01011101, '00000000); data('11110000, '11111111); end(); data('00001000, '10101010); end() }
 }
