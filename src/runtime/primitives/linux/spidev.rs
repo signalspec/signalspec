@@ -1,6 +1,6 @@
 use std::{sync::Arc, path::PathBuf, future::Future};
 
-use crate::{Channel, ChannelMessage, Item, Shape};
+use crate::{Channel, ChannelMessage, Item, Shape, Value};
 use crate::runtime::PrimitiveProcess;
 
 use spidev::{Spidev, SpidevOptions, SpiModeFlags, SpidevTransfer};
@@ -46,7 +46,7 @@ impl PrimitiveProcess for SpiProcess {
                         }
                         Some(ChannelMessage { variant: 0, values }) => { // data
                             debug!("data byte");
-                            tx_buf.push((&values[0]).try_into().expect("invalid value on spidev receive channel"));
+                            tx_buf.push(values[0].as_byte().expect("invalid value on spidev receive channel"));
                             rx_buf.push(0u8);
                         }
                         Some(ChannelMessage { variant: 1, .. }) => { // end
@@ -62,7 +62,7 @@ impl PrimitiveProcess for SpiProcess {
 
 
                 for &b in &rx_buf {
-                    chan_up.send(ChannelMessage { variant: 0, values: vec![b.into()] });
+                    chan_up.send(ChannelMessage { variant: 0, values: vec![Value::from_byte(b)] });
                 }
                 chan_up.send(ChannelMessage { variant: 1, values: vec![] });
 

@@ -161,11 +161,11 @@ peg::parser!(pub grammar signalspec() for str {
     rule bitsliteral() -> ast::Value
         = "'h" v:(hexchar()+) {
             ast::Value::Vector(v.iter().flat_map(|&i| {
-              (0..4).map(move |b| (((i & 1<<(3-b)) != 0) as u8).into())
+              (0..4).rev().map(move |b| ast::Value::from_bit((i & 1<<b) != 0))
             }).collect())
         }
         / "'" "b"? v:(binbit()+)
-            { ast::Value::Vector(v.iter().map(|&b| (b as u8).into()).collect()) }
+            { ast::Value::Vector(v.iter().map(|&b| ast::Value::from_bit(b)).collect()) }
 
         rule hexchar() -> u8
             = c:$(['0'..='9' | 'a'..='f' | 'A'..='F'])

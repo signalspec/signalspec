@@ -503,6 +503,13 @@ pub fn expr_prelude() -> HashMap<String, Item> {
         prelude.insert(name.to_owned(), Item::Leaf(LeafItem::Func(Arc::new(FunctionDef::Primitive(prim)))));
     }
 
+    pub fn add_type(prelude: &mut HashMap<String, Item>, name: &str, ty: Type) {
+        prelude.insert(name.to_owned(), Expr::Expr(ty, ExprKind::Ignored).into());
+    }
+
+    add_type(&mut prelude, "bit", Type::Number(0.into(), 1.into()));
+    add_type(&mut prelude, "byte", Type::Vector(8, Box::new(Type::Number(0.into(), 1.into()))));
+
     add_primitive_fn(&mut prelude, "signed", fn_signed);
     add_primitive_fn(&mut prelude, "unsigned", fn_unsigned);
     add_primitive_fn(&mut prelude, "chunks", fn_chunks);
