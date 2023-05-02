@@ -1,5 +1,5 @@
 @test(#up, (9))
-with Seq(1..10, _) def main() = {
+with Seq(0..10, _) def main() = {
 //# wrong number of arguments to `val`
     val(0, 0)
 //     ^^^^^^ expected 1 arguments, but found 2

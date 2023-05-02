@@ -7,3 +7,11 @@ def main() = {
     val(#b)
     val(#c)
 }
+
+@test(#up, (#a, #b, #c))
+with Seq(_:#a|#b|#c, _)
+def t2() = {
+    val(_)
+    val(#a | #b)
+    val(#c)
+}

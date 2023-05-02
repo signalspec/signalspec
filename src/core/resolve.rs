@@ -493,7 +493,10 @@ impl<'a> Builder<'a> {
             use crate::tree::Zip::*;
             let mut valid = true;
             param.ty.zip(&arg, &mut |m| { match m {
-                Both(&Tree::Leaf(_), &Item::Leaf(LeafItem::Value(ref v))) => {
+                Both(
+                    &Tree::Leaf(ref ty),
+                    &Item::Leaf(LeafItem::Value(ref v))
+                ) if v.get_type().is_subtype(ty) => {
                     out.push(v.clone());
                 },
                 _ => {

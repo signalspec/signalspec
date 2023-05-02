@@ -79,6 +79,7 @@ impl Type {
     pub fn is_subtype(&self, other: &Type) -> bool {
         match (self, other) {
             (_, Type::Ignored) => true,
+            (Type::Ignored, _) => true,
             (Type::Symbol(s1), Type::Symbol(s2)) => s1.is_subset(s2),
             (Type::Number(lo1, hi1), Type::Number(lo2, hi2)) =>
                 lo2 <= lo1 && hi1 <= hi2,
