@@ -111,7 +111,7 @@ impl fmt::Display for LeafItem {
         match *self {
             LeafItem::Value(ref v) => write!(f, "{}", v),
             LeafItem::Func(..) => write!(f, "<function>"),
-            LeafItem::String(ref s) => write!(f, "{}", s),
+            LeafItem::String(ref s) => write!(f, "\"{}\"", s),
             LeafItem::Invalid(_) => write!(f, "<error>"),
         }
     }

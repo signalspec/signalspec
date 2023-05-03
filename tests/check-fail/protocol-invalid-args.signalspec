@@ -3,3 +3,14 @@
 with Seq(_, _) def main() = ^Seq(9, 9, 9) {}
 //                              ^^^^^^^^^ found `(9, 9, 9)`
 // ^* definition site
+
+//# undefined variable `undefinedvar`
+@test(#up, ())
+with Seq(_, _) def main() = ^Seq(undefinedvar, #up) {}
+//                               ^^^^^^^^^^^^ not found
+
+//# expected a value that can be resolved as a type
+//^* expected a single value, found `"not a type"`
+@test(#up, ())
+with Seq(_, _) def main() = ^Seq("not a type", #up) {}
+

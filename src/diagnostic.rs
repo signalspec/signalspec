@@ -235,6 +235,13 @@ diagnostic_kinds!{
         error "expected a single value, found `{found}`" at span
     }
 
+    ExpectedType {
+        span: Span,
+        found: String
+    } => "expected a value that can be resolved as a type" {
+        error "expected a single value, found `{found}`" at span
+    }
+
     ExpectedConst {
         span: Span,
         found: String

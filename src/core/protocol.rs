@@ -2,7 +2,7 @@ use crate::diagnostic::{Collector, ErrorReported, Span};
 use crate::syntax::ast::{self, AstNode};
 use crate::{Index, Dir, DiagnosticHandler, Diagnostic};
 use super::resolve::resolve_dir;
-use super::{ Scope, Shape, ShapeMsg, ShapeMsgParam };
+use super::{ Scope, Shape, ShapeMsg, ShapeMsgParam, expr_resolve };
 use super::{ lexpr, rexpr, Item };
 
 pub fn resolve(ctx: &dyn DiagnosticHandler, index: &Index, scope: &Scope, ast: &ast::ProtocolRef) -> Result<Shape, ErrorReported> {
@@ -24,6 +24,7 @@ pub fn resolve(ctx: &dyn DiagnosticHandler, index: &Index, scope: &Scope, ast: &
                 def: protocol_def_span,
             }))
         }
+        Err(InstantiateProtocolError::ErrorInProtocolBody(e)) => Err(e),
     }
 }
 
@@ -35,6 +36,13 @@ pub enum InstantiateProtocolError {
         found: Item,
         protocol_def_span: Span,
     },
+    ErrorInProtocolBody(ErrorReported),
+}
+
+impl From<ErrorReported> for InstantiateProtocolError {
+    fn from(e: ErrorReported) -> Self {
+        InstantiateProtocolError::ErrorInProtocolBody(e)
+    }
 }
 
 /// Instantiates a protocol with passed arguments, creating a Shape.
@@ -50,7 +58,7 @@ pub fn instantiate(ctx: &dyn DiagnosticHandler, index: &Index, protocol_name: &s
         });
     }
 
-    let dir = super::resolve::resolve_dir(ctx, &protocol_def_scope, &protocol_ast.dir).unwrap();
+    let dir = super::resolve::resolve_dir(ctx, &protocol_def_scope, &protocol_ast.dir)?;
 
     let mut messages = vec![];
 
@@ -58,18 +66,19 @@ pub fn instantiate(ctx: &dyn DiagnosticHandler, index: &Index, protocol_name: &s
         match *entry {
             ast::ProtocolEntry::Message(ast::ProtocolMessageDef { ref name, ref params, .. }) => {
                 let params = params.iter().map(|p| {
-                    match &p {
+                    let (ty_expr, direction) = match &p {
                         ast::DefParam::Const(node) => {
-                            let ty = rexpr(ctx, &protocol_def_scope, &node.expr).as_type_tree().expect("todo: not a type");
-                            ShapeMsgParam { ty, direction: Dir::Dn } // TODO: allow const here at all?
+                            // TODO: should const even be allowed here, or create separate tags?
+                            (&node.expr, Dir::Dn)
                         }
                         ast::DefParam::Var(node) => {
-                            let ty = rexpr(ctx, &protocol_def_scope, &node.expr).as_type_tree().expect("todo: not a type");
-                            let direction = resolve_dir(ctx, &protocol_def_scope, &node.direction).unwrap();
-                            ShapeMsgParam { ty, direction }
+                            let direction = resolve_dir(ctx, &protocol_def_scope, &node.direction)?;
+                            (&node.expr, direction)
                         }
-                    }
-                }).collect();
+                    };
+                    let ty = expr_resolve::type_tree(ctx, &protocol_def_scope, ty_expr)?;
+                    Ok(ShapeMsgParam { ty, direction })
+                }).collect::<Result<_, InstantiateProtocolError>>()?;
                 messages.push(ShapeMsg::new(name.name.clone(), params));
             }
         }

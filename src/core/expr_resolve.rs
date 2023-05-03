@@ -42,6 +42,18 @@ pub fn constant_number(ctx: &dyn DiagnosticHandler, scope: &Scope, e: &ast::Expr
     }
 }
 
+pub fn type_tree(ctx: &dyn DiagnosticHandler, scope: &Scope, e: &ast::Expr) -> Result<Tree<Type>, ErrorReported> {
+    match rexpr(ctx, scope, e) {
+        Item::Leaf(LeafItem::Invalid(r)) => Err(r),
+        i => i.as_type_tree().ok_or_else(|| {
+            ctx.report(Diagnostic::ExpectedType {
+                span: Span::new(&scope.file, e.span()),
+                found: i.to_string()
+            })
+        })
+    }
+}
+
 /// Like iter.collect::<Result<..>>() but doesn't short-circuit so errors from
 /// all subtrees are reported
 pub fn collect_or_err<T, C: FromIterator<T>>(iter: impl Iterator<Item=Result<T, ErrorReported>>) -> Result<C, ErrorReported> {
