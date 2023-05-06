@@ -1,0 +1,11 @@
+@test(#up, ())
+with Seq(_, _) def main() = ^Seq(#x, #up) {
+//# no variant `foo` exists on protocol `Seq`
+    on foo() {}
+//     ^^^ not found
+
+//# no child signal `bar` exists on protocol `Seq`
+    on bar {}
+//     ^^^ not found
+}
+

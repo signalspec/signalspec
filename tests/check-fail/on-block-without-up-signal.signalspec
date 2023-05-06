@@ -1,0 +1,14 @@
+@test(#up, ())
+with Seq(_, _) def main() = {
+//# `on` block used in a context without an upwards signal
+    on foo() {}
+//  ^^^^^^^^^^^ requires a signal to act on
+}
+
+@test(#up, ())
+with Seq(_, _) def main() = {
+//# `on` block used in a context without an upwards signal
+    on foo {}
+//  ^^^^^^^^^ requires a signal to act on
+}
+

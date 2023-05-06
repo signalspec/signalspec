@@ -118,17 +118,32 @@ impl<'a> Builder<'a> {
             }
 
             ast::Action::On(ref node @ ast::ActionOn { args: Some(args), ..}) => {
-                let mut body_scope = sb.scope.child();
-
-                debug!("Upper message, shape: {:?}", sb.shape_up);
-
-                let shape_up = sb.shape_up.expect("`on` block with no upper shape");
-
-                let msg_def = if let Some(t) = shape_up.variant_named(&node.name.name) { t } else {
-                    panic!("Variant {:?} not found on shape {:?}", node.name.name, shape_up)
+                let Some(shape_up) = sb.shape_up else {
+                    let r = self.ui.report(Diagnostic::OnBlockWithoutUpSignal{
+                        span: Span::new(&sb.scope.file, node.span)
+                    });
+                    return self.add_step(Step::Invalid(r));
                 };
 
-                assert_eq!(msg_def.params.len(), args.items.len());
+                let Some(msg_def) = shape_up.variant_named(&node.name.name) else {
+                    let r = self.ui.report(Diagnostic::NoVariantNamed {
+                        span: Span::new(&sb.scope.file, node.name.span),
+                        protocol_name: shape_up.def.ast().name.name.to_owned(),
+                        name: node.name.name.to_owned(),
+                    });
+                    return self.add_step(Step::Invalid(r));
+                };
+
+                if args.items.len() != msg_def.params.len() {
+                    self.ui.report(Diagnostic::ArgsMismatchCount {
+                        span: Span::new(&sb.scope.file, args.span),
+                        def_name: node.name.name.clone(),
+                        expected: msg_def.params.len(),
+                        found: args.items.len(),
+                    });
+                }
+
+                let mut body_scope = sb.scope.child();
 
                 enum UpInner {
                     Val(ExprDn),
@@ -184,16 +199,24 @@ impl<'a> Builder<'a> {
             }
 
             ast::Action::On(ref node @ ast::ActionOn { args: None, ..}) => {
-                let shape_up = sb.shape_up.expect("`on` block with no upper shape");
-
-                let inner_shape_up = if let Some(t) = shape_up.child_named(&node.name.name) { t } else {
-                    panic!("Child {:?} not found on shape {:?}", node.name.name, shape_up)
+                let Some(shape_up) = sb.shape_up else {
+                    let r = self.ui.report(Diagnostic::OnBlockWithoutUpSignal{
+                        span: Span::new(&sb.scope.file, node.span)
+                    });
+                    return self.add_step(Step::Invalid(r));
                 };
 
-                let body_scope = sb.scope.child();
+                let Some(inner_shape_up) = shape_up.child_named(&node.name.name) else {
+                    let r = self.ui.report(Diagnostic::NoChildNamed {
+                        span: Span::new(&sb.scope.file, node.name.span),
+                        protocol_name: shape_up.def.ast().name.name.to_owned(),
+                        name: node.name.name.to_owned(),
+                    });
+                    return self.add_step(Step::Invalid(r));
+                };
 
                 if let &Some(ref body) = &node.block {
-                    self.resolve_seq(sb.with_upper(&body_scope, Some(inner_shape_up)), body)
+                    self.resolve_seq(sb.with_upper(&sb.scope, Some(inner_shape_up)), body)
                 } else {
                     self.add_step(Step::Seq(vec![]))
                 }

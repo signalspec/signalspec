@@ -129,6 +129,22 @@ diagnostic_kinds!{
         error "not found" at span
     }
 
+    NoVariantNamed {
+        span: Span,
+        protocol_name: String,
+        name: String
+    } => "no variant `{name}` exists on protocol `{protocol_name}`" {
+        error "not found" at span
+    }
+
+    NoChildNamed {
+        span: Span,
+        protocol_name: String,
+        name: String
+    } => "no child signal `{name}` exists on protocol `{protocol_name}`" {
+        error "not found" at span
+    }
+
     NoProtocolNamed {
         span: Span,
         protocol_name: String
@@ -154,6 +170,12 @@ diagnostic_kinds!{
         child_mode: crate::Dir
     } => "mode mismatch on child protocol `{child_name}`" {
         error "mode of this protocol is `{child_mode}` but the parent has `{mode}`" at span
+    }
+
+    OnBlockWithoutUpSignal {
+        span: Span
+    } => "`on` block used in a context without an upwards signal" {
+        error "requires a signal to act on" at span
     }
 
     StackWithoutBaseSignal {
