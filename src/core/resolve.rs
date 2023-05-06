@@ -117,18 +117,18 @@ impl<'a> Builder<'a> {
                 step
             }
 
-            ast::Action::On(ref node) => {
+            ast::Action::On(ref node @ ast::ActionOn { args: Some(args), ..}) => {
                 let mut body_scope = sb.scope.child();
 
                 debug!("Upper message, shape: {:?}", sb.shape_up);
 
                 let shape_up = sb.shape_up.expect("`on` block with no upper shape");
 
-                let (variant, msg_def) = if let Some(t) = shape_up.variant_named(&node.name.name) { t } else {
+                let msg_def = if let Some(t) = shape_up.variant_named(&node.name.name) { t } else {
                     panic!("Variant {:?} not found on shape {:?}", node.name.name, shape_up)
                 };
 
-                assert_eq!(msg_def.params.len(), node.args.items.len());
+                assert_eq!(msg_def.params.len(), args.items.len());
 
                 enum UpInner {
                     Val(ExprDn),
@@ -138,7 +138,7 @@ impl<'a> Builder<'a> {
                 let mut dn = Vec::new();
                 let mut up_inner = Vec::new();
 
-                for (param, expr) in msg_def.params.iter().zip(&node.args.items) {
+                for (param, expr) in msg_def.params.iter().zip(&args.items) {
                     match param.direction {
                         Dir::Dn => {
                             bind_tree_fields(self.ui, expr, &param.ty, &mut body_scope, (&mut *self, &mut dn),
@@ -180,7 +180,23 @@ impl<'a> Builder<'a> {
                     }
                 }).collect();
 
-                self.add_step(Step::TokenTop { top_dir: shape_up.dir, variant, dn, up, inner })
+                self.add_step(Step::TokenTop { top_dir: shape_up.dir, variant: msg_def.tag, dn, up, inner })
+            }
+
+            ast::Action::On(ref node @ ast::ActionOn { args: None, ..}) => {
+                let shape_up = sb.shape_up.expect("`on` block with no upper shape");
+
+                let inner_shape_up = if let Some(t) = shape_up.child_named(&node.name.name) { t } else {
+                    panic!("Child {:?} not found on shape {:?}", node.name.name, shape_up)
+                };
+
+                let body_scope = sb.scope.child();
+
+                if let &Some(ref body) = &node.block {
+                    self.resolve_seq(sb.with_upper(&body_scope, Some(inner_shape_up)), body)
+                } else {
+                    self.add_step(Step::Seq(vec![]))
+                }
             }
 
             ast::Action::Repeat(ref node) => {
@@ -382,9 +398,9 @@ impl<'a> Builder<'a> {
     fn resolve_process(&mut self, sb: ResolveCx<'_>, process_ast: &ast::Process) -> (StepId, Option<Shape>) {
         match process_ast {
             ast::Process::Call(node) => {
-                if let Some((variant, msg_def)) = sb.shape_down.variant_named(&node.name.name) {
+                if let Some(msg_def) = sb.shape_down.variant_named(&node.name.name) {
                     let (dn, up) = self.resolve_token(msg_def, sb.scope, &node);
-                    (self.add_step(Step::Token { variant, dn, up }), None)
+                    (self.add_step(Step::Token { variant: msg_def.tag, dn, up }), None)
                 } else {
                     let args: Vec<Item> = node.args.items.iter().map(|a| rexpr(self.ui, sb.scope, a)).collect();
                     let (scope, imp) = match self.index.find_def(sb.shape_down, &node.name.name, args) {
@@ -400,6 +416,19 @@ impl<'a> Builder<'a> {
                     };
                     self.resolve_process(sb.with_scope(&scope), imp)
                 }
+            }
+
+            ast::Process::Child(node) => {
+                let Some(child_shape) = sb.shape_down.child_named(&node.name.name) else {
+                    let r = self.ui.report(Diagnostic::NoDefNamed {
+                        span: Span::new(&sb.scope.file, node.name.span),
+                        protocol_name: sb.shape_down.def.ast().name.name.to_owned(),
+                        def_name: node.name.name.to_owned(),
+                    });
+                    return (self.add_step(Step::Invalid(r)), None)
+                };
+
+                (self.add_step(Step::Pass), Some(child_shape.clone()))
             }
 
             ast::Process::Primitive(node) => {
@@ -420,7 +449,7 @@ impl<'a> Builder<'a> {
             }
 
             ast::Process::Seq(node) => {
-                let top_shape = match protocol::resolve(self.ui, self.index, sb.scope, &node.top) {
+                let top_shape = match protocol::resolve(self.ui, self.index, sb.scope, &node.top, 0) {
                     Ok(shape) => shape,
                     Err(r) => return (self.add_step(Step::Invalid(r)), None),
                 };
@@ -448,8 +477,13 @@ impl<'a> Builder<'a> {
                 };
 
                 let (hi, shape_up) = self.resolve_process(sb.with_lower(sb.scope, &shape), &node.upper);
-                let stack = self.add_step(Step::Stack { lo, shape, hi });
-                (stack, shape_up)
+
+                if matches!(self.steps[lo], Step::Pass) {
+                    (hi, shape_up)
+                } else {
+                    let stack = self.add_step(Step::Stack { lo, shape, hi });
+                    (stack, shape_up)
+                }
             }
         }
     }

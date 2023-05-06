@@ -77,7 +77,9 @@ peg::parser!(pub grammar signalspec() for str {
       
       rule protocol_entry() -> ast::ProtocolEntry
         = start:pos() name:IDENTIFIER() _ params:def_params() end:pos() 
-        { ast::ProtocolEntry::Message( ast::ProtocolMessageDef { span: FileSpan{start, end}, name, params }) }
+          {ast::ProtocolEntry::Message( ast::ProtocolMessageDef { span: FileSpan{start, end}, name, params }) }
+        / start:pos() name:IDENTIFIER() _ ":" _ child_protocol:protocol_ref() end:pos()
+          { ast::ProtocolEntry::Child(ast::ProtocolChild { span: FileSpan { start, end }, name, child_protocol }) }
 
   rule protocol_ref() -> ast::ProtocolRef
     = start:pos() name:IDENTIFIER() _ param:expr_tup() end:pos() { ast::ProtocolRef { span: FileSpan{ start, end }, name, param: param.into() } }
@@ -100,7 +102,7 @@ peg::parser!(pub grammar signalspec() for str {
       rule action() -> ast::Action
         = start:pos() KW("repeat") _ dir_count:(!['{'] dir:expr() _ count:expr() { (dir, count) })? _ block:block() end:pos()
           { ast::Action::Repeat(ast::ActionRepeat{ span: FileSpan{start, end}, dir_count, block }) }
-        / start:pos() KW("on") _ name:IDENTIFIER() _ args:expr_tup() _ block:block()? end:pos()
+        / start:pos() KW("on") _ name:IDENTIFIER() _ args:expr_tup()? _ block:block()? end:pos()
           { ast::Action::On(ast::ActionOn{ span: FileSpan{start, end}, name, args, block }) }
         / start:pos() KW("for") _ vars:COMMASEP(<(l:IDENTIFIER() _ "=" _ r:expr() { (l,r) })>) _ block:block() end:pos()
           { ast::Action::For(ast::ActionFor{ span: FileSpan{start, end}, vars, block }) }
@@ -191,6 +193,9 @@ peg::parser!(pub grammar signalspec() for str {
       }
       / start:pos() name:IDENTIFIER() _ args:expr_tup() end:pos() {
           ast::Process::Call(ast::ProcessCall { span: FileSpan { start, end }, name, args })
+      }
+      / start:pos() name:IDENTIFIER() end:pos() {
+          ast::Process::Child(ast::ProcessChild { span: FileSpan { start, end }, name })
       }
       / block:block() { ast::Process::InferSeq(block) }
 

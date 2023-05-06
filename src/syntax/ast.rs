@@ -227,6 +227,7 @@ ast_node! {
 ast_node!{
     pub enum ProtocolEntry {
         Message(ProtocolMessageDef),
+        Child(ProtocolChild),
     }
 }
 
@@ -235,6 +236,14 @@ ast_node!{
         pub span: FileSpan,
         pub name: Identifier,
         pub params: Vec<DefParam>,
+    }
+}
+
+ast_node!{
+    pub struct ProtocolChild {
+        pub span: FileSpan,
+        pub name: Identifier,
+        pub child_protocol: ProtocolRef,
     }
 }
 
@@ -279,7 +288,7 @@ ast_node!{
     pub struct ActionOn {
         pub span: FileSpan,
         pub name: Identifier,
-        pub args: ExprTup,
+        pub args: Option<ExprTup>,
         pub block: Option<Block>,
     }
 }
@@ -312,6 +321,7 @@ ast_node!{
 ast_node!{
     pub enum Process {
         Call(ProcessCall),
+        Child(ProcessChild),
         Seq(ProcessSeq),
         InferSeq(Block),
         Stack(ProcessStack),
@@ -324,6 +334,13 @@ ast_node!{
         pub span: FileSpan,
         pub name: Identifier,
         pub args: ExprTup,
+    }
+}
+
+ast_node!{
+    pub struct ProcessChild {
+        pub span: FileSpan,
+        pub name: Identifier,
     }
 }
 

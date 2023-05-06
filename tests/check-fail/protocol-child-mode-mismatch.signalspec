@@ -1,0 +1,9 @@
+//# mode mismatch on child protocol `foo`
+protocol Foo() #dn {
+    foo: Seq(#x, #up)
+//  ^^^^^^^^^^^^^^^^^ mode of this protocol is `#up` but the parent has `#dn`
+}
+
+@test(#up, ())
+with Seq(_, _) def main() = ^Foo() {}
+

@@ -23,6 +23,7 @@ pub struct AltUpArm {
 #[derive(Debug)]
 pub enum Step {
     Invalid(ErrorReported),
+    Pass,
     Stack { lo: StepId, shape: Shape, hi: StepId },
     Token { variant: usize, dn: Vec<ExprDn>, up: Vec<(Predicate, ValueSrcId)> },
     TokenTop { top_dir: Dir, variant: usize, dn: Vec<(Predicate, ValueSrcId)>, up: Vec<ExprDn>, inner: StepId },
@@ -58,6 +59,7 @@ pub fn write_tree(f: &mut dyn Write, indent: u32, steps: &[Step], step: StepId) 
     let i: String = " ".repeat(indent as usize);
     match steps[step.0 as usize] {
         Step::Invalid(_) => writeln!(f, "{}Invalid", i)?,
+        Step::Pass => writeln!(f, "{}Pass", i)?,
         Step::Stack{ lo, hi, ..} => {
             writeln!(f, "{}Stack:", i)?;
             write_tree(f, indent+2, steps, lo)?;
@@ -127,6 +129,13 @@ pub fn analyze_unambiguous(steps: &EntityMap<StepId, Step>) -> EntityMap<StepId,
 
         let info = match *step {
             Step::Invalid(_) => {
+                StepInfo {
+                    first: MatchSet::proc(),
+                    followlast: None,
+                    nullable: false,
+                }
+            }
+            Step::Pass => {
                 StepInfo {
                     first: MatchSet::proc(),
                     followlast: None,

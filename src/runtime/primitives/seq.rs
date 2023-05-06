@@ -10,8 +10,9 @@ use super::super::channel::item_to_msgs;
 pub(crate) struct SeqUpProcess(Vec<ChannelMessage>);
 
 impl SeqUpProcess {
-    pub fn instantiate(args: Item, _shape_dn: &Shape, _shape_up: Option<&Shape>) -> Result<Arc<dyn PrimitiveProcess>, String> {
+    pub fn instantiate(args: Item, _shape_dn: &Shape, shape_up: Option<&Shape>) -> Result<Arc<dyn PrimitiveProcess>, String> {
         let (ty, seq) = args.try_into()?;
+        assert!(shape_up.unwrap().tag_offset == 0);
         let msgs = item_to_msgs(&ty, &seq)
                 .map_err(|()| format!("argument can't be converted to values"))?;
         Ok(Arc::new(SeqUpProcess(msgs)))
@@ -37,8 +38,9 @@ impl PrimitiveProcess for SeqUpProcess {
 pub(crate) struct SeqDownProcess(Vec<ChannelMessage>);
 
 impl SeqDownProcess {
-    pub fn instantiate(args: Item, _shape_dn: &Shape, _shape_up: Option<&Shape>) -> Result<Arc<dyn PrimitiveProcess>, String> {
+    pub fn instantiate(args: Item, _shape_dn: &Shape, shape_up: Option<&Shape>) -> Result<Arc<dyn PrimitiveProcess>, String> {
         let (ty, seq) = args.try_into()?;
+        assert!(shape_up.unwrap().tag_offset == 0);
         let msgs = item_to_msgs(&ty, &seq)
                 .map_err(|()| format!("argument can't be converted to values"))?;
         Ok(Arc::new(SeqDownProcess(msgs)))

@@ -1,0 +1,29 @@
+protocol Test(dir) dir {
+    a: Seq(#x|#y, dir),
+    b: Seq(#x|#y, dir),
+}
+
+with Seq(_:#x|#y, dir)
+def interleave() = ^Test(dir) {
+    repeat {
+        on a {
+            on val(v) {
+                val(v)
+            }
+        }
+        on b {
+            on val(v) {
+                val(v)
+            }
+        }
+    }
+}
+
+@test(#both, (#x, #y, #x, #x))
+with Seq(_:#x|#y, _)
+def t1() = interleave() | {
+    a|val(#x)
+    b|val(#y)
+    a|val(#x)
+    b|val(#x)
+}

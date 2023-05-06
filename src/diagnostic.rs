@@ -147,6 +147,15 @@ diagnostic_kinds!{
         error "definition site" at def
     }
 
+    ProtocolChildModeMismatch {
+        span: Span,
+        child_name: String,
+        mode: crate::Dir,
+        child_mode: crate::Dir
+    } => "mode mismatch on child protocol `{child_name}`" {
+        error "mode of this protocol is `{child_mode}` but the parent has `{mode}`" at span
+    }
+
     StackWithoutBaseSignal {
         span: Span
     } => "stacked process without base signal" {

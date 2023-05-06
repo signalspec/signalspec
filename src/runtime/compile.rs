@@ -154,6 +154,7 @@ impl Compiler<'_> {
     fn compile_step(&mut self, step: StepId, channels: ChannelIds) {
         match self.program.steps[step] {
             Step::Invalid(_) => panic!("Compiling invalid step"),
+            Step::Pass => todo!(),
             Step::Stack { lo, ref shape, hi} => {
                 let lo_info = &self.program.step_info[lo];
                 let hi_info = &self.program.step_info[hi];

@@ -16,6 +16,7 @@ use crate::{ Scope, ShapeMsg };
 use crate::syntax::{ SourceFile, parse_process, ast };
 pub use channel::{ Channel, ChannelMessage };
 use futures_lite::ready;
+use indexmap::IndexMap;
 
 use crate::core::{ Dir, Index, Item, Shape, compile_process, ShapeMsgParam};
 
@@ -123,7 +124,10 @@ fn base_shape(index: &Index) -> Shape {
         def: base,
         param: Item::Tuple(vec![]),
         dir: Dir::Dn,
+        tag_offset: 0,
+        tag_count: 0,
         messages: vec![],
+        children: IndexMap::new()
     }
 }
 
@@ -136,11 +140,15 @@ fn seq_shape(index: &Index, ty_item: Item, dir: Dir) -> Result<Shape, ()> {
         def: base,
         param: Item::Tuple(vec![ty_item, Item::symbol(match dir { Dir::Dn => "dn", Dir::Up => "up"})]),
         dir,
+        tag_offset: 0,
+        tag_count: 1,
         messages: vec![
             ShapeMsg {
                 name: "val".into(),
+                tag: 0,
                 params: vec![ShapeMsgParam { ty, direction: dir }]
             }
         ],
+        children: IndexMap::new()
     })
 }

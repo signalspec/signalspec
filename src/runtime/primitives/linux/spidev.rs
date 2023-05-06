@@ -10,8 +10,9 @@ pub(crate) struct SpiProcess{
 }
 
 impl SpiProcess {
-    pub fn instantiate(args: Item, _shape_dn: &Shape, _shape_up: Option<&Shape>) -> Result<Arc<dyn PrimitiveProcess>, String> {
+    pub fn instantiate(args: Item, _shape_dn: &Shape, shape_up: Option<&Shape>) -> Result<Arc<dyn PrimitiveProcess>, String> {
         let devname: String = args.try_into()?;
+        assert!(shape_up.unwrap().tag_offset == 0);
         Ok(Arc::new(SpiProcess{ devname: PathBuf::from(devname) }))
     }
 }

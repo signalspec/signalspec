@@ -1,3 +1,5 @@
+use indexmap::IndexMap;
+
 use crate::diagnostic::{Collector, ErrorReported, Span};
 use crate::syntax::ast::{self, AstNode};
 use crate::{Index, Dir, DiagnosticHandler, Diagnostic};
@@ -5,9 +7,15 @@ use super::expr_resolve::constant;
 use super::{ Scope, Shape, ShapeMsg, ShapeMsgParam, expr_resolve };
 use super::{ lexpr, rexpr, Item };
 
-pub fn resolve(ctx: &dyn DiagnosticHandler, index: &Index, scope: &Scope, ast: &ast::ProtocolRef) -> Result<Shape, ErrorReported> {
+pub fn resolve(
+    ctx: &dyn DiagnosticHandler,
+    index: &Index,
+    scope: &Scope,
+    ast: &ast::ProtocolRef,
+    tag_offset: usize,
+) -> Result<Shape, ErrorReported> {
     let args = rexpr(ctx, scope, &ast.param);
-    match instantiate(ctx, index, &ast.name.name, args) {
+    match instantiate(ctx, index, &ast.name.name, args, tag_offset) {
         Ok(shape) => Ok(shape),
         Err(InstantiateProtocolError::ProtocolNotFound) => {
             Err(ctx.report(Diagnostic::NoProtocolNamed {
@@ -46,21 +54,30 @@ impl From<ErrorReported> for InstantiateProtocolError {
 }
 
 /// Instantiates a protocol with passed arguments, creating a Shape.
-pub fn instantiate(ctx: &dyn DiagnosticHandler, index: &Index, protocol_name: &str, args: Item) -> Result<Shape, InstantiateProtocolError> {
-    let protocol = index.find_protocol(protocol_name).ok_or(InstantiateProtocolError::ProtocolNotFound)?;
+pub fn instantiate(
+    ctx: &dyn DiagnosticHandler,
+    index: &Index,
+    protocol_name: &str,
+    args: Item,
+    tag_offset: usize,
+) -> Result<Shape, InstantiateProtocolError> {
+    let protocol = index.find_protocol(protocol_name)
+        .ok_or(InstantiateProtocolError::ProtocolNotFound)?;
     let protocol_ast = protocol.ast();
-    let mut protocol_def_scope = protocol.scope().child();
-    if let Err(msg) = lexpr(ctx, &mut protocol_def_scope, &protocol_ast.param, &args) {
+    let mut scope = protocol.scope().child();
+    if let Err(msg) = lexpr(ctx, &mut scope, &protocol_ast.param, &args) {
         return Err(InstantiateProtocolError::ArgsMismatch {
             msg,
             found: args,
-            protocol_def_span: Span::new(&protocol_def_scope.file, protocol_ast.param.span())
+            protocol_def_span: Span::new(&scope.file, protocol_ast.param.span())
         });
     }
 
-    let dir = constant::<Dir>(ctx, &protocol_def_scope, &protocol_ast.dir)?;
+    let dir = constant::<Dir>(ctx, &scope, &protocol_ast.dir)?;
 
     let mut messages = vec![];
+    let mut children = IndexMap::new();
+    let mut tag = tag_offset;
 
     for entry in &protocol_ast.entries {
         match *entry {
@@ -72,19 +89,43 @@ pub fn instantiate(ctx: &dyn DiagnosticHandler, index: &Index, protocol_name: &s
                             (&node.expr, Dir::Dn)
                         }
                         ast::DefParam::Var(node) => {
-                            let direction = constant::<Dir>(ctx, &protocol_def_scope, &node.direction)?;
+                            let direction = constant::<Dir>(ctx, &scope, &node.direction)?;
                             (&node.expr, direction)
                         }
                     };
-                    let ty = expr_resolve::type_tree(ctx, &protocol_def_scope, ty_expr)?;
+                    let ty = expr_resolve::type_tree(ctx, &scope, ty_expr)?;
                     Ok(ShapeMsgParam { ty, direction })
                 }).collect::<Result<_, InstantiateProtocolError>>()?;
-                messages.push(ShapeMsg::new(name.name.clone(), params));
+                messages.push(ShapeMsg { name: name.name.clone(), params, tag });
+                tag += 1;
+            }
+            ast::ProtocolEntry::Child(ref node) => {
+                let inner_shape = resolve(ctx, index, &scope, &node.child_protocol, tag)?;
+
+                if inner_shape.dir != dir {
+                    Err(ctx.report(Diagnostic::ProtocolChildModeMismatch {
+                        span: Span::new(&scope.file, node.span),
+                        child_name: node.name.name.clone(),
+                        mode: dir,
+                        child_mode: inner_shape.dir,
+                    }))?
+                }
+
+                tag += inner_shape.tag_count;
+                children.insert(node.name.name.clone(), inner_shape);
             }
         }
     }
 
-    Ok(Shape { def: protocol.clone(), dir, messages, param: args })
+    Ok(Shape {
+        def: protocol.clone(),
+        dir,
+        tag_offset,
+        tag_count: tag - tag_offset,
+        messages,
+        children,
+        param: args
+    })
 }
 
 /// Match a Shape against the `with` part of a with-def block, binding variables

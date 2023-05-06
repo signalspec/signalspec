@@ -10,8 +10,9 @@ use crate::runtime::{ PrimitiveProcess };
 pub(crate) struct ReaderProcess(PathBuf);
 
 impl ReaderProcess {
-    pub fn instantiate(args: Item, _shape_dn: &Shape, _shape_up: Option<&Shape>) -> Result<Arc<dyn PrimitiveProcess>, String> {
+    pub fn instantiate(args: Item, _shape_dn: &Shape, shape_up: Option<&Shape>) -> Result<Arc<dyn PrimitiveProcess>, String> {
         let name: String = args.try_into()?;
+        assert!(shape_up.unwrap().tag_offset == 0);
         Ok(Arc::new(ReaderProcess(PathBuf::from(name))))
     }
 }
@@ -39,8 +40,9 @@ impl ::std::fmt::Debug for ReaderProcess {
 pub(crate) struct WriterProcess(PathBuf);
 
 impl WriterProcess {
-    pub fn instantiate(args: Item, _shape_dn: &Shape, _shape_up: Option<&Shape>) -> Result<Arc<dyn PrimitiveProcess>, String> {
+    pub fn instantiate(args: Item, _shape_dn: &Shape, shape_up: Option<&Shape>) -> Result<Arc<dyn PrimitiveProcess>, String> {
         let name: String = args.try_into()?;
+        assert!(shape_up.unwrap().tag_offset == 0);
         Ok(Arc::new(WriterProcess(PathBuf::from(name))))
     }
 }
