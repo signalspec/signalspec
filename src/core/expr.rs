@@ -496,6 +496,15 @@ fn fn_complex(arg: Item) -> Result<Item, &'static str> {
     }
 }
 
+fn fn_bits(arg: Item) -> Result<Item, &'static str> {
+    let Item::Leaf(LeafItem::Value(Expr::Const(Value::Number(width)))) = arg else {
+        return Err("invalid arguments to bits(): expected constant integer");
+    };
+    let width = width.to_u32().ok_or("width must be a constant integer")?;
+    let ty = Type::Vector(width, Box::new(Type::Number(0.into(), 1.into())));
+    Ok(Expr::Expr(ty, ExprKind::Ignored).into())
+}
+
 pub fn expr_prelude() -> HashMap<String, Item> {
     let mut prelude = HashMap::new();
 
@@ -509,6 +518,7 @@ pub fn expr_prelude() -> HashMap<String, Item> {
 
     add_type(&mut prelude, "bit", Type::Number(0.into(), 1.into()));
     add_type(&mut prelude, "byte", Type::Vector(8, Box::new(Type::Number(0.into(), 1.into()))));
+    add_primitive_fn(&mut prelude, "bits", fn_bits);
 
     add_primitive_fn(&mut prelude, "signed", fn_signed);
     add_primitive_fn(&mut prelude, "unsigned", fn_unsigned);

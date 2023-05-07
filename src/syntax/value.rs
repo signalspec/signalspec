@@ -29,15 +29,21 @@ impl Value {
         Value::Vector((0..8).rev().map(|i| Value::from_bit((b & 1<<i) != 0)).collect())
     }
 
-    pub fn as_byte(&self) -> Option<u8> {
+    /// Get MSB-first bit vector as a u64
+    pub fn as_bits(&self, n: usize) -> Option<u64> {
+        assert!(n <= 64);
         match self {
-            Value::Vector(v) if v.len() == 8 => {
-                (0..8).rev().zip(v.iter()).try_fold(0, |byte, (i, e)| {
-                    e.as_bit().map(|bit| byte | ((bit as u8)<<i))
+            Value::Vector(v) if v.len() == n => {
+                (0..n).rev().zip(v.iter()).try_fold(0, |byte, (i, e)| {
+                    e.as_bit().map(|bit| byte | ((bit as u64)<<i))
                 })
             }
             _ => None
         }
+    }
+
+    pub fn as_byte(&self) -> Option<u8> {
+        self.as_bits(8).map(|x| x as u8)
     }
 
     pub fn as_symbol(&self) -> Option<&str> {
