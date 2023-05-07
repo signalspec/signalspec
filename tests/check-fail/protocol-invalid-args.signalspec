@@ -10,7 +10,7 @@ with Seq(_, _) def main() = ^Seq(undefinedvar, #up) {}
 //                               ^^^^^^^^^^^^ not found
 
 //# expected a value that can be resolved as a type
-//^* expected a single value, found `"not a type"`
+//^* found `"not a type"`
 @test(#up, ())
 with Seq(_, _) def main() = ^Seq("not a type", #up) {}
 

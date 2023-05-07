@@ -221,39 +221,26 @@ diagnostic_kinds!{
         error "expected `{expected}`, found `{found}`" at span
     }
 
-    InvalidDirectionExpression {
+    ExpectedConst {
         span: Span,
-        found: String
-    } => "invalid expression for direction" {
-        error "expected constant `#up` or `#dn`, found {found}" at span
+        found: String,
+        expected: &'static str
+    } => "expected constant {expected}" {
+        error "found `{found}`" at span
     }
 
     ExpectedValue {
         span: Span,
         found: String
-    } => "expected a value" {
-        error "expected a single value, found `{found}`" at span
+    } => "expected a single value" {
+        error "found `{found}`" at span
     }
 
     ExpectedType {
         span: Span,
         found: String
     } => "expected a value that can be resolved as a type" {
-        error "expected a single value, found `{found}`" at span
-    }
-
-    ExpectedConst {
-        span: Span,
-        found: String
-    } => "expected a constant" {
-        error "expected a constant, found `{found}`" at span
-    }
-
-    ExpectedConstNumber {
-        span: Span,
-        found: String
-    } => "expected a constant number" {
-        error "expected a constant number, found `{found}`" at span
+        error "found `{found}`" at span
     }
 
     IncompatibleTypes {

@@ -39,6 +39,13 @@ impl Value {
             _ => None
         }
     }
+
+    pub fn as_symbol(&self) -> Option<&str> {
+        match self {
+            Value::Symbol(v) => Some(v.as_str()),
+            _ => None
+        }
+    }
 }
 
 #[test]
@@ -104,6 +111,23 @@ impl TryFrom<&Value> for u32 {
 impl From<u32> for Value {
     fn from(value: u32) -> Self {
         Value::Number((value as i64).into())
+    }
+}
+
+impl TryFrom<Value> for Number {
+    type Error = ();
+
+    fn try_from(value: Value) -> Result<Self, Self::Error> {
+        match value {
+            Value::Number(i) => Ok(i),
+            _ => Err(())
+        }
+    }
+}
+
+impl From<Number> for Value {
+    fn from(n: Number) -> Self {
+        Value::Number(n)
     }
 }
 

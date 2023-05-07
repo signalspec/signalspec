@@ -12,15 +12,17 @@ mod shape;
 mod resolve;
 mod predicate;
 
+use crate::Value;
 use crate::entitymap::entity_key;
 
+use self::expr_resolve::TryFromConstant;
 use self::file::ProtocolRef;
 
 pub use self::file::FileScope;
 pub use self::index::{ Index };
 pub use self::scope::{ Item, LeafItem, Scope };
 pub use self::expr::{ Expr, ExprDn, ConcatElem };
-pub use self::expr_resolve::{ rexpr, rexpr_tup, lexpr, value };
+pub use self::expr_resolve::{ rexpr, rexpr_tup, lexpr, value, constant };
 pub use self::function::{ PrimitiveFn, FunctionDef, Func };
 pub use self::step::{ Step, StepId, StepInfo, AltDnArm, AltUpArm, write_tree };
 pub use self::resolve::{ compile_process, ProcessChain };
@@ -33,6 +35,31 @@ pub use self::predicate::Predicate;
 pub enum Dir {
     Up,
     Dn,
+}
+
+impl TryFrom<Value> for Dir {
+    type Error = ();
+
+    fn try_from(value: Value) -> Result<Self, ()> {
+        match value.as_symbol() {
+            Some("up") => Ok(Dir::Up),
+            Some("dn") => Ok(Dir::Dn),
+            _ => Err(()),
+        }
+    }
+}
+
+impl TryFromConstant for Dir {
+    const EXPECTED_MSG: &'static str = "#up | #dn";
+}
+
+impl std::fmt::Display for Dir {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", match self {
+            Dir::Up => "#up",
+            Dir::Dn => "#dn",
+        })
+    }
 }
 
 impl Dir {

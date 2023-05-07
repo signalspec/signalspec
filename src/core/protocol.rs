@@ -1,7 +1,7 @@
 use crate::diagnostic::{Collector, ErrorReported, Span};
 use crate::syntax::ast::{self, AstNode};
 use crate::{Index, Dir, DiagnosticHandler, Diagnostic};
-use super::resolve::resolve_dir;
+use super::expr_resolve::constant;
 use super::{ Scope, Shape, ShapeMsg, ShapeMsgParam, expr_resolve };
 use super::{ lexpr, rexpr, Item };
 
@@ -58,7 +58,7 @@ pub fn instantiate(ctx: &dyn DiagnosticHandler, index: &Index, protocol_name: &s
         });
     }
 
-    let dir = super::resolve::resolve_dir(ctx, &protocol_def_scope, &protocol_ast.dir)?;
+    let dir = constant::<Dir>(ctx, &protocol_def_scope, &protocol_ast.dir)?;
 
     let mut messages = vec![];
 
@@ -72,7 +72,7 @@ pub fn instantiate(ctx: &dyn DiagnosticHandler, index: &Index, protocol_name: &s
                             (&node.expr, Dir::Dn)
                         }
                         ast::DefParam::Var(node) => {
-                            let direction = resolve_dir(ctx, &protocol_def_scope, &node.direction)?;
+                            let direction = constant::<Dir>(ctx, &protocol_def_scope, &node.direction)?;
                             (&node.expr, direction)
                         }
                     };

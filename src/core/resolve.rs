@@ -7,12 +7,12 @@ use crate::diagnostic::{Span, ErrorReported};
 use crate::entitymap::{ EntityMap, entity_key };
 use crate::runtime::instantiate_primitive;
 use crate::tree::Tree;
-use crate::{Value, Index, DiagnosticHandler, Diagnostic, SourceFile, FileSpan};
+use crate::{Index, DiagnosticHandler, Diagnostic, SourceFile, FileSpan};
 use crate::syntax::ast::{self, AstNode};
 use super::index::FindDefError;
 use super::step::{Step, StepInfo, analyze_unambiguous, AltUpArm, AltDnArm};
 use super::{Expr, ExprDn, Item, Scope, Shape, Type, ShapeMsg, protocol};
-use super::{Dir, rexpr, value, StepId, LeafItem, Predicate, ValueSrcId, rexpr_tup};
+use super::{Dir, rexpr, value, constant, StepId, LeafItem, Predicate, ValueSrcId, rexpr_tup};
 
 #[derive(Clone, Copy)]
 struct ResolveCx<'a> {
@@ -36,22 +36,6 @@ impl<'a> ResolveCx<'a> {
 }
 
 entity_key!(pub ValueSinkId);
-
-pub fn resolve_dir(ctx: &dyn DiagnosticHandler, scope: &Scope, ast: &ast::Expr) -> Result<Dir, ErrorReported> {
-    match rexpr(ctx, scope, ast) {
-        Item::Leaf(LeafItem::Value(Expr::Const(Value::Symbol(s)))) if s == "up" => Ok(Dir::Up),
-        Item::Leaf(LeafItem::Value(Expr::Const(Value::Symbol(s)))) if s == "dn" => Ok(Dir::Dn),
-        Item::Leaf(LeafItem::Invalid(r)) => Err(r),
-        item => {
-            Err(ctx.report(
-                Diagnostic::InvalidDirectionExpression {
-                    span: Span::new(&scope.file, ast.span()),
-                    found: item.to_string(),
-                }
-            ))
-        }
-    }
-}
 
 pub struct Builder<'a> {
     ui: &'a dyn DiagnosticHandler,
@@ -203,7 +187,7 @@ impl<'a> Builder<'a> {
                 let (dir, count) = match &node.dir_count {
                     Some((dir_ast, count_ast)) => {
                         let count = value(self.ui, sb.scope, count_ast);
-                        let dir = resolve_dir(self.ui, sb.scope, dir_ast);
+                        let dir = constant::<Dir>(self.ui, sb.scope, dir_ast);
                         (dir, count)
                     }
                     None => (Ok(Dir::Up), Ok(Expr::ignored()))
@@ -296,7 +280,7 @@ impl<'a> Builder<'a> {
             }
 
             ast::Action::Alt(ref node) => {
-                let dir = resolve_dir(self.ui, sb.scope, &node.dir);
+                let dir = constant::<Dir>(self.ui, sb.scope, &node.dir);
                 let scrutinee = rexpr(self.ui, sb.scope, &node.expr);
 
                 match dir {

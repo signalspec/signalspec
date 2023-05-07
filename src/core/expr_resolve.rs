@@ -16,30 +16,42 @@ pub fn value(ctx: &dyn DiagnosticHandler, scope: &Scope, e: &ast::Expr) -> Resul
     }
 }
 
-pub fn constant(ctx: &dyn DiagnosticHandler, scope: &Scope, e: &ast::Expr) -> Result<Value, ErrorReported> {
-    match rexpr(ctx, scope, e) {
-        Item::Leaf(LeafItem::Value(Expr::Const(c))) => Ok(c),
-        Item::Leaf(LeafItem::Invalid(r)) => Err(r),
-        other => Err(ctx.report(
-            Diagnostic::ExpectedConst {
-                span: Span::new(&scope.file, e.span()),
-                found: other.to_string()
-            }
-        )),
-    }
+pub trait TryFromConstant: TryFrom<Value> {
+    /// Error message, used as "expected constant {x}"
+    const EXPECTED_MSG: &'static str;
 }
 
-pub fn constant_number(ctx: &dyn DiagnosticHandler, scope: &Scope, e: &ast::Expr) -> Result<Number, ErrorReported> {
-    match rexpr(ctx, scope, e) {
-        Item::Leaf(LeafItem::Value(Expr::Const(Value::Number(v)))) => Ok(v),
-        Item::Leaf(LeafItem::Invalid(r)) => Err(r),
-        other => Err(ctx.report(
-            Diagnostic::ExpectedConstNumber {
-                span: Span::new(&scope.file, e.span()),
-                found: other.to_string()
+impl TryFromConstant for Value {
+    const EXPECTED_MSG: &'static str = "value";
+}
+
+impl TryFromConstant for Number {
+    const EXPECTED_MSG: &'static str = "number";
+}
+
+pub fn constant<'a, T: TryFromConstant>(ctx: &dyn DiagnosticHandler, scope: &Scope, ast: &ast::Expr) -> Result<T, ErrorReported> {
+    let item = rexpr(ctx, scope, ast);
+    let found = item.to_string();
+
+    match item {
+        Item::Leaf(LeafItem::Value(Expr::Const(v))) => {
+            if let Ok(r) = T::try_from(v) {
+                return Ok(r);
             }
-        )),
+        }
+        Item::Leaf(LeafItem::Invalid(r)) => {
+            return Err(r);
+        }
+        _ => {}
     }
+
+    Err(ctx.report(
+        Diagnostic::ExpectedConst {
+            span: Span::new(&scope.file, ast.span()),
+            found,
+            expected: T::EXPECTED_MSG,
+        }
+    ))
 }
 
 pub fn type_tree(ctx: &dyn DiagnosticHandler, scope: &Scope, e: &ast::Expr) -> Result<Tree<Type>, ErrorReported> {
@@ -145,8 +157,8 @@ fn resolve_expr_flip(ctx: &dyn DiagnosticHandler, scope: &Scope, node: &ast::Exp
 }
 
 fn resolve_expr_range(ctx: &dyn DiagnosticHandler, scope: &Scope, node: &ast::ExprRange) -> Item {
-    let min = constant_number(ctx, scope, &node.lo);
-    let max = constant_number(ctx, scope, &node.hi);
+    let min = constant::<Number>(ctx, scope, &node.lo);
+    let max = constant::<Number>(ctx, scope, &node.hi);
 
     let min = try_item!(min);
     let max = try_item!(max);
@@ -197,8 +209,8 @@ fn resolve_expr_choose(ctx: &dyn DiagnosticHandler, scope: &Scope, node: &ast::E
     let e = value(ctx, scope, &node.e);
     let pairs = collect_or_err(
         node.choices.iter().map(|&(ref le, ref re)| {
-            let l = constant(ctx, scope, le);
-            let r = constant(ctx, scope, re);
+            let l = constant::<Value>(ctx, scope, le);
+            let r = constant::<Value>(ctx, scope, re);
             Ok((l?, r?))
         }
     ));

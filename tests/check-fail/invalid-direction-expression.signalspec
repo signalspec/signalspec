@@ -1,16 +1,16 @@
 @test(#up, ())
 with Seq(#x, _) def main() = {
-//# invalid expression for direction
+//# expected constant #up | #dn
     repeat #foo 6 {
-//         ^^^^ expected constant `#up` or `#dn`, found #foo
+//         ^^^^ found `#foo`
 
     }
 
-//# invalid expression for direction
+//# expected constant #up | #dn
 //# undefined variable `dn`
     alt (dn, 1) #x {
 //       ^^ not found
-//      ^^^^^^^ expected constant `#up` or `#dn`, found (<error>, 1) 
+//      ^^^^^^^ found `(<error>, 1)`
     }
 
 // if expression is itself an error, don't report a new error
