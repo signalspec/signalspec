@@ -1,7 +1,7 @@
-protocol SPI(mode: #controller | #async_controller | #monitor | #generate) mode[#controller = #dn, #async_controller = #dn, #monitor = #up, #generate=#dn] {
+protocol SPI(role: #controller | #async_controller | #monitor | #generate) role[#controller = #dn, #async_controller = #dn, #monitor = #up, #generate=#dn] {
   data(
-    var(mode[#controller = #dn, #async_controller = #dn, #monitor = #up, #generate = #dn]) byte,
-    var(mode[#controller = #up, #async_controller = #up, #monitor = #up, #generate = #dn]) byte,
+    var(role[#controller = #dn, #async_controller = #dn, #monitor = #up, #generate = #dn]) byte,
+    var(role[#controller = #up, #async_controller = #up, #monitor = #up, #generate = #dn]) byte,
   ),
   end(),
 }
