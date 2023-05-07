@@ -570,7 +570,18 @@ impl ProgramExec {
                     let fut = self.primitives[id].get_or_insert_with(|| p.primitives[id].run(ch));
                     match ready!(fut.poll(cx)) {
                         Ok(_) => drop(self.primitives[id].take()),
-                        Err(_) => return Poll::Ready(Err(())),
+                        Err(_) => {
+                            struct FailedFuture;
+                            impl Future for FailedFuture {
+                                type Output = Result<(), ()>;
+
+                                fn poll(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Self::Output> {
+                                    Poll::Ready(Err(()))
+                                }
+                            }
+                            self.primitives[id] = Some(Box::pin(FailedFuture));
+                            return Poll::Ready(Err(()))
+                        }
                     }
                 }
                 Insn::CounterReset(counter, val) => {

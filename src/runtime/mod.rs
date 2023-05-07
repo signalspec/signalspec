@@ -103,7 +103,9 @@ impl<'a> Handle<'a> {
 
     pub fn receive(&mut self) -> Option<ChannelMessage> {
         futures_lite::future::block_on(poll_fn(|cx| {
-            let _ = self.poll(cx);
+            if let Poll::Ready(Err(())) = self.poll(cx) {
+                return Poll::Ready(None);
+            }
             if let Some(ch) = self.channels.up.as_ref() {
                 ready!(ch.poll_receive(cx));
                 Poll::Ready(ch.read().pop())
