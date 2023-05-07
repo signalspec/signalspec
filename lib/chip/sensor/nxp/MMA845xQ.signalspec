@@ -1,0 +1,51 @@
+let ADDR = '0011101
+
+// https://www.nxp.com/docs/en/data-sheet/MMA8451Q.pdf
+// https://www.nxp.com/docs/en/data-sheet/MMA8452Q.pdf
+// https://www.nxp.com/docs/en/data-sheet/MMA8453Q.pdf
+
+let OUT_X_MSB = 'h01
+let XYZ_DATA_CFG = 'h0E
+let WHO_AM_I = 'h0D
+let CTRL_REG1 = 'h2A
+let CTRL_REG4 = 'h2D
+
+with I2C(role)
+def read_reg(var(#dn) reg, var(#up) val) = {
+    start(ADDR, #w)
+    write(reg)
+    start(ADDR, #r)
+    read(val)
+    stop()
+}
+
+with I2C(role)
+def write_reg(var(#dn) reg, var(#dn) val) = {
+    start(ADDR, #w)
+    write(reg)
+    write(val)
+    stop()
+}
+
+with I2C(role)
+def MMA845xQ() = ^Seq((byte, byte, byte, byte, byte, byte), #up) {
+    read_reg(WHO_AM_I, <:'h2a);
+    write_reg(CTRL_REG1, 'h31);
+    write_reg(XYZ_DATA_CFG, 'h00);
+    write_reg(CTRL_REG4, 'h01);
+    repeat #dn 100 {
+        on val((d1, d2, d3, d4, d5, d6)) {
+            start(ADDR, #w);
+            write(OUT_X_MSB);
+            start(ADDR, #r);
+            read(d1);
+            read(d2);
+            read(d3);
+            read(d4);
+            read(d5);
+            read(d6);
+            stop()
+        }
+    }
+}
+

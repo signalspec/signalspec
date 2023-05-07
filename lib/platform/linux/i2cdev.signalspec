@@ -1,0 +1,3 @@
+with Base() def i2cdev(const devname) = ^I2C(#async_controller) {
+    primitive i2cdev(devname)
+}

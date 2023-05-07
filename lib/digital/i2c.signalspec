@@ -1,0 +1,9 @@
+protocol I2C(role: #controller | #async_controller | #monitor) role[#controller=#dn, #async_controller=#dn, #monitor=#up] {
+    start(
+        var(role[#controller=#dn, #async_controller=#dn, #monitor=#up]) bits(7),
+        var(role[#controller=#dn, #async_controller=#dn, #monitor=#up]) #w|#r,
+    ),
+    read(var(role[#controller=#up, #async_controller=#up, #monitor=#up]) byte),
+    write(var(role[#controller=#dn, #async_controller=#dn, #monitor=#up]) byte),
+    stop(),
+}

@@ -26,6 +26,9 @@ pub(crate) fn instantiate_primitive(
         #[cfg(target_os = "linux")]
         "spidev" => linux::spidev::SpiProcess::instantiate,
 
+        #[cfg(target_os = "linux")]
+        "i2cdev" => linux::i2cdev::I2CProcess::instantiate,
+
         _ => return Err("primitive does not exist on this platform".into())
     };
 
