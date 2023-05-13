@@ -143,7 +143,7 @@ pub enum Expr {
 pub enum ExprKind {
     Ignored,
     Const(Value),
-    VarDn(ValueSrcId),
+    VarDn(ExprDn),
     VarUp(ValueSinkId),
     Range(Number, Number),
     Union(Vec<ExprKind>),
@@ -197,7 +197,7 @@ impl Expr {
     }
 
     pub fn var_dn(id: ValueSrcId, ty: Type) -> Self {
-        Expr::Expr(ty, ExprKind::VarDn(id))
+        Expr::Expr(ty, ExprKind::VarDn(ExprDn::Variable(id)))
     }
 
     pub fn var_up(id: ValueSinkId, ty: Type) -> Self {
@@ -209,7 +209,7 @@ impl ExprKind {
     pub fn down(&self) -> Option<ExprDn> {
         match *self {
             ExprKind::Ignored | ExprKind::Range(..) | ExprKind::Union(..) | ExprKind::VarUp(..) => None,
-            ExprKind::VarDn(id) => Some(ExprDn::Variable(id)),
+            ExprKind::VarDn(ref dn) => Some(dn.clone()),
             ExprKind::Const(ref v) => Some(ExprDn::Const(v.clone())),
             ExprKind::Flip(ref d, _) => d.down(),
             ExprKind::Choose(ref e, ref c) => Some(ExprDn::Choose(Box::new(e.down()?), c.clone())),
@@ -253,7 +253,7 @@ impl ExprKind {
     pub fn predicate(&self) -> Option<Predicate> {
         match *self {
             ExprKind::Ignored | ExprKind::VarUp(..) => Some(Predicate::Any),
-            ExprKind::VarDn(id) => Some(Predicate::EqualToDn(ExprDn::Variable(id))),
+            ExprKind::VarDn(ref dn) => Some(Predicate::EqualToDn(dn.clone())),
             ExprKind::Flip(_, ref up) => up.predicate(),
             ExprKind::Const(ref v) => Predicate::from_value(v),
             ExprKind::Range(lo, hi) => Some(Predicate::Range(lo, hi)),
