@@ -358,61 +358,10 @@ impl fmt::Display for Expr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Expr::Const(c) => c.fmt(f),
-            Expr::Expr(_, e) => e.fmt(f),
-        }
-    }
-}
-
-impl fmt::Display for ExprKind {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            ExprKind::Ignored => write!(f, "_"),
-            ExprKind::Range(a, b) => write!(f, "{}..{}", a, b),
-            ExprKind::VarDn(id) => write!(f, "${}", u32::from(*id)),
-            ExprKind::VarUp(id) => write!(f, ">>{}", u32::from(*id)),
-            ExprKind::Const(ref p) => write!(f, "{}", p),
-            ExprKind::Flip(ref d, ref u) if **d == ExprKind::Ignored => write!(f, ":> {}", u),
-            ExprKind::Flip(ref d, ref u) if **u == ExprKind::Ignored => write!(f, "<: {}", d),
-            ExprKind::Flip(d, u) => write!(f, "{}!{}", d, u),
-            ExprKind::Union(ref t) => {
-                for (k, i) in t.iter().enumerate() {
-                    if k > 0 { write!(f, "|")? }
-                    write!(f, "{}", i)?;
-                }
-                Ok(())
-            }
-            ExprKind::Choose(e, choices) => {
-                write!(f, "{}[", e)?;
-                for (i, &(ref a, ref b)) in choices.iter().enumerate()  {
-                    if i != 0 { write!(f, ", ")?; }
-                    write!(f, "{}={}", a, b)?;
-                }
-                write!(f, "]")
-            },
-            ExprKind::Concat(elems) => {
-                write!(f, "[")?;
-                for (i, e) in elems.iter().enumerate()  {
-                    if i != 0 { write!(f, ", ")?; }
-                    match e {
-                        ConcatElem::Elem(inner) => write!(f, "{inner}")?,
-                        ConcatElem::Slice(inner, width) => write!(f, "{width}:{inner}")?,
-                    }
-                }
-                write!(f, "]")
-            },
-
-            ExprKind::BinaryConst(ref e, op, ref c) => {
-                match op {
-                    BinOp::Add => write!(f, "{} + {}", e, c),
-                    BinOp::Sub => write!(f, "{} - {}", e, c),
-                    BinOp::SubSwap => write!(f, "{} - {}", c, e),
-                    BinOp::Mul => write!(f, "{} * {}", c, e),
-                    BinOp::Div => write!(f, "{} / {}", e, c),
-                    BinOp::DivSwap => write!(f, "{} / {}", c, e),
-                }
-            }
-
-            ExprKind::Unary(ref expr, op) => write!(f, "unary({expr}, {op:?})")
+            Expr::Expr(_, ExprKind::Ignored) => write!(f, "_"),
+            Expr::Expr(_, ExprKind::Const(ref p)) => write!(f, "{}", p),
+            Expr::Expr(_, ExprKind::Range(a, b)) => write!(f, "{}..{}", a, b),
+            Expr::Expr(ty, _) => write!(f, "<{ty}>"),
         }
     }
 }
