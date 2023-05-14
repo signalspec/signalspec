@@ -11,3 +11,20 @@ with Seq(1..10, _) def main() = {
     val(20)
 //      ^^ expected `1..10`, found `20`
 }
+
+
+// Not reported on invalid value that has its own error
+
+@test(#up, (9))
+with Seq(1..10, _) def main() = {
+//# undefined variable `notfound`
+    val(notfound)
+//      ^^^^^^^^ not found
+}
+
+@test(#dn, (9))
+with Seq(1..10, _) def main() = {
+//# undefined variable `notfound`
+    val(notfound)
+//      ^^^^^^^^ not found
+}

@@ -563,20 +563,32 @@ impl<'a> Builder<'a> {
 
         for (param, arg_ast) in msg_def.params.iter().zip(node.args.items.iter()) {
             let arg = rexpr(self.ui, scope, arg_ast);
-            let out = match param.direction {
-                Dir::Up => &mut up,
-                Dir::Dn => &mut dn,
-            };
 
-            use crate::tree::Zip::*;
             let mut valid = true;
             param.ty.zip(&arg, &mut |m| { match m {
-                Both(
+                crate::tree::Zip::Both(
                     &Tree::Leaf(ref ty),
                     &Item::Leaf(LeafItem::Value(ref v))
                 ) if v.get_type().is_subtype(ty) => {
-                    out.push(v.clone());
+                    match param.direction {
+                        Dir::Dn => {
+                            dn.push(v.down().unwrap());
+                        }
+                        Dir::Up => {
+                            let predicate = v.predicate().expect("Value cannot be up-evaluated as a predicate");
+                            let src = self.up_value_src(&v);
+                            up.push((predicate, src));
+                        }
+                    }
                 },
+
+                crate::tree::Zip::Both(_, &Item::Leaf(LeafItem::Invalid(_))) => {
+                    match param.direction {
+                        Dir::Dn => dn.push(ExprDn::invalid()),
+                        Dir::Up => up.push((Predicate::Any, self.add_value_src())),
+                    }
+                }
+
                 _ => {
                     valid = false;
                 }
@@ -591,13 +603,6 @@ impl<'a> Builder<'a> {
                 });
             }
         }
-
-        let dn = dn.into_iter().map(|x| x.down().unwrap()).collect();
-        let up = up.into_iter().map(|x| {
-            let predicate = x.predicate().expect("Value cannot be up-evaluated as a predicate");
-            let src = self.up_value_src(&x);
-            (predicate, src)
-        }).collect();
 
         (dn, up)
     }
