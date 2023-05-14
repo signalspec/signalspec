@@ -448,11 +448,20 @@ impl<'a> Builder<'a> {
 
     fn bind_tree_fields_up_finish(&mut self, up_inner: Vec<LValueSrc>, file: &Arc<SourceFile>) -> Vec<ExprDn> {
         up_inner.into_iter().map(|v| {
-            match v {
-                LValueSrc::Var(snk, span) => self.take_upvalue(snk, file, span),
-                LValueSrc::Val(e) => e,
-            }
+            self.finish_lvalue_src(v, file)
         }).collect()
+    }
+
+    fn finish_lvalue_src(&mut self, v: LValueSrc, file: &Arc<SourceFile>) -> ExprDn {
+        match v {
+            LValueSrc::Var(snk, span) => self.take_upvalue(snk, file, span),
+            LValueSrc::Val(e) => e,
+            LValueSrc::Concat(c) => {
+                ExprDn::Concat(c.into_iter().map(|e| {
+                    e.map_elem_owned(|v| self.finish_lvalue_src(v, file))
+                }).collect())
+            }
+        }
     }
 
     fn resolve_process(&mut self, sb: ResolveCx<'_>, process_ast: &ast::Process) -> (StepId, Option<Shape>) {

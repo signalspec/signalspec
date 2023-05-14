@@ -318,7 +318,7 @@ fn resolve_expr_concat(ctx: &dyn DiagnosticHandler, scope: &Scope, node: &ast::E
                     elems.push(ConcatElem::Slice(e, w));
                 }
 
-                other => Err(ctx.report(Diagnostic::ConcatSpreadInvalidType {
+                other => Err(ctx.report(Diagnostic::ExpectedVector {
                     span: span(),
                     expected_width: w,
                     found: other.get_type(),
@@ -510,6 +510,57 @@ pub fn lvalue_dn(
             Ok(Predicate::from_value(&lit.value).unwrap())
         }
 
+        ast::Expr::Concat(node) => {
+            let pat_w: u32 = node.elems.iter().map(|&(w, _)| w.unwrap_or(1)).sum();
+
+            let elem_ty = match rhs.get_type() {
+                Type::Vector(ty_w, elem_ty) if pat_w == ty_w => *elem_ty,
+                wrong_ty => return Err(ctx.report(Diagnostic::ExpectedVector {
+                    span: Span::new(&scope.file, node.span),
+                    expected_width: pat_w,
+                    found: wrong_ty,
+                }))
+            };
+
+            let dn = rhs.down().unwrap();
+
+            let mut i = 0;
+            let mut parts = Vec::new();
+            let mut err = None;
+
+            for (width, e) in &node.elems {
+                if let Some(width) = *width {
+                    let ri = Expr::Expr(
+                        Type::Vector(width, Box::new(elem_ty.clone())),
+                        ExprKind::VarDn(ExprDn::Slice(Box::new(dn.clone()), i, i+width))
+                    );
+
+                    // Flatten nested vector predicates
+                    match lvalue_dn(ctx, scope, e, ri) {
+                        Ok(Predicate::Vector(inner)) => parts.extend(inner),
+                        Ok(p) => parts.push(ConcatElem::Slice(p, width)),
+                        Err(r) => { parts.push(ConcatElem::Slice(Predicate::Any, width)); err = Some(r) }
+                    }
+
+                    i += width;
+                } else {
+                    let ri = Expr::Expr(
+                        elem_ty.clone(),
+                        ExprKind::VarDn(ExprDn::Index(Box::new(dn.clone()), i))
+                    );
+
+                    match lvalue_dn(ctx, scope, e, ri) {
+                        Ok(p) => parts.push(ConcatElem::Elem(p)),
+                        Err(r) => { parts.push(ConcatElem::Elem(Predicate::Any)); err = Some(r) }
+                    }
+
+                    i += 1;
+                }
+            }
+
+            if let Some(r) = err { Err(r) } else {Ok(Predicate::Vector(parts))  }
+        }
+
         pat => Err(ctx.report(Diagnostic::NotAllowedInPattern {
             span: Span::new(&scope.file, pat.span())
         }))
@@ -519,6 +570,7 @@ pub fn lvalue_dn(
 pub enum LValueSrc {
    Val(ExprDn),
    Var(ValueSinkId, FileSpan),
+   Concat(Vec<ConcatElem<LValueSrc>>),
 }
 
 /// Pattern matching for `alt` or `on` in the up direction.
@@ -542,6 +594,32 @@ pub fn lvalue_up(
 
         ast::Expr::Value(lit) => {
             Ok(LValueSrc::Val(ExprDn::Const(lit.value.clone())))
+        }
+
+        ast::Expr::Concat(node) => {
+            let pat_w: u32 = node.elems.iter().map(|&(w, _)| w.unwrap_or(1)).sum();
+
+            let elem_ty = match ty {
+                Type::Vector(ty_w, elem_ty) if pat_w == ty_w => *elem_ty,
+                wrong_ty => return Err(ctx.report(Diagnostic::ExpectedVector {
+                    span: Span::new(&scope.file, node.span),
+                    expected_width: pat_w,
+                    found: wrong_ty,
+                }))
+            };
+
+            let parts = collect_or_err(node.elems.iter()
+                .map(|&(width, ref e)| {
+                    if let Some(width) = width {
+                        let ty_inner = Type::Vector(width, Box::new(elem_ty.clone()));
+                        Ok(ConcatElem::Slice(lvalue_up(ctx, scope, e, ty_inner, add_value_sink)?, width))
+                    } else {
+                        Ok(ConcatElem::Elem(lvalue_up(ctx, scope, e, elem_ty.clone(), add_value_sink)?))
+                    }
+                })
+            );
+
+            Ok(LValueSrc::Concat(parts?))
         }
 
         pat => Err(ctx.report(Diagnostic::NotAllowedInPattern {

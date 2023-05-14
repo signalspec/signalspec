@@ -22,6 +22,13 @@ impl<E> ConcatElem<E> {
         }
     }
 
+    pub fn map_elem_owned<T>(self, f: impl FnOnce(E) -> T) -> ConcatElem<T> {
+        match self {
+            ConcatElem::Elem(e) => ConcatElem::Elem(f(e)),
+            ConcatElem::Slice(e, w) => ConcatElem::Slice(f(e), w),
+        }
+    }
+
     pub fn elem_count(&self) -> u32 {
         match *self {
             ConcatElem::Elem(..) => 1,

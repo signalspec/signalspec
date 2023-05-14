@@ -26,3 +26,31 @@ def tuple() = ^Seq((0..10, 0..10), dir) {
 @test(#both, ((5, 6), (5, 6), (7, 8)))
 with Seq((_:0..10, _:0..10), _) def test2() = { tuple() | { val((5, 6)); val((7, 8)) } }
 
+with Seq((_:#a|#b|#c, _:bits(2)), dir)
+def test_vec() = ^Seq(bits(3), dir) {
+    repeat {
+        alt #up () {
+            () => {
+                on val('111) {
+                    val((#a, '00))
+                }
+            }
+
+            () => {
+                on val([2:'10, x]) {
+                    val((#b, [1, x]))
+                }
+            }
+
+            () => {
+                on val([0, 2:x]) {
+                    val((#c, x))
+                }
+            }
+        }
+    }
+}
+
+@test(#both, ((#b, '10), (#a, '00), (#b, '11), (#c, '01)))
+with Seq((_:#a|#b|#c, _:bits(2)), dir) def on_vec() = test_vec() | { val('100); val('111); val('101); val('001) }
+

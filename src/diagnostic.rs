@@ -339,12 +339,12 @@ diagnostic_kinds!{
         error "found `{ty2}`" at span2
     }
 
-    ConcatSpreadInvalidType {
+    ExpectedVector {
         span: Span,
         expected_width: u32,
         found: Type
-    } => "invalid type for spread in vector literal" {
-        error "expected vector of width {expected_width}, found `{found}`" at span
+    } => "expected vector of width {expected_width}" {
+        error "found `{found}`" at span
     }
 
     NotAllowedInPattern {

@@ -83,3 +83,19 @@ def ambiguous() = ^Seq(#a | #b, dir) {
 // test seq_both(#a|#b, (#a, #b, #a)) | ambiguous() | { val(#b) };
 // test seq_both(#a|#b, (#a, #a, #b)) | ambiguous() | { val(#a) };
 // test fail seq_both(#a|#b, (#a, #b, #a)) | ambiguous() | { val(#a) };
+
+with Seq((_:#ones|#bit|#two, _:bits(2)), dir)
+def vector_map() = ^Seq(bits(4), dir) {
+    repeat {
+        on val(x) {
+            alt dir x {
+                '1111 => { val((#ones, '00)) }
+                [1, 1, 0, x] => { val((#bit, [0, x])) }
+                [2:'00, 2:x] => { val((#two, x)) }
+            }
+        }
+    }
+}
+
+@test(#both, ((#ones, '00), (#bit, '01), (#two, '10)))
+with Seq((_:#ones|#bit|#two, _:bits(2)), dir) def vector() = vector_map() | { val('1111); val('1101); val('0010) }

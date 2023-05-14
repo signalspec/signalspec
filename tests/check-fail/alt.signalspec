@@ -22,6 +22,10 @@ with Seq(0..10, _) def main() = {
 //# invalid item not matched
         "foo" => {}
 //      ^^^^^ found `(1, (#x, #y), <error>)`, incompatible with pattern
+
+//# expected vector of width 2
+        ([x, y], _, _) => {}
+//       ^^^^^^ found `1`
     }
 }
 
@@ -42,6 +46,10 @@ with Seq(0..10, _) def main() = {
 //# expression type not supported as a pattern
         (_, #x) => { val(3) }
 //       ^ not allowed here
+
+//# expected vector of width 2
+        ([x, y], #x) => { val(4) }
+//       ^^^^^^ found `_`
     }
 }
 
