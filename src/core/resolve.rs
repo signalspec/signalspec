@@ -2,13 +2,13 @@ use std::sync::Arc;
 
 use num_traits::Signed;
 
-use crate::core::expr_resolve::bind_tree_fields;
 use crate::diagnostic::{Span, ErrorReported};
 use crate::entitymap::{ EntityMap, entity_key };
 use crate::runtime::instantiate_primitive;
 use crate::tree::Tree;
-use crate::{Index, DiagnosticHandler, Diagnostic, SourceFile, FileSpan};
+use crate::{Index, DiagnosticHandler, Diagnostic, SourceFile, FileSpan, TypeTree};
 use crate::syntax::ast::{self, AstNode};
+use super::expr_resolve::{lvalue_dn, zip_ast, LValueSrc, lvalue_up};
 use super::index::FindDefError;
 use super::step::{Step, StepInfo, analyze_unambiguous, AltUpArm, AltDnArm};
 use super::{Expr, ExprDn, Item, Scope, Shape, Type, ShapeMsg, protocol};
@@ -105,7 +105,7 @@ impl<'a> Builder<'a> {
             self.ui.report(Diagnostic::UpValueNotProvided {
                 span: Span::new(file, span),
             });
-            ExprDn::Variable(ValueSrcId(u32::MAX))
+            ExprDn::invalid()
         })
     }
 
@@ -145,39 +145,22 @@ impl<'a> Builder<'a> {
 
                 let mut body_scope = sb.scope.child();
 
-                enum UpInner {
-                    Val(ExprDn),
-                    Var(ValueSinkId, FileSpan),
-                }
-
+                let mut dn_vars = Vec::new();
                 let mut dn = Vec::new();
                 let mut up_inner = Vec::new();
 
                 for (param, expr) in msg_def.params.iter().zip(&args.items) {
                     match param.direction {
                         Dir::Dn => {
-                            bind_tree_fields(self.ui, expr, &param.ty, &mut body_scope, (&mut *self, &mut dn),
-                                |(slf, dn), ty, _name| {
-                                    let id = slf.add_value_src();
-                                    dn.push((Predicate::Any, id));
-                                    Expr::var_dn(id, ty.clone())
-                                },
-                                |&mut (ref mut slf, ref mut dn), e| {
-                                    dn.push((e.predicate().expect("on field is not a predicate"), slf.add_value_src()))
-                                }
-                            );
+                            let item = param.ty.map_leaf(&mut |ty| {
+                                let id = self.add_value_src();
+                                dn_vars.push(id);
+                                LeafItem::Value(Expr::var_dn(id, ty.clone()))
+                            });
+                            self.bind_tree_fields_dn(&mut body_scope, &item, expr, &mut dn).ok();
                         }
                         Dir::Up => {
-                            bind_tree_fields(self.ui, expr, &param.ty, &mut body_scope, (&mut *self, &mut up_inner),
-                                |(slf, up_inner), ty, name| {
-                                    let id = slf.add_value_sink();
-                                    up_inner.push(UpInner::Var(id, name.span));
-                                    Expr::var_up(id, ty.clone())
-                                },
-                                |(_, up_inner), e| {
-                                    up_inner.push(UpInner::Val(e.down().unwrap()));
-                                }
-                            );
+                            self.bind_tree_fields_up(&mut body_scope,  &param.ty, expr, &mut up_inner).ok();
                         }
                     };
                 }
@@ -188,14 +171,9 @@ impl<'a> Builder<'a> {
                     self.add_step(Step::Seq(vec![]))
                 };
 
-                let up = up_inner.into_iter().map(|v| {
-                    match v {
-                        UpInner::Var(snk, span) => self.take_upvalue(snk, &sb.scope.file, span),
-                        UpInner::Val(e) => e,
-                    }
-                }).collect();
+                let up = self.bind_tree_fields_up_finish(up_inner, &sb.scope.file);
 
-                self.add_step(Step::TokenTop { top_dir: shape_up.dir, variant: msg_def.tag, dn, up, inner })
+                self.add_step(Step::TokenTop { top_dir: shape_up.dir, variant: msg_def.tag, dn_vars, dn, up, inner })
             }
 
             ast::Action::On(ref node @ ast::ActionOn { args: None, ..}) => {
@@ -327,25 +305,14 @@ impl<'a> Builder<'a> {
                         let scrutinee_dn = scrutinee.flatten(&mut |e| {
                             match e {
                                 LeafItem::Value(v) => v.down().expect("can't be down-evaluated"),
+                                LeafItem::Invalid(_) => ExprDn::invalid(),
                                 t => panic!("{t:?} not allowed in alt")
                             }
                         });
                         let arms = node.arms.iter().map(|arm| {
                             let mut body_scope = sb.scope.child();
                             let mut vals = Vec::new();
-
-                            bind_tree_fields(self.ui, &arm.discriminant, &scrutinee, &mut body_scope, &mut vals,
-                                |vals, t, _name| {
-                                    vals.push(Predicate::Any);
-                                    match t {
-                                        LeafItem::Value(v) => v.clone(),
-                                        t => panic!("{t:?} not allowed in alt")
-                                    }
-                                },
-                                |vals, e| {
-                                    vals.push(e.predicate().expect("alt arm {:?} is not a valid predicate"))
-                                }
-                            );
+                            self.bind_tree_fields_dn(&mut body_scope, &scrutinee, &arm.discriminant, &mut vals).ok();
 
                             let upvalues_scope = self.upvalues.len();
                             let body = self.resolve_seq(sb.with_scope(&body_scope), &arm.block);
@@ -361,45 +328,21 @@ impl<'a> Builder<'a> {
                         let scrutinee_src = scrutinee.flatten(&mut |e| {
                             match e {
                                 LeafItem::Value(v) => self.up_value_src(&v),
+                                LeafItem::Invalid(_) => self.add_value_src(),
                                 t => panic!("{t:?} not allowed in alt")
                             }
                         });
                         let arms = node.arms.iter().map(|arm| {
                             let mut body_scope = sb.scope.child();
-
-                            enum UpInner {
-                                Val(ExprDn),
-                                Var(ValueSinkId, FileSpan),
-                            }
                             
                             let mut up_inner = Vec::new();
-                            bind_tree_fields(self.ui,&arm.discriminant, &scrutinee, &mut body_scope, (&mut *self, &mut up_inner),
-                                |(slf, up_inner), t, name| {
-                                    let ty = match t {
-                                        LeafItem::Value(v) => v.get_type(),
-                                        t => panic!("{t:?} not allowed in alt")
-                                    };
-                                    let id = slf.add_value_sink();
-                                    up_inner.push(UpInner::Var(id, name.span));
-                                    Expr::var_up(id, ty)
-                                },
-                                |(_, up_inner), e| {
-                                    let Some(e) = e.down() else {
-                                        panic!("{e:?} cannot be down-evaluated in alt");
-                                    };
-                                    up_inner.push(UpInner::Val(e))
-                                }
-                            );
+                            let ty = scrutinee.as_type_tree().unwrap();
+                            self.bind_tree_fields_up(&mut body_scope, &ty, &arm.discriminant, &mut up_inner).ok();
 
                             let upvalues_scope = self.upvalues.len();
                             let body = self.resolve_seq(sb.with_scope(&body_scope), &arm.block);
 
-                            let vals = up_inner.into_iter().map(|v| {
-                                match v {
-                                    UpInner::Var(snk, span) => self.take_upvalue(snk, &sb.scope.file, span),
-                                    UpInner::Val(e) => e,
-                                }
-                            }).collect();
+                            let vals = self.bind_tree_fields_up_finish(up_inner, &sb.scope.file);
 
                             if self.upvalues.len() > upvalues_scope {
                                 // TODO: could support if all arms set the same upvalues, and we insert phi nodes to join them
@@ -416,6 +359,93 @@ impl<'a> Builder<'a> {
             }
             ast::Action::Error(r) => self.add_step(Step::Invalid(ErrorReported::from_ast(r))),
         }
+    }
+
+    fn bind_tree_fields_dn(
+        &mut self,
+        scope: &mut Scope,
+        rhs: &Item,
+        pat: &ast::Expr,
+        dn: &mut Vec<Predicate>,
+    ) -> Result<(), ErrorReported> {
+        zip_ast(self.ui, &scope.file.clone(), pat, rhs, &mut |pat, r| {
+            match (pat, r) {
+                (pat, Tree::Leaf(LeafItem::Value(r))) => {
+                    match lvalue_dn(self.ui, scope, pat, r.clone()){
+                        Ok(p) => { dn.push(p); Ok(()) }
+                        Err(r) => { dn.push(Predicate::Any); Err(r) }
+                    }
+                }
+                (ast::Expr::Ignore(_), t) => {
+                    t.for_each(&mut |_| {
+                        dn.push(Predicate::Any)
+                    });
+                    Ok(())
+                }
+                (ast::Expr::Var(ref name), t @ Tree::Tuple(_)) => {
+                    t.for_each(&mut |_| {
+                        dn.push(Predicate::Any)
+                    });
+                    scope.bind(&name.name, t.clone());
+                    Ok(())
+                }
+                (_, Tree::Leaf(LeafItem::Invalid(r))) => {
+                    dn.push(Predicate::Any);
+                    Err(r.clone())
+                }
+                (pat, e) => {
+                    dn.push(Predicate::Any);
+                    Err(self.ui.report(Diagnostic::InvalidItemForPattern {
+                        span: Span::new(&scope.file, pat.span()),
+                        found: e.to_string(),
+                    }))
+                }
+            }  
+        })
+    }
+
+    fn bind_tree_fields_up(
+        &mut self,
+        scope: &mut Scope,
+        rhs: &TypeTree,
+        pat: &ast::Expr,
+        up: &mut Vec<LValueSrc>,
+    ) -> Result<(), ErrorReported> {
+        zip_ast(self.ui, &scope.file.clone(), pat, rhs, &mut |pat, r| {
+            match (pat, r) {
+                (pat, Tree::Leaf(t)) => {
+                    match lvalue_up(self.ui, scope, pat, t.clone(), &mut || self.add_value_sink()) {
+                        Ok(x) => { up.push(x); Ok(()) },
+                        Err(r) => { up.push(LValueSrc::Val(ExprDn::invalid())); Err(r) }
+                    }
+                }
+                (ast::Expr::Var(ref name), tup @ Tree::Tuple(_)) => {
+                    let e = tup.map_leaf(&mut |ty| {
+                        let id = self.add_value_sink();
+                        up.push(LValueSrc::Var(id, name.span));
+                        LeafItem::Value(Expr::var_up(id, ty.clone()))
+                    });
+                    scope.bind(&name.name, e);
+                    Ok(())
+                }
+                (pat, ty) => {
+                    up.push(LValueSrc::Val(ExprDn::invalid()));
+                    Err(self.ui.report(Diagnostic::InvalidItemForPattern {
+                        span: Span::new(&scope.file, pat.span()),
+                        found: ty.to_string(),
+                    }))
+                }
+            }
+        })
+    }
+
+    fn bind_tree_fields_up_finish(&mut self, up_inner: Vec<LValueSrc>, file: &Arc<SourceFile>) -> Vec<ExprDn> {
+        up_inner.into_iter().map(|v| {
+            match v {
+                LValueSrc::Var(snk, span) => self.take_upvalue(snk, file, span),
+                LValueSrc::Val(e) => e,
+            }
+        }).collect()
     }
 
     fn resolve_process(&mut self, sb: ResolveCx<'_>, process_ast: &ast::Process) -> (StepId, Option<Shape>) {

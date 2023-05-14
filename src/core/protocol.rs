@@ -23,11 +23,11 @@ pub fn resolve(
                 protocol_name: ast.name.name.clone(),
             }))
         },
-        Err(InstantiateProtocolError::ArgsMismatch { msg, found, protocol_def_span }) => {
+        Err(InstantiateProtocolError::ArgsMismatch { found, protocol_def_span }) => {
+            //TODO: should be chained to previous error
             Err(ctx.report(Diagnostic::ProtocolArgumentMismatch {
                 span: Span::new(&scope.file, ast.param.span()),
                 protocol_name: ast.name.name.clone(),
-                msg: msg.to_string(),
                 found: format!("{found}"),
                 def: protocol_def_span,
             }))
@@ -40,7 +40,6 @@ pub fn resolve(
 pub enum InstantiateProtocolError {
     ProtocolNotFound,
     ArgsMismatch {
-        msg: &'static str,
         found: Item,
         protocol_def_span: Span,
     },
@@ -65,9 +64,8 @@ pub fn instantiate(
         .ok_or(InstantiateProtocolError::ProtocolNotFound)?;
     let protocol_ast = protocol.ast();
     let mut scope = protocol.scope().child();
-    if let Err(msg) = lexpr(ctx, &mut scope, &protocol_ast.param, &args) {
+    if let Err(_) = lexpr(ctx, &mut scope, &protocol_ast.param, &args) {
         return Err(InstantiateProtocolError::ArgsMismatch {
-            msg,
             found: args,
             protocol_def_span: Span::new(&scope.file, protocol_ast.param.span())
         });
@@ -139,8 +137,8 @@ pub(crate) fn match_protocol(scope: &mut Scope, protocol: &ast::ProtocolRef, sha
 
     let mut ctx = Collector::new();
 
-    if let Err(e) = lexpr(&mut ctx, scope, &protocol.param, &shape.param) {
-        debug!("Failed to match protocol argument for `{}`: {:?}", protocol.name.name, e);
+    if let Err(_) = lexpr(&mut ctx, scope, &protocol.param, &shape.param) {
+        debug!("Failed to match protocol argument for `{}`", protocol.name.name);
         return false;
     }
 

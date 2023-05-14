@@ -26,7 +26,7 @@ pub enum Step {
     Pass,
     Stack { lo: StepId, shape: Shape, hi: StepId },
     Token { variant: usize, dn: Vec<ExprDn>, up: Vec<(Predicate, ValueSrcId)> },
-    TokenTop { top_dir: Dir, variant: usize, dn: Vec<(Predicate, ValueSrcId)>, up: Vec<ExprDn>, inner: StepId },
+    TokenTop { top_dir: Dir, variant: usize, dn_vars: Vec<ValueSrcId> , dn: Vec<Predicate>, up: Vec<ExprDn>, inner: StepId },
     Primitive(Arc<dyn PrimitiveProcess + 'static>),
     Seq(Vec<StepId>),
     RepeatDn {
@@ -168,7 +168,7 @@ pub fn analyze_unambiguous(steps: &EntityMap<StepId, Step>) -> EntityMap<StepId,
                     },
                     Dir::Dn => {
                         StepInfo {
-                            first: MatchSet::upper(variant, dn.iter().map(|(p, _)| p.clone()).collect()),
+                            first: MatchSet::upper(variant, dn.clone()),
                             followlast: inner.followlast.clone(),
                             nullable: false,
                         }

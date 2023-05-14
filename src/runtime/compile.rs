@@ -212,14 +212,15 @@ impl Compiler<'_> {
                 }
             }
 
-            Step::TokenTop { top_dir, variant, ref dn, ref up, inner } => {
+            Step::TokenTop { top_dir, variant, ref dn_vars, ref dn, ref up, inner } => {
                 let inner_info = &self.program.step_info[inner];
 
                 match top_dir {
                     Dir::Up => {},
                     Dir::Dn => {
                         if let Some(c) = channels.up_rx {
-                            self.emit(Insn::Consume(c, variant, dn.clone()));
+                            let dn_and_vars = dn.iter().cloned().zip(dn_vars.iter().cloned()).collect();
+                            self.emit(Insn::Consume(c, variant, dn_and_vars));
                         }
 
                         self.seq_prep(channels.without_up(), &None, &inner_info.first);

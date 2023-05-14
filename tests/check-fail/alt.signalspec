@@ -1,0 +1,47 @@
+@test(#dn, ())
+with Seq(0..10, _) def main() = {
+//# undefined variable `missing`
+    alt #dn (1, (#x, #y), missing) {
+//                        ^^^^^^^ not found
+        _ => { }
+
+        (a, b, c) => {}
+
+//# too many positional arguments passed
+        (_, _) => {}
+//           ^ 1 unexpected positional arguments not matched
+
+//# too few positional arguments passed
+        (_, _, _, _, _) => {}
+//                ^^^^ expected 2 more positional arguments not passed
+
+//# invalid item not matched
+        (1, 2, 3) => {}
+//          ^ found `(#x, #y)`, incompatible with pattern
+
+//# invalid item not matched
+        "foo" => {}
+//      ^^^^^ found `(1, (#x, #y), <error>)`, incompatible with pattern
+    }
+}
+
+@test(#up, ())
+with Seq(0..10, _) def main() = {
+    //# undefined variable `missing`
+    alt #up (_, missing) {
+//              ^^^^^^^ not found
+
+//# no value for up-direction variable provided
+//# no value for up-direction variable provided
+        (a, b) => { val(1) }
+//          ^ must be up-evaluated exactly once in this block
+//       ^ must be up-evaluated exactly once in this block
+
+        (#x, #y) => { val(2) }
+
+//# expression type not supported as a pattern
+        (_, #x) => { val(3) }
+//       ^ not allowed here
+    }
+}
+

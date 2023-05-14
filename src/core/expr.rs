@@ -302,6 +302,10 @@ pub enum ExprDn {
 }
 
 impl ExprDn {
+    pub fn invalid() -> ExprDn {
+        ExprDn::Variable(u32::MAX.into())
+    }
+
     /// Down-evaluate the expression with variables from the given value function.
     pub fn eval(&self, state: &dyn Fn(ValueSrcId)->Value) -> Value {
         match *self {

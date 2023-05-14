@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::default::Default;
 use std::sync::Arc;
 
-use crate::{syntax::Value, tree::Tree, SourceFile, TypeTree, diagnostic::ErrorReported};
+use crate::{syntax::Value, tree::Tree, SourceFile, TypeTree, diagnostic::ErrorReported, Type};
 use super::{ Expr, FunctionDef };
 
 pub type ScopeNames = HashMap<String, Item>;
@@ -95,6 +95,7 @@ impl Item {
     pub fn as_type_tree(&self) -> Option<TypeTree> {
         self.try_map_leaf(&mut |t| { match t {
             LeafItem::Value(v) => Ok(v.get_type()),
+            LeafItem::Invalid(_) => Ok(Type::Ignored),
             _ => Err(())
         }}).ok()
     }

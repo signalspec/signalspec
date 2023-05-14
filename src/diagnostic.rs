@@ -155,10 +155,9 @@ diagnostic_kinds!{
     ProtocolArgumentMismatch {
         span: Span,
         protocol_name: String,
-        msg: String,
         found: String,
         def: Span
-    } => "invalid arguments to protocol `{protocol_name}`: {msg}" {
+    } => "invalid arguments to protocol `{protocol_name}`" {
         error "found `{found}`" at span
         error "definition site" at def
     }
@@ -227,9 +226,8 @@ diagnostic_kinds!{
 
     FunctionArgumentMismatch {
         span: Span,
-        def: Span,
-        msg: String
-    } => "function argument mismatch: {msg}" {
+        def: Span
+    } => "function argument mismatch" {
         error "call site" at span
         error "definition" at def
     }
@@ -252,10 +250,38 @@ diagnostic_kinds!{
         error "expected `{expected}`, found `{found}`" at span
     }
 
+    TupleTooManyPositional {
+        span: Span,
+        n: usize
+    } => "too many positional arguments passed" {
+        error "{n} unexpected positional arguments not matched" at span
+    }
+
+    TupleTooFewPositional {
+        span: Span,
+        n: usize
+    } => "too few positional arguments passed" {
+        error "expected {n} more positional arguments not passed" at span
+    }
+
+    ExpectedTuple {
+        span: Span,
+        found: String
+    } => "expected a tuple" {
+        error "passed a single value `{found}`" at span
+    }
+
+    InvalidItemForPattern {
+        span: Span,
+        found: String
+    } => "invalid item not matched" {
+        error "found `{found}`, incompatible with pattern" at span
+    }
+
     ExpectedConst {
         span: Span,
         found: String,
-        expected: &'static str
+        expected: String
     } => "expected constant {expected}" {
         error "found `{found}`" at span
     }
@@ -319,6 +345,12 @@ diagnostic_kinds!{
         found: Type
     } => "invalid type for spread in vector literal" {
         error "expected vector of width {expected_width}, found `{found}`" at span
+    }
+
+    NotAllowedInPattern {
+        span: Span
+    } => "expression type not supported as a pattern" {
+        error "not allowed here" at span
     }
 }
 
