@@ -11,11 +11,13 @@ with Seq(#x, _) def main() = {
     alt (dn, 1) #x {
 //       ^^ not found
 //      ^^^^^^^ found `(<error>, 1)`
+        _ => {}
     }
 
 // if expression is itself an error, don't report a new error
 //# undefined variable `xyz`
     alt xyz (1, 2) {
 //      ^^^ not found
+        _ => {}
     }
 }

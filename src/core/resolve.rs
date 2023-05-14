@@ -300,6 +300,13 @@ impl<'a> Builder<'a> {
                 let dir = constant::<Dir>(self.ui, sb.scope, &node.dir);
                 let scrutinee = rexpr(self.ui, sb.scope, &node.expr);
 
+                if node.arms.is_empty() {
+                    let r = self.ui.report(Diagnostic::AltZeroArms{
+                        span: Span::new(&sb.scope.file, node.span)
+                    });
+                    return self.add_step(Step::Invalid(r));
+                }
+
                 match dir {
                     Ok(Dir::Dn) => {
                         let scrutinee_dn = scrutinee.flatten(&mut |e| {

@@ -45,3 +45,15 @@ with Seq(0..10, _) def main() = {
     }
 }
 
+
+@test(#up, ())
+with Seq(0..10, _) def main() = {
+//# `alt` action must have at least one arm
+    alt #up #foo {}
+//  ^^^^^^^^^^^^^^^ no arms specified
+
+//# `alt` action must have at least one arm
+    alt #dn #foo {}
+//  ^^^^^^^^^^^^^^^ no arms specified
+}
+

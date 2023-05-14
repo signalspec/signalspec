@@ -352,6 +352,12 @@ diagnostic_kinds!{
     } => "expression type not supported as a pattern" {
         error "not allowed here" at span
     }
+
+    AltZeroArms {
+        span: Span
+    } => "`alt` action must have at least one arm" {
+        error "no arms specified" at span
+    }
 }
 
 pub struct SimplePrintHandler;
