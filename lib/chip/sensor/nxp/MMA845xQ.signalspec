@@ -28,23 +28,33 @@ def write_reg(var(#dn) reg, var(#dn) val) = {
 }
 
 with I2C(role)
-def MMA845xQ() = ^Seq((byte, byte, byte, byte, byte, byte), #up) {
+def MMA845xQ() = ^Seq((-4.0..4.0, -4.0..4.0, -4.0..4.0), #up) {
     read_reg(WHO_AM_I, <:'h2a);
     write_reg(CTRL_REG1, 'h31);
     write_reg(XYZ_DATA_CFG, 'h00);
     write_reg(CTRL_REG4, 'h01);
-    repeat #dn 100 {
-        on val((d1, d2, d3, d4, d5, d6)) {
-            start(ADDR, #w);
-            write(OUT_X_MSB);
-            start(ADDR, #r);
-            read(d1);
-            read(d2);
-            read(d3);
-            read(d4);
-            read(d5);
-            read(d6);
-            stop()
+    repeat #dn 100000 {
+        on val((x, y, z)) {
+            // TODO: use `for` once it can be used in #async_dn
+            alt #up (chunks(8, signed(16, x * 16384.0)), chunks(8, signed(16, y * 16384.0)), chunks(8, signed(16, z * 16384.0))) {
+                ([x1,x2], [y1, y2], [z1, z2]) => {
+                    start(ADDR, #w);
+                    write(OUT_X_MSB);
+                    start(ADDR, #r);
+
+                    read(x1)
+                    read(x2)
+
+                    read(y1)
+                    read(y2)
+
+                    read(z1)
+                    read(z2)
+
+                    stop()
+                }
+            }
+            
         }
     }
 }

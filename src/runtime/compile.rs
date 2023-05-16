@@ -331,22 +331,33 @@ impl Compiler<'_> {
             Step::AltUp(ref opts, ref dests) => {
                 let mut jumps_to_final = vec![];
 
-                for &AltUpArm { ref vals, body } in opts {
+                fn inner(s: &mut Compiler, body: StepId, channels: ChannelIds, dests: &Vec<ValueSrcId>, vals: &Vec<ExprDn>) {
+                    s.compile_step(body, channels);
+
+                    for (&id, e) in dests.iter().zip(vals.iter()) {
+                        s.emit(Insn::Assign(id, e.clone()));
+                    }
+                }
+
+                // resolve checks that there is at least one alt arm
+                let (last, rest) = opts.split_last().unwrap();
+
+                for &AltUpArm { ref vals, body } in rest {
                     let inner_info = &self.program.step_info[body];
                     let test = self.emit_placeholder();
 
-                    self.compile_step(body, channels);
-
-                    for (&id, e) in dests.iter().zip(vals.iter()) {
-                        self.emit(Insn::Assign(id, e.clone()));
-                    }
+                    inner(self, body, channels, dests, vals);
 
                     jumps_to_final.push(self.emit_placeholder());
 
                     self.backpatch(test, self.test_matchset(channels, &inner_info.first, self.next_ip()));
                 }
 
-                self.emit(Insn::Fail);
+                {
+                    // Final arm doesn't need a test or jump to end
+                    let &AltUpArm { ref vals, body } = last;
+                    inner(self, body, channels, dests, vals);
+                }
 
                 for ip in jumps_to_final {
                     self.backpatch(ip, Insn::Jump(self.next_ip()));
@@ -418,8 +429,8 @@ pub fn compile(program: &ProcessChain) -> CompiledProgram {
     }
     compiler.emit(Insn::End);
 
-    for (ip, insn) in compiler.insns.iter().enumerate() {
-        debug!("{ip:4} {insn:?}");
+    for (ip, insn) in compiler.insns.iter() {
+        debug!("{ip:4?} {insn:?}");
     }
 
     CompiledProgram {
