@@ -376,16 +376,15 @@ impl DiagnosticHandler for SimplePrintHandler {
 /// If the error is an unclosed delimiter, get the span of the opening delimiter
 fn find_unclosed_delimiter(parent: &dyn AstNode, err: &ast::Error) -> Option<FileSpan> {
     if let Some(parent) = parent.downcast::<ast::ExprTup>() {
-        //TODO: use `is_err_and` once stable
-        if parent.close.as_ref().err().filter(|&e| ptr::eq(err, e)).is_some() {
+        if parent.close.as_ref().is_err_and(|e| ptr::eq(err, e)) {
             return Some(parent.open.span)
         }
     } else if let Some(parent) = parent.downcast::<ast::Block>() {
-        if parent.close.as_ref().err().filter(|&e| ptr::eq(err, e)).is_some() {
+        if parent.close.as_ref().is_err_and(|e| ptr::eq(err, e)) {
             return Some(parent.open.span)
         }
     } else if let Some(parent) = parent.downcast::<ast::Protocol>() {
-        if parent.close.as_ref().err().filter(|&e| ptr::eq(err, e)).is_some() {
+        if parent.close.as_ref().is_err_and(|e| ptr::eq(err, e)) {
             return Some(parent.open.span)
         }
     }
@@ -394,7 +393,11 @@ fn find_unclosed_delimiter(parent: &dyn AstNode, err: &ast::Error) -> Option<Fil
 
 pub fn report_parse_errors(ui: &dyn DiagnosticHandler, file: &Arc<SourceFile>, ast: &dyn AstNode) -> bool{
     let mut has_errors = false;
-    for (parent, err) in ast.walk_preorder_with_parent().filter_map(|(p, n)| n.downcast::<ast::Error>().map(|n| (p, n))) {
+    let errors = ast.walk_preorder_with_parent()
+        .filter_map(|(p, n)| {
+            n.downcast::<ast::Error>().map(|n| (p, n))
+        });
+    for (parent, err) in errors {
         if let Some(open) = find_unclosed_delimiter(parent, err) {
             ui.report(Diagnostic::UnclosedDelimiter {
                 span: Span::new(file, err.span),
