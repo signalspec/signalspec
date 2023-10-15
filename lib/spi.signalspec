@@ -7,7 +7,7 @@ protocol SPI(role: #controller | #async_controller | #monitor | #generate) role[
 }
 
 with Seq((_:#l|#h, _:#l|#h, _:#l|#h, _:#l|#h), dir)
-def spi() = ^SPI(dir[#up = #monitor, #dn = #generate]) {
+def spi() = new SPI(dir[#up = #monitor, #dn = #generate]) {
   repeat dir <: 10 { val((#h, <: #l, <: #l, <: #l)) }
   repeat {
     repeat #up 1..1000 {

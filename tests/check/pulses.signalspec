@@ -1,5 +1,5 @@
 with Seq(_:#h|#l, dir)
-def pulses() = ^Seq(1..10, dir) {
+def pulses() = new Seq(1..10, dir) {
     repeat {
         on val(len) {
             repeat dir 1!1..10 {

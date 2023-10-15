@@ -322,8 +322,8 @@ ast_node!{
     pub enum Process {
         Call(ProcessCall),
         Child(ProcessChild),
-        Seq(ProcessSeq),
-        InferSeq(Block),
+        New(ProcessNew),
+        Seq(Block),
         Stack(ProcessStack),
         Primitive(ProcessPrimitive),
     }
@@ -345,7 +345,7 @@ ast_node!{
 }
 
 ast_node!{
-    pub struct ProcessSeq {
+    pub struct ProcessNew {
         pub span: FileSpan,
         pub top: ProtocolRef,
         pub block: Block,

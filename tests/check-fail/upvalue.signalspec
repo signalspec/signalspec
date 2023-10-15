@@ -1,5 +1,5 @@
 @test(#up, (9))
-with Seq(1..10, _) def main() = ^Seq(1..10, #up) {
+with Seq(1..10, _) def main() = new Seq(1..10, #up) {
 //# value for up-direction variable provided multiple times
     on val(v) {
 //         ^ must be up-evaluated exactly once in this block

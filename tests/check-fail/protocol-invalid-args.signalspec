@@ -2,17 +2,17 @@
 //# too many positional arguments passed
 //^* 1 unexpected positional arguments not matched
 @test(#up, ())
-with Seq(_, _) def main() = ^Seq(9, 9, 9) {}
-//                              ^^^^^^^^^ found `(9, 9, 9)`
+with Seq(_, _) def main() = new Seq(9, 9, 9) {}
+//                                 ^^^^^^^^^ found `(9, 9, 9)`
 // ^* definition site
 
 //# undefined variable `undefinedvar`
 @test(#up, ())
-with Seq(_, _) def main() = ^Seq(undefinedvar, #up) {}
-//                               ^^^^^^^^^^^^ not found
+with Seq(_, _) def main() = new Seq(undefinedvar, #up) {}
+//                                  ^^^^^^^^^^^^ not found
 
 //# expected a value that can be resolved as a type
 //^* found `"not a type"`
 @test(#up, ())
-with Seq(_, _) def main() = ^Seq("not a type", #up) {}
+with Seq(_, _) def main() = new Seq("not a type", #up) {}
 

@@ -517,7 +517,7 @@ impl<'a> Builder<'a> {
                 (self.add_step(Step::Primitive(prim)), None)
             }
 
-            ast::Process::Seq(node) => {
+            ast::Process::New(node) => {
                 let top_shape = match protocol::resolve(self.ui, self.index, sb.scope, &node.top, 0) {
                     Ok(shape) => shape,
                     Err(r) => return (self.add_step(Step::Invalid(r)), None),
@@ -526,7 +526,7 @@ impl<'a> Builder<'a> {
                 (block, Some(top_shape))
             }
 
-            ast::Process::InferSeq(ref block) => {
+            ast::Process::Seq(ref block) => {
                 let block = self.resolve_seq(sb.with_upper(sb.scope, None), block);
                 (block, None)
             }

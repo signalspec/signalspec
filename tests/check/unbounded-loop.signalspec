@@ -1,5 +1,5 @@
 with Seq(_:#h|#l, d)
-def main() = ^Seq(0..3, d) {
+def main() = new Seq(0..3, d) {
   repeat {
     on val(v) {
       val(#h)

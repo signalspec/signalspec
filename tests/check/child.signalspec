@@ -4,7 +4,7 @@ protocol Test(dir) dir {
 }
 
 with Seq(_:#x|#y, dir)
-def interleave() = ^Test(dir) {
+def interleave() = new Test(dir) {
     repeat {
         on a {
             on val(v) {
