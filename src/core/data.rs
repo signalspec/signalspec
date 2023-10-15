@@ -14,8 +14,16 @@ impl Value {
             Value::Number(v) => Type::Number(v, v),
             Value::Complex(_) => Type::Complex,
             Value::Symbol(ref v) => Type::Symbol(Some(v.clone()).into_iter().collect()),
-            Value::Vector(ref n) => Type::Vector(n.len() as u32,
-                Box::new(n.first().map_or(Type::Ignored, Value::get_type))),
+            Value::Vector(ref n) => {
+                let len = n.len() as u32;
+                let Ok(inner) = Type::union_iter(n.iter().map(Value::get_type)) else {
+                    // Only a concatenation expression can create a vector
+                    // containing different types, and it reports an error,
+                    // so this should be unreachable.
+                    panic!("Incompatible types in vector: {self:?}")
+                };
+                Type::Vector(len, Box::new(inner))
+            }
         }
     }
 }
