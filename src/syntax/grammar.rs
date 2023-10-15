@@ -155,26 +155,18 @@ peg::parser!(pub grammar signalspec() for str {
 
   rule concat_elem() -> (Option<u32>, ast::Expr) = w:(w:INTEGER() ":" {w})? e:expr() { (w, e) }
 
-  pub rule literal() -> ast::Value
-    = "#" i:IDENTIFIER() { ast::Value::Symbol(i.name) }
-    / v:NUMBER() u:unit() { ast::Value::Number(v) }
-    / bitsliteral()
+  pub rule literal() -> ast::Literal
+    = "#" i:IDENTIFIER() { ast::Literal::Symbol(i.name) }
+    / v:NUMBER() u:unit() { ast::Literal::Number(v) }
+    / "'h" v:(hexchar()+) { ast::Literal::Hex(v) }
+    / "'" "b"? v:(binbit()+) { ast::Literal::Bin(v) }
 
-    rule bitsliteral() -> ast::Value
-        = "'h" v:(hexchar()+) {
-            ast::Value::Vector(v.iter().flat_map(|&i| {
-              (0..4).rev().map(move |b| ast::Value::from_bit((i & 1<<b) != 0))
-            }).collect())
-        }
-        / "'" "b"? v:(binbit()+)
-            { ast::Value::Vector(v.iter().map(|&b| ast::Value::from_bit(b)).collect()) }
+    rule hexchar() -> u8
+        = c:$(['0'..='9' | 'a'..='f' | 'A'..='F'])
+        {? u8::from_str_radix(c, 16).map_err(|_| "hex char") }
 
-        rule hexchar() -> u8
-            = c:$(['0'..='9' | 'a'..='f' | 'A'..='F'])
-            {? u8::from_str_radix(c, 16).map_err(|_| "hex char") }
-
-        rule binbit() -> bool
-            = "0" {false} / "1" {true}
+    rule binbit() -> bool
+        = "0" {false} / "1" {true}
 
     rule unit() -> String
         = u:$(['a'..='z' | 'A'..='Z']+) { u.to_string() }

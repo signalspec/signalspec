@@ -1,6 +1,6 @@
 use std::{sync::Arc, fmt::Display};
 
-use crate::{syntax::{ast::{self, AstNode, BinOp}, Value, Number}, tree::Tree, diagnostic::{DiagnosticHandler, Diagnostic, Span, ErrorReported}, Type, core::ConcatElem, FileSpan, SourceFile};
+use crate::{syntax::{ast::{self, AstNode, BinOp}, Number}, tree::Tree, diagnostic::{DiagnosticHandler, Diagnostic, Span, ErrorReported}, Value, Type, core::ConcatElem, FileSpan, SourceFile};
 use super::{Expr, Func, FunctionDef, Item, Scope, LeafItem, expr::{ExprKind, eval_choose, eval_binary}, Predicate, ExprDn, resolve::ValueSinkId };
 
 pub fn value(ctx: &dyn DiagnosticHandler, scope: &Scope, e: &ast::Expr) -> Result<Expr, ErrorReported> {
@@ -127,7 +127,7 @@ pub fn rexpr(ctx: &dyn DiagnosticHandler, scope: &Scope, e: &ast::Expr) -> Item 
             resolve_function_call(ctx, || Span::new(&scope.file, node.span), func, arg)
         }
 
-        ast::Expr::Value(ref node) => Expr::Const(node.value.clone()).into(),
+        ast::Expr::Value(ref node) => Expr::Const(Value::from_literal(&node.value)).into(),
         ast::Expr::Ignore(_) => Expr::ignored().into(),
 
         ast::Expr::Typed(ref node) => resolve_expr_typed(ctx, scope, node),
@@ -507,7 +507,8 @@ pub fn lvalue_dn(
 
         ast::Expr::Value(lit) => {
             // TODO: check type
-            Ok(Predicate::from_value(&lit.value).unwrap())
+            let val = Value::from_literal(&lit.value);
+            Ok(Predicate::from_value(&val).unwrap())
         }
 
         ast::Expr::Concat(node) => {
@@ -593,7 +594,7 @@ pub fn lvalue_up(
         }
 
         ast::Expr::Value(lit) => {
-            Ok(LValueSrc::Val(ExprDn::Const(lit.value.clone())))
+            Ok(LValueSrc::Val(ExprDn::Const(Value::from_literal(&lit.value))))
         }
 
         ast::Expr::Concat(node) => {
@@ -669,14 +670,15 @@ pub fn lexpr(ctx: &dyn DiagnosticHandler, scope: &mut Scope, pat: &ast::Expr, r:
             }
 
             ast::Expr::Value(lv) => {
+                let lval = Value::from_literal(&lv.value);
                 match r {
-                    Item::Leaf(LeafItem::Value(Expr::Const(ref rv))) if lv.value == *rv => Ok(()),
+                    Item::Leaf(LeafItem::Value(Expr::Const(ref rv))) if lval == *rv => Ok(()),
                     Item::Leaf(LeafItem::Invalid(r)) => Err(r.clone()),
                     non_match => {
                         Err(ctx.report(Diagnostic::ExpectedConst {
                             span: Span::new(&scope.file, lv.span),
                             found: non_match.to_string(),
-                            expected: lv.value.to_string(),
+                            expected: lval.to_string(),
                         }))
                     }
                 }

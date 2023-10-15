@@ -8,24 +8,25 @@ pub(crate) mod protocol;
 mod function;
 mod matchset;
 mod data;
+mod value;
 mod shape;
 mod resolve;
 mod predicate;
 
-use crate::Value;
 use crate::entitymap::entity_key;
 
 use self::expr_resolve::TryFromConstant;
 use self::file::ProtocolRef;
 
 pub use self::file::FileScope;
-pub use self::index::{ Index };
+pub use self::index::Index;
 pub use self::scope::{ Item, LeafItem, Scope };
 pub use self::expr::{ Expr, ExprDn, ConcatElem };
 pub use self::expr_resolve::{ rexpr, rexpr_tup, lexpr, value, constant };
 pub use self::function::{ PrimitiveFn, FunctionDef, Func };
 pub use self::step::{ Step, StepId, StepInfo, AltDnArm, AltUpArm, write_tree };
 pub use self::resolve::{ compile_process, ProcessChain };
+pub use self::value::Value;
 pub use self::data::{ Type, TypeTree, DataMode };
 pub use self::shape::{ Shape, ShapeMsg, ShapeMsgParam };
 pub use self::matchset::{ MatchSet, MessagePatternSet };

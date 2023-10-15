@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::default::Default;
 use std::sync::Arc;
 
-use crate::{syntax::Value, tree::Tree, SourceFile, TypeTree, diagnostic::ErrorReported, Type};
+use crate::{Value, tree::Tree, SourceFile, TypeTree, diagnostic::ErrorReported, Type};
 use super::{ Expr, FunctionDef };
 
 pub type ScopeNames = HashMap<String, Item>;

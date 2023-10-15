@@ -1,6 +1,6 @@
 
 use std::collections::HashSet;
-use crate::syntax::{Value, Number};
+use crate::{syntax::Number, Value};
 use super::{ExprDn, ConcatElem, ValueSrcId};
 
 #[derive(Clone, PartialEq, Debug)]

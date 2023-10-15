@@ -1,5 +1,6 @@
 use std::any::Any;
-pub use super::{ BinOp, Value, FileSpan, Spanned, AstNode };
+use super::Number;
+pub use super::{ BinOp, FileSpan, Spanned, AstNode };
 
 /// Helper trait for iterating AST children in macro
 trait AstWalk {
@@ -49,7 +50,7 @@ impl AstWalk for FileSpan { fn walk(&self, _res: &mut Vec<&dyn AstNode>) {} }
 impl AstWalk for u32 { fn walk(&self, _res: &mut Vec<&dyn AstNode>) {} }
 impl AstWalk for String { fn walk(&self, _res: &mut Vec<&dyn AstNode>) {} }
 impl AstWalk for &'static str { fn walk(&self, _res: &mut Vec<&dyn AstNode>) {} }
-impl AstWalk for Value { fn walk(&self, _res: &mut Vec<&dyn AstNode>) {} }
+impl AstWalk for Literal { fn walk(&self, _res: &mut Vec<&dyn AstNode>) {} }
 impl AstWalk for BinOp { fn walk(&self, _res: &mut Vec<&dyn AstNode>) {} }
 
 macro_rules! ast_node {
@@ -424,10 +425,18 @@ ast_node!{
     }
 }
 
+#[derive(Clone, Debug)]
+pub enum Literal {
+    Number(Number),
+    Symbol(String),
+    Hex(Vec<u8>), // 0-16
+    Bin(Vec<bool>),
+}
+
 ast_node!{
     pub struct ExprLiteral {
         pub span: FileSpan,
-        pub value: Value,
+        pub value: Literal,
     }
 }
 

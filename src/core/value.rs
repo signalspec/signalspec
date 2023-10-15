@@ -2,7 +2,7 @@ use std::fmt;
 use num_complex::Complex;
 use num_traits::ToPrimitive;
 
-pub type Number = num_rational::Rational64;
+use crate::{syntax::{Number, ast::Literal}, Type};
 
 #[derive(PartialEq, Eq, Clone, Hash)]
 pub enum Value {
@@ -13,6 +13,21 @@ pub enum Value {
 }
 
 impl Value {
+    pub fn from_literal(value: &Literal) -> Value {
+        match value {
+            Literal::Number(n) => Value::Number(n.clone()),
+            Literal::Symbol(s) => Value::Symbol(s.clone()),
+            Literal::Hex(digits) => {
+                Value::Vector(digits.iter().flat_map(|i| {
+                    (0..4).rev().map(move |b| Value::from_bit((i & 1<<b) != 0))
+                }).collect())
+            },
+            Literal::Bin(v) => {
+                Value::Vector(v.iter().map(|&b| Value::from_bit(b)).collect())
+            }
+        }
+    }
+
     pub fn from_bit(b: bool) -> Value {
         Value::Number((b as i64).into())
     }
@@ -50,6 +65,24 @@ impl Value {
         match self {
             Value::Symbol(v) => Some(v.as_str()),
             _ => None
+        }
+    }
+
+    pub fn get_type(&self) -> Type {
+        match *self {
+            Value::Number(v) => Type::Number(v, v),
+            Value::Complex(_) => Type::Complex,
+            Value::Symbol(ref v) => Type::Symbol(Some(v.clone()).into_iter().collect()),
+            Value::Vector(ref n) => {
+                let len = n.len() as u32;
+                let Ok(inner) = Type::union_iter(n.iter().map(Value::get_type)) else {
+                    // Only a concatenation expression can create a vector
+                    // containing different types, and it reports an error,
+                    // so this should be unreachable.
+                    panic!("Incompatible types in vector: {self:?}")
+                };
+                Type::Vector(len, Box::new(inner))
+            }
         }
     }
 }

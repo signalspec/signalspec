@@ -3,30 +3,10 @@ use std::fmt::Display;
 
 use indexmap::IndexSet;
 
-use crate::{DiagnosticHandler, Diagnostic};
+use crate::{DiagnosticHandler, Diagnostic, Value};
 use crate::diagnostic::{Span, ErrorReported};
-use crate::syntax::{Value, Number};
+use crate::syntax::Number;
 use crate::tree::Tree;
-
-impl Value {
-    pub fn get_type(&self) -> Type {
-        match *self {
-            Value::Number(v) => Type::Number(v, v),
-            Value::Complex(_) => Type::Complex,
-            Value::Symbol(ref v) => Type::Symbol(Some(v.clone()).into_iter().collect()),
-            Value::Vector(ref n) => {
-                let len = n.len() as u32;
-                let Ok(inner) = Type::union_iter(n.iter().map(Value::get_type)) else {
-                    // Only a concatenation expression can create a vector
-                    // containing different types, and it reports an error,
-                    // so this should be unreachable.
-                    panic!("Incompatible types in vector: {self:?}")
-                };
-                Type::Vector(len, Box::new(inner))
-            }
-        }
-    }
-}
 
 /// A type represents a set of possible values
 #[derive(Debug, PartialEq, Clone)]
