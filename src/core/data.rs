@@ -55,7 +55,7 @@ impl Type {
             (Type::Complex, Value::Number(_)) => true,
             (Type::Complex, Value::Complex(_)) => true,
             (Type::Number(lo, hi), Value::Number(n)) =>
-                lo <= n && n < hi,
+                lo <= n && n <= hi,
             (Type::Symbol(s), Value::Symbol(v)) =>
                 s.contains(v),
             (Type::Vector(w, t), Value::Vector(v)) =>

@@ -19,13 +19,17 @@ with Seq(0..10, _) def main() = {
         (1, 2, 3) => {}
 //          ^ found `(#x, #y)`, incompatible with pattern
 
+//# type error
+        (#a, _, _) => {}
+//       ^^ `#a` does not match type `1`
+
 //# invalid item not matched
         "foo" => {}
 //      ^^^^^ found `(1, (#x, #y), <error>)`, incompatible with pattern
 
-//# expected vector of width 2
+//# expected type `1`
         ([x, y], _, _) => {}
-//       ^^^^^^ found `1`
+//       ^^^^^^ can't destructure into vector of width 2
     }
 }
 
@@ -47,9 +51,9 @@ with Seq(0..10, _) def main() = {
         (_, #x) => { val(3) }
 //       ^ not allowed here
 
-//# expected vector of width 2
+//# expected type `_`
         ([x, y], #x) => { val(4) }
-//       ^^^^^^ found `_`
+//       ^^^^^^ can't destructure into vector of width 2
     }
 }
 

@@ -347,6 +347,14 @@ diagnostic_kinds!{
         error "found `{found}`" at span
     }
 
+    PatternExpectedVector {
+        span: Span,
+        expected: Type,
+        found_width: u32
+    } => "expected type `{expected}`" {
+        error "can't destructure into vector of width {found_width}" at span
+    }
+
     NotAllowedInPattern {
         span: Span
     } => "expression type not supported as a pattern" {

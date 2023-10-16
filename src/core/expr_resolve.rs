@@ -506,8 +506,18 @@ pub fn lvalue_dn(
         ast::Expr::Ignore(_) => Ok(Predicate::Any),
 
         ast::Expr::Value(lit) => {
-            // TODO: check type
             let val = Value::from_literal(&lit.value);
+
+            let r_ty = rhs.get_type();
+            if !r_ty.test(&val) {
+                ctx.report(Diagnostic::TypeConstraint {
+                    span: Span::new(&scope.file, lit.span),
+                    found: val.get_type(),
+                    bound: r_ty
+                });
+            }
+
+            // from_literal Value is always a valid predicate.
             Ok(Predicate::from_value(&val).unwrap())
         }
 
@@ -516,13 +526,16 @@ pub fn lvalue_dn(
 
             let elem_ty = match rhs.get_type() {
                 Type::Vector(ty_w, elem_ty) if pat_w == ty_w => *elem_ty,
-                wrong_ty => return Err(ctx.report(Diagnostic::ExpectedVector {
+                expected_ty => return Err(ctx.report(Diagnostic::PatternExpectedVector {
                     span: Span::new(&scope.file, node.span),
-                    expected_width: pat_w,
-                    found: wrong_ty,
+                    found_width: pat_w,
+                    expected: expected_ty,
                 }))
             };
 
+            // Can't fail:
+            // * In `on`, this is always a `VarDn`.
+            // * In `alt`, we've already checked.
             let dn = rhs.down().unwrap();
 
             let mut i = 0;
@@ -594,7 +607,17 @@ pub fn lvalue_up(
         }
 
         ast::Expr::Value(lit) => {
-            Ok(LValueSrc::Val(ExprDn::Const(Value::from_literal(&lit.value))))
+            let val = Value::from_literal(&lit.value);
+
+            if !ty.test(&val) {
+                ctx.report(Diagnostic::TypeConstraint {
+                    span: Span::new(&scope.file, lit.span),
+                    found: val.get_type(),
+                    bound: ty
+                });
+            }
+
+            Ok(LValueSrc::Val(ExprDn::Const(val)))
         }
 
         ast::Expr::Concat(node) => {
@@ -602,10 +625,10 @@ pub fn lvalue_up(
 
             let elem_ty = match ty {
                 Type::Vector(ty_w, elem_ty) if pat_w == ty_w => *elem_ty,
-                wrong_ty => return Err(ctx.report(Diagnostic::ExpectedVector {
+                expected_ty => return Err(ctx.report(Diagnostic::PatternExpectedVector {
                     span: Span::new(&scope.file, node.span),
-                    expected_width: pat_w,
-                    found: wrong_ty,
+                    found_width: pat_w,
+                    expected: expected_ty,
                 }))
             };
 
