@@ -300,6 +300,19 @@ diagnostic_kinds!{
         error "found `{found}`" at span
     }
 
+    InvalidRepeatCountType {
+        span: Span,
+        found: Type
+    } => "repeat count must be a positive integer" {
+        error "found `{found}`" at span
+    }
+
+    InvalidRepeatCountPredicate {
+        span: Span
+    } => "repeat count predicate must be representable as an integer range" {
+        error "unsupported" at span
+    }
+
     IncompatibleTypes {
         span: Span,
         t1: Type,
@@ -365,6 +378,13 @@ diagnostic_kinds!{
         span: Span
     } => "`alt` action must have at least one arm" {
         error "no arms specified" at span
+    }
+
+    RequiredDownValue {
+        span: Span,
+        found: String
+    } => "expression cannot be evaluated as a value" {
+        error "found `{found}`" at span
     }
 }
 

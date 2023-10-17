@@ -109,6 +109,16 @@ impl<'a> Builder<'a> {
         })
     }
 
+    fn require_down(&self, scope: &Scope, span: FileSpan, v: &Expr) -> ExprDn {
+        v.down().unwrap_or_else(|| {
+            self.ui.report(Diagnostic::RequiredDownValue {
+                span: Span::new(&scope.file, span),
+                found: v.to_string(),
+            });
+            ExprDn::invalid()
+        })
+    }
+
     fn resolve_action(&mut self, sb: ResolveCx<'_>, action: &ast::Action) -> StepId {
         match action {
             ast::Action::Process(ref node) => {
@@ -218,24 +228,50 @@ impl<'a> Builder<'a> {
                     panic!("Upvalues set in repeat loop");
                 }
 
+                let count_span = node.dir_count.as_ref().map_or(node.span, |t| t.1.span());
+
                 let count = match count {
                     Ok(count) => count,
                     Err(r) => return self.add_step(Step::Invalid(r)),
                 };
 
+                match count.get_type() {
+                    Type::Number(lo, hi)
+                        if lo.is_integer() && hi.is_integer() && !lo.is_negative() => {}
+                    Type::Ignored => {}
+                    found => {
+                        let r = self.ui.report(Diagnostic::InvalidRepeatCountType {
+                            span: Span::new(&sb.scope.file, count_span),
+                            found,
+                        });
+                        return self.add_step(Step::Invalid(r));
+                    }
+                }
+
                 match dir {
                     Ok(Dir::Up) => {
                         let (min, max) = match count.predicate() {
                             Some(Predicate::Any) => (0, None),
-                            Some(Predicate::Number(n)) if n.is_integer() && !n.is_negative() => (*n.numer(), Some(*n.numer() + 1)),
-                            Some(Predicate::Range(min, max)) if min.is_integer() && !min.is_negative() && max.is_integer() => (*min.numer(), Some(*max.numer())),
-                            _ => panic!("Invalid repeat count {count}")
+                            Some(Predicate::Number(n))
+                                if n.is_integer()
+                                && !n.is_negative() => (*n.numer(), Some(*n.numer() + 1)),
+                            Some(Predicate::Range(min, max))
+                                if min.is_integer()
+                                && !min.is_negative()
+                                && max.is_integer() => (*min.numer(), Some(*max.numer())),
+                            _ => {
+                                let r = self.ui.report(Diagnostic::InvalidRepeatCountPredicate {
+                                    span: Span::new(&sb.scope.file, count_span),
+                                });
+                                return self.add_step(Step::Invalid(r));
+                            }
                         };
                         let count_src = self.up_value_src(&count);
                         self.add_step(Step::RepeatUp { min, max, inner, count: count_src })
                     }
                     Ok(Dir::Dn) => {
-                        self.add_step(Step::RepeatDn { count: count.down().unwrap(), inner })
+                        let count = self.require_down(&sb.scope, count_span, &count);
+                        self.add_step(Step::RepeatDn { count, inner })
                     }
                     Err(r) => return self.add_step(Step::Invalid(r))
                 }

@@ -6,3 +6,38 @@ with Seq(#x, _) def main() = {
 
     }
 }
+
+@test(#up, ())
+with Seq(#x, _) def main() = {
+//# repeat count must be a positive integer
+    repeat #up (-1) {
+//             ^^^^ found `-1`
+
+    }
+
+//# repeat count must be a positive integer
+    repeat #up #a {
+//             ^^ found `#a`
+
+    }
+
+    for a=[0,1,2] {
+//# repeat count predicate must be representable as an integer range
+        repeat #up a {
+//                 ^ unsupported
+
+        }
+    }
+
+//# repeat count must be a positive integer
+    repeat #dn #a {
+//             ^^ found `#a`
+
+    }
+
+//# expression cannot be evaluated as a value
+    repeat #dn 1..10 {
+//             ^^^^^ found `1..10`
+
+    }
+}
