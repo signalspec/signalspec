@@ -347,9 +347,17 @@ impl<'a> Builder<'a> {
                     Ok(Dir::Dn) => {
                         let scrutinee_dn = scrutinee.flatten(&mut |e| {
                             match e {
-                                LeafItem::Value(v) => v.down().expect("can't be down-evaluated"),
+                                LeafItem::Value(v) => {
+                                    self.require_down(&sb.scope, node.expr.span(), v)
+                                }
                                 LeafItem::Invalid(_) => ExprDn::invalid(),
-                                t => panic!("{t:?} not allowed in alt")
+                                t => {
+                                    self.ui.report(Diagnostic::ExpectedValue {
+                                        span: Span::new(&sb.scope.file, node.expr.span()),
+                                        found: t.to_string()
+                                    });
+                                    ExprDn::invalid()
+                                }
                             }
                         });
                         let arms = node.arms.iter().map(|arm| {
@@ -372,14 +380,20 @@ impl<'a> Builder<'a> {
                             match e {
                                 LeafItem::Value(v) => self.up_value_src(&v),
                                 LeafItem::Invalid(_) => self.add_value_src(),
-                                t => panic!("{t:?} not allowed in alt")
+                                t => {
+                                    self.ui.report(Diagnostic::ExpectedValue {
+                                        span: Span::new(&sb.scope.file, node.expr.span()),
+                                        found: t.to_string()
+                                    });
+                                    self.add_value_src()
+                                }
                             }
                         });
                         let arms = node.arms.iter().map(|arm| {
                             let mut body_scope = sb.scope.child();
                             
                             let mut up_inner = Vec::new();
-                            let ty = scrutinee.as_type_tree().unwrap();
+                            let ty = scrutinee.as_type_tree().unwrap_or(Tree::Leaf(Type::Ignored));
                             self.bind_tree_fields_up(&mut body_scope, &ty, &arm.discriminant, &mut up_inner).ok();
 
                             let upvalues_scope = self.upvalues.len();

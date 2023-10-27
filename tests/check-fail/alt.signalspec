@@ -69,3 +69,27 @@ with Seq(0..10, _) def main() = {
 //  ^^^^^^^^^^^^^^^ no arms specified
 }
 
+@test(#dn, ())
+with Seq(0..10, _) def main() = {
+//# expected a single value
+    alt #dn "foo" {
+//          ^^^^^ found `"foo"`
+        _ => {}
+    }
+
+//# expression cannot be evaluated as a value
+    alt #dn _ {
+//          ^ found `_`
+        _ => {}
+    }
+}
+
+@test(#up, ())
+with Seq(0..10, _) def main() = {
+//# expected a single value
+    alt #up "foo" {
+//          ^^^^^ found `"foo"`
+        #x => {}
+    }
+}
+
