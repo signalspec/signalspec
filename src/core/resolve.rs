@@ -631,7 +631,7 @@ impl<'a> Builder<'a> {
                 ) if v.get_type().is_subtype(ty) => {
                     match param.direction {
                         Dir::Dn => {
-                            dn.push(v.down().unwrap());
+                            dn.push(self.require_down(scope, arg_ast.span(), v));
                         }
                         Dir::Up => {
                             let predicate = v.predicate().expect("Value cannot be up-evaluated as a predicate");
