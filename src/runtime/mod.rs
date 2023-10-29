@@ -148,7 +148,8 @@ fn seq_shape(index: &Index, ty_item: Item, dir: Dir) -> Result<Shape, ()> {
             ShapeMsg {
                 name: "val".into(),
                 tag: 0,
-                params: vec![ShapeMsgParam { ty, direction: dir }]
+                params: vec![ShapeMsgParam { ty, direction: dir }],
+                child: None,
             }
         ],
         children: IndexMap::new()

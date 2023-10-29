@@ -237,6 +237,7 @@ ast_node!{
         pub span: FileSpan,
         pub name: Identifier,
         pub params: Vec<DefParam>,
+        pub child: Option<ProtocolRef>,
     }
 }
 

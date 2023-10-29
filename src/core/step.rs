@@ -27,6 +27,8 @@ pub enum Step {
     Stack { lo: StepId, shape: Shape, hi: StepId },
     Token { variant: usize, dn: Vec<ExprDn>, up: Vec<(Predicate, ValueSrcId)> },
     TokenTop { top_dir: Dir, variant: usize, dn_vars: Vec<ValueSrcId> , dn: Vec<Predicate>, up: Vec<ExprDn>, inner: StepId },
+    TokenTransaction{ variant: usize, inner: Option<StepId> },
+    TokenTopTransaction { top_dir: Dir, variant: usize, inner: StepId },
     Primitive(Arc<dyn PrimitiveProcess + 'static>),
     Seq(Vec<StepId>),
     RepeatDn {
@@ -69,10 +71,20 @@ pub fn write_tree(f: &mut dyn Write, indent: u32, steps: &[Step], step: StepId) 
             writeln!(f, "{}Primitive", i)?
         }
         Step::Token { variant, ref dn, ref up } => {
-            writeln!(f, "{}Token: {:?} {:?} {:?}", i, variant, dn, up)?
+            writeln!(f, "{}Token: {:?} {:?} {:?}", i, variant, dn, up)?;
         }
         Step::TokenTop { variant, ref dn, ref up, inner, .. } => {
             writeln!(f, "{}Up: {:?} {:?} {:?}", i, variant, dn, up)?;
+            write_tree(f, indent+1, steps, inner)?;
+        }
+        Step::TokenTransaction { variant, inner } => {
+            writeln!(f, "{}TokenTransaction: {:?}", i, variant,)?;
+            if let Some(inner) = inner {
+                write_tree(f, indent+1, steps, inner)?;
+            }
+        }
+        Step::TokenTopTransaction { variant, inner, .. } => {
+            writeln!(f, "{}UpTransaction: {:?}", i, variant)?;
             write_tree(f, indent+1, steps, inner)?;
         }
         Step::Seq(ref inner) => {
@@ -149,7 +161,7 @@ pub fn analyze_unambiguous(steps: &EntityMap<StepId, Step>) -> EntityMap<StepId,
                     nullable: false,
                 }
             },
-            Step::Token { variant, ref dn, ref up } => {
+            Step::Token { variant, ref dn, ref up} => {
                 StepInfo {
                     first: MatchSet::lower(variant, dn.clone(), up.iter().map(|(p, _)| p.clone()).collect()),
                     followlast: None,
@@ -170,6 +182,47 @@ pub fn analyze_unambiguous(steps: &EntityMap<StepId, Step>) -> EntityMap<StepId,
                         StepInfo {
                             first: MatchSet::upper(variant, dn.clone()),
                             followlast: inner.followlast.clone(),
+                            nullable: false,
+                        }
+                    },
+                }
+            },
+            Step::TokenTransaction { variant, inner } => {
+                if let Some(inner) = inner {
+                    let inner = get(inner);
+                    StepInfo {
+                        first: MatchSet::merge_first([
+                            Some(&inner.first),
+                            inner.nullable.then(|| MatchSet::lower(variant, vec![], vec![])).as_ref()
+                        ].into_iter().flatten()),
+                        followlast: None,
+                        nullable: false,
+                    }
+                } else {
+                    StepInfo {
+                        first: MatchSet::proc(),
+                        followlast: None,
+                        nullable: false,
+                    }
+                }
+            },
+            Step::TokenTopTransaction { top_dir, variant, inner } => {
+                let inner = get(inner);
+                match top_dir {
+                    Dir::Up => {
+                        StepInfo {
+                            first: inner.first.clone(),
+                            followlast: inner.followlast.clone(),
+                            nullable: inner.nullable,
+                        }
+                    },
+                    Dir::Dn => {
+                        StepInfo {
+                            first: MatchSet::merge_first([
+                                Some(&inner.first),
+                                inner.nullable.then(|| MatchSet::upper(variant, vec![])).as_ref()
+                            ].into_iter().flatten()),
+                            followlast: None, //inner.followlast.clone(),
                             nullable: false,
                         }
                     },

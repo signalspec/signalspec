@@ -76,8 +76,8 @@ peg::parser!(pub grammar signalspec() for str {
         { ast::Protocol { span:FileSpan{start, end}, attributes, name, param: param.into(), dir, open, entries, close }}
       
       rule protocol_entry() -> ast::ProtocolEntry
-        = start:pos() name:IDENTIFIER() _ params:def_params() end:pos() 
-          {ast::ProtocolEntry::Message( ast::ProtocolMessageDef { span: FileSpan{start, end}, name, params }) }
+        = start:pos() name:IDENTIFIER() _ params:def_params() child:(_ ":" _ p:protocol_ref() {p})? end:pos()
+          {ast::ProtocolEntry::Message( ast::ProtocolMessageDef { span: FileSpan{start, end}, name, params, child }) }
         / start:pos() name:IDENTIFIER() _ ":" _ child_protocol:protocol_ref() end:pos()
           { ast::ProtocolEntry::Child(ast::ProtocolChild { span: FileSpan { start, end }, name, child_protocol }) }
 

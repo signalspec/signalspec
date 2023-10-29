@@ -1,0 +1,8 @@
+protocol Foo() #dn {
+//# protocol message with child protocol cannot have arguments
+    foo(var(#dn) _:#a): Seq(#a, #dn)
+//  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ has arguments and child protocol
+}
+
+@test(#dn, ())
+with Seq(_, _) def main() = new Foo() {}

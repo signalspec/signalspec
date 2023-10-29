@@ -206,7 +206,7 @@ impl Compiler<'_> {
                 self.emit(Insn::Primitive(id, chans));
             }
 
-            Step::Token { variant, ref up, ..}=> {
+            Step::Token { variant, ref up, .. }=> {
                 if let Some(c) = channels.dn_rx {
                     self.emit(Insn::Consume(c, variant, up.clone()));
                 }
@@ -231,6 +231,32 @@ impl Compiler<'_> {
 
                 if let Some(c) = channels.up_tx {
                     self.emit(Insn::Send(c, variant, up.clone()));
+                }
+            }
+
+            Step::TokenTransaction { variant, inner } => {
+                if let Some(inner) = inner {
+                    self.compile_step(inner, channels)
+                }
+
+                if let Some(c) = channels.dn_tx {
+                    self.emit(Insn::Send(c, variant, vec![]));
+                }
+
+                if let Some(c) = channels.dn_rx {
+                    self.emit(Insn::Consume(c, variant, vec![]));
+                }
+            }
+
+            Step::TokenTopTransaction { variant, inner, .. } => {
+                self.compile_step(inner, channels);
+
+                if let Some(c) = channels.up_rx {
+                    self.emit(Insn::Consume(c, variant, vec![]));
+                }
+
+                if let Some(c) = channels.up_tx {
+                    self.emit(Insn::Send(c, variant, vec![]));
                 }
             }
 

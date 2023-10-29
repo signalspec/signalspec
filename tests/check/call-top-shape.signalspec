@@ -1,0 +1,30 @@
+protocol Packets(t, dir) dir {
+    packet() : Seq(t, dir)
+}
+
+with Seq(_:#a|#end, dir)
+def pkt() = new Packets(_:#a, dir) {
+    repeat {
+        on packet() {
+            repeat {
+                on val(#a) {
+                    val(#a)
+                }
+            }
+        }
+        val(#end)
+    }
+}
+
+@test(#both, (#a, #a, #end, #end, #a, #end))
+with Seq(_:#a|#end, _)
+def t1() = pkt() | {
+    packet() | {
+        val(#a)
+        val(#a)
+    }
+    packet() | {}
+    packet() | {
+        val(#a)
+    }
+}

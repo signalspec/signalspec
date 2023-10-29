@@ -162,6 +162,12 @@ diagnostic_kinds!{
         error "definition site" at def
     }
 
+    ProtocolMessageWithArgsAndChild {
+        span: Span
+    } => "protocol message with child protocol cannot have arguments" {
+        error "has arguments and child protocol" at span
+    }
+
     ProtocolChildModeMismatch {
         span: Span,
         child_name: String,

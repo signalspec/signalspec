@@ -7,6 +7,7 @@ pub struct ShapeMsg {
     pub name: String,
     pub tag: usize,
     pub params: Vec<ShapeMsgParam>,
+    pub child: Option<Shape>,
 }
 
 #[derive(Clone, Debug)]

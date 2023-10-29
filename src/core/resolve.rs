@@ -176,14 +176,21 @@ impl<'a> Builder<'a> {
                 }
 
                 let inner = if let &Some(ref body) = &node.block {
-                    self.resolve_seq(sb.with_upper(&body_scope, None), body)
+                    self.resolve_seq(sb.with_upper(&body_scope, msg_def.child.as_ref()), body)
                 } else {
                     self.add_step(Step::Seq(vec![]))
                 };
 
                 let up = self.bind_tree_fields_up_finish(up_inner, &sb.scope.file);
 
-                self.add_step(Step::TokenTop { top_dir: shape_up.dir, variant: msg_def.tag, dn_vars, dn, up, inner })
+                if msg_def.child.is_some() {
+                    assert!(dn_vars.is_empty());
+                    assert!(dn.is_empty());
+                    assert!(up.is_empty());
+                    self.add_step(Step::TokenTopTransaction { top_dir: shape_up.dir, variant: msg_def.tag, inner })
+                } else {
+                    self.add_step(Step::TokenTop { top_dir: shape_up.dir, variant: msg_def.tag, dn_vars, dn, up, inner })
+                }
             }
 
             ast::Action::On(ref node @ ast::ActionOn { args: None, ..}) => {
@@ -519,7 +526,11 @@ impl<'a> Builder<'a> {
             ast::Process::Call(node) => {
                 if let Some(msg_def) = sb.shape_down.variant_named(&node.name.name) {
                     let (dn, up) = self.resolve_token(msg_def, sb.scope, &node);
-                    (self.add_step(Step::Token { variant: msg_def.tag, dn, up }), None)
+                    if msg_def.child.is_none() {
+                        (self.add_step(Step::Token { variant: msg_def.tag, dn, up }), None)
+                    } else {
+                        (self.add_step(Step::TokenTransaction { variant: msg_def.tag, inner: None }), msg_def.child.clone() )
+                    }
                 } else {
                     let args: Vec<Item> = node.args.items.iter().map(|a| rexpr(self.ui, sb.scope, a)).collect();
                     let (scope, imp) = match self.index.find_def(sb.shape_down, &node.name.name, args) {
@@ -597,11 +608,17 @@ impl<'a> Builder<'a> {
 
                 let (hi, shape_up) = self.resolve_process(sb.with_lower(sb.scope, &shape), &node.upper);
 
-                if matches!(self.steps[lo], Step::Pass) {
-                    (hi, shape_up)
-                } else {
-                    let stack = self.add_step(Step::Stack { lo, shape, hi });
-                    (stack, shape_up)
+                match self.steps[lo] {
+                    Step::Pass => (hi, shape_up),
+                    Step::TokenTransaction { variant, inner } => {
+                        assert!(inner.is_none());
+                        let id = self.add_step(Step::TokenTransaction { variant, inner: Some(hi) });
+                        (id, shape_up)
+                    }
+                    _ => {
+                        let stack = self.add_step(Step::Stack { lo, shape, hi });
+                        (stack, shape_up)
+                    }
                 }
             }
         }

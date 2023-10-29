@@ -79,7 +79,13 @@ pub fn instantiate(
 
     for entry in &protocol_ast.entries {
         match *entry {
-            ast::ProtocolEntry::Message(ast::ProtocolMessageDef { ref name, ref params, .. }) => {
+            ast::ProtocolEntry::Message(ast::ProtocolMessageDef { ref name, ref params, ref child, .. }) => {
+                if child.is_some() && !params.is_empty() {
+                    ctx.report(Diagnostic::ProtocolMessageWithArgsAndChild {
+                        span: Span::new(&scope.file, entry.span())
+                    });
+                }
+
                 let params = params.iter().map(|p| {
                     let (ty_expr, direction) = match &p {
                         ast::DefParam::Const(node) => {
@@ -94,7 +100,24 @@ pub fn instantiate(
                     let ty = expr_resolve::type_tree(ctx, &scope, ty_expr)?;
                     Ok(ShapeMsgParam { ty, direction })
                 }).collect::<Result<_, InstantiateProtocolError>>()?;
-                messages.push(ShapeMsg { name: name.name.clone(), params, tag });
+
+                let child = if let Some(child) = child {
+                    let shape = resolve(ctx, index, &scope, &child, tag)?;
+
+                    if shape.dir != dir {
+                        Err(ctx.report(Diagnostic::ProtocolChildModeMismatch {
+                            span: Span::new(&scope.file, child.span),
+                            child_name: child.name.name.clone(),
+                            mode: dir,
+                            child_mode: shape.dir,
+                        }))?
+                    }
+
+                    tag += shape.tag_count;
+                    Some(shape)
+                } else { None };
+
+                messages.push(ShapeMsg { name: name.name.clone(), params, tag, child });
                 tag += 1;
             }
             ast::ProtocolEntry::Child(ref node) => {
