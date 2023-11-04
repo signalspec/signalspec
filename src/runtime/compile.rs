@@ -1,5 +1,5 @@
 use crate::entitymap::{EntityMap, entity_key};
-use crate::core::{Shape, ExprDn, ProcessChain, MatchSet, MessagePatternSet, StepId, Step, AltUpArm, AltDnArm, Dir, Predicate, ValueSrcId};
+use crate::core::{Shape, ExprDn, ProcessChain, MatchSet, MessagePatternSet, StepId, Step, AltUpArm, AltDnArm, Predicate, ValueSrcId, ShapeMode};
 use super::PrimitiveProcess;
 
 type VariantId = usize;
@@ -112,8 +112,7 @@ impl Compiler<'_> {
     }
 
     fn new_channels(&mut self, shape: &Shape) -> (Option<ChanId>, Option<ChanId>) {
-        let dir = shape.direction();
-        (dir.down.then(|| self.new_channel()), dir.up.then(|| self.new_channel()))
+        (shape.mode.has_dn_channel().then(|| self.new_channel()), shape.mode.has_up_channel().then(|| self.new_channel()))
     }
 
     fn new_primitive(&mut self, p: Arc<dyn PrimitiveProcess>) -> PrimitiveId {
@@ -212,12 +211,12 @@ impl Compiler<'_> {
                 }
             }
 
-            Step::TokenTop { top_dir, variant, ref dn_vars, ref dn, ref up, inner } => {
+            Step::TokenTop { inner_mode, variant, ref dn_vars, ref dn, ref up, inner } => {
                 let inner_info = &self.program.step_info[inner];
 
-                match top_dir {
-                    Dir::Up => {},
-                    Dir::Dn => {
+                match inner_mode {
+                    ShapeMode::Up | ShapeMode::Null => {},
+                    ShapeMode::Dn | ShapeMode::Sync | ShapeMode::Async => {
                         if let Some(c) = channels.up_rx {
                             let dn_and_vars = dn.iter().cloned().zip(dn_vars.iter().cloned()).collect();
                             self.emit(Insn::Consume(c, variant, dn_and_vars));
@@ -438,14 +437,11 @@ pub fn compile(program: &ProcessChain) -> CompiledProgram {
 
     let _root_task = compiler.new_task();
 
-    let dn_dir = program.shape_dn.direction();
-    let up_dir = program.shape_up.as_ref().map(|x| x.direction());
-
     let channels = ChannelIds {
-        dn_tx: dn_dir.down.then(|| compiler.new_channel()),
-        dn_rx: dn_dir.up.then(|| compiler.new_channel()),
-        up_tx: up_dir.map_or(false, |d| d.up).then(|| compiler.new_channel()),
-        up_rx: up_dir.map_or(false, |d| d.down).then(|| compiler.new_channel()),
+        dn_tx: program.shape_dn.mode.has_dn_channel().then(|| compiler.new_channel()),
+        dn_rx: program.shape_dn.mode.has_up_channel().then(|| compiler.new_channel()),
+        up_tx: program.shape_up.as_ref().map_or(false, |s| s.mode.has_up_channel()).then(|| compiler.new_channel()),
+        up_rx: program.shape_up.as_ref().map_or(false, |s| s.mode.has_dn_channel()).then(|| compiler.new_channel()),
     };
 
     compiler.seq_prep(channels, &None, &program.step_info[program.root].first);

@@ -1,0 +1,10 @@
+
+protocol Foo() #dn {
+//# data direction not allowed by protocol mode
+    foo(var(#up) data)
+//      ^^^^^^^^^^^^^ mode of this protocol is `#dn` which can't have data with direction `#up`
+}
+
+@test(#up, ())
+with Seq(_, _) def main() = new Foo() {}
+

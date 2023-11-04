@@ -1,4 +1,4 @@
-protocol I2C(role: #controller | #async_controller | #monitor) role[#controller=#dn, #async_controller=#dn, #monitor=#up] {
+protocol I2C(role: #controller | #async_controller | #monitor) role[#controller=#sync, #async_controller=#async, #monitor=#up] {
     start(
         var(role[#controller=#dn, #async_controller=#dn, #monitor=#up]) bits(7),
         var(role[#controller=#dn, #async_controller=#dn, #monitor=#up]) #w|#r,

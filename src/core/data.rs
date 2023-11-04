@@ -124,17 +124,3 @@ impl IncompatibleTypes {
 }
 
 pub type TypeTree = Tree<Type>;
-
-/// Flags indicating the directions data flows
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
-pub struct DataMode {
-    pub down: bool,
-    pub up: bool,
-}
-
-impl DataMode {
-    pub fn constrain(&mut self, other: DataMode) {
-        self.up &= other.up;
-        self.down |= other.down;
-    }
-}

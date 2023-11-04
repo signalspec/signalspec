@@ -4,7 +4,7 @@ use std::sync::Arc;
 use crate::diagnostic::ErrorReported;
 use crate::entitymap::{entity_key, EntityMap};
 use crate::runtime::PrimitiveProcess;
-use super::{ExprDn, MatchSet, Shape, Dir, Predicate, ValueSrcId};
+use super::{ExprDn, MatchSet, Shape, Predicate, ValueSrcId, ShapeMode};
 
 entity_key!(pub StepId);
 
@@ -26,9 +26,9 @@ pub enum Step {
     Pass,
     Stack { lo: StepId, shape: Shape, hi: StepId },
     Token { variant: usize, dn: Vec<ExprDn>, up: Vec<(Predicate, ValueSrcId)> },
-    TokenTop { top_dir: Dir, variant: usize, dn_vars: Vec<ValueSrcId> , dn: Vec<Predicate>, up: Vec<ExprDn>, inner: StepId },
+    TokenTop { inner_mode: ShapeMode, variant: usize, dn_vars: Vec<ValueSrcId> , dn: Vec<Predicate>, up: Vec<ExprDn>, inner: StepId },
     TokenTransaction{ variant: usize, inner: Option<StepId> },
-    TokenTopTransaction { top_dir: Dir, variant: usize, inner: StepId },
+    TokenTopTransaction { inner_mode: ShapeMode, variant: usize, inner: StepId },
     Primitive(Arc<dyn PrimitiveProcess + 'static>),
     Seq(Vec<StepId>),
     RepeatDn {
@@ -168,17 +168,17 @@ pub fn analyze_unambiguous(steps: &EntityMap<StepId, Step>) -> EntityMap<StepId,
                     nullable: false,
                 }
             },
-            Step::TokenTop { top_dir, variant, ref dn, inner, .. } => {
+            Step::TokenTop { inner_mode, variant, ref dn, inner, .. } => {
                 let inner = get(inner);
-                match top_dir {
-                    Dir::Up => {
+                match inner_mode {
+                    ShapeMode::Up | ShapeMode::Null => {
                         StepInfo {
                             first: inner.first.clone(),
                             followlast: inner.followlast.clone(),
                             nullable: inner.nullable,
                         }
                     },
-                    Dir::Dn => {
+                    ShapeMode::Dn | ShapeMode::Sync | ShapeMode::Async => {
                         StepInfo {
                             first: MatchSet::upper(variant, dn.clone()),
                             followlast: inner.followlast.clone(),
@@ -206,17 +206,17 @@ pub fn analyze_unambiguous(steps: &EntityMap<StepId, Step>) -> EntityMap<StepId,
                     }
                 }
             },
-            Step::TokenTopTransaction { top_dir, variant, inner } => {
+            Step::TokenTopTransaction { inner_mode, variant, inner } => {
                 let inner = get(inner);
-                match top_dir {
-                    Dir::Up => {
+                match inner_mode {
+                    ShapeMode::Up | ShapeMode::Null => {
                         StepInfo {
                             first: inner.first.clone(),
                             followlast: inner.followlast.clone(),
                             nullable: inner.nullable,
                         }
                     },
-                    Dir::Dn => {
+                    ShapeMode::Dn | ShapeMode::Sync | ShapeMode::Async => {
                         StepInfo {
                             first: MatchSet::merge_first([
                                 Some(&inner.first),

@@ -11,6 +11,7 @@ use self::channel::SeqChannels;
 pub use self::test_runner::run as run_tests;
 pub use self::test_runner::run_file as run_tests_in_file;
 pub(crate) use self::primitives::{ PrimitiveProcess, instantiate_primitive };
+use crate::core::ShapeMode;
 use crate::diagnostic::{DiagnosticHandler, Collector};
 use crate::{ Scope, ShapeMsg };
 use crate::syntax::{ SourceFile, parse_process, ast };
@@ -125,7 +126,7 @@ fn base_shape(index: &Index) -> Shape {
     Shape {
         def: base,
         param: Item::Tuple(vec![]),
-        dir: Dir::Dn,
+        mode: ShapeMode::Null,
         tag_offset: 0,
         tag_count: 0,
         messages: vec![],
@@ -141,7 +142,7 @@ fn seq_shape(index: &Index, ty_item: Item, dir: Dir) -> Result<Shape, ()> {
     Ok(Shape {
         def: base,
         param: Item::Tuple(vec![ty_item, Item::symbol(match dir { Dir::Dn => "dn", Dir::Up => "up"})]),
-        dir,
+        mode: dir.into(),
         tag_offset: 0,
         tag_count: 1,
         messages: vec![

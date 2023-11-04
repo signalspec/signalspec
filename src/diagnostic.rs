@@ -168,11 +168,19 @@ diagnostic_kinds!{
         error "has arguments and child protocol" at span
     }
 
+    ProtocolDataModeMismatch {
+        span: Span,
+        mode: crate::core::ShapeMode,
+        param_dir: crate::core::Dir
+    } => "data direction not allowed by protocol mode" {
+        error "mode of this protocol is `{mode}` which can't have data with direction `{param_dir}`" at span
+    }
+
     ProtocolChildModeMismatch {
         span: Span,
         child_name: String,
-        mode: crate::Dir,
-        child_mode: crate::Dir
+        mode: crate::core::ShapeMode,
+        child_mode: crate::core::ShapeMode
     } => "mode mismatch on child protocol `{child_name}`" {
         error "mode of this protocol is `{child_mode}` but the parent has `{mode}`" at span
     }

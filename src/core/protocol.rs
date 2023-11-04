@@ -4,6 +4,7 @@ use crate::diagnostic::{Collector, ErrorReported, Span};
 use crate::syntax::ast::{self, AstNode};
 use crate::{Index, Dir, DiagnosticHandler, Diagnostic};
 use super::expr_resolve::constant;
+use super::shape::ShapeMode;
 use super::{ Scope, Shape, ShapeMsg, ShapeMsgParam, expr_resolve };
 use super::{ lexpr, rexpr, Item };
 
@@ -71,7 +72,7 @@ pub fn instantiate(
         });
     }
 
-    let dir = constant::<Dir>(ctx, &scope, &protocol_ast.dir)?;
+    let mode = constant::<ShapeMode>(ctx, &scope, &protocol_ast.dir)?;
 
     let mut messages = vec![];
     let mut children = IndexMap::new();
@@ -88,13 +89,21 @@ pub fn instantiate(
 
                 let params = params.iter().map(|p| {
                     let (ty_expr, direction) = match &p {
-                        ast::DefParam::Const(node) => {
-                            // TODO: should const even be allowed here, or create separate tags?
-                            (&node.expr, Dir::Dn)
+                        ast::DefParam::Const(_) => {
+                            panic!("Not allowed here")
                         }
                         ast::DefParam::Var(node) => {
-                            let direction = constant::<Dir>(ctx, &scope, &node.direction)?;
-                            (&node.expr, direction)
+                            let param_dir = constant::<Dir>(ctx, &scope, &node.direction)?;
+
+                            if !mode.allows_data(param_dir) {
+                                Err(ctx.report(Diagnostic::ProtocolDataModeMismatch {
+                                    span: Span::new(&scope.file, p.span()),
+                                    mode,
+                                    param_dir
+                                }))?;
+                            }
+
+                            (&node.expr, param_dir)
                         }
                     };
                     let ty = expr_resolve::type_tree(ctx, &scope, ty_expr)?;
@@ -104,12 +113,12 @@ pub fn instantiate(
                 let child = if let Some(child) = child {
                     let shape = resolve(ctx, index, &scope, &child, tag)?;
 
-                    if shape.dir != dir {
+                    if !mode.allows_child(shape.mode) {
                         Err(ctx.report(Diagnostic::ProtocolChildModeMismatch {
                             span: Span::new(&scope.file, child.span),
                             child_name: child.name.name.clone(),
-                            mode: dir,
-                            child_mode: shape.dir,
+                            mode,
+                            child_mode: shape.mode,
                         }))?
                     }
 
@@ -123,12 +132,12 @@ pub fn instantiate(
             ast::ProtocolEntry::Child(ref node) => {
                 let inner_shape = resolve(ctx, index, &scope, &node.child_protocol, tag)?;
 
-                if inner_shape.dir != dir {
+                if !mode.allows_child(inner_shape.mode) {
                     Err(ctx.report(Diagnostic::ProtocolChildModeMismatch {
                         span: Span::new(&scope.file, node.span),
                         child_name: node.name.name.clone(),
-                        mode: dir,
-                        child_mode: inner_shape.dir,
+                        mode,
+                        child_mode: inner_shape.mode,
                     }))?
                 }
 
@@ -140,7 +149,7 @@ pub fn instantiate(
 
     Ok(Shape {
         def: protocol.clone(),
-        dir,
+        mode,
         tag_offset,
         tag_count: tag - tag_offset,
         messages,

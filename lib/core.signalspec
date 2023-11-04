@@ -1,4 +1,4 @@
-protocol Base() #dn {
+protocol Base() #null {
 
 }
 

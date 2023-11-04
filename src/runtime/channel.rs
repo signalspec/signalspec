@@ -156,10 +156,9 @@ impl SeqChannels {
     }
 
     pub fn for_shape(shape: &Shape) -> SeqChannels {
-        let dir = shape.direction();
         SeqChannels { 
-            dn: dir.down.then(Channel::new),
-            up: dir.up.then(Channel::new),
+            dn: shape.mode.has_dn_channel().then(Channel::new),
+            up: shape.mode.has_up_channel().then(Channel::new),
         }
     }
 }

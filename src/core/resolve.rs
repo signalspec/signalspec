@@ -187,9 +187,9 @@ impl<'a> Builder<'a> {
                     assert!(dn_vars.is_empty());
                     assert!(dn.is_empty());
                     assert!(up.is_empty());
-                    self.add_step(Step::TokenTopTransaction { top_dir: shape_up.dir, variant: msg_def.tag, inner })
+                    self.add_step(Step::TokenTopTransaction { inner_mode: shape_up.mode, variant: msg_def.tag, inner })
                 } else {
-                    self.add_step(Step::TokenTop { top_dir: shape_up.dir, variant: msg_def.tag, dn_vars, dn, up, inner })
+                    self.add_step(Step::TokenTop { inner_mode: shape_up.mode, variant: msg_def.tag, dn_vars, dn, up, inner })
                 }
             }
 

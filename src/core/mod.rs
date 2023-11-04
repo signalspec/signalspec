@@ -27,8 +27,8 @@ pub use self::function::{ PrimitiveFn, FunctionDef, Func };
 pub use self::step::{ Step, StepId, StepInfo, AltDnArm, AltUpArm, write_tree };
 pub use self::resolve::{ compile_process, ProcessChain };
 pub use self::value::Value;
-pub use self::data::{ Type, TypeTree, DataMode };
-pub use self::shape::{ Shape, ShapeMsg, ShapeMsgParam };
+pub use self::data::{ Type, TypeTree };
+pub use self::shape::{ ShapeMode, Shape, ShapeMsg, ShapeMsgParam };
 pub use self::matchset::{ MatchSet, MessagePatternSet };
 pub use self::predicate::Predicate;
 
