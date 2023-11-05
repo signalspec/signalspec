@@ -1,7 +1,19 @@
 use std::{sync::Arc, fmt::Display};
 
-use crate::{syntax::{ast::{self, AstNode, BinOp}, Number}, tree::Tree, diagnostic::{DiagnosticHandler, Diagnostic, Span, ErrorReported}, Value, Type, core::ConcatElem, FileSpan, SourceFile};
-use super::{Expr, Func, FunctionDef, Item, Scope, LeafItem, expr::{ExprKind, eval_choose, eval_binary}, Predicate, ExprDn, resolve::ValueSinkId };
+use crate::{
+    core::{
+        expr::{eval_binary, eval_choose, ExprKind},
+        resolve::action::ValueSinkId,
+        ConcatElem, Expr, ExprDn, Func, FunctionDef, Item, LeafItem, Predicate, Scope,
+    },
+    diagnostic::{Diagnostic, DiagnosticHandler, ErrorReported, Span},
+    syntax::{
+        ast::{self, AstNode, BinOp},
+        Number,
+    },
+    tree::Tree,
+    FileSpan, SourceFile, Type, Value,
+};
 
 pub fn value(ctx: &dyn DiagnosticHandler, scope: &Scope, e: &ast::Expr) -> Result<Expr, ErrorReported> {
     match rexpr(ctx, scope, e) {

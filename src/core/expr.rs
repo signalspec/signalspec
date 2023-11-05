@@ -2,7 +2,7 @@ use std::{fmt, collections::{HashSet, HashMap}, sync::Arc};
 use num_complex::Complex;
 use num_traits::cast::ToPrimitive;
 use crate::{syntax::{BinOp, Number }, core::{PrimitiveFn, FunctionDef}, Value};
-use super::{ Item, Type, LeafItem, predicate::Predicate, resolve::ValueSinkId, ValueSrcId };
+use super::{ Item, Type, LeafItem, predicate::Predicate, resolve::action::ValueSinkId, ValueSrcId };
 
 /// Element of Expr::Concat
 #[derive(PartialEq, Eq, Hash, Debug, Clone)]

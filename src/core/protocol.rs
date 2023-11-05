@@ -3,9 +3,9 @@ use indexmap::IndexMap;
 use crate::diagnostic::{Collector, ErrorReported, Span};
 use crate::syntax::ast::{self, AstNode};
 use crate::{Index, Dir, DiagnosticHandler, Diagnostic};
-use super::expr_resolve::constant;
+use super::resolve::expr::{ constant, type_tree };
 use super::shape::ShapeMode;
-use super::{ Scope, Shape, ShapeMsg, ShapeMsgParam, expr_resolve };
+use super::{ Scope, Shape, ShapeMsg, ShapeMsgParam };
 use super::{ lexpr, rexpr, Item };
 
 pub fn resolve(
@@ -106,7 +106,7 @@ pub fn instantiate(
                             (&node.expr, param_dir)
                         }
                     };
-                    let ty = expr_resolve::type_tree(ctx, &scope, ty_expr)?;
+                    let ty = type_tree(ctx, &scope, ty_expr)?;
                     Ok(ShapeMsgParam { ty, direction })
                 }).collect::<Result<_, InstantiateProtocolError>>()?;
 

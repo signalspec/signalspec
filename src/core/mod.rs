@@ -1,6 +1,5 @@
 mod scope;
 mod expr;
-mod expr_resolve;
 mod step;
 mod file;
 mod index;
@@ -15,14 +14,14 @@ mod predicate;
 
 use crate::entitymap::entity_key;
 
-use self::expr_resolve::TryFromConstant;
+use self::resolve::expr::TryFromConstant;
 use self::file::ProtocolRef;
 
 pub use self::file::FileScope;
 pub use self::index::Index;
 pub use self::scope::{ Item, LeafItem, Scope };
 pub use self::expr::{ Expr, ExprDn, ConcatElem };
-pub use self::expr_resolve::{ rexpr, rexpr_tup, lexpr, value, constant };
+pub use self::resolve::expr::{ rexpr, rexpr_tup, lexpr, value, constant };
 pub use self::function::{ PrimitiveFn, FunctionDef, Func };
 pub use self::step::{ Step, StepId, StepInfo, AltDnArm, AltUpArm, write_tree };
 pub use self::resolve::{ compile_process, ProcessChain };

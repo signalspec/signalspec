@@ -24,7 +24,7 @@ impl FileScope {
         for entry in &ast.entries {
             match entry {
                 ast::ModuleEntry::Let(letdef) => {
-                    super::resolve::resolve_letdef(&ctx, &mut scope, &letdef);
+                    super::resolve::action::resolve_letdef(&ctx, &mut scope, &letdef);
                 }
                 _ => {}
             }

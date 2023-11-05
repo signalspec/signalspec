@@ -4,7 +4,7 @@ use indexmap::IndexMap;
 
 use crate::Value;
 
-use super::{Dir, Item, ProtocolRef, TypeTree, expr_resolve::TryFromConstant};
+use super::{Dir, Item, ProtocolRef, TypeTree, TryFromConstant};
 
 #[derive(Copy, Clone, Debug)]
 pub enum ShapeMode {

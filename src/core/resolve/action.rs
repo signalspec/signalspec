@@ -2,17 +2,22 @@ use std::sync::Arc;
 
 use num_traits::Signed;
 
-use crate::diagnostic::{Span, ErrorReported};
-use crate::entitymap::{ EntityMap, entity_key };
+use crate::core::{
+    constant,
+    index::FindDefError,
+    protocol,
+    resolve::expr::{lvalue_dn, lvalue_up, zip_ast, LValueSrc},
+    rexpr, rexpr_tup,
+    step::{analyze_unambiguous, AltDnArm, AltUpArm, Step, StepInfo},
+    value, Dir, Expr, ExprDn, Item, LeafItem, Predicate, Scope, Shape, ShapeMsg, StepId, Type,
+    ValueSrcId,
+};
+use crate::diagnostic::{ErrorReported, Span};
+use crate::entitymap::{entity_key, EntityMap};
 use crate::runtime::instantiate_primitive;
-use crate::tree::Tree;
-use crate::{Index, DiagnosticHandler, Diagnostic, SourceFile, FileSpan, TypeTree};
 use crate::syntax::ast::{self, AstNode};
-use super::expr_resolve::{lvalue_dn, zip_ast, LValueSrc, lvalue_up};
-use super::index::FindDefError;
-use super::step::{Step, StepInfo, analyze_unambiguous, AltUpArm, AltDnArm};
-use super::{Expr, ExprDn, Item, Scope, Shape, Type, ShapeMsg, protocol};
-use super::{Dir, rexpr, value, constant, StepId, LeafItem, Predicate, ValueSrcId, rexpr_tup};
+use crate::tree::Tree;
+use crate::{Diagnostic, DiagnosticHandler, FileSpan, Index, SourceFile, TypeTree};
 
 #[derive(Clone, Copy)]
 struct ResolveCx<'a> {
