@@ -26,3 +26,12 @@ with Seq(#x, _) def main() = {
     }
 }
 
+// TODO: parser should not accept `for` as an identifier
+//@test(#up, ())
+//with Seq(#x, _) def main() = {
+//    for {
+//
+//    }
+//}
+
+

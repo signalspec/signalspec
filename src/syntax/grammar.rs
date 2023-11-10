@@ -104,7 +104,7 @@ peg::parser!(pub grammar signalspec() for str {
           { ast::Action::Repeat(ast::ActionRepeat{ span: FileSpan{start, end}, dir_count, block }) }
         / start:pos() KW("on") _ name:IDENTIFIER() _ args:expr_tup()? _ block:block()? end:pos()
           { ast::Action::On(ast::ActionOn{ span: FileSpan{start, end}, name, args, block }) }
-        / start:pos() KW("for") _ vars:COMMASEP(<(l:IDENTIFIER() _ "=" _ r:expr() { (l,r) })>) _ block:block() end:pos()
+        / start:pos() KW("for") _ vars:COMMASEP_ONE(<(l:IDENTIFIER() _ "=" _ r:expr() { (l,r) })>) _ block:block() end:pos()
           { ast::Action::For(ast::ActionFor{ span: FileSpan{start, end}, vars, block }) }
         / start:pos() KW("alt") _ dir:expr() _ expr:expr() _ open:tok_node("{") _ arms:alt_arm()**__ _ close:tok_node_or_err("}") end:pos()
           { ast::Action::Alt(ast::ActionAlt{ span: FileSpan{start, end}, dir, expr, arms }) }
@@ -203,6 +203,7 @@ peg::parser!(pub grammar signalspec() for str {
   rule __() = quiet!{ (WHITESPACE() / TERMINATOR())+ }
 
   rule COMMASEP<T>(x: rule<T>) -> Vec<T> = v:(x() ** (_ "," _)) (_ ",")? {v}
+  rule COMMASEP_ONE<T>(x: rule<T>) -> Vec<T> = v:(x() ++ (_ "," _)) (_ ",")? {v}
 
   rule TOK(s: &str) -> FileSpan = start:position!() ##parse_string_literal(s) end:position!() {
     FileSpan::new(start, end)
