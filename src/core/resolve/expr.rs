@@ -332,7 +332,6 @@ fn resolve_expr_concat(ctx: &dyn DiagnosticHandler, scope: &Scope, node: &ast::E
 
                 other => Err(ctx.report(Diagnostic::ExpectedVector {
                     span: span(),
-                    expected_width: w,
                     found: other.get_type(),
                 }))?
             }

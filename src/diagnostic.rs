@@ -368,9 +368,8 @@ diagnostic_kinds!{
 
     ExpectedVector {
         span: Span,
-        expected_width: u32,
         found: Type
-    } => "expected vector of width {expected_width}" {
+    } => "expected vector" {
         error "found `{found}`" at span
     }
 
@@ -392,6 +391,16 @@ diagnostic_kinds!{
         span: Span
     } => "`alt` action must have at least one arm" {
         error "no arms specified" at span
+    }
+
+    ForLoopVectorWidthMismatch {
+        span1: Span,
+        width1: u32,
+        span2: Span,
+        width2: u32
+    } => "`for` loop vectors must be the same width" {
+        error "vector of width {width1}" at span1
+        error "vector of width {width2}" at span2
     }
 
     RequiredDownValue {

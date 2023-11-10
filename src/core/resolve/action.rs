@@ -298,27 +298,43 @@ impl<'a> Builder<'a> {
                 
                 for &(ref name, ref expr) in &node.vars {
                     let Ok(e) = value(self.ui, sb.scope, expr) else { continue; };
-                    let t = e.get_type();
-                    if let Type::Vector(c, ty) = t {
-                        match count {
-                            Some(count) => assert_eq!(count, c),
-                            None => count = Some(c),
+                    let (c, ty) = match e.get_type() {
+                        Type::Vector(c, ty) => (c, ty),
+                        other => {
+                            self.ui.report(Diagnostic::ExpectedVector {
+                                span: Span::new(&sb.scope.file, expr.span()),
+                                found: other,
+                            });
+
+                            continue;
                         }
-                        
-                        let value = if let Some(e_dn) = e.down() {
-                            let id = self.add_value_src(); // The element of the vector inside the loop
-                            vars_dn.push((e_dn, id));
-                            Expr::var_dn(id, *ty)
-                        } else {
-                            let id = self.add_value_sink();
-                            vars_up_inner.push((id, e, name.span));
-                            Expr::var_up(id, *ty)
-                        };
-                        
-                        body_scope.bind(&name.name, Item::Leaf(LeafItem::Value(value)));
-                    } else {
-                        panic!("Foreach must loop over vector type, not {:?}", t)
+                    };
+
+                    match count {
+                        None => count = Some(c),
+                        Some(count) if count == c => {},
+                        Some(count) => {
+                            self.ui.report(Diagnostic::ForLoopVectorWidthMismatch {
+                                span1: Span::new(&sb.scope.file, node.vars[0].1.span()),
+                                width1: count,
+                                span2: Span::new(&sb.scope.file, expr.span()),
+                                width2: c
+                            });
+                            continue;
+                        }
                     }
+
+                    let value = if let Some(e_dn) = e.down() {
+                        let id = self.add_value_src(); // The element of the vector inside the loop
+                        vars_dn.push((e_dn, id));
+                        Expr::var_dn(id, *ty)
+                    } else {
+                        let id = self.add_value_sink();
+                        vars_up_inner.push((id, e, name.span));
+                        Expr::var_up(id, *ty)
+                    };
+
+                    body_scope.bind(&name.name, Item::Leaf(LeafItem::Value(value)));
                 }
 
                 let upvalues_scope = self.upvalues.len();
