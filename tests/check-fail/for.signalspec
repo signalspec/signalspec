@@ -4,6 +4,7 @@ with Seq(#x, _) def main() = {
     for x = () {
 //          ^^ found `()`
 
+        val(x)
     }
 }
 
@@ -13,7 +14,7 @@ with Seq(#x, _) def main() = {
 //# expected vector
     for x = #a {
 //          ^^ found `#a`
-
+        val(x)
     }
 }
 
@@ -23,6 +24,7 @@ with Seq(#x, _) def main() = {
     for x = [#a, #b], y = [#x], z = [#t, #u] {
 //          ^^^^^^^^ vector of width 2
 //                        ^^^^ vector of width 1
+        val(y)
     }
 }
 

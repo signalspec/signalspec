@@ -21,12 +21,10 @@ with Seq(#x, _) def main() = {
 
     }
 
-    for a=[0,1,2] {
 //# repeat count predicate must be representable as an integer range
-        repeat #up a {
-//                 ^ unsupported
+    repeat #up (1..2)[1=1, 2=2] {
+//             ^^^^^^^^^^^^^^^^ unsupported
 
-        }
     }
 
 //# repeat count must be a positive integer

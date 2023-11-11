@@ -1,7 +1,7 @@
 
 use std::collections::HashSet;
 use crate::{syntax::Number, Value};
-use super::{ExprDn, ConcatElem, ValueSrcId};
+use super::ConcatElem;
 
 #[derive(Clone, PartialEq, Debug)]
 pub enum Predicate {
@@ -20,9 +20,6 @@ pub enum Predicate {
 
     /// Vector: test each slice / element
     Vector(Vec<ConcatElem<Predicate>>),
-
-    /// Down-evaluate the expression and compare. This is used for `for` loops.
-    EqualToDn(ExprDn),
 }
 
 impl Predicate {
@@ -37,7 +34,7 @@ impl Predicate {
         }
     }
 
-    pub fn test(&self, v: &Value, state: &dyn Fn(ValueSrcId)->Value) -> bool {
+    pub fn test(&self, v: &Value) -> bool {
         match (self, v) {
             (Predicate::Any, _) => true,
             (Predicate::Range(lo, hi), Value::Number(n)) => n>=lo && n<hi,
@@ -49,12 +46,11 @@ impl Predicate {
 
                 components.iter().all(|component| {
                     match *component {
-                        ConcatElem::Elem(ref e) => e.test(take(), state),
-                        ConcatElem::Slice(ref e, w) => e.test(&Value::Vector((0..w).map(|_| take().clone()).collect()), state),
+                        ConcatElem::Elem(ref e) => e.test(take()),
+                        ConcatElem::Slice(ref e, w) => e.test(&Value::Vector((0..w).map(|_| take().clone()).collect())),
                     }
                 })
             },
-            (Predicate::EqualToDn(ref dn), v) => &dn.eval(state) == v,
             _ => panic!("Type mismatch: {} against predicate {:?}", v, self)
         }
     }
@@ -62,7 +58,6 @@ impl Predicate {
     pub fn excludes(&self, other: &Self) -> bool {
         match (self, other) {
             (Predicate::Any, _) | (_, Predicate::Any) => false,
-            (Predicate::EqualToDn(..), _) | (_, Predicate::EqualToDn(..)) => false,
             (Predicate::Range(lo1, hi1), Predicate::Range(lo2, hi2)) => hi1 <= lo2 || hi2 <= lo1,
             (Predicate::Range(lo, hi), Predicate::Number(n)) 
             | (Predicate::Number(n), Predicate::Range(lo, hi))  => n < lo || n >= hi,
@@ -85,13 +80,12 @@ impl Predicate {
 #[test]
 fn test_predicate() {
     use super::expr::test_expr_parse;
-    let no_get_var = &|_| panic!();
 
     let range = test_expr_parse("1 ! 1..10").predicate().unwrap();
     assert_eq!(range, Predicate::Range(1.into(), 10.into()));
-    assert_eq!(range.test(&Value::Number(1.into()), no_get_var), true);
-    assert_eq!(range.test(&Value::Number(2.into()), no_get_var), true);
-    assert_eq!(range.test(&Value::Number(10.into()), no_get_var), false);
+    assert_eq!(range.test(&Value::Number(1.into())), true);
+    assert_eq!(range.test(&Value::Number(2.into())), true);
+    assert_eq!(range.test(&Value::Number(10.into())), false);
     assert_eq!(range.excludes(&Predicate::Range(10.into(), 20.into())), true);
     assert_eq!(range.excludes(&Predicate::Range(0.into(), 1.into())), true);
     assert_eq!(range.excludes(&Predicate::Range(0.into(), 11.into())), false);
@@ -104,20 +98,20 @@ fn test_predicate() {
 
     let any = test_expr_parse("<: 5").predicate().unwrap();
     assert_eq!(any, Predicate::Any);
-    assert_eq!(any.test(&Value::Number(1.into()), no_get_var), true);
+    assert_eq!(any.test(&Value::Number(1.into())), true);
     assert_eq!(any.excludes(&Predicate::Range(5.into(), 20.into())), false);
 
     let int = test_expr_parse(":> 5").predicate().unwrap();
     assert_eq!(int, Predicate::Number(5.into()));
-    assert_eq!(int.test(&Value::Number(5.into()), no_get_var), true);
-    assert_eq!(int.test(&Value::Number(4.into()), no_get_var), false);
+    assert_eq!(int.test(&Value::Number(5.into())), true);
+    assert_eq!(int.test(&Value::Number(4.into())), false);
     assert_eq!(int.excludes(&int), false);
     assert_eq!(int.excludes(&Predicate::Number(0.into())), true);
 
     let sym = test_expr_parse("#h | #l").predicate().unwrap();
     assert_eq!(sym, Predicate::SymbolSet(["h".into(), "l".into()].into()));
-    assert_eq!(sym.test(&Value::Symbol("h".into()), no_get_var), true);
-    assert_eq!(sym.test(&Value::Symbol("z".into()), no_get_var), false);
+    assert_eq!(sym.test(&Value::Symbol("h".into())), true);
+    assert_eq!(sym.test(&Value::Symbol("z".into())), false);
     assert_eq!(sym.excludes(&Predicate::SymbolSet(["h".into(), "x".into()].into())), false);
     assert_eq!(sym.excludes(&Predicate::SymbolSet(["z".into(), "x".into()].into())), true);
 
@@ -133,14 +127,14 @@ fn test_predicate() {
         Value::Number(9.into()),
         Value::Number(9.into()),
         Value::Number(9.into()),
-    ]), no_get_var), true);
+    ])), true);
     assert_eq!(vec.test(&Value::Vector(vec![
         Value::Number(0.into()),
         Value::Number(3.into()),
         Value::Number(9.into()),
         Value::Number(9.into()),
         Value::Number(9.into()),
-    ]), no_get_var), false);
+    ])), false);
     assert_eq!(vec.excludes(&vec), false);
     assert_eq!(vec.excludes(&test_expr_parse("[0..5, 9, 3:_]").predicate().unwrap()), true);
     assert_eq!(vec.excludes(&test_expr_parse("[_, _, 3:_]").predicate().unwrap()), false);
@@ -152,5 +146,5 @@ fn test_predicate() {
         Value::Symbol("b".into()),
         Value::Symbol("c".into()),
         Value::Symbol("d".into()),
-    ]), no_get_var), true);
+    ])), true);
 }

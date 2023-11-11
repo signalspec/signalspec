@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use num_traits::Signed;
 
-use crate::core::{
+use crate::{core::{
     constant,
     index::FindDefError,
     protocol,
@@ -10,8 +10,8 @@ use crate::core::{
     rexpr, rexpr_tup,
     step::{analyze_unambiguous, AltDnArm, AltUpArm, Step, StepInfo},
     value, Dir, Expr, ExprDn, Item, LeafItem, Predicate, Scope, Shape, ShapeMsg, StepId, Type,
-    ValueSrcId,
-};
+    ValueSrcId, expr::ExprKind, ConcatElem,
+}, Value};
 use crate::diagnostic::{ErrorReported, Span};
 use crate::entitymap::{entity_key, EntityMap};
 use crate::runtime::instantiate_primitive;
@@ -85,7 +85,7 @@ impl<'a> Builder<'a> {
         self.upvalues.push((snk, val))
     }
 
-    pub fn take_upvalue(&mut self, snk: ValueSinkId, file: &Arc<SourceFile>, span: FileSpan) -> ExprDn {
+    pub fn take_upvalue_optional(&mut self, snk: ValueSinkId, file: &Arc<SourceFile>, span: FileSpan) -> Option<ExprDn> {
         let mut i = 0;
         let mut ret = None;
         let mut multiple = false;
@@ -106,7 +106,11 @@ impl<'a> Builder<'a> {
             });
         }
 
-        ret.unwrap_or_else(|| {
+        ret
+    }
+
+    pub fn take_upvalue(&mut self, snk: ValueSinkId, file: &Arc<SourceFile>, span: FileSpan) -> ExprDn {
+        self.take_upvalue_optional(snk, file, span).unwrap_or_else(|| {
             self.ui.report(Diagnostic::UpValueNotProvided {
                 span: Span::new(file, span),
             });
@@ -290,22 +294,32 @@ impl<'a> Builder<'a> {
             }
 
             ast::Action::For(ref node) => {
-                let mut body_scope = sb.scope.child();
+                enum LoopVar {
+                    Const(Vec<Value>),
+                    Expr {
+                        ty: Type,
+                        dn: Option<ExprDn>,
+                        up_id: ValueSinkId,
+                        up_expr: ExprKind,
+                        up_collected: Option<Vec<ExprDn>>,
+                        span: FileSpan
+                    },
+                    Invalid(ErrorReported)
+                }
+                
                 let mut count = None;
-
-                let mut vars_dn: Vec<(ExprDn, ValueSrcId)> = Vec::new();
-                let mut vars_up_inner:Vec<(ValueSinkId, Expr, FileSpan)> = Vec::new();
+                let mut vars = Vec::new();
                 
                 for &(ref name, ref expr) in &node.vars {
                     let Ok(e) = value(self.ui, sb.scope, expr) else { continue; };
                     let (c, ty) = match e.get_type() {
-                        Type::Vector(c, ty) => (c, ty),
+                        Type::Vector(c, ty) => (c, *ty),
                         other => {
-                            self.ui.report(Diagnostic::ExpectedVector {
+                            let r = self.ui.report(Diagnostic::ExpectedVector {
                                 span: Span::new(&sb.scope.file, expr.span()),
                                 found: other,
                             });
-
+                            vars.push((name, LoopVar::Invalid(r)));
                             continue;
                         }
                     };
@@ -314,50 +328,89 @@ impl<'a> Builder<'a> {
                         None => count = Some(c),
                         Some(count) if count == c => {},
                         Some(count) => {
-                            self.ui.report(Diagnostic::ForLoopVectorWidthMismatch {
+                            let r = self.ui.report(Diagnostic::ForLoopVectorWidthMismatch {
                                 span1: Span::new(&sb.scope.file, node.vars[0].1.span()),
                                 width1: count,
                                 span2: Span::new(&sb.scope.file, expr.span()),
                                 width2: c
                             });
+                            vars.push((name, LoopVar::Invalid(r)));
                             continue;
                         }
                     }
 
-                    let value = if let Some(e_dn) = e.down() {
-                        let id = self.add_value_src(); // The element of the vector inside the loop
-                        vars_dn.push((e_dn, id));
-                        Expr::var_dn(id, *ty)
-                    } else {
-                        let id = self.add_value_sink();
-                        vars_up_inner.push((id, e, name.span));
-                        Expr::var_up(id, *ty)
+                    let var = match e {
+                        Expr::Const(Value::Vector(v)) => LoopVar::Const(v),
+                        Expr::Const(_) => unreachable!(), // Checked that type is vector
+                        Expr::Expr(_, e) => LoopVar::Expr{
+                            ty,
+                            dn: e.down(),
+                            up_id: self.add_value_sink(),
+                            up_expr: e,
+                            up_collected: Some(Vec::new()),
+                            span: name.span
+                        },
                     };
 
-                    body_scope.bind(&name.name, Item::Leaf(LeafItem::Value(value)));
+                    vars.push((name, var));
                 }
 
-                let upvalues_scope = self.upvalues.len();
+                let mut seq = Vec::new();
 
-                let inner = self.resolve_seq(sb.with_scope(&body_scope), &node.block);
+                for iter in 0..count.unwrap_or(0) {
+                    let mut body_scope = sb.scope.child();
+                    let upvalues_scope = self.upvalues.len();
 
-                let vars_up: Vec<_> = vars_up_inner.into_iter().map(|(snk, outer_expr, span)| {
-                    (self.take_upvalue(snk, &sb.scope.file, span), outer_expr)
-                }).collect();
+                    for (name, var) in &vars {
+                        let value = match var {
+                            LoopVar::Const(v) => {
+                                LeafItem::Value(Expr::Const(v[iter as usize].clone()))
+                            }
+                            LoopVar::Expr { ty, dn, up_id, ..} => {
+                                let up = ExprKind::VarUp(*up_id);
+                                let e = if let Some(dn) = dn {
+                                    let elem = ExprDn::Index(Box::new(dn.clone()), iter);
+                                    ExprKind::Flip(Box::new(ExprKind::VarDn(elem)), Box::new(up))
+                                } else { up };
+                                LeafItem::Value(Expr::Expr(ty.clone(), e))
+                            }
+                            LoopVar::Invalid(r) => LeafItem::Invalid(r.clone())
+                        };
 
-                if self.upvalues.len() > upvalues_scope {
-                    panic!("Upvalues set in for loop: {:?}", self.upvalues);
+                        body_scope.bind(&name.name, Item::Leaf(value));
+                    }
+
+                    let inner = self.resolve_seq(sb.with_scope(&body_scope), &node.block);
+
+                    for (_, var) in &mut vars {
+                        if let LoopVar::Expr { up_id, up_collected, span, ..} = var {
+                            if let Some(up) = self.take_upvalue_optional(*up_id, &sb.scope.file, *span) {
+                                if let Some(collected) = up_collected {
+                                    collected.push(up);
+                                }
+                            } else {
+                                *up_collected = None;
+                            }
+                        };
+                    }
+
+                    if self.upvalues.len() > upvalues_scope {
+                        panic!("Upvalues set in for loop: {:?}", self.upvalues);
+                    }
+
+                    seq.push(inner);
                 }
 
-                // up_value_src may set more upvalues, so this needs to happen after taking the body upvalues
-                // and checking that the body didn't set any others.
-                let vars_up: Vec<(ExprDn, ValueSrcId)> = vars_up.into_iter().map(|(val, outer_expr)| {
-                    let src = self.up_value_src(&outer_expr);
-                    (val, src)
-                }).collect();
+                for (_, var) in &mut vars {
+                    if let LoopVar::Expr{ up_expr, up_collected, ..} = var {
+                        if let Some(collected) = up_collected {
+                            let concat = ExprDn::Concat(collected.drain(..).map(ConcatElem::Elem).collect());
+                            up_expr.up(concat, &mut |snk, x| self.set_upvalue(snk, x));
+                        }
+                    }
+                }
 
-                let iters = count.unwrap_or(0) as u32;
-                self.add_step(Step::Foreach { iters, inner, dn: vars_dn, up: vars_up })
+                self.add_step(Step::Seq(seq))
             }
 
             ast::Action::Alt(ref node) => {

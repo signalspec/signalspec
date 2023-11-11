@@ -41,18 +41,6 @@ pub enum Step {
         inner: StepId,
         count: ValueSrcId,
     },
-    Foreach {
-        /// Number of iterations = length of input and output vectors
-        iters: u32,
-
-        /// Evaluated at entry to produce vectors that are iterated in the loop
-        dn: Vec<(ExprDn, ValueSrcId)>,
-
-        /// Evaluated after each iteration to produce an element for each output vector
-        up: Vec<(ExprDn, ValueSrcId)>,
-
-        inner: StepId
-    },
     AltDn(Vec<ExprDn>, Vec<AltDnArm>),
     AltUp(Vec<AltUpArm>, Vec<ValueSrcId>),
 }
@@ -99,13 +87,6 @@ pub fn write_tree(f: &mut dyn Write, indent: u32, steps: &[Step], step: StepId) 
         }
         Step::RepeatUp { min, max, inner, count} => {
             writeln!(f, "{i}Repeat[Up]: {min}..={max:?} => {count:?}")?;
-            write_tree(f, indent + 1, steps, inner)?;
-        }
-        Step::Foreach { iters, dn: ref dn_vecs, up: ref up_elems, inner } => {
-            write!(f, "{}For: {} ", i, iters)?;
-            for expr in dn_vecs { write!(f, "<={:?}, ", expr)?; }
-            for expr in up_elems { write!(f, "=>{:?}, ", expr)?; }
-            writeln!(f, "")?;
             write_tree(f, indent + 1, steps, inner)?;
         }
         Step::AltDn(ref scrutinee, ref arms) => {
@@ -284,32 +265,6 @@ pub fn analyze_unambiguous(steps: &EntityMap<StepId, Step>) -> EntityMap<StepId,
                     followlast: Some(inner.first.clone()),
                     nullable: inner.nullable || min == 0,
                 }
-            },
-            Step::Foreach { inner, dn: ref dn_vecs, .. } => {
-                let inner = get(inner);
-
-                MatchSet::check_compatible(&inner.followlast, &inner.first);
-
-                // If the `for` block is introducing variables, the send from first
-                // cannot be lifted out of the block because it relies on those
-                // variables being defined. It would conflict with any alternatives anyway
-                // since those couldn't use the variable.
-                // TODO: is testing vars_dn the right condition or should we more specifically
-                // look at whether `first` contains a send with inner variables.
-                if dn_vecs.is_empty() {
-                    StepInfo {
-                        first: inner.first.clone(),
-                        followlast: inner.followlast.clone(),
-                        nullable: inner.nullable,
-                    }
-                } else {
-                    StepInfo {
-                        first: MatchSet::proc(),
-                        followlast: inner.followlast.clone(),
-                        nullable: inner.nullable,
-                    }
-                }
-
             },
             Step::AltDn(_, ref opts) => {
                 let nullable = opts.iter().any(|arm| get(arm.body).nullable);

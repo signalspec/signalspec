@@ -7,6 +7,22 @@ def main() = {
     }
 }
 
+// Non-constant expression
+with Seq(_:#a|#b, dir)
+def groups() = new Seq(_:[#a|#b, #a|#b, #a|#b, #a|#b], dir) {
+    on val(v) {
+        for i = v {
+            val(i)
+        }
+    }
+}
+
+@test(#both, (#a, #b, #a, #a))
+@test(#up_fail, (#a, #a, #a, #a))
+with Seq(_:#a|#b, dir)
+def test_non_constant() = groups() | val([#a, #b, #a, #a])
+
+// Two loop variables
 @test(#both, ((#a, #b), (#b, #a), (#a, #a)))
 with Seq((_:#a|#b, _:#a|#b), dir)
 def main() = {

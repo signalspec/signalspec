@@ -17,7 +17,7 @@ with Seq(1..10, _) def main() = new Seq(1..10, #up) {
 @test(#up, (9))
 with Seq(1..10, _) def main() = {
 //# value for up-direction variable provided multiple times
-    for xyz = [_, _] {
+    for xyz = [_] {
 //      ^^^ must be up-evaluated exactly once in this block
         val(xyz)
         val(xyz)

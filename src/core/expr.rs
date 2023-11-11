@@ -260,7 +260,7 @@ impl ExprKind {
     pub fn predicate(&self) -> Option<Predicate> {
         match *self {
             ExprKind::Ignored | ExprKind::VarUp(..) => Some(Predicate::Any),
-            ExprKind::VarDn(ref dn) => Some(Predicate::EqualToDn(dn.clone())),
+            ExprKind::VarDn(_) => None,
             ExprKind::Flip(_, ref up) => up.predicate(),
             ExprKind::Const(ref v) => Predicate::from_value(v),
             ExprKind::Range(lo, hi) => Some(Predicate::Range(lo, hi)),
@@ -287,7 +287,6 @@ impl ExprKind {
             ExprKind::Choose(ref e, _) | ExprKind::BinaryConst(ref e, _, _) | ExprKind::Unary(ref e, _) => {
                 match e.predicate() {
                     Some(Predicate::Any) => Some(Predicate::Any),
-                    Some(Predicate::EqualToDn(..)) => e.down().map(Predicate::EqualToDn), // TODO: accidentally quadratic
                     _ => None
                 }
             },

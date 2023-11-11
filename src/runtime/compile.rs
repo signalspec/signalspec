@@ -32,11 +32,6 @@ pub enum Insn {
     CounterDecrement(CounterId, InsnId),
     CounterIncrement(CounterId),
 
-    IterDnStart(ValueSrcId, ExprDn),
-    IterDnStep(ValueSrcId),
-    IterUpStep(ValueSrcId, ExprDn),
-    IterUpExit(ValueSrcId),
-
     Assign(ValueSrcId, ExprDn),
     TestVal(ExprDn, Predicate, InsnId),
 
@@ -310,49 +305,6 @@ impl Compiler<'_> {
                 self.backpatch(test_ip, Insn::CounterDecrement(counter, self.next_ip()));
             }
 
-            Step::Foreach { iters, ref dn, ref up, inner} => {
-                assert!(iters > 0);
-
-                let inner_info = &self.program.step_info[inner];
-
-                let counter = self.new_counter();
-                self.emit(Insn::CounterReset(counter, (iters - 1) as i64)); // tested at end of loop
-
-                for &(ref e,  id) in dn {
-                    self.emit(Insn::IterDnStart(id, e.clone()));
-                }
-
-                let loop_head = self.next_ip();
-
-                for &(_, id) in dn {
-                    self.emit(Insn::IterDnStep(id));
-                }
-
-                if !dn.is_empty() {
-                    self.seq_prep(channels, &None, &inner_info.first);
-                }
-
-                self.compile_step(inner, channels);
-
-                for &(ref e, id) in up {
-                    self.emit(Insn::IterUpStep(id, e.clone()));
-                }
-
-                let exit_check = self.emit_placeholder();
-
-                if dn.is_empty() {
-                    self.seq_prep(channels, &inner_info.followlast, &inner_info.first);
-                }
-
-                self.emit(Insn::Jump(loop_head));
-
-                self.backpatch(exit_check, Insn::CounterDecrement(counter, self.next_ip()));
-
-                for &(_, id) in up {
-                    self.emit(Insn::IterUpExit(id));
-                }
-            }
-
             Step::AltUp(ref opts, ref dests) => {
                 let mut jumps_to_final = vec![];
 
@@ -476,7 +428,6 @@ pub struct ProgramExec {
     registers: EntityMap<ValueSrcId, Option<Value>>,
     channels: EntityMap<ChanId, Channel>,
     counters: EntityMap<CounterId, i64>,
-    iters: EntityMap<ValueSrcId, Option<Vec<Value>>>,
     primitives: EntityMap<PrimitiveId, Option<Pin<Box<dyn Future<Output = Result<(), ()>>>>>>,
 }
 
@@ -491,7 +442,7 @@ impl EntityMap<ValueSrcId, Option<Value>> {
     }
 
     fn up_eval_test(&mut self, p: &Predicate, v: &Value) -> bool {
-        p.test(v, &|var| self[var].clone().unwrap())
+        p.test(v)
     }
 }
 
@@ -509,7 +460,6 @@ impl ProgramExec {
             registers: program.vars.iter().map(|_| None).collect(),
             channels: channels.into(),
             counters: program.counters.iter().map(|_| 0).collect(),
-            iters: program.vars.iter().map(|_| None).collect(),
             primitives: program.primitives.iter().map(|_| None).collect(),
             program,
         }
@@ -641,23 +591,6 @@ impl ProgramExec {
                 }
                 Insn::CounterIncrement(counter) => {
                     self.counters[counter] += 1;
-                }
-                Insn::IterDnStart(var, ref expr) => {
-                    let mut v = Vec::<Value>::try_from(self.registers.down_eval(expr)).unwrap();
-                    v.reverse();
-                    self.iters[var] = Some(v);
-                }
-                Insn::IterDnStep(var) => {
-                    let v = self.iters[var].as_mut().unwrap().pop().unwrap();
-                    self.registers[var] = Some(v);
-                }
-                Insn::IterUpStep(var, ref expr) => {
-                    let v = self.registers.down_eval(expr);
-                    self.iters[var].get_or_insert_with(Vec::new).push(v);
-                }
-                Insn::IterUpExit(var) => {
-                    let v = self.iters[var].take().unwrap();
-                    self.registers[var] = Some(Value::Vector(v));
                 }
                 Insn::Assign(l, ref r) => {
                     let v = self.registers.down_eval(r);
