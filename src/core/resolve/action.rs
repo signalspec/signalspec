@@ -788,6 +788,12 @@ pub fn compile_process(ui: &dyn DiagnosticHandler, index: &Index, scope: &Scope,
     let sb = ResolveCx { scope, shape_up: None, shape_down: &shape_dn };
     let (step, shape_up) = builder.resolve_process(sb, ast);
 
+    if log_enabled!(log::Level::Debug) {
+        let mut buf = String::new();
+        crate::core::step::write_tree(&mut buf, 0, &builder.steps, step).unwrap();
+        debug!("Steps:\n{}", buf);
+    }
+
     let step_info = analyze_unambiguous(&builder.steps);
 
     ProcessChain {

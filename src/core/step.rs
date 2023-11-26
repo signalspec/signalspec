@@ -1,4 +1,3 @@
-use std::io::{Write, Result as IoResult};
 use std::sync::Arc;
 
 use crate::diagnostic::ErrorReported;
@@ -45,9 +44,9 @@ pub enum Step {
     AltUp(Vec<AltUpArm>, Vec<ValueSrcId>),
 }
 
-pub fn write_tree(f: &mut dyn Write, indent: u32, steps: &[Step], step: StepId) -> IoResult<()> {
+pub fn write_tree(f: &mut dyn std::fmt::Write, indent: u32, steps: &EntityMap<StepId, Step>, step: StepId) -> Result<(), std::fmt::Error> {
     let i: String = " ".repeat(indent as usize);
-    match steps[step.0 as usize] {
+    match steps[step] {
         Step::Invalid(_) => writeln!(f, "{}Invalid", i)?,
         Step::Pass => writeln!(f, "{}Pass", i)?,
         Step::Stack{ lo, hi, ..} => {
