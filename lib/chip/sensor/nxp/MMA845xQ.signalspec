@@ -37,26 +37,23 @@ def MMA845xQ() = new Seq((-4.0..4.0, -4.0..4.0, -4.0..4.0), #up) {
     write_reg(CTRL_REG4, 'h01);
     repeat #dn 100000 {
         on val((x, y, z)) {
-            // TODO: use `for` once it can be used in #async_dn
-            alt #up (chunks(8, signed(16, x * 16384.0)), chunks(8, signed(16, y * 16384.0)), chunks(8, signed(16, z * 16384.0))) {
-                ([x1,x2], [y1, y2], [z1, z2]) => {
-                    transaction() | {
-                        start(ADDR, #w);
-                        write(OUT_X_MSB);
-                        start(ADDR, #r);
+            transaction() | {
+                start(ADDR, #w);
+                write(OUT_X_MSB);
+                start(ADDR, #r);
 
-                        read(x1)
-                        read(x2)
+                for b = chunks(8, signed(16, x * 16384.0)) {
+                    read(b)
+                }
 
-                        read(y1)
-                        read(y2)
+                for b = chunks(8, signed(16, y * 16384.0)) {
+                    read(b)
+                }
 
-                        read(z1)
-                        read(z2)
-                    }
+                for b = chunks(8, signed(16, z * 16384.0)) {
+                    read(b)
                 }
             }
-            
         }
     }
 }
