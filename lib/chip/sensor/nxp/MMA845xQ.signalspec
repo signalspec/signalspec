@@ -12,19 +12,21 @@ let CTRL_REG4 = 'h2D
 
 with I2C(role)
 def read_reg(var(#dn) reg, var(#up) val) = {
-    start(ADDR, #w)
-    write(reg)
-    start(ADDR, #r)
-    read(val)
-    stop()
+    transaction() | {
+        start(ADDR, #w)
+        write(reg)
+        start(ADDR, #r)
+        read(val)
+    }
 }
 
 with I2C(role)
 def write_reg(var(#dn) reg, var(#dn) val) = {
-    start(ADDR, #w)
-    write(reg)
-    write(val)
-    stop()
+    transaction() | {
+        start(ADDR, #w)
+        write(reg)
+        write(val)
+    }
 }
 
 with I2C(role)
@@ -38,20 +40,20 @@ def MMA845xQ() = new Seq((-4.0..4.0, -4.0..4.0, -4.0..4.0), #up) {
             // TODO: use `for` once it can be used in #async_dn
             alt #up (chunks(8, signed(16, x * 16384.0)), chunks(8, signed(16, y * 16384.0)), chunks(8, signed(16, z * 16384.0))) {
                 ([x1,x2], [y1, y2], [z1, z2]) => {
-                    start(ADDR, #w);
-                    write(OUT_X_MSB);
-                    start(ADDR, #r);
+                    transaction() | {
+                        start(ADDR, #w);
+                        write(OUT_X_MSB);
+                        start(ADDR, #r);
 
-                    read(x1)
-                    read(x2)
+                        read(x1)
+                        read(x2)
 
-                    read(y1)
-                    read(y2)
+                        read(y1)
+                        read(y2)
 
-                    read(z1)
-                    read(z2)
-
-                    stop()
+                        read(z1)
+                        read(z2)
+                    }
                 }
             }
             

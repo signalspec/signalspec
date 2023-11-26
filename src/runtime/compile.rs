@@ -63,6 +63,14 @@ impl ChannelIds {
         Self { up_rx: None, up_tx: None, ..self }
     }
 
+    fn only_downward(self) -> ChannelIds {
+        ChannelIds { dn_rx: None, up_tx: None, ..self }
+    }
+
+    fn only_upward(self) -> ChannelIds {
+        ChannelIds { dn_tx: None, up_rx: None, ..self }
+    }
+
     fn to_vec(self) -> Vec<ChanId> {
         [self.dn_tx, self.dn_rx, self.up_tx, self.up_rx].into_iter().flatten().collect()
     }
@@ -151,19 +159,25 @@ impl Compiler<'_> {
             Step::Pass => todo!(),
             Step::Stack { lo, ref shape, hi} => {
                 if let Step::TokenTransaction { variant } = self.program.steps[lo] {
-                    self.compile_step(hi, channels);
+                    if let (ShapeMode::Async, Some(dn_rx), Some(dn_tx)) = (shape.mode, channels.dn_rx, channels.dn_tx) {
+                        // For ShapeMode::Async, emit all downward sends before upward receives
+                        self.compile_step(hi, channels.only_downward());
+                        self.emit(Insn::Send(dn_tx, variant, vec![]));
+                        self.compile_step(hi, channels.only_upward());
+                        self.emit(Insn::Consume(dn_rx, variant, vec![]));
+                    } else {
+                        self.compile_step(hi, channels);
 
-                    if let Some(c) = channels.dn_tx {
-                        self.emit(Insn::Send(c, variant, vec![]));
+                        if let Some(c) = channels.dn_tx {
+                            self.emit(Insn::Send(c, variant, vec![]));
+                        }
+
+                        if let Some(c) = channels.dn_rx {
+                            self.emit(Insn::Consume(c, variant, vec![]));
+                        }
                     }
-
-                    if let Some(c) = channels.dn_rx {
-                        self.emit(Insn::Consume(c, variant, vec![]));
-                    }
-
                     return;
                 }
-
 
                 let lo_info = &self.program.step_info[lo];
                 let hi_info = &self.program.step_info[hi];
@@ -261,22 +275,14 @@ impl Compiler<'_> {
 
             Step::Seq(ref steps) => {
                 let mut prev_followlast = None;
-                let mut deferred_receive_start = 0;
-                for (i, &step) in steps.iter().enumerate() {
+                for &step in steps.iter() {
                     let inner_info = &self.program.step_info[step];
 
                     if let Some(prev_followlast) = prev_followlast {
                         self.seq_prep(channels, prev_followlast, &inner_info.first);
                     }
 
-                    // For a sequence of token nodes, reorder to coalesce all the downward sends before the upward receives
-                    // This allows asynchronous primitives below to see multiple tokens before needing to respond
-                    if !(matches!(self.program.steps[step], Step::Token { .. })) || i + 1 == steps.len() {
-                        for &step in &steps[deferred_receive_start..=i] {
-                            self.compile_step(step, channels);
-                        }
-                        deferred_receive_start = i + 1;
-                    }
+                    self.compile_step(step, channels);
 
                     prev_followlast = Some(&inner_info.followlast);
                 }

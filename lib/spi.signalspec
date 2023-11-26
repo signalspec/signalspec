@@ -1,35 +1,41 @@
-protocol SPI(role: #controller | #async_controller | #monitor | #generate) role[#controller = #sync, #async_controller = #async, #monitor = #up, #generate=#dn] {
+protocol SPI(role: #controller | #async_controller | #monitor | #generate) role[#controller = #sync, #async_controller = #sync, #monitor = #up, #generate=#dn] {
+  transaction() : SPITransaction(role)
+}
+
+protocol SPITransaction(role: #controller | #async_controller | #monitor | #generate) role[#controller = #sync, #async_controller = #async, #monitor = #up, #generate=#dn] {
   data(
     var(role[#controller = #dn, #async_controller = #dn, #monitor = #up, #generate = #dn]) byte,
     var(role[#controller = #up, #async_controller = #up, #monitor = #up, #generate = #dn]) byte,
-  ),
-  end(),
+  )
 }
 
 with Seq((_:#l|#h, _:#l|#h, _:#l|#h, _:#l|#h), dir)
 def spi() = new SPI(dir[#up = #monitor, #dn = #generate]) {
   repeat dir <: 10 { val((#h, <: #l, <: #l, <: #l)) }
   repeat {
-    repeat #up 1..1000 {
-      on data(pico_byte, poci_byte) {
-        for pico_bit=pico_byte, poci_bit=poci_byte {
-          let pico_level = pico_bit[0=#l, 1=#h]
-          let poci_level = poci_bit[0=#l, 1=#h]
-          val((#l, #l, <: pico_level, <: poci_level))
-          repeat dir <: 4 { val((#l, #l, <: pico_level, <: poci_level)) }
-          val((#l, #h, pico_level, poci_level))
-          repeat dir <: 4 { val((#l, #h, <: pico_level, <: poci_level)) }
+    on transaction() {
+      repeat #up 1..1000 {
+        on data(pico_byte, poci_byte) {
+          for pico_bit=pico_byte, poci_bit=poci_byte {
+            let pico_level = pico_bit[0=#l, 1=#h]
+            let poci_level = poci_bit[0=#l, 1=#h]
+            val((#l, #l, <: pico_level, <: poci_level))
+            repeat dir <: 4 { val((#l, #l, <: pico_level, <: poci_level)) }
+            val((#l, #h, pico_level, poci_level))
+            repeat dir <: 4 { val((#l, #h, <: pico_level, <: poci_level)) }
+          }
         }
       }
     }
-    on end() {
-      val((#h, <: #l, <: #l, <: #l))
-    }
+    val((#h, <: #l, <: #l, <: #l))
     repeat dir <: 9 { val((#h, <: #l, <: #l, <: #l)) }
   }
 }
 
 @test(#roundtrip)
 with Seq((_:#l|#h, _:#l|#h, _:#l|#h, _:#l|#h), _) def test1() = {
-  spi() | { data('01011101, '00000000); data('11110000, '11111111); end(); data('00001000, '10101010); end() }
+  spi() | {
+    transaction() | { data('01011101, '00000000); data('11110000, '11111111) }
+    transaction() | { data('00001000, '10101010) }
+  }
 }
