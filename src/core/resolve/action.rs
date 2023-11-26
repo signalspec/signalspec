@@ -603,7 +603,7 @@ impl<'a> Builder<'a> {
                     if msg_def.child.is_none() {
                         (self.add_step(Step::Token { variant: msg_def.tag, dn, up }), None)
                     } else {
-                        (self.add_step(Step::TokenTransaction { variant: msg_def.tag, inner: None }), msg_def.child.clone() )
+                        (self.add_step(Step::TokenTransaction { variant: msg_def.tag }), msg_def.child.clone() )
                     }
                 } else {
                     let args: Vec<Item> = node.args.items.iter().map(|a| rexpr(self.ui, sb.scope, a)).collect();
@@ -684,11 +684,6 @@ impl<'a> Builder<'a> {
 
                 match self.steps[lo] {
                     Step::Pass => (hi, shape_up),
-                    Step::TokenTransaction { variant, inner } => {
-                        assert!(inner.is_none());
-                        let id = self.add_step(Step::TokenTransaction { variant, inner: Some(hi) });
-                        (id, shape_up)
-                    }
                     _ => {
                         let stack = self.add_step(Step::Stack { lo, shape, hi });
                         (stack, shape_up)

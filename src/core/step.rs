@@ -27,7 +27,7 @@ pub enum Step {
     Stack { lo: StepId, shape: Shape, hi: StepId },
     Token { variant: usize, dn: Vec<ExprDn>, up: Vec<(Predicate, ValueSrcId)> },
     TokenTop { inner_mode: ShapeMode, variant: usize, dn_vars: Vec<ValueSrcId> , dn: Vec<Predicate>, up: Vec<ExprDn>, inner: StepId },
-    TokenTransaction{ variant: usize, inner: Option<StepId> },
+    TokenTransaction { variant: usize },
     TokenTopTransaction { inner_mode: ShapeMode, variant: usize, inner: StepId },
     Primitive(Arc<dyn PrimitiveProcess + 'static>),
     Seq(Vec<StepId>),
@@ -65,11 +65,8 @@ pub fn write_tree(f: &mut dyn Write, indent: u32, steps: &[Step], step: StepId) 
             writeln!(f, "{}Up: {:?} {:?} {:?}", i, variant, dn, up)?;
             write_tree(f, indent+1, steps, inner)?;
         }
-        Step::TokenTransaction { variant, inner } => {
+        Step::TokenTransaction { variant } => {
             writeln!(f, "{}TokenTransaction: {:?}", i, variant,)?;
-            if let Some(inner) = inner {
-                write_tree(f, indent+1, steps, inner)?;
-            }
         }
         Step::TokenTopTransaction { variant, inner, .. } => {
             writeln!(f, "{}UpTransaction: {:?}", i, variant)?;
@@ -135,11 +132,23 @@ pub fn analyze_unambiguous(steps: &EntityMap<StepId, Step>) -> EntityMap<StepId,
                     nullable: false,
                 }
             }
-            Step::Stack { .. } => {
-                StepInfo {
-                    first: MatchSet::proc(),
-                    followlast: None,
-                    nullable: false,
+            Step::Stack { lo, hi, .. } => {
+                if let Step::TokenTransaction { variant } = steps[lo] {
+                    let inner = get(hi);
+                    StepInfo {
+                        first: MatchSet::merge_first([
+                            Some(&inner.first),
+                            inner.nullable.then(|| MatchSet::lower(variant, vec![], vec![])).as_ref()
+                        ].into_iter().flatten()),
+                        followlast: None,
+                        nullable: false,
+                    }
+                } else {
+                    StepInfo {
+                        first: MatchSet::proc(),
+                        followlast: None,
+                        nullable: false,
+                    }
                 }
             },
             Step::Token { variant, ref dn, ref up} => {
@@ -168,23 +177,11 @@ pub fn analyze_unambiguous(steps: &EntityMap<StepId, Step>) -> EntityMap<StepId,
                     },
                 }
             },
-            Step::TokenTransaction { variant, inner } => {
-                if let Some(inner) = inner {
-                    let inner = get(inner);
-                    StepInfo {
-                        first: MatchSet::merge_first([
-                            Some(&inner.first),
-                            inner.nullable.then(|| MatchSet::lower(variant, vec![], vec![])).as_ref()
-                        ].into_iter().flatten()),
-                        followlast: None,
-                        nullable: false,
-                    }
-                } else {
-                    StepInfo {
-                        first: MatchSet::proc(),
-                        followlast: None,
-                        nullable: false,
-                    }
+            Step::TokenTransaction { .. } => {
+                StepInfo {
+                    first: MatchSet::proc(),
+                    followlast: None,
+                    nullable: false,
                 }
             },
             Step::TokenTopTransaction { inner_mode, variant, inner } => {

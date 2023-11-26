@@ -150,6 +150,21 @@ impl Compiler<'_> {
             Step::Invalid(_) => panic!("Compiling invalid step"),
             Step::Pass => todo!(),
             Step::Stack { lo, ref shape, hi} => {
+                if let Step::TokenTransaction { variant } = self.program.steps[lo] {
+                    self.compile_step(hi, channels);
+
+                    if let Some(c) = channels.dn_tx {
+                        self.emit(Insn::Send(c, variant, vec![]));
+                    }
+
+                    if let Some(c) = channels.dn_rx {
+                        self.emit(Insn::Consume(c, variant, vec![]));
+                    }
+
+                    return;
+                }
+
+
                 let lo_info = &self.program.step_info[lo];
                 let hi_info = &self.program.step_info[hi];
                 let (c_dn, c_up) = self.new_channels(shape);
@@ -228,18 +243,8 @@ impl Compiler<'_> {
                 }
             }
 
-            Step::TokenTransaction { variant, inner } => {
-                if let Some(inner) = inner {
-                    self.compile_step(inner, channels)
-                }
-
-                if let Some(c) = channels.dn_tx {
-                    self.emit(Insn::Send(c, variant, vec![]));
-                }
-
-                if let Some(c) = channels.dn_rx {
-                    self.emit(Insn::Consume(c, variant, vec![]));
-                }
+            Step::TokenTransaction { .. } => {
+                todo!(); // like `pass`, normally handled in `stack`
             }
 
             Step::TokenTopTransaction { variant, inner, .. } => {
