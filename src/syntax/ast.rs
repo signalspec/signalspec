@@ -499,6 +499,7 @@ ast_node!{
         pub span: FileSpan,
         pub lo: Box<Expr>,
         pub hi: Box<Expr>,
+        pub step: Option<Box<Expr>>,
     }
 }
 

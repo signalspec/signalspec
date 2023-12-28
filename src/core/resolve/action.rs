@@ -252,8 +252,9 @@ impl<'a> Builder<'a> {
                 };
 
                 match count.get_type() {
-                    Type::Number(lo, hi)
-                        if lo.is_integer() && hi.is_integer() && !lo.is_negative() => {}
+                    Type::Number(nt)
+                        if nt.is_integer() && !nt.min().is_negative() => {}
+                    Type::NumberSet(s) if s.iter().all(|v| v.is_integer() && !v.is_negative()) => {}
                     Type::Ignored => {}
                     found => {
                         let r = self.ui.report(Diagnostic::InvalidRepeatCountType {

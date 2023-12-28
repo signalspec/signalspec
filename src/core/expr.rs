@@ -398,7 +398,7 @@ fn fn_signed_unsigned(arg: Item, signed: SignMode) -> Result<Item, &'static str>
 
                         Expr::Expr(Type::Number(..), e) => {
                             let op = ExprKind::Unary(Box::new(e), UnaryOp::IntToBits {width, signed });
-                            let ty = Type::Vector(width, Box::new(Type::Number(0.into(), 1.into())));
+                            let ty = Type::bits(width);
                             Ok(Expr::Expr(ty, op).into())
                         }
 
@@ -460,7 +460,7 @@ fn fn_bits(arg: Item) -> Result<Item, &'static str> {
         return Err("invalid arguments to bits(): expected constant integer");
     };
     let width = width.to_u32().ok_or("width must be a constant integer")?;
-    let ty = Type::Vector(width, Box::new(Type::Number(0.into(), 1.into())));
+    let ty = Type::bits(width);
     Ok(Expr::Expr(ty, ExprKind::Ignored).into())
 }
 
@@ -475,8 +475,8 @@ pub fn expr_prelude() -> HashMap<String, Item> {
         prelude.insert(name.to_owned(), Expr::Expr(ty, ExprKind::Ignored).into());
     }
 
-    add_type(&mut prelude, "bit", Type::Number(0.into(), 1.into()));
-    add_type(&mut prelude, "byte", Type::Vector(8, Box::new(Type::Number(0.into(), 1.into()))));
+    add_type(&mut prelude, "bit", Type::bit());
+    add_type(&mut prelude, "byte", Type::bits(8));
     add_primitive_fn(&mut prelude, "bits", fn_bits);
 
     add_primitive_fn(&mut prelude, "signed", fn_signed);
@@ -486,6 +486,9 @@ pub fn expr_prelude() -> HashMap<String, Item> {
 
     prelude
 }
+
+#[cfg(test)]
+use super::data::NumberType;
 
 #[cfg(test)]
 pub fn test_expr_parse(e: &str) -> Expr {
@@ -503,26 +506,70 @@ pub fn test_expr_parse(e: &str) -> Expr {
 }
 
 #[test]
-fn exprs() {
+fn test_number_const() {
     let two = test_expr_parse("2");
-    assert_eq!(two.get_type(), Type::Number(2.into(), 2.into()));
+    assert_eq!(two.get_type(), Type::NumberSet([Number::new(2, 1)].into()));
 
     let decimal = test_expr_parse("1.023");
-    let decimal_val = Number::new(1023, 1000);
-    assert_eq!(decimal.get_type(), Type::Number(decimal_val, decimal_val));
-
-    let range = test_expr_parse("0.0..5.0");
-    assert_eq!(range.get_type(), Type::Number(0.into(), 5.into()));
+    assert_eq!(decimal.get_type(), Type::NumberSet([Number::new(1023, 1000)].into()));
 
     let four = test_expr_parse("2 + 2");
-    assert_eq!(four.get_type(), Type::Number(4.into(), 4.into()));
+    assert_eq!(four.get_type(), Type::NumberSet([Number::new(4, 1)].into()));
+}
+
+#[test]
+fn test_number_range() {
+    let range = test_expr_parse("0.0..5.0");
+    assert_eq!(range.get_type(), Type::Number(NumberType::new(Number::new(1, 1), 0, 5)));
 
     let sum = test_expr_parse("(0..10) + 5");
-    assert_eq!(sum.get_type(), Type::Number(5.into(), 15.into()));
+    assert_eq!(sum.get_type(), Type::Number(NumberType::new(Number::new(1, 1), 5, 15)));
+
+    let sub = test_expr_parse("(0..10) - 5");
+    assert_eq!(sub.get_type(), Type::Number(NumberType::new(Number::new(1, 1), -5, 5)));
+
+    let sub_swap = test_expr_parse("5 - (0..7)");
+    assert_eq!(sub_swap.get_type(), Type::Number(NumberType::new(Number::new(-1, 1), -5, 2)));
 
     let mul = test_expr_parse("(0..10) * 5");
-    assert_eq!(mul.get_type(), Type::Number(0.into(), 50.into()));
+    assert_eq!(mul.get_type(), Type::Number(NumberType::new(Number::new(5, 1), 0, 10)));
 
+    let div = test_expr_parse("(0..10) / 8");
+    assert_eq!(div.get_type(), Type::Number(NumberType::new(Number::new(1, 8), 0, 10)));
+
+    let scale_by = test_expr_parse("0.0..2.0 by 0.1");
+    assert_eq!(scale_by.get_type(), Type::Number(NumberType::new(Number::new(1, 10), 0, 20)));
+
+    let scale_by_mul = test_expr_parse("(0.0..2.0 by 0.1) * 5");
+    assert_eq!(scale_by_mul.get_type(), Type::Number(NumberType::new(Number::new(5, 10), 0, 20)));
+}
+
+#[test]
+fn test_number_set() {
+    let range = test_expr_parse("0 | 1.5");
+    assert_eq!(range.get_type(), Type::NumberSet([Number::new(0, 1), Number::new(3, 2)].into()));
+
+    let sum = test_expr_parse("(0|1) + 2");
+    assert_eq!(sum.get_type(), Type::NumberSet([Number::new(2, 1), Number::new(3, 1)].into()));
+
+    let sub = test_expr_parse("(100 | 200) - 2");
+    assert_eq!(sub.get_type(), Type::NumberSet([Number::new(98, 1), Number::new(198, 1)].into()));
+
+    let sub_swap = test_expr_parse("5 - (1 | 7)");
+    assert_eq!(sub_swap.get_type(), Type::NumberSet([Number::new(4, 1), Number::new(-2, 1)].into()));
+
+    let mul = test_expr_parse("(-1 | 2) * 5");
+    assert_eq!(mul.get_type(), Type::NumberSet([Number::new(-5, 1), Number::new(10, 1)].into()));
+
+    let div = test_expr_parse("(64 | 32) / 8");
+    assert_eq!(div.get_type(), Type::NumberSet([Number::new(8, 1), Number::new(4, 1)].into()));
+
+    let div_swap = test_expr_parse("128 / (64 | 32)");
+    assert_eq!(div_swap.get_type(), Type::NumberSet([Number::new(2, 1), Number::new(4, 1)].into()));
+}
+
+#[test]
+fn exprs() {
     let one_one_i = test_expr_parse("complex(1.0, 0.0) + complex(0, 1)");
     assert_eq!(one_one_i.get_type(), Type::Complex);
 
@@ -544,13 +591,13 @@ fn exprs() {
     assert_eq!(down.get_type(), Type::Symbol(Some("h".to_string()).into_iter().collect()));
 
     let bound1 = test_expr_parse("_ : (0..10)");
-    assert_eq!(bound1.get_type(), Type::Number(0.into(), 10.into()));
+    assert_eq!(bound1.get_type(), Type::Number(NumberType::new(Number::new(1, 1), 0, 10)));
 
     let bound2 = test_expr_parse("(0..2) : (0..10)");
-    assert_eq!(bound2.get_type(), Type::Number(0.into(), 2.into()));
+    assert_eq!(bound2.get_type(), Type::Number(NumberType::new(Number::new(1, 1), 0, 2)));
 
     let fncall = test_expr_parse("((a) => a+3.0)(2.0)");
-    assert_eq!(fncall.get_type(), Type::Number(5.into(), 5.into()));
+    assert_eq!(fncall.get_type(), Type::NumberSet([Number::new(5, 1)].into()));
 }
 
 #[test]

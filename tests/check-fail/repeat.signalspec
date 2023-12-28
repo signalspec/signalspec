@@ -22,8 +22,8 @@ with Seq(#x, _) def main() = {
     }
 
 //# repeat count predicate must be representable as an integer range
-    repeat #up (1..2)[1=1, 2=2] {
-//             ^^^^^^^^^^^^^^^^ unsupported
+    repeat #up (1|4|5) {
+//             ^^^^^^^ unsupported
 
     }
 

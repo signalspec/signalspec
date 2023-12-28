@@ -4,7 +4,7 @@ use crate::{
     core::{
         expr::{eval_binary, eval_choose, ExprKind},
         resolve::action::ValueSinkId,
-        ConcatElem, Expr, ExprDn, Func, FunctionDef, Item, LeafItem, Predicate, Scope,
+        ConcatElem, Expr, ExprDn, Func, FunctionDef, Item, LeafItem, Predicate, Scope, data::{NumberType, NumberTypeError},
     },
     diagnostic::{Diagnostic, DiagnosticHandler, ErrorReported, Span},
     syntax::{
@@ -171,12 +171,33 @@ fn resolve_expr_flip(ctx: &dyn DiagnosticHandler, scope: &Scope, node: &ast::Exp
 fn resolve_expr_range(ctx: &dyn DiagnosticHandler, scope: &Scope, node: &ast::ExprRange) -> Item {
     let min = constant::<Number>(ctx, scope, &node.lo);
     let max = constant::<Number>(ctx, scope, &node.hi);
+    let step = node.step.as_ref().map(|s| constant::<Number>(ctx, scope, s)).transpose();
 
     let min = try_item!(min);
     let max = try_item!(max);
+    let step = try_item!(step).unwrap_or(Number::new(1, 1));
 
-    let ty = Type::Number(min, max);
-    Expr::Expr(ty, ExprKind::Range(min, max)).into()
+    let nt = match NumberType::from_scaled(min, max, step) {
+        Ok(t) => t,
+        Err(NumberTypeError::BoundsNotMultipleOfStep) => return ctx.report(
+            Diagnostic::RangeNotMultipleOfStep {
+                min, min_span: Span::new(&scope.file, node.lo.span()),
+                max, max_span: Span::new(&scope.file, node.hi.span()),
+                step
+            }
+        ).into(),
+        Err(NumberTypeError::Order) => return ctx.report(
+            Diagnostic::RangeOrder {
+                min, min_span: Span::new(&scope.file, node.lo.span()),
+                max, max_span: Span::new(&scope.file, node.hi.span()),
+            }).into(),
+        Err(NumberTypeError::StepIsZero) => return ctx.report(
+            Diagnostic::RangeStepZero {
+                step, step_span: Span::new(&scope.file, node.step.as_ref().unwrap().span()),
+            }).into(),
+    };
+
+    Expr::Expr(Type::Number(nt), ExprKind::Range(min, max)).into()
 }
 
 fn resolve_expr_typed(ctx: &dyn DiagnosticHandler, scope: &Scope, node: &ast::ExprTyped) -> Item {
@@ -248,7 +269,7 @@ fn resolve_expr_choose(ctx: &dyn DiagnosticHandler, scope: &Scope, node: &ast::E
         }
         Expr::Expr(ty, e) => {
             //TODO: doesn't check coverage of full number range
-            if ty != lt {
+            if !(ty.is_subtype(&lt) && lt.is_subtype(&ty)) {
                 return ctx.report(crate::Diagnostic::ChooseNotCovered { span: span(), found: ty }).into();
             }
 
@@ -396,16 +417,32 @@ fn resolve_expr_binary(ctx: &dyn DiagnosticHandler, scope: &Scope, node: &ast::E
     };
 
     let ty = match (expr_ty, &val) {
-        (Type::Number(min, max), Value::Number(c)) => {
-            assert!(min <= max);
-            let (a, b) = (op.eval(min, c), op.eval(max, c));
-            if op == BinOp::SubSwap || op == BinOp::DivSwap {
-                assert!(b <= a);
-                Type::Number(b, a)
-            } else {
-                assert!(a <= b);
-                Type::Number(a, b)
-            }
+        (Type::Number(nt), Value::Number(c)) => {
+            let check_scale = |n: Option<NumberType>| {
+                n.ok_or_else(|| {
+                    ctx.report(Diagnostic::OperandNotMultipleOfScale {
+                        const_span: Span::new(&scope.file, val_span),
+                        const_val: *c,
+                        var_span: Span::new(&scope.file, expr_span),
+                        var_scale: nt.scale(),
+                    })
+                })
+            };
+
+            Type::Number(match op {
+                BinOp::Add => try_item!(check_scale(nt.add(*c))),
+                BinOp::Sub => try_item!(check_scale(nt.add(-c))),
+                BinOp::SubSwap => try_item!(check_scale(nt.mul(Number::new(-1,1)).add(*c))),
+
+                BinOp::Mul => nt.mul(*c),
+                BinOp::Div => nt.mul(c.recip()),
+                BinOp::DivSwap => return ctx.report(Diagnostic::DivisionMustBeConst {
+                    span: Span::new(&scope.file, expr_span),
+                }).into(),
+            })
+        }
+        (Type::NumberSet(ls), Value::Number(c)) => {
+            Type::NumberSet(ls.into_iter().map(|l| op.eval(l, c)).collect())
         }
         (Type::Complex, Value::Number(..)) => Type::Complex,
         (Type::Number(..), Value::Complex(..)) => Type::Complex,

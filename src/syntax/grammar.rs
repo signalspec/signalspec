@@ -134,7 +134,7 @@ peg::parser!(pub grammar signalspec() for str {
     --
     l:@ _ "|" _ r:(@)   { ast::ExprUnion { span: FAKE_SPAN, items: vec![l, r] }.into() }
     --
-    l:@ _ ".." _ r:(@)  { ast::ExprRange { span: FAKE_SPAN, lo: Box::new(l), hi: Box::new(r) }.into() } // TODO: nonassociative
+    l:@ _ ".." _ r:expr() step:(__ "by" _ s:expr() {s})?  { ast::ExprRange { span: FAKE_SPAN, lo: Box::new(l), hi: Box::new(r), step: step.map(Box::new) }.into() }
     --
     l:(@) _ "+" _ r:@   { ast::ExprBin { span: FAKE_SPAN, l: Box::new(l), op: BinOp::Add, r:Box::new(r) }.into() }
     l:(@) _ "-" _ r:@   { ast::ExprBin { span: FAKE_SPAN, l: Box::new(l), op: BinOp::Sub, r:Box::new(r) }.into() }

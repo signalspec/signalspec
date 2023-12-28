@@ -1,5 +1,5 @@
 use std::{sync::Arc, fmt::{Display, Debug}, cell::RefCell, ptr};
-use crate::{SourceFile, FileSpan, syntax::{AstNode, ast}, Type};
+use crate::{SourceFile, FileSpan, syntax::{AstNode, ast, Number}, Type};
 
 /// Sentinel value returned by `report` to serve as a type-system check that an error was already reported
 #[derive(Clone)]
@@ -356,6 +356,22 @@ diagnostic_kinds!{
         error "both sides are runtime values" at span
     }
 
+    DivisionMustBeConst {
+        span: Span
+    } => "denominator must be constant in division" {
+        error "denominator is a runtime value" at span
+    }
+
+    OperandNotMultipleOfScale {
+        const_span: Span,
+        const_val: Number,
+        var_span: Span,
+        var_scale: Number
+    } => "constant operand is not a multiple of variable operand's step" {
+        error "found value {const_val}" at const_span
+        error "found variable with step size of {var_scale}" at var_span
+    }
+
     BinaryInvalidType {
         span1: Span,
         ty1: Type,
@@ -364,6 +380,34 @@ diagnostic_kinds!{
     } => "invalid types for binary operator" {
         error "found `{ty1}`" at span1
         error "found `{ty2}`" at span2
+    }
+
+    RangeNotMultipleOfStep {
+        min: Number,
+        min_span: Span,
+        max: Number,
+        max_span: Span,
+        step: Number
+    } => "range bounds must be a multiple of step ({step})" {
+        error "found minimum {min}" at min_span
+        error "found maximum {max}" at max_span
+    }
+
+    RangeOrder {
+        min: Number,
+        min_span: Span,
+        max: Number,
+        max_span: Span
+    } => "range upper bound must be greater than lower bound" {
+        error "found minimum {min}" at min_span
+        error "found maximum {max}" at max_span
+    }
+
+    RangeStepZero {
+        step: Number,
+        step_span: Span
+    } => "range step must be nonzero" {
+        error "found step {step}" at step_span
     }
 
     ExpectedVector {

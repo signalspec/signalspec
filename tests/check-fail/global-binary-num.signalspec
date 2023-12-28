@@ -1,0 +1,22 @@
+//# denominator must be constant in division
+let x = 1 / (3..4)
+//          ^^^^^^ denominator is a runtime value
+
+//# constant operand is not a multiple of variable operand's step
+let y = (1..10 by 1/10) + 1/3 
+//                        ^^^ found value 1/3
+//      ^^^^^^^^^^^^^^^ found variable with step size of 1/10
+
+//# range bounds must be a multiple of step (1)
+let z = 0..5.2
+//      ^ found minimum 0
+//         ^^^ found maximum 26/5
+
+//# range upper bound must be greater than lower bound
+let a = 7..2
+//      ^ found minimum 7
+//         ^ found maximum 2
+
+//# range step must be nonzero
+let b = 1..10 by 0
+//               ^ found step 0
