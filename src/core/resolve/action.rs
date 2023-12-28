@@ -10,7 +10,7 @@ use crate::{core::{
     rexpr, rexpr_tup,
     step::{analyze_unambiguous, AltDnArm, AltUpArm, Step, StepInfo},
     value, Dir, Expr, ExprDn, Item, LeafItem, Predicate, Scope, Shape, ShapeMsg, StepId, Type,
-    ValueSrcId, expr::ExprKind, ConcatElem,
+    ValueSrcId, expr::ExprKind, ConcatElem, lexpr,
 }, Value};
 use crate::diagnostic::{ErrorReported, Span};
 use crate::entitymap::{entity_key, EntityMap};
@@ -682,7 +682,7 @@ impl<'a> Builder<'a> {
                     }
                 } else {
                     let args: Vec<Item> = node.args.items.iter().map(|a| rexpr(self.ui, sb.scope, a)).collect();
-                    let (scope, imp) = match self.index.find_def(sb.shape_down, &node.name.name, args) {
+                    let def = match self.index.find_def(sb.shape_down, &node.name.name) {
                         Ok(res) => res,
                         Err(FindDefError::NoDefinitionWithName) => {
                             let r = self.ui.report(Diagnostic::NoDefNamed {
@@ -693,7 +693,30 @@ impl<'a> Builder<'a> {
                             return (self.add_step(Step::Invalid(r)), None)
                         }
                     };
-                    self.resolve_process(sb.with_scope(&scope), imp)
+
+                    let mut scope = def.scope.child();
+
+                    lexpr(self.ui, &mut scope, &def.protocol.param, &sb.shape_down.param).ok();
+
+                    if def.params.len() != args.len() {
+                        self.ui.report(Diagnostic::ArgsMismatchCount {
+                            span: Span::new(&sb.scope.file, node.args.span),
+                            def_name: node.name.name.clone(),
+                            expected: def.params.len(),
+                            found: args.len(),
+                        });
+                    }
+
+                    for (param, arg) in def.params.iter().zip(args.iter()) {
+                        let param_expr = match param {
+                            ast::DefParam::Const(node) => &node.expr,
+                            ast::DefParam::Var(node) => &node.expr,
+                        };
+
+                        lexpr(self.ui, &mut scope, param_expr, &arg).ok();
+                    }
+
+                    self.resolve_process(sb.with_scope(&scope), &def.implementation)
                 }
             }
 

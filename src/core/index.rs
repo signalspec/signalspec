@@ -17,12 +17,12 @@ pub struct Index {
 }
 
 #[derive(Clone)]
-struct Def {
-    protocol: ast::ProtocolRef,
-    name: ast::Identifier,
-    params: Vec<ast::DefParam>,
-    scope: Scope,
-    implementation: ast::Process,
+pub(crate) struct Def {
+    pub(crate) protocol: ast::ProtocolRef,
+    pub(crate) name: ast::Identifier,
+    pub(crate) params: Vec<ast::DefParam>,
+    pub(crate) scope: Scope,
+    pub(crate) implementation: ast::Process,
 }
 
 impl Index {
@@ -78,15 +78,22 @@ impl Index {
         self.protocols_by_name.get(name)
     }
 
-    pub(crate) fn find_def(&self, shape: &Shape, name: &str, args: Vec<Item>) -> Result<(Scope, &ast::Process), FindDefError> {
+    pub(crate) fn find_def(&self, shape: &Shape, name: &str) -> Result<&Def, FindDefError> {
         let mut found = None;
         for entry in &self.defs {
-            if let Some(scope) = match_def(entry, shape, name, &args) {
-                if found.is_none() {
-                    found = Some((scope, &entry.implementation));
-                } else {
-                    panic!("Multiple definition of `{}`", name);
-                }
+            // TODO: resolve protocol.name in its file and make sure they refer to the same protocol
+            if entry.protocol.name.name != shape.def.ast().name.name {
+                continue;
+            }
+
+            if entry.name.name != name {
+                continue;
+            }
+
+            if found.is_none() {
+                found = Some(entry);
+            } else {
+                panic!("Multiple definition of `{}`", name);
             }
         }
         found.ok_or(FindDefError::NoDefinitionWithName)
@@ -132,24 +139,4 @@ impl Index {
 
 pub enum FindDefError {
     NoDefinitionWithName,
-}
-
-/// Match a shape, name, and argument against a candidate with-def block. If
-/// matched, returns a scope for the inside of the block.
-fn match_def(def: &Def, shape: &Shape, name: &str, args: &[Item]) -> Option<Scope> {
-    if def.name.name != name {
-        return None;
-    }
-
-    let mut scope = def.scope.child();
-
-    if !crate::core::protocol::match_protocol(&mut scope, &def.protocol, shape) {
-        return None;
-    }
-
-    if !crate::core::protocol::match_def_params(&mut scope, &def.params, args) {
-        return None;
-    }
-
-    Some(scope)
 }
