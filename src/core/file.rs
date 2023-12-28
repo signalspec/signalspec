@@ -5,10 +5,11 @@ use crate::syntax::{ ast, parse_module, SourceFile };
 use crate::core::Scope;
 use std::fmt::Debug;
 
-use super::scope::ScopeNames;
+use super::ScopeNames;
 
 pub struct FileScope {
-    pub(crate) scope: Scope,
+    pub(crate) file: Arc<SourceFile>,
+    pub(crate) names: ScopeNames,
     pub(crate) ast: ast::Module,
     pub errors: Vec<Diagnostic>,
 }
@@ -30,7 +31,7 @@ impl FileScope {
             }
         }
 
-        FileScope { scope, ast, errors: ctx.diagnostics() }
+        FileScope { file: scope.file, names: scope.names, ast, errors: ctx.diagnostics() }
     }
 
     pub fn protocols<'a>(self: &'a Arc<Self>) -> impl Iterator<Item=(ProtocolRef, &'a ast::Protocol)> + 'a {
@@ -47,7 +48,14 @@ impl FileScope {
         })
     }
 
-    pub fn source(&self) -> &Arc<SourceFile> { &self.scope.file }
+    pub fn source(&self) -> &Arc<SourceFile> { &self.file }
+
+    pub fn scope(&self) -> Scope {
+        Scope {
+            file: self.file.clone(),
+            names: self.names.clone(),
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -66,10 +74,6 @@ impl ProtocolRef {
 
     pub fn file(&self) -> &Arc<FileScope> {
         &self.file
-    }
-
-    pub fn scope(&self) -> &Scope {
-        &self.file.scope
     }
 }
 

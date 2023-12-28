@@ -129,7 +129,8 @@ pub fn rexpr(ctx: &dyn DiagnosticHandler, scope: &Scope, e: &ast::Expr) -> Item 
             Item::Leaf(LeafItem::Func(Arc::new(FunctionDef::Code(Func{
                 args: (*node.args).clone(),
                 body: (*node.body).clone(),
-                scope: scope.clone(),
+                file: scope.file.clone(),
+                names: scope.names.clone(),
             }))))
         }
 
@@ -464,12 +465,12 @@ fn resolve_function_call(ctx: &dyn DiagnosticHandler, call_site_span: impl FnOnc
         Item::Leaf(LeafItem::Func(func_def)) => {
             match *func_def {
                 FunctionDef::Code(ref func) => {
-                    let mut inner_scope = func.scope.child();
+                    let mut inner_scope = Scope { file: func.file.clone(), names: func.names.clone() };
                     if let Err(_) = lexpr(ctx, &mut inner_scope, &func.args, &arg) {
                         // TODO: should be chained to inner error
                         return ctx.report(Diagnostic::FunctionArgumentMismatch {
                             span: call_site_span(),
-                            def: Span::new(&func.scope.file, func.args.span()),
+                            def: Span::new(&func.file, func.args.span()),
                         }).into()
                     }
                     rexpr(ctx, &inner_scope, &func.body)

@@ -64,7 +64,7 @@ pub fn instantiate(
     let protocol = index.find_protocol(protocol_name)
         .ok_or(InstantiateProtocolError::ProtocolNotFound)?;
     let protocol_ast = protocol.ast();
-    let mut scope = protocol.scope().child();
+    let mut scope = protocol.file().scope();
     if let Err(_) = lexpr(ctx, &mut scope, &protocol_ast.param, &args) {
         return Err(InstantiateProtocolError::ArgsMismatch {
             found: args,

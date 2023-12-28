@@ -131,12 +131,14 @@ fn run_test(ui: &dyn DiagnosticHandler, index: &Index, file: &FileScope, def: &a
         return Err("Test def must not have parameters");
     }
 
+    let scope = file.scope();
+
     let seq_ty = match &def.bottom.param {
-        ast::Expr::Tup(t) if t.items.len() == 2 => rexpr(ui, &file.scope, &t.items[0]),
+        ast::Expr::Tup(t) if t.items.len() == 2 => rexpr(ui, &scope, &t.items[0]),
         _ => return Err("Seq takes two arguments"),
     };
 
-    let test_args = rexpr_tup(ui, &file.scope, &attr.args);
+    let test_args = rexpr_tup(ui, &scope, &attr.args);
     let test_args = test_args.as_tuple();
     let test_mode = test_args.first().and_then(|i| i.as_symbol());
     let test_data = test_args.get(1);
@@ -147,7 +149,7 @@ fn run_test(ui: &dyn DiagnosticHandler, index: &Index, file: &FileScope, def: &a
             return (None, TestState::CompileError);
         };
 
-        let Ok(h) = handle.compile_run(ui, index, &file.scope, &def.process) else { return (None, TestState::CompileError); };
+        let Ok(h) = handle.compile_run(ui, index, &scope, &def.process) else { return (None, TestState::CompileError); };
 
         if compile_only {
             return (None, TestState::CompileSuccess);
@@ -172,7 +174,7 @@ fn run_test(ui: &dyn DiagnosticHandler, index: &Index, file: &FileScope, def: &a
         };
         for m in messages { channel.send(m); }
         channel.set_closed(true);
-        let Ok(h) = handle.compile_run(ui, index, &file.scope, &def.process) else { return TestState::CompileError; };
+        let Ok(h) = handle.compile_run(ui, index, &scope, &def.process) else { return TestState::CompileError; };
 
         if compile_only {
             return TestState::CompileSuccess;

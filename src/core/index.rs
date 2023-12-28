@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use crate::DiagnosticHandler;
 use crate::syntax::{ ast, SourceFile };
-use super::{ ProtocolRef, Item, Scope, FileScope, Shape };
+use super::{ ProtocolRef, Item, FileScope, Shape };
 
 fn default_library_dir() -> Option<PathBuf> {
     Some(std::env::current_exe().ok()?.parent()?.parent()?.join("lib/signalspec"))
@@ -21,7 +21,7 @@ pub(crate) struct Def {
     pub(crate) protocol: ast::ProtocolRef,
     pub(crate) name: ast::Identifier,
     pub(crate) params: Vec<ast::DefParam>,
-    pub(crate) scope: Scope,
+    pub(crate) file: Arc<FileScope>,
     pub(crate) implementation: ast::Process,
 }
 
@@ -108,7 +108,7 @@ impl Index {
             self.defs.push(Def {
                 protocol: def.bottom.clone(),
                 name: def.name.clone(),
-                scope: file.scope.clone(),
+                file: file.clone(),
                 params: def.params.iter().map(|x| x.clone()).collect(),
                 implementation: def.process.clone()
             });
@@ -121,7 +121,7 @@ impl Index {
         }
 
         self.defs.retain(|d| {
-            !Arc::ptr_eq(&d.scope.file, &file.scope.file)
+            !Arc::ptr_eq(&d.file, &file)
         });
     }
 

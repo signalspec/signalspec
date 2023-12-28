@@ -1,4 +1,5 @@
 mod scope;
+mod item;
 mod expr;
 mod step;
 mod file;
@@ -12,6 +13,8 @@ mod shape;
 mod resolve;
 mod predicate;
 
+use std::collections::HashMap;
+
 use crate::entitymap::entity_key;
 
 use self::resolve::expr::TryFromConstant;
@@ -19,7 +22,8 @@ use self::file::ProtocolRef;
 
 pub use self::file::FileScope;
 pub use self::index::Index;
-pub use self::scope::{ Item, LeafItem, Scope };
+pub use self::scope::Scope;
+pub use self::item::{Item, LeafItem};
 pub use self::expr::{ Expr, ExprDn, ConcatElem };
 pub use self::resolve::expr::{ rexpr, rexpr_tup, lexpr, value, constant };
 pub use self::function::{ PrimitiveFn, FunctionDef, Func };
@@ -30,6 +34,8 @@ pub use self::data::{ Type, TypeTree };
 pub use self::shape::{ ShapeMode, Shape, ShapeMsg, ShapeMsgParam };
 pub use self::matchset::{ MatchSet, MessagePatternSet };
 pub use self::predicate::Predicate;
+
+pub type ScopeNames = HashMap<String, Item>;
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum Dir {

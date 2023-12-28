@@ -694,7 +694,7 @@ impl<'a> Builder<'a> {
                         }
                     };
 
-                    let mut scope = def.scope.child();
+                    let mut scope = def.file.scope();
 
                     lexpr(self.ui, &mut scope, &def.protocol.param, &sb.shape_down.param).ok();
 

@@ -1,5 +1,7 @@
-use crate::syntax::ast;
-use super::{ Item, Scope };
+use std::sync::Arc;
+
+use crate::{syntax::ast, SourceFile};
+use super::{ Item, ScopeNames };
 
 pub type PrimitiveFn = fn(Item)->Result<Item, &'static str>;
 
@@ -15,5 +17,6 @@ pub enum FunctionDef {
 pub struct Func {
     pub args: ast::Expr,
     pub body: ast::Expr,
-    pub scope: Scope,
+    pub file: Arc<SourceFile>,
+    pub names: ScopeNames,
 }
