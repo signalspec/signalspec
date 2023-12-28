@@ -19,6 +19,30 @@ use crate::syntax::ast::{self, AstNode};
 use crate::tree::Tree;
 use crate::{Diagnostic, DiagnosticHandler, FileSpan, Index, SourceFile, TypeTree};
 
+use super::expr::{TryFromConstant, lvalue_const};
+
+enum AltMode {
+    Const,
+    Var(Dir),
+}
+
+impl TryFrom<Value> for AltMode {
+    type Error = ();
+
+    fn try_from(value: Value) -> Result<Self, ()> {
+        match value.as_symbol() {
+            Some("const") => Ok(AltMode::Const),
+            Some("dn") => Ok(AltMode::Var(Dir::Dn)),
+            Some("up") => Ok(AltMode::Var(Dir::Up)),
+            _ => Err(()),
+        }
+    }
+}
+
+impl TryFromConstant for AltMode {
+    const EXPECTED_MSG: &'static str = "#up | #dn | #const";
+}
+
 #[derive(Clone, Copy)]
 struct ResolveCx<'a> {
     scope: &'a Scope,
@@ -415,18 +439,29 @@ impl<'a> Builder<'a> {
             }
 
             ast::Action::Alt(ref node) => {
-                let dir = constant::<Dir>(self.ui, sb.scope, &node.dir);
+                let dir = constant::<AltMode>(self.ui, sb.scope, &node.dir);
                 let scrutinee = rexpr(self.ui, sb.scope, &node.expr);
 
                 if node.arms.is_empty() {
-                    let r = self.ui.report(Diagnostic::AltZeroArms{
+                    let r = self.ui.report(Diagnostic::AltZeroArms {
                         span: Span::new(&sb.scope.file, node.span)
                     });
                     return self.add_step(Step::Invalid(r));
                 }
 
                 match dir {
-                    Ok(Dir::Dn) => {
+                    Ok(AltMode::Const) => {
+                        for arm in &node.arms {
+                            let mut body_scope = sb.scope.child();
+                            if self.bind_tree_fields_const(&mut body_scope, &scrutinee, &arm.discriminant).unwrap_or(false) {
+                                return self.resolve_seq(sb.with_scope(&body_scope), &arm.block);
+                            }
+                        }
+                        self.add_step(Step::Invalid(self.ui.report(Diagnostic::AltNoArmsMatched {
+                            span: Span::new(&sb.scope.file, node.span)
+                        })))
+                    }
+                    Ok(AltMode::Var(Dir::Dn)) => {
                         let scrutinee_dn = scrutinee.flatten(&mut |e| {
                             match e {
                                 LeafItem::Value(v) => {
@@ -442,6 +477,7 @@ impl<'a> Builder<'a> {
                                 }
                             }
                         });
+
                         let arms = node.arms.iter().map(|arm| {
                             let mut body_scope = sb.scope.child();
                             let mut vals = Vec::new();
@@ -457,7 +493,7 @@ impl<'a> Builder<'a> {
                         }).collect();
                         self.add_step(Step::AltDn(scrutinee_dn, arms))
                     }
-                    Ok(Dir::Up) => {
+                    Ok(AltMode::Var(Dir::Up)) => {
                         let scrutinee_src = scrutinee.flatten(&mut |e| {
                             match e {
                                 LeafItem::Value(v) => self.up_value_src(&v),
@@ -541,6 +577,44 @@ impl<'a> Builder<'a> {
                 }
             }  
         })
+    }
+
+    fn bind_tree_fields_const(
+        &mut self,
+        scope: &mut Scope,
+        rhs: &Item,
+        pat: &ast::Expr,
+    ) -> Result<bool, ErrorReported> {
+        let mut matched = true;
+        zip_ast(self.ui, &scope.file.clone(), pat, rhs, &mut |pat, r| {
+            match (pat, r) {
+                (ast::Expr::Ignore(_), _) => Ok(()),
+                (ast::Expr::Var(ref name), t) => {
+                    scope.bind(&name.name, t.clone());
+                    Ok(())
+                }
+                (pat, Tree::Leaf(LeafItem::Value(Expr::Const(c)))) => {
+                    match lvalue_const(self.ui, scope, pat, c) {
+                        Ok(p) => { matched &= p; Ok(()) } ,
+                        Err(r) => Err(r),
+                    }
+                }
+                (_, Tree::Leaf(LeafItem::Value(e))) => {
+                    Err(self.ui.report(Diagnostic::ExpectedConst {
+                        span: Span::new(&scope.file, pat.span()),
+                        found: e.to_string(),
+                        expected: "value".into(),
+                    }))
+                }
+                (_, Tree::Leaf(LeafItem::Invalid(r))) => Err(r.clone()),
+                (pat, e) => {
+                    Err(self.ui.report(Diagnostic::InvalidItemForPattern {
+                        span: Span::new(&scope.file, pat.span()),
+                        found: e.to_string(),
+                    }))
+                }
+            }
+        }).map(|()| matched)
     }
 
     fn bind_tree_fields_up(

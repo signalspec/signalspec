@@ -700,7 +700,57 @@ pub fn lvalue_up(
     }
 }
 
-/// Destructures an item into left-hand-side binding, such as a `let` or function argument
+/// Pattern matching for constant `alt`
+/// 
+/// Bind variables from `pat` in `scope`, and return whether the pattern matches a constant
+pub fn lvalue_const(
+    ctx: &dyn DiagnosticHandler,
+    scope: &mut Scope,
+    pat: &ast::Expr,
+    val: &Value,
+) -> Result<bool, ErrorReported> {
+    match pat {
+        ast::Expr::Var(ref name) => {
+            scope.bind(&name.name, Item::Leaf(LeafItem::Value(Expr::Const(val.clone()))));
+            Ok(true)
+        }
+
+        ast::Expr::Value(lit) => {
+            let pat_val = Value::from_literal(&lit.value);
+            Ok(&pat_val == val)
+        }
+
+        ast::Expr::Concat(node) => {
+            let pat_w: u32 = node.elems.iter().map(|&(w, _)| w.unwrap_or(1)).sum();
+
+            let elems = match val {
+                Value::Vector(v) if pat_w as usize == v.len() => v,
+                _ => return Ok(false),
+            };
+
+            let mut elems = elems.into_iter();
+
+            for (width, pat) in node.elems.iter() {
+                let res = if let Some(width) = width {
+                    let slice = (0..*width).map(|_| elems.next().unwrap().clone()).collect();
+                    lvalue_const(ctx, scope, pat, &Value::Vector(slice))?
+                } else {
+                    lvalue_const(ctx, scope, pat, elems.next().unwrap())?
+                };
+
+                if !res { return Ok(false) }
+            }
+
+            Ok(true)
+        }
+
+        pat => Err(ctx.report(Diagnostic::NotAllowedInPattern {
+            span: Span::new(&scope.file, pat.span())
+        }))
+    }
+}
+
+/// Destructures an item into an infallible left-hand-side binding, such as a `let` or function argument
 pub fn lexpr(ctx: &dyn DiagnosticHandler, scope: &mut Scope, pat: &ast::Expr, r: &Item) -> Result<(), ErrorReported> {
     zip_ast(ctx, &scope.file.clone(), pat, r, &mut move |pat, r| {
         let pat = match pat {

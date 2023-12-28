@@ -437,6 +437,12 @@ diagnostic_kinds!{
         error "no arms specified" at span
     }
 
+    AltNoArmsMatched {
+        span: Span
+    } => "no arms matched constant alt" {
+        error "all patterns failed to match" at span
+    }
+
     ForLoopVectorWidthMismatch {
         span1: Span,
         width1: u32,

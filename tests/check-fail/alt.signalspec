@@ -93,3 +93,13 @@ with Seq(0..10, _) def main() = {
     }
 }
 
+@test(#up, ())
+with Seq(0..10, _) def main() = {
+//# no arms matched constant alt
+//# expected constant value
+    alt #const 0..10 {
+//  ^- all patterns failed to match
+        #x => {}
+//      ^^ found `0..10`
+    }
+}
