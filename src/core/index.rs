@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use crate::DiagnosticHandler;
+use crate::diagnostic::Diagnostics;
 use crate::syntax::{ ast, SourceFile };
 use super::{ ProtocolRef, Item, FileScope, Shape };
 
@@ -14,6 +14,7 @@ pub struct Index {
     prelude: HashMap<String, Item>,
     protocols_by_name: BTreeMap<String, ProtocolRef>,
     defs: Vec<Def>,
+    modules: Vec<Arc<FileScope>>,
 }
 
 #[derive(Clone)]
@@ -31,27 +32,28 @@ impl Index {
             prelude: super::expr::expr_prelude(),
             protocols_by_name: BTreeMap::new(),
             defs: Vec::new(),
+            modules: Vec::new(),
         }
     }
 
     /// Create an index and populate it with the libraries from the colon-separated
     /// environment variable SIGNALSPEC_PATH. If not set or contains empty components,
     /// the path <signalspec executable>/../../lib/signalspec is used.
-    pub fn from_env(ui: &dyn DiagnosticHandler) -> Result<Index, std::io::Error> {
+    pub fn from_env() -> Result<Index, std::io::Error> {
         let mut index = Self::new();
         for path in std::env::var("SIGNALSPEC_PATH").unwrap_or_default().split(":") {
             if path.is_empty() {
                 if let Some(dir) = default_library_dir() {
-                    index.load(ui, &dir)?;
+                    index.load(&dir)?;
                 }
             } else {
-                index.load(ui, Path::new(path))?;
+                index.load(Path::new(path))?;
             }
         }
         Ok(index)
     }
 
-    pub fn load(&mut self, ui: &dyn DiagnosticHandler, p: &Path) -> Result<(), std::io::Error> {
+    pub fn load(&mut self, p: &Path) -> Result<(), std::io::Error> {
         info!("Loading {}", p.display());
         match std::fs::metadata(p) {
             Ok(ref meta) if meta.is_dir() => {
@@ -60,14 +62,13 @@ impl Index {
                     let path = entry.path();
                     let m = entry.metadata()?;
                     if path.extension() == Some("signalspec".as_ref()) || m.is_dir() {
-                        self.load(ui, &path)?;
+                        self.load(&path)?;
                     }
                 }
                 Ok(())
             }
             Ok(_) => {
-                let module = self.parse_module(Arc::new(SourceFile::load(p)?));
-                ui.report_all(module.errors.clone());
+                self.parse_module(Arc::new(SourceFile::load(p)?));
                 Ok(())
             }
             Err(e) => Err(e)
@@ -113,6 +114,8 @@ impl Index {
                 implementation: def.process.clone()
             });
         }
+
+        self.modules.push(file);
     }
 
     pub fn remove_file(&mut self, file: &Arc<FileScope>) {
@@ -121,8 +124,12 @@ impl Index {
         }
 
         self.defs.retain(|d| {
-            !Arc::ptr_eq(&d.file, &file)
+            !Arc::ptr_eq(&d.file, file)
         });
+
+        self.modules.retain(|f| {
+            !Arc::ptr_eq(f, file)
+        })
     }
 
     pub fn parse_module(&mut self, file: Arc<SourceFile>) -> Arc<FileScope> {
@@ -134,6 +141,19 @@ impl Index {
     /// Get a reference to the index's prelude.
     pub fn prelude(&self) -> &HashMap<String, Item> {
         &self.prelude
+    }
+
+    pub fn diagnostics(&self) -> Diagnostics {
+        self.modules.iter().flat_map(|f| f.diagnostics().into_iter()).collect()
+    }
+
+    pub fn validate(self) -> Result<Index, Diagnostics> {
+        let diagnostics = self.diagnostics();
+        if diagnostics.is_empty() {
+            Ok(self)
+        } else {
+            Err(diagnostics)
+        }
     }
 }
 

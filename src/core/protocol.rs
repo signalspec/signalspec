@@ -2,32 +2,32 @@ use indexmap::IndexMap;
 
 use crate::diagnostic::{ErrorReported, Span};
 use crate::syntax::ast::{self, AstNode};
-use crate::{Index, Dir, DiagnosticHandler, Diagnostic};
+use crate::{Index, Dir, DiagnosticContext, Diagnostic};
 use super::resolve::expr::{ constant, type_tree };
 use super::shape::ShapeMode;
 use super::{ Scope, Shape, ShapeMsg, ShapeMsgParam };
 use super::{ lexpr, rexpr, Item };
 
 pub fn resolve(
-    ctx: &dyn DiagnosticHandler,
+    dcx: &mut DiagnosticContext,
     index: &Index,
     scope: &Scope,
     ast: &ast::ProtocolRef,
     tag_offset: usize,
 ) -> Result<Shape, ErrorReported> {
-    let args = rexpr(ctx, scope, &ast.param);
-    match instantiate(ctx, index, &ast.name.name, args, tag_offset) {
+    let args = rexpr(dcx, scope, &ast.param);
+    match instantiate(dcx, index, &ast.name.name, args, tag_offset) {
         Ok(shape) => Ok(shape),
         Err(InstantiateProtocolError::ProtocolNotFound) => {
-            Err(ctx.report(Diagnostic::NoProtocolNamed {
-                span: Span::new(&scope.file, ast.name.span),
+            Err(dcx.report(Diagnostic::NoProtocolNamed {
+                span: scope.span(ast.name.span),
                 protocol_name: ast.name.name.clone(),
             }))
         },
         Err(InstantiateProtocolError::ArgsMismatch { found, protocol_def_span }) => {
             //TODO: should be chained to previous error
-            Err(ctx.report(Diagnostic::ProtocolArgumentMismatch {
-                span: Span::new(&scope.file, ast.param.span()),
+            Err(dcx.report(Diagnostic::ProtocolArgumentMismatch {
+                span: scope.span(ast.param.span()),
                 protocol_name: ast.name.name.clone(),
                 found: format!("{found}"),
                 def: protocol_def_span,
@@ -55,7 +55,7 @@ impl From<ErrorReported> for InstantiateProtocolError {
 
 /// Instantiates a protocol with passed arguments, creating a Shape.
 pub fn instantiate(
-    ctx: &dyn DiagnosticHandler,
+    dcx: &mut DiagnosticContext,
     index: &Index,
     protocol_name: &str,
     args: Item,
@@ -65,14 +65,14 @@ pub fn instantiate(
         .ok_or(InstantiateProtocolError::ProtocolNotFound)?;
     let protocol_ast = protocol.ast();
     let mut scope = protocol.file().scope();
-    if let Err(_) = lexpr(ctx, &mut scope, &protocol_ast.param, &args) {
+    if let Err(_) = lexpr(dcx, &mut scope, &protocol_ast.param, &args) {
         return Err(InstantiateProtocolError::ArgsMismatch {
             found: args,
-            protocol_def_span: Span::new(&scope.file, protocol_ast.param.span())
+            protocol_def_span: scope.span(protocol_ast.param.span())
         });
     }
 
-    let mode = constant::<ShapeMode>(ctx, &scope, &protocol_ast.dir)?;
+    let mode = constant::<ShapeMode>(dcx, &scope, &protocol_ast.dir)?;
 
     let mut messages = vec![];
     let mut children = IndexMap::new();
@@ -82,8 +82,8 @@ pub fn instantiate(
         match *entry {
             ast::ProtocolEntry::Message(ast::ProtocolMessageDef { ref name, ref params, ref child, .. }) => {
                 if child.is_some() && !params.is_empty() {
-                    ctx.report(Diagnostic::ProtocolMessageWithArgsAndChild {
-                        span: Span::new(&scope.file, entry.span())
+                    dcx.report(Diagnostic::ProtocolMessageWithArgsAndChild {
+                        span: scope.span(entry.span())
                     });
                 }
 
@@ -93,11 +93,11 @@ pub fn instantiate(
                             panic!("Not allowed here")
                         }
                         ast::DefParam::Var(node) => {
-                            let param_dir = constant::<Dir>(ctx, &scope, &node.direction)?;
+                            let param_dir = constant::<Dir>(dcx, &scope, &node.direction)?;
 
                             if !mode.allows_data(param_dir) {
-                                Err(ctx.report(Diagnostic::ProtocolDataModeMismatch {
-                                    span: Span::new(&scope.file, p.span()),
+                                Err(dcx.report(Diagnostic::ProtocolDataModeMismatch {
+                                    span: scope.span(p.span()),
                                     mode,
                                     param_dir
                                 }))?;
@@ -106,16 +106,16 @@ pub fn instantiate(
                             (&node.expr, param_dir)
                         }
                     };
-                    let ty = type_tree(ctx, &scope, ty_expr)?;
+                    let ty = type_tree(dcx, &scope, ty_expr)?;
                     Ok(ShapeMsgParam { ty, direction })
                 }).collect::<Result<_, InstantiateProtocolError>>()?;
 
                 let child = if let Some(child) = child {
-                    let shape = resolve(ctx, index, &scope, &child, tag)?;
+                    let shape = resolve(dcx, index, &scope, &child, tag)?;
 
                     if !mode.allows_child(shape.mode) {
-                        Err(ctx.report(Diagnostic::ProtocolChildModeMismatch {
-                            span: Span::new(&scope.file, child.span),
+                        Err(dcx.report(Diagnostic::ProtocolChildModeMismatch {
+                            span: scope.span(child.span),
                             child_name: child.name.name.clone(),
                             mode,
                             child_mode: shape.mode,
@@ -130,11 +130,11 @@ pub fn instantiate(
                 tag += 1;
             }
             ast::ProtocolEntry::Child(ref node) => {
-                let inner_shape = resolve(ctx, index, &scope, &node.child_protocol, tag)?;
+                let inner_shape = resolve(dcx, index, &scope, &node.child_protocol, tag)?;
 
                 if !mode.allows_child(inner_shape.mode) {
-                    Err(ctx.report(Diagnostic::ProtocolChildModeMismatch {
-                        span: Span::new(&scope.file, node.span),
+                    Err(dcx.report(Diagnostic::ProtocolChildModeMismatch {
+                        span: scope.span(node.span),
                         child_name: node.name.name.clone(),
                         mode,
                         child_mode: inner_shape.mode,

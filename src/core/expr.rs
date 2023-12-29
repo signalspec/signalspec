@@ -492,9 +492,11 @@ use super::data::NumberType;
 
 #[cfg(test)]
 pub fn test_expr_parse(e: &str) -> Expr {
-    use crate::diagnostic::SimplePrintHandler;
+    use crate::diagnostic::{DiagnosticContext, print_diagnostics};
     use crate::syntax::{parse_expr, SourceFile};
     use crate::core::{Scope, value};
+
+    let mut dcx = DiagnosticContext::new();
 
     let scope = Scope { 
         file: Arc::new(SourceFile::new("<tests>".into(), "".into())),
@@ -502,7 +504,11 @@ pub fn test_expr_parse(e: &str) -> Expr {
     };
 
     let ast = parse_expr(e).unwrap();
-    value(&mut SimplePrintHandler, &scope, &ast).unwrap()
+    let v = value(&mut dcx, &scope, &ast).unwrap();
+
+    print_diagnostics(dcx.diagnostics());
+
+    v
 }
 
 #[test]

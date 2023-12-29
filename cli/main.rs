@@ -5,6 +5,7 @@ use std::path::{PathBuf, Path};
 use std::process;
 
 use argparse::{ArgumentParser, Collect, StoreOption, Store};
+use diagnostic::report_diagnostics;
 
 fn main() {
     env_logger::init();
@@ -30,13 +31,13 @@ fn main() {
         ap.parse_args_or_exit();
     }
 
-    let ui = &diagnostic::CliHandler;
-
-    let mut index = signalspec::Index::from_env(ui).unwrap();
+    let mut index = signalspec::Index::from_env().unwrap();
 
     for source_fname in imports {
-        index.load(ui, Path::new(&source_fname)).unwrap();
+        index.load(Path::new(&source_fname)).unwrap();
     }
+
+    report_diagnostics(index.diagnostics());
 
     if let Some(dump_ast) = dump_ast {
         let file = signalspec::syntax::SourceFile::load(&dump_ast).unwrap();
@@ -44,14 +45,15 @@ fn main() {
         signalspec::syntax::dump_tree(&mut std::io::stdout(), &file, &ast, 0).unwrap();
         process::exit(0);
     } if let Some(path) = test {
-        let success = signalspec::runtime::run_tests(ui, &index, &Path::new(&path));
+        let success = signalspec::runtime::run_tests(&report_diagnostics, &index, &Path::new(&path));
         process::exit( if success { 0 } else { 1 } );
     } else {
         let mut handle = signalspec::Handle::base(&index);
-        let Ok(inner_handle) = handle.parse_compile_run(ui, &index, &cmd) else {
+        let inner_handle = handle.parse_compile_run(&index, &cmd).unwrap_or_else(|e| {
+            report_diagnostics(e);
             eprintln!("Exiting due to previous errors");
             process::exit(2);
-        };
+        });
 
         let success = console::run(inner_handle).is_ok();
 

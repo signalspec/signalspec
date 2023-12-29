@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::SourceFile;
+use crate::{SourceFile, FileSpan, diagnostic::Span};
 use super::{ Item, ScopeNames };
 
 /// A collection of named Items.
@@ -35,6 +35,10 @@ impl Scope {
             file: self.file.clone(),
             names: self.names.clone(),
         }
+    }
+
+    pub fn span(&self, s: FileSpan) -> Span {
+        Span::new(&self.file, s)
     }
 }
 

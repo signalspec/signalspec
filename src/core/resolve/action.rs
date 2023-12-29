@@ -11,13 +11,13 @@ use crate::{core::{
     step::{analyze_unambiguous, AltDnArm, AltUpArm, Step, StepInfo},
     value, Dir, Expr, ExprDn, Item, LeafItem, Predicate, Scope, Shape, ShapeMsg, StepId, Type,
     ValueSrcId, expr::ExprKind, ConcatElem, lexpr,
-}, Value};
+}, Value, diagnostic::{DiagnosticContext, Diagnostics}};
 use crate::diagnostic::{ErrorReported, Span};
 use crate::entitymap::{entity_key, EntityMap};
 use crate::runtime::instantiate_primitive;
 use crate::syntax::ast::{self, AstNode};
 use crate::tree::Tree;
-use crate::{Diagnostic, DiagnosticHandler, FileSpan, Index, SourceFile, TypeTree};
+use crate::{Diagnostic, FileSpan, Index, SourceFile, TypeTree};
 
 use super::expr::{TryFromConstant, lvalue_const};
 
@@ -67,7 +67,7 @@ impl<'a> ResolveCx<'a> {
 entity_key!(pub ValueSinkId);
 
 pub struct Builder<'a> {
-    ui: &'a dyn DiagnosticHandler,
+    dcx: DiagnosticContext,
     index: &'a Index,
     steps: EntityMap<StepId, Step>,
     value_src: EntityMap<ValueSrcId, ()>,
@@ -76,9 +76,9 @@ pub struct Builder<'a> {
 }
 
 impl<'a> Builder<'a> {
-    pub fn new(ui: &'a dyn DiagnosticHandler, index: &'a Index) -> Self {
+    pub fn new(index: &'a Index) -> Self {
         Self {
-            ui,
+            dcx: DiagnosticContext::new(),
             index,
             steps: EntityMap::new(),
             value_src: EntityMap::new(),
@@ -89,6 +89,11 @@ impl<'a> Builder<'a> {
 
     fn add_step(&mut self, step: Step) -> StepId {
         self.steps.push(step)
+    }
+
+    fn err_step(&mut self, diag: Diagnostic) -> StepId {
+        let r = self.dcx.report(diag);
+        self.add_step(Step::Invalid(r))
     }
 
     fn add_value_src(&mut self) -> ValueSrcId {
@@ -125,7 +130,7 @@ impl<'a> Builder<'a> {
         }
 
         if multiple {
-            self.ui.report(Diagnostic::UpValueMultiplyProvided {
+            self.dcx.report(Diagnostic::UpValueMultiplyProvided {
                 span: Span::new(file, span),
             });
         }
@@ -135,17 +140,17 @@ impl<'a> Builder<'a> {
 
     pub fn take_upvalue(&mut self, snk: ValueSinkId, file: &Arc<SourceFile>, span: FileSpan) -> ExprDn {
         self.take_upvalue_optional(snk, file, span).unwrap_or_else(|| {
-            self.ui.report(Diagnostic::UpValueNotProvided {
+            self.dcx.report(Diagnostic::UpValueNotProvided {
                 span: Span::new(file, span),
             });
             ExprDn::invalid()
         })
     }
 
-    fn require_down(&self, scope: &Scope, span: FileSpan, v: &Expr) -> ExprDn {
+    fn require_down(&mut self, scope: &Scope, span: FileSpan, v: &Expr) -> ExprDn {
         v.down().unwrap_or_else(|| {
-            self.ui.report(Diagnostic::RequiredDownValue {
-                span: Span::new(&scope.file, span),
+            self.dcx.report(Diagnostic::RequiredDownValue {
+                span: scope.span(span),
                 found: v.to_string(),
             });
             ExprDn::invalid()
@@ -162,15 +167,15 @@ impl<'a> Builder<'a> {
 
             ast::Action::On(ref node @ ast::ActionOn { args: Some(args), ..}) => {
                 let Some(shape_up) = sb.shape_up else {
-                    let r = self.ui.report(Diagnostic::OnBlockWithoutUpSignal{
-                        span: Span::new(&sb.scope.file, node.span)
+                    let r = self.dcx.report(Diagnostic::OnBlockWithoutUpSignal{
+                        span: sb.scope.span(node.span)
                     });
                     return self.add_step(Step::Invalid(r));
                 };
 
                 let Some(msg_def) = shape_up.variant_named(&node.name.name) else {
-                    let r = self.ui.report(Diagnostic::NoVariantNamed {
-                        span: Span::new(&sb.scope.file, node.name.span),
+                    let r = self.dcx.report(Diagnostic::NoVariantNamed {
+                        span: sb.scope.span(node.name.span),
                         protocol_name: shape_up.def.ast().name.name.to_owned(),
                         name: node.name.name.to_owned(),
                     });
@@ -178,8 +183,8 @@ impl<'a> Builder<'a> {
                 };
 
                 if args.items.len() != msg_def.params.len() {
-                    self.ui.report(Diagnostic::ArgsMismatchCount {
-                        span: Span::new(&sb.scope.file, args.span),
+                    self.dcx.report(Diagnostic::ArgsMismatchCount {
+                        span: sb.scope.span(args.span),
                         def_name: node.name.name.clone(),
                         expected: msg_def.params.len(),
                         found: args.items.len(),
@@ -228,15 +233,15 @@ impl<'a> Builder<'a> {
 
             ast::Action::On(ref node @ ast::ActionOn { args: None, ..}) => {
                 let Some(shape_up) = sb.shape_up else {
-                    let r = self.ui.report(Diagnostic::OnBlockWithoutUpSignal{
-                        span: Span::new(&sb.scope.file, node.span)
+                    let r = self.dcx.report(Diagnostic::OnBlockWithoutUpSignal{
+                        span: sb.scope.span(node.span)
                     });
                     return self.add_step(Step::Invalid(r));
                 };
 
                 let Some(inner_shape_up) = shape_up.child_named(&node.name.name) else {
-                    let r = self.ui.report(Diagnostic::NoChildNamed {
-                        span: Span::new(&sb.scope.file, node.name.span),
+                    let r = self.dcx.report(Diagnostic::NoChildNamed {
+                        span: sb.scope.span(node.name.span),
                         protocol_name: shape_up.def.ast().name.name.to_owned(),
                         name: node.name.name.to_owned(),
                     });
@@ -253,8 +258,8 @@ impl<'a> Builder<'a> {
             ast::Action::Repeat(ref node) => {
                 let (dir, count) = match &node.dir_count {
                     Some((dir_ast, count_ast)) => {
-                        let count = value(self.ui, sb.scope, count_ast);
-                        let dir = constant::<Dir>(self.ui, sb.scope, dir_ast);
+                        let count = value(&mut self.dcx, sb.scope, count_ast);
+                        let dir = constant::<Dir>(&mut self.dcx, sb.scope, dir_ast);
                         (dir, count)
                     }
                     None => (Ok(Dir::Up), Ok(Expr::ignored()))
@@ -281,8 +286,8 @@ impl<'a> Builder<'a> {
                     Type::NumberSet(s) if s.iter().all(|v| v.is_integer() && !v.is_negative()) => {}
                     Type::Ignored => {}
                     found => {
-                        let r = self.ui.report(Diagnostic::InvalidRepeatCountType {
-                            span: Span::new(&sb.scope.file, count_span),
+                        let r = self.dcx.report(Diagnostic::InvalidRepeatCountType {
+                            span: sb.scope.span(count_span),
                             found,
                         });
                         return self.add_step(Step::Invalid(r));
@@ -301,8 +306,8 @@ impl<'a> Builder<'a> {
                                 && !min.is_negative()
                                 && max.is_integer() => (*min.numer(), Some(*max.numer())),
                             _ => {
-                                let r = self.ui.report(Diagnostic::InvalidRepeatCountPredicate {
-                                    span: Span::new(&sb.scope.file, count_span),
+                                let r = self.dcx.report(Diagnostic::InvalidRepeatCountPredicate {
+                                    span: sb.scope.span(count_span),
                                 });
                                 return self.add_step(Step::Invalid(r));
                             }
@@ -336,12 +341,12 @@ impl<'a> Builder<'a> {
                 let mut vars = Vec::new();
                 
                 for &(ref name, ref expr) in &node.vars {
-                    let Ok(e) = value(self.ui, sb.scope, expr) else { continue; };
+                    let Ok(e) = value(&mut self.dcx, sb.scope, expr) else { continue; };
                     let (c, ty) = match e.get_type() {
                         Type::Vector(c, ty) => (c, *ty),
                         other => {
-                            let r = self.ui.report(Diagnostic::ExpectedVector {
-                                span: Span::new(&sb.scope.file, expr.span()),
+                            let r = self.dcx.report(Diagnostic::ExpectedVector {
+                                span: sb.scope.span(expr.span()),
                                 found: other,
                             });
                             vars.push((name, LoopVar::Invalid(r)));
@@ -353,10 +358,10 @@ impl<'a> Builder<'a> {
                         None => count = Some(c),
                         Some(count) if count == c => {},
                         Some(count) => {
-                            let r = self.ui.report(Diagnostic::ForLoopVectorWidthMismatch {
-                                span1: Span::new(&sb.scope.file, node.vars[0].1.span()),
+                            let r = self.dcx.report(Diagnostic::ForLoopVectorWidthMismatch {
+                                span1: sb.scope.span(node.vars[0].1.span()),
                                 width1: count,
-                                span2: Span::new(&sb.scope.file, expr.span()),
+                                span2: sb.scope.span(expr.span()),
                                 width2: c
                             });
                             vars.push((name, LoopVar::Invalid(r)));
@@ -439,12 +444,12 @@ impl<'a> Builder<'a> {
             }
 
             ast::Action::Alt(ref node) => {
-                let dir = constant::<AltMode>(self.ui, sb.scope, &node.dir);
-                let scrutinee = rexpr(self.ui, sb.scope, &node.expr);
+                let dir = constant::<AltMode>(&mut self.dcx, sb.scope, &node.dir);
+                let scrutinee = rexpr(&mut self.dcx, sb.scope, &node.expr);
 
                 if node.arms.is_empty() {
-                    let r = self.ui.report(Diagnostic::AltZeroArms {
-                        span: Span::new(&sb.scope.file, node.span)
+                    let r = self.dcx.report(Diagnostic::AltZeroArms {
+                        span: sb.scope.span(node.span)
                     });
                     return self.add_step(Step::Invalid(r));
                 }
@@ -457,9 +462,9 @@ impl<'a> Builder<'a> {
                                 return self.resolve_seq(sb.with_scope(&body_scope), &arm.block);
                             }
                         }
-                        self.add_step(Step::Invalid(self.ui.report(Diagnostic::AltNoArmsMatched {
-                            span: Span::new(&sb.scope.file, node.span)
-                        })))
+                        self.err_step(Diagnostic::AltNoArmsMatched {
+                            span: sb.scope.span(node.span)
+                        })
                     }
                     Ok(AltMode::Var(Dir::Dn)) => {
                         let scrutinee_dn = scrutinee.flatten(&mut |e| {
@@ -469,8 +474,8 @@ impl<'a> Builder<'a> {
                                 }
                                 LeafItem::Invalid(_) => ExprDn::invalid(),
                                 t => {
-                                    self.ui.report(Diagnostic::ExpectedValue {
-                                        span: Span::new(&sb.scope.file, node.expr.span()),
+                                    self.dcx.report(Diagnostic::ExpectedValue {
+                                        span: sb.scope.span(node.expr.span()),
                                         found: t.to_string()
                                     });
                                     ExprDn::invalid()
@@ -499,8 +504,8 @@ impl<'a> Builder<'a> {
                                 LeafItem::Value(v) => self.up_value_src(&v),
                                 LeafItem::Invalid(_) => self.add_value_src(),
                                 t => {
-                                    self.ui.report(Diagnostic::ExpectedValue {
-                                        span: Span::new(&sb.scope.file, node.expr.span()),
+                                    self.dcx.report(Diagnostic::ExpectedValue {
+                                        span: sb.scope.span(node.expr.span()),
                                         found: t.to_string()
                                     });
                                     self.add_value_src()
@@ -543,10 +548,10 @@ impl<'a> Builder<'a> {
         pat: &ast::Expr,
         dn: &mut Vec<Predicate>,
     ) -> Result<(), ErrorReported> {
-        zip_ast(self.ui, &scope.file.clone(), pat, rhs, &mut |pat, r| {
+        zip_ast(&mut self.dcx, &scope.file.clone(), pat, rhs, &mut |dcx, pat, r| {
             match (pat, r) {
                 (pat, Tree::Leaf(LeafItem::Value(r))) => {
-                    match lvalue_dn(self.ui, scope, pat, r.clone()){
+                    match lvalue_dn(dcx, scope, pat, r.clone()){
                         Ok(p) => { dn.push(p); Ok(()) }
                         Err(r) => { dn.push(Predicate::Any); Err(r) }
                     }
@@ -570,8 +575,8 @@ impl<'a> Builder<'a> {
                 }
                 (pat, e) => {
                     dn.push(Predicate::Any);
-                    Err(self.ui.report(Diagnostic::InvalidItemForPattern {
-                        span: Span::new(&scope.file, pat.span()),
+                    Err(dcx.report(Diagnostic::InvalidItemForPattern {
+                        span: scope.span(pat.span()),
                         found: e.to_string(),
                     }))
                 }
@@ -586,7 +591,7 @@ impl<'a> Builder<'a> {
         pat: &ast::Expr,
     ) -> Result<bool, ErrorReported> {
         let mut matched = true;
-        zip_ast(self.ui, &scope.file.clone(), pat, rhs, &mut |pat, r| {
+        zip_ast(&mut self.dcx, &scope.file.clone(), pat, rhs, &mut |dcx, pat, r| {
             match (pat, r) {
                 (ast::Expr::Ignore(_), _) => Ok(()),
                 (ast::Expr::Var(ref name), t) => {
@@ -594,22 +599,22 @@ impl<'a> Builder<'a> {
                     Ok(())
                 }
                 (pat, Tree::Leaf(LeafItem::Value(Expr::Const(c)))) => {
-                    match lvalue_const(self.ui, scope, pat, c) {
+                    match lvalue_const(dcx, scope, pat, c) {
                         Ok(p) => { matched &= p; Ok(()) } ,
                         Err(r) => Err(r),
                     }
                 }
                 (_, Tree::Leaf(LeafItem::Value(e))) => {
-                    Err(self.ui.report(Diagnostic::ExpectedConst {
-                        span: Span::new(&scope.file, pat.span()),
+                    Err(dcx.report(Diagnostic::ExpectedConst {
+                        span: scope.span(pat.span()),
                         found: e.to_string(),
                         expected: "value".into(),
                     }))
                 }
                 (_, Tree::Leaf(LeafItem::Invalid(r))) => Err(r.clone()),
                 (pat, e) => {
-                    Err(self.ui.report(Diagnostic::InvalidItemForPattern {
-                        span: Span::new(&scope.file, pat.span()),
+                    Err(dcx.report(Diagnostic::InvalidItemForPattern {
+                        span: scope.span(pat.span()),
                         found: e.to_string(),
                     }))
                 }
@@ -624,17 +629,17 @@ impl<'a> Builder<'a> {
         pat: &ast::Expr,
         up: &mut Vec<LValueSrc>,
     ) -> Result<(), ErrorReported> {
-        zip_ast(self.ui, &scope.file.clone(), pat, rhs, &mut |pat, r| {
+        zip_ast(&mut self.dcx, &scope.file.clone(), pat, rhs, &mut |dcx, pat, r| {
             match (pat, r) {
                 (pat, Tree::Leaf(t)) => {
-                    match lvalue_up(self.ui, scope, pat, t.clone(), &mut || self.add_value_sink()) {
+                    match lvalue_up(dcx, scope, pat, t.clone(), &mut || self.value_sink.push(())) {
                         Ok(x) => { up.push(x); Ok(()) },
                         Err(r) => { up.push(LValueSrc::Val(ExprDn::invalid())); Err(r) }
                     }
                 }
                 (ast::Expr::Var(ref name), tup @ Tree::Tuple(_)) => {
                     let e = tup.map_leaf(&mut |ty| {
-                        let id = self.add_value_sink();
+                        let id = self.value_sink.push(());
                         up.push(LValueSrc::Var(id, name.span));
                         LeafItem::Value(Expr::var_up(id, ty.clone()))
                     });
@@ -643,8 +648,8 @@ impl<'a> Builder<'a> {
                 }
                 (pat, ty) => {
                     up.push(LValueSrc::Val(ExprDn::invalid()));
-                    Err(self.ui.report(Diagnostic::InvalidItemForPattern {
-                        span: Span::new(&scope.file, pat.span()),
+                    Err(dcx.report(Diagnostic::InvalidItemForPattern {
+                        span: scope.span(pat.span()),
                         found: ty.to_string(),
                     }))
                 }
@@ -681,12 +686,12 @@ impl<'a> Builder<'a> {
                         (self.add_step(Step::TokenTransaction { variant: msg_def.tag }), msg_def.child.clone() )
                     }
                 } else {
-                    let args: Vec<Item> = node.args.items.iter().map(|a| rexpr(self.ui, sb.scope, a)).collect();
+                    let args: Vec<Item> = node.args.items.iter().map(|a| rexpr(&mut self.dcx, sb.scope, a)).collect();
                     let def = match self.index.find_def(sb.shape_down, &node.name.name) {
                         Ok(res) => res,
                         Err(FindDefError::NoDefinitionWithName) => {
-                            let r = self.ui.report(Diagnostic::NoDefNamed {
-                                span: Span::new(&sb.scope.file, node.name.span),
+                            let r = self.dcx.report(Diagnostic::NoDefNamed {
+                                span: sb.scope.span(node.name.span),
                                 protocol_name: sb.shape_down.def.ast().name.name.to_owned(),
                                 def_name: node.name.name.to_owned(),
                             });
@@ -696,11 +701,11 @@ impl<'a> Builder<'a> {
 
                     let mut scope = def.file.scope();
 
-                    lexpr(self.ui, &mut scope, &def.protocol.param, &sb.shape_down.param).ok();
+                    lexpr(&mut self.dcx, &mut scope, &def.protocol.param, &sb.shape_down.param).ok();
 
                     if def.params.len() != args.len() {
-                        self.ui.report(Diagnostic::ArgsMismatchCount {
-                            span: Span::new(&sb.scope.file, node.args.span),
+                        self.dcx.report(Diagnostic::ArgsMismatchCount {
+                            span: sb.scope.span(node.args.span),
                             def_name: node.name.name.clone(),
                             expected: def.params.len(),
                             found: args.len(),
@@ -713,7 +718,7 @@ impl<'a> Builder<'a> {
                             ast::DefParam::Var(node) => &node.expr,
                         };
 
-                        lexpr(self.ui, &mut scope, param_expr, &arg).ok();
+                        lexpr(&mut self.dcx, &mut scope, param_expr, &arg).ok();
                     }
 
                     self.resolve_process(sb.with_scope(&scope), &def.implementation)
@@ -722,8 +727,8 @@ impl<'a> Builder<'a> {
 
             ast::Process::Child(node) => {
                 let Some(child_shape) = sb.shape_down.child_named(&node.name.name) else {
-                    let r = self.ui.report(Diagnostic::NoDefNamed {
-                        span: Span::new(&sb.scope.file, node.name.span),
+                    let r = self.dcx.report(Diagnostic::NoDefNamed {
+                        span: sb.scope.span(node.name.span),
                         protocol_name: sb.shape_down.def.ast().name.name.to_owned(),
                         def_name: node.name.name.to_owned(),
                     });
@@ -734,13 +739,13 @@ impl<'a> Builder<'a> {
             }
 
             ast::Process::Primitive(node) => {
-                let arg = rexpr_tup(self.ui, sb.scope, &node.args);
+                let arg = rexpr_tup(&mut self.dcx, sb.scope, &node.args);
                 debug!("instantiating primitive {} with {}", node.name.name, arg);
                 let prim = match instantiate_primitive(&node.name, arg, sb.shape_down, sb.shape_up) {
                     Ok(p) => p,
                     Err(msg) => {
-                        let r = self.ui.report(Diagnostic::ErrorInPrimitiveProcess {
-                            span: Span::new(&sb.scope.file, node.span),
+                        let r = self.dcx.report(Diagnostic::ErrorInPrimitiveProcess {
+                            span: sb.scope.span(node.span),
                             msg
                         });
                         return (self.add_step(Step::Invalid(r)), None);
@@ -751,7 +756,7 @@ impl<'a> Builder<'a> {
             }
 
             ast::Process::New(node) => {
-                let top_shape = match protocol::resolve(self.ui, self.index, sb.scope, &node.top, 0) {
+                let top_shape = match protocol::resolve(&mut self.dcx, self.index, sb.scope, &node.top, 0) {
                     Ok(shape) => shape,
                     Err(r) => return (self.add_step(Step::Invalid(r)), None),
                 };
@@ -771,8 +776,8 @@ impl<'a> Builder<'a> {
                     if let Step::Invalid(_) = &self.steps[lo] {
                         return (lo, shape);
                     } else {
-                        let r = self.ui.report(Diagnostic::StackWithoutBaseSignal {
-                            span: Span::new(&sb.scope.file, node.lower.span()),
+                        let r = self.dcx.report(Diagnostic::StackWithoutBaseSignal {
+                            span: sb.scope.span(node.lower.span()),
                         });
                         return (self.add_step(Step::Invalid(r)), None)
                     }
@@ -793,8 +798,8 @@ impl<'a> Builder<'a> {
 
     pub fn resolve_token(&mut self, msg_def: &ShapeMsg, scope: &Scope, node: &ast::ProcessCall) -> (Vec<ExprDn>, Vec<(Predicate, ValueSrcId)>) {
         if node.args.items.len() != msg_def.params.len() {
-            self.ui.report(Diagnostic::ArgsMismatchCount {
-                span: Span::new(&scope.file, node.args.span),
+            self.dcx.report(Diagnostic::ArgsMismatchCount {
+                span: scope.span(node.args.span),
                 def_name: node.name.name.clone(),
                 expected: msg_def.params.len(),
                 found: node.args.items.len(),
@@ -805,7 +810,7 @@ impl<'a> Builder<'a> {
         let mut up = Vec::new();
 
         for (param, arg_ast) in msg_def.params.iter().zip(node.args.items.iter()) {
-            let arg = rexpr(self.ui, scope, arg_ast);
+            let arg = rexpr(&mut self.dcx, scope, arg_ast);
 
             let mut valid = true;
             param.ty.zip(&arg, &mut |m| { match m {
@@ -838,8 +843,8 @@ impl<'a> Builder<'a> {
             }});
 
             if !valid {
-                self.ui.report(Diagnostic::ArgMismatchType {
-                    span: Span::new(&scope.file, arg_ast.span()),
+                self.dcx.report(Diagnostic::ArgMismatchType {
+                    span: scope.span(arg_ast.span()),
                     def_name: node.name.name.clone(),
                     expected: format!("{}", param.ty),
                     found: format!("{arg}")
@@ -854,7 +859,7 @@ impl<'a> Builder<'a> {
         let mut scope = sb.scope.child();
 
         for ld in &block.lets {
-            resolve_letdef(self.ui,&mut scope, &ld);
+            resolve_letdef(&mut self.dcx, &mut scope, &ld);
         }
 
         let steps = block.actions.iter().map(|action| {
@@ -866,9 +871,9 @@ impl<'a> Builder<'a> {
 }
 
 
-pub fn resolve_letdef(ui: &dyn DiagnosticHandler, scope: &mut Scope, ld: &ast::LetDef) {
+pub fn resolve_letdef(dcx: &mut DiagnosticContext, scope: &mut Scope, ld: &ast::LetDef) {
     let &ast::LetDef { ref name, ref expr, .. } = ld;
-    let item = rexpr(ui, scope, expr);
+    let item = rexpr(dcx, scope, expr);
     scope.bind(&name.name, item);
 }
 
@@ -881,8 +886,8 @@ pub struct ProcessChain {
     pub shape_up: Option<Shape>,
 }
 
-pub fn compile_process(ui: &dyn DiagnosticHandler, index: &Index, scope: &Scope, shape_dn: Shape, ast: &ast::Process) -> ProcessChain {
-    let mut builder = Builder::new(ui, index);
+pub fn compile_process(index: &Index, scope: &Scope, shape_dn: Shape, ast: &ast::Process) -> Result<ProcessChain, Diagnostics> {
+    let mut builder = Builder::new(index);
     let sb = ResolveCx { scope, shape_up: None, shape_down: &shape_dn };
     let (step, shape_up) = builder.resolve_process(sb, ast);
 
@@ -894,12 +899,16 @@ pub fn compile_process(ui: &dyn DiagnosticHandler, index: &Index, scope: &Scope,
 
     let step_info = analyze_unambiguous(&builder.steps);
 
-    ProcessChain {
+    if builder.dcx.has_errors() {
+        return Err(builder.dcx.diagnostics());
+    }
+
+    Ok(ProcessChain {
         steps: builder.steps,
         vars: builder.value_src,
         step_info,
         root: step,
         shape_dn,
         shape_up,
-    }
+    })
 }

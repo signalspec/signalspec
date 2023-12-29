@@ -1,5 +1,41 @@
-use std::{sync::Arc, fmt::{Display, Debug}, cell::RefCell, ptr};
+use std::{sync::Arc, fmt::{Display, Debug}, ptr};
 use crate::{SourceFile, FileSpan, syntax::{AstNode, ast, Number}, Type};
+
+pub type Diagnostics = Vec<Diagnostic>;
+
+pub fn print_diagnostics(diagnostics: Diagnostics) {
+    for d in diagnostics {
+        eprintln!("{d}");
+        for l in d.labels() {
+            let start_line = l.span.file.byte_to_line(l.span.span.start);
+            eprintln!("\t{}:{} {}", l.span.file.name(), start_line + 1, l.label);
+        }
+    }
+}
+
+pub struct DiagnosticContext {
+    diagnostics: Vec<Diagnostic>,
+}
+
+impl DiagnosticContext {
+    pub fn new() -> DiagnosticContext {
+        DiagnosticContext { diagnostics: Vec::new() }
+    }
+
+    pub fn report(&mut self, error: Diagnostic) -> ErrorReported {
+        self.diagnostics.push(error);
+        ErrorReported::error_reported()
+    }
+
+    pub fn has_errors(&self) -> bool {
+        !self.diagnostics.is_empty()
+    }
+
+    pub fn diagnostics(&self) -> Vec<Diagnostic> {
+        self.diagnostics.clone()
+    }
+}
+
 
 /// Sentinel value returned by `report` to serve as a type-system check that an error was already reported
 #[derive(Clone)]
@@ -18,13 +54,6 @@ impl ErrorReported {
 impl Debug for ErrorReported {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Error previously reported")
-    }
-}
-
-pub trait DiagnosticHandler {
-    fn report(&self, error: Diagnostic) -> ErrorReported;
-    fn report_all(&self, errors: Vec<Diagnostic>) {
-        for i in errors { self.report(i); }
     }
 }
 
@@ -461,19 +490,6 @@ diagnostic_kinds!{
     }
 }
 
-pub struct SimplePrintHandler;
-
-impl DiagnosticHandler for SimplePrintHandler {
-    fn report(&self, d: Diagnostic) -> ErrorReported {
-        eprintln!("{d}");
-        for l in d.labels() {
-            let start_line = l.span.file.byte_to_line(l.span.span.start);
-            eprintln!("\t{}:{} {}", l.span.file.name(), start_line + 1, l.label);
-        }
-        ErrorReported::error_reported()
-    }
-}
-
 /// If the error is an unclosed delimiter, get the span of the opening delimiter
 fn find_unclosed_delimiter(parent: &dyn AstNode, err: &ast::Error) -> Option<FileSpan> {
     if let Some(parent) = parent.downcast::<ast::ExprTup>() {
@@ -492,7 +508,7 @@ fn find_unclosed_delimiter(parent: &dyn AstNode, err: &ast::Error) -> Option<Fil
     None
 }
 
-pub fn report_parse_errors(ui: &dyn DiagnosticHandler, file: &Arc<SourceFile>, ast: &dyn AstNode) -> bool{
+pub fn report_parse_errors(dcx: &mut DiagnosticContext, file: &Arc<SourceFile>, ast: &dyn AstNode) -> bool{
     let mut has_errors = false;
     let errors = ast.walk_preorder_with_parent()
         .filter_map(|(p, n)| {
@@ -500,13 +516,13 @@ pub fn report_parse_errors(ui: &dyn DiagnosticHandler, file: &Arc<SourceFile>, a
         });
     for (parent, err) in errors {
         if let Some(open) = find_unclosed_delimiter(parent, err) {
-            ui.report(Diagnostic::UnclosedDelimiter {
+            dcx.report(Diagnostic::UnclosedDelimiter {
                 span: Span::new(file, err.span),
                 open: Span::new(file, open),
                 expected: err.expected
             });
         } else {
-            ui.report(Diagnostic::ParseError {
+            dcx.report(Diagnostic::ParseError {
                 span: Span::new(file, err.span),
                 expected: err.expected
             });
@@ -514,24 +530,4 @@ pub fn report_parse_errors(ui: &dyn DiagnosticHandler, file: &Arc<SourceFile>, a
         has_errors = true;
     }
     has_errors
-}
-
-/// Implementation of DiagnosticHandler that simply collects errors in a Vec
-pub struct Collector {
-    diagnostics: RefCell<Vec<Diagnostic>>
-}
-
-impl Collector {
-    pub fn new() -> Self { Self { diagnostics: RefCell::new(Vec::new()) } }
-
-    pub fn diagnostics(self) -> Vec<Diagnostic> {
-        self.diagnostics.into_inner()
-    }
-}
-
-impl DiagnosticHandler for Collector {
-    fn report(&self, error: Diagnostic) -> ErrorReported {
-        self.diagnostics.borrow_mut().push(error);
-        ErrorReported::error_reported()
-    }
 }

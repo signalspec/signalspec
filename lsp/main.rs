@@ -3,7 +3,7 @@ use crossbeam_channel::Sender;
 
 use lsp_server::{ Connection, Message };
 use lsp_types::{ ServerCapabilities, InitializeParams, TextDocumentSyncCapability, TextDocumentSyncOptions, TextDocumentSyncKind, OneOf, Url };
-use signalspec::{ SourceFile, syntax::FilePos, diagnostic::Span, DiagnosticHandler };
+use signalspec::{ SourceFile, syntax::FilePos, diagnostic::Span };
 
 mod dispatch;
 use dispatch::DispatchNotification;
@@ -130,10 +130,7 @@ impl LspState {
     fn document_modified(&mut self, uri: Url) {
         let doc = self.open_documents.get(&uri).unwrap();
 
-        let collector = signalspec::diagnostic::Collector::new();
-        collector.report_all(doc.file.errors.clone());
-
-        let diagnostics = collector.diagnostics().into_iter().map(|d| {
+        let diagnostics = doc.file.diagnostics().into_iter().map(|d| {
             let labels = d.labels();
             let primary_label = labels.first().unwrap();
             lsp_types::Diagnostic {

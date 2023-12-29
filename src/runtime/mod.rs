@@ -12,7 +12,8 @@ pub use self::test_runner::run as run_tests;
 pub use self::test_runner::run_file as run_tests_in_file;
 pub(crate) use self::primitives::{ PrimitiveProcess, instantiate_primitive };
 use crate::core::ShapeMode;
-use crate::diagnostic::{DiagnosticHandler, Collector};
+use crate::diagnostic::DiagnosticContext;
+use crate::diagnostic::Diagnostics;
 use crate::{ Scope, ShapeMsg };
 use crate::syntax::{ SourceFile, parse_process, ast };
 pub use channel::{ Channel, ChannelMessage };
@@ -54,16 +55,9 @@ impl<'a> Handle<'a> {
         self.shape.as_ref()
     }
 
-    pub fn compile_run<'x: 'a>(&'x mut self, ui: &dyn DiagnosticHandler, index: &Index, scope: &Scope, process: &ast::Process) -> Result<Handle<'x>, ()> {
+    pub fn compile_run<'x: 'a>(&'x mut self, index: &Index, scope: &Scope, process: &ast::Process) -> Result<Handle<'x>, Diagnostics> {
         let shape = self.shape.as_ref().expect("no shape");
-        let errors = Collector::new();
-        let program = compile_process(&errors, index, scope, shape.clone(), process);
-
-        let errors = errors.diagnostics();
-        if !errors.is_empty() {
-            ui.report_all(errors);
-            return Err(())
-        }
+        let program = compile_process(index, scope, shape.clone(), process)?;
 
         let compiled = Arc::new(compile::compile(&program));
         let channels_hi = program.shape_up.as_ref().map_or(SeqChannels::null(), SeqChannels::for_shape);
@@ -71,14 +65,19 @@ impl<'a> Handle<'a> {
         Ok(Handle { shape: program.shape_up, channels: channels_hi, parent: Some(self), future: Some(future) })
     }
 
-    pub fn parse_compile_run<'x: 'a>(&'x mut self, ui: &dyn DiagnosticHandler, index: &Index, call: &str) -> Result<Handle<'x>, ()> {
+    pub fn parse_compile_run<'x: 'a>(&'x mut self, index: &Index, call: &str) -> Result<Handle<'x>, Diagnostics> {
         let file = Arc::new(SourceFile::new("<process>".into(),  call.into()));
         let scope = Scope::new(file.clone());
+
+        let mut dcx = DiagnosticContext::new();
         let ast = parse_process(file.source()).expect("parser failed");
-        if crate::diagnostic::report_parse_errors(ui, &file, &ast) {
-            return Err(())
+        crate::diagnostic::report_parse_errors(&mut dcx, &file, &ast);
+        
+        if dcx.has_errors() {
+            return Err(dcx.diagnostics());
         }
-        self.compile_run(ui, index, &scope, &ast)
+
+        self.compile_run(index, &scope, &ast)
     }
 
     fn poll(&mut self, cx: &mut std::task::Context) -> Poll<Result<(), ()>> {

@@ -3,12 +3,13 @@ use std::sync::Arc;
 use std::fs;
 use std::path::Path;
 
-use crate::{DiagnosticHandler,  Handle, ChannelMessage };
+use crate::diagnostic::Diagnostics;
+use crate::{ Handle, ChannelMessage, DiagnosticContext };
 use crate::runtime::channel::item_to_msgs;
 use crate::syntax::{ ast, SourceFile };
 use crate::core::{ Index, FileScope, rexpr, rexpr_tup };
 
-pub fn run(ui: &dyn DiagnosticHandler, index: &Index, fname: &Path) -> bool {
+pub fn run(show_diagnostics: &dyn Fn(Diagnostics), index: &Index, fname: &Path) -> bool {
     let fname = Path::new(fname);
     match fs::metadata(fname) {
         Ok(ref meta) if meta.is_file() => {
@@ -20,14 +21,14 @@ pub fn run(ui: &dyn DiagnosticHandler, index: &Index, fname: &Path) -> bool {
                     return false;
                 }
             };
-            run_file(ui, index, file, false)
+            run_file(show_diagnostics, index, file, false)
         },
         Ok(ref meta) if meta.is_dir() => {
             let mut success = true;
             for entry in fs::read_dir(fname).unwrap() {
                 let path = entry.unwrap().path();
                 if path.to_str().unwrap().ends_with(".signalspec") {
-                    success &= run(ui, index, &path);
+                    success &= run(show_diagnostics, index, &path);
                 }
             }
             success
@@ -39,13 +40,13 @@ pub fn run(ui: &dyn DiagnosticHandler, index: &Index, fname: &Path) -> bool {
     }
 }
 
-pub fn run_file(ui: &dyn DiagnosticHandler, index: &Index, file: Arc<SourceFile>, compile_only: bool) -> bool {
+pub fn run_file(show_diagnostics: &dyn Fn(Diagnostics), index: &Index, file: Arc<SourceFile>, compile_only: bool) -> bool {
     let mut index = index.clone();
 
     let module = index.parse_module(file);
 
-    if !module.errors.is_empty() {
-        ui.report_all(module.errors.clone());
+    if module.errors.has_errors() {
+        show_diagnostics(module.errors.diagnostics());
         return false;
     }
 
@@ -56,7 +57,7 @@ pub fn run_file(ui: &dyn DiagnosticHandler, index: &Index, file: Arc<SourceFile>
             if !compile_only {
                 print!("\tTest {} #{}:", def.name.name, count+1);
             }
-            let res = match run_test(ui, &index, &module, def, attr, compile_only) {
+            let res = match run_test(show_diagnostics, &index, &module, def, attr, compile_only) {
                 Ok(res) => res,
                 Err(msg) => {
                     println!(" ERR: {msg}");
@@ -122,7 +123,7 @@ struct TestResult {
     down: Option<TestState>
 }
 
-fn run_test(ui: &dyn DiagnosticHandler, index: &Index, file: &FileScope, def: &ast::Def, attr: &ast::Attribute, compile_only: bool) -> Result<TestResult, &'static str> {
+fn run_test(show_diagnostics: &dyn Fn(Diagnostics), index: &Index, file: &FileScope, def: &ast::Def, attr: &ast::Attribute, compile_only: bool) -> Result<TestResult, &'static str> {
     if def.bottom.name.name != "Seq" {
         return Err("Test def must use Seq");
     }
@@ -131,14 +132,16 @@ fn run_test(ui: &dyn DiagnosticHandler, index: &Index, file: &FileScope, def: &a
         return Err("Test def must not have parameters");
     }
 
+    let mut dcx = DiagnosticContext::new();
+
     let scope = file.scope();
 
     let seq_ty = match &def.bottom.param {
-        ast::Expr::Tup(t) if t.items.len() == 2 => rexpr(ui, &scope, &t.items[0]),
+        ast::Expr::Tup(t) if t.items.len() == 2 => rexpr(&mut dcx, &scope, &t.items[0]),
         _ => return Err("Seq takes two arguments"),
     };
 
-    let test_args = rexpr_tup(ui, &scope, &attr.args);
+    let test_args = rexpr_tup(&mut dcx, &scope, &attr.args);
     let test_args = test_args.as_tuple();
     let test_mode = test_args.first().and_then(|i| i.as_symbol());
     let test_data = test_args.get(1);
@@ -149,7 +152,13 @@ fn run_test(ui: &dyn DiagnosticHandler, index: &Index, file: &FileScope, def: &a
             return (None, TestState::CompileError);
         };
 
-        let Ok(h) = handle.compile_run(ui, index, &scope, &def.process) else { return (None, TestState::CompileError); };
+        let h = match handle.compile_run(index, &scope, &def.process) {
+            Ok(h) => h,
+            Err(d) => {
+                show_diagnostics(d);
+                return (None, TestState::CompileError); 
+            }
+        };
 
         if compile_only {
             return (None, TestState::CompileSuccess);
@@ -174,7 +183,13 @@ fn run_test(ui: &dyn DiagnosticHandler, index: &Index, file: &FileScope, def: &a
         };
         for m in messages { channel.send(m); }
         channel.set_closed(true);
-        let Ok(h) = handle.compile_run(ui, index, &scope, &def.process) else { return TestState::CompileError; };
+        let h = match handle.compile_run( index, &scope, &def.process) {
+            Ok(h) => h,
+            Err(d) => {
+                show_diagnostics(d);
+                return TestState::CompileError;
+            }
+        };
 
         if compile_only {
             return TestState::CompileSuccess;

@@ -1,6 +1,6 @@
-use signalspec::{self, SourceFile, Diagnostic, diagnostic::Collector, FileSpan, Label, Index};
+use signalspec::{self, SourceFile, Diagnostic, FileSpan, Label, Index};
 use env_logger;
-use std::{process, fs, path::Path, sync::Arc};
+use std::{process, fs, path::Path, sync::Arc, cell::RefCell};
 
 fn main() {
     env_logger::init();
@@ -26,14 +26,16 @@ fn check_file(fname: &Path) -> bool {
             return false;
         }
     };
-    let errors = Collector::new();
+
+    let errors = RefCell::new(Vec::new());
 
     let mut index = Index::new();
-    index.load(&errors, Path::new("tests/min-prelude.signalspec")).unwrap();
+    index.load(Path::new("tests/min-prelude.signalspec")).unwrap();
+    let index = index.validate().unwrap();
 
-    signalspec::runtime::run_tests_in_file(&errors, &index, file.clone(), true);
+    signalspec::runtime::run_tests_in_file(&|d| errors.borrow_mut().extend(d), &index, file.clone(), true);
 
-    check_errors(&file,&errors.diagnostics())
+    check_errors(&file, &errors.into_inner())
 }
 
 fn check_errors(f: &SourceFile, errors: &[Diagnostic]) -> bool {

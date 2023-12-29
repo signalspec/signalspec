@@ -6,7 +6,7 @@ use std::ops::Range;
 use indexmap::IndexSet;
 use num_traits::One;
 
-use crate::{DiagnosticHandler, Diagnostic, Value};
+use crate::{Diagnostic, Value, DiagnosticContext};
 use crate::diagnostic::{Span, ErrorReported};
 use crate::syntax::Number as Rational;
 use crate::tree::Tree;
@@ -243,8 +243,8 @@ impl Display for Type {
 pub struct IncompatibleTypes(Type, Type);
 
 impl IncompatibleTypes {
-    pub fn report_at(self, ctx: &dyn DiagnosticHandler, span: Span) -> ErrorReported {
-        ctx.report(Diagnostic::IncompatibleTypes { span, t1: self.0, t2: self.1 })
+    pub fn report_at(self, dcx: &mut DiagnosticContext, span: Span) -> ErrorReported {
+        dcx.report(Diagnostic::IncompatibleTypes { span, t1: self.0, t2: self.1 })
     }
 }
 

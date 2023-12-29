@@ -6,7 +6,7 @@ use crate::{
         resolve::action::ValueSinkId,
         ConcatElem, Expr, ExprDn, Func, FunctionDef, Item, LeafItem, Predicate, Scope, data::{NumberType, NumberTypeError},
     },
-    diagnostic::{Diagnostic, DiagnosticHandler, ErrorReported, Span},
+    diagnostic::{Diagnostic, ErrorReported, Span, DiagnosticContext},
     syntax::{
         ast::{self, AstNode, BinOp},
         Number,
@@ -15,13 +15,13 @@ use crate::{
     FileSpan, SourceFile, Type, Value,
 };
 
-pub fn value(ctx: &dyn DiagnosticHandler, scope: &Scope, e: &ast::Expr) -> Result<Expr, ErrorReported> {
-    match rexpr(ctx, scope, e) {
+pub fn value(dcx: &mut DiagnosticContext, scope: &Scope, e: &ast::Expr) -> Result<Expr, ErrorReported> {
+    match rexpr(dcx, scope, e) {
         Item::Leaf(LeafItem::Value(v)) => Ok(v),
         Item::Leaf(LeafItem::Invalid(r)) => Err(r),
-        other => Err(ctx.report(
+        other => Err(dcx.report(
             Diagnostic::ExpectedValue {
-                span: Span::new(&scope.file, e.span()),
+                span: scope.span(e.span()),
                 found: other.to_string()
             }
         )),
@@ -41,8 +41,8 @@ impl TryFromConstant for Number {
     const EXPECTED_MSG: &'static str = "number";
 }
 
-pub fn constant<'a, T: TryFromConstant>(ctx: &dyn DiagnosticHandler, scope: &Scope, ast: &ast::Expr) -> Result<T, ErrorReported> {
-    let item = rexpr(ctx, scope, ast);
+pub fn constant<'a, T: TryFromConstant>(dcx: &mut DiagnosticContext, scope: &Scope, ast: &ast::Expr) -> Result<T, ErrorReported> {
+    let item = rexpr(dcx, scope, ast);
     let found = item.to_string();
 
     match item {
@@ -57,21 +57,21 @@ pub fn constant<'a, T: TryFromConstant>(ctx: &dyn DiagnosticHandler, scope: &Sco
         _ => {}
     }
 
-    Err(ctx.report(
+    Err(dcx.report(
         Diagnostic::ExpectedConst {
-            span: Span::new(&scope.file, ast.span()),
+            span: scope.span(ast.span()),
             found,
             expected: T::EXPECTED_MSG.to_string(),
         }
     ))
 }
 
-pub fn type_tree(ctx: &dyn DiagnosticHandler, scope: &Scope, e: &ast::Expr) -> Result<Tree<Type>, ErrorReported> {
-    match rexpr(ctx, scope, e) {
+pub fn type_tree(dcx: &mut DiagnosticContext, scope: &Scope, e: &ast::Expr) -> Result<Tree<Type>, ErrorReported> {
+    match rexpr(dcx, scope, e) {
         Item::Leaf(LeafItem::Invalid(r)) => Err(r),
         i => i.as_type_tree().ok_or_else(|| {
-            ctx.report(Diagnostic::ExpectedType {
-                span: Span::new(&scope.file, e.span()),
+            dcx.report(Diagnostic::ExpectedType {
+                span: scope.span(e.span()),
                 found: i.to_string()
             })
         })
@@ -91,8 +91,8 @@ pub fn collect_or_err<T, C: FromIterator<T>>(iter: impl Iterator<Item=Result<T, 
     if let Some(e) = error { Err(e) } else { Ok(result) }
 }
 
-pub fn rexpr_tup(ctx: &dyn DiagnosticHandler, scope: &Scope, node: &ast::ExprTup) -> Item {
-    let values: Vec<Item> = node.items.iter().map(|i| rexpr(ctx, scope, i)).collect();
+pub fn rexpr_tup(dcx: &mut DiagnosticContext, scope: &Scope, node: &ast::ExprTup) -> Item {
+    let values: Vec<Item> = node.items.iter().map(|i| rexpr(dcx, scope, i)).collect();
     if values.len() == 1 {
         values.into_iter().next().unwrap()
     } else {
@@ -110,18 +110,18 @@ macro_rules! try_item {
 }
 
 /// Resolve an expression as used in an argument or right hand side of an assignment
-pub fn rexpr(ctx: &dyn DiagnosticHandler, scope: &Scope, e: &ast::Expr) -> Item {
+pub fn rexpr(dcx: &mut DiagnosticContext, scope: &Scope, e: &ast::Expr) -> Item {
     match e {
         ast::Expr::Var(ref name) => {
             if let Some(s) = scope.get(&name.name) { s } else {
-                ctx.report(Diagnostic::UndefinedVariable {
-                    span: Span::new(&scope.file, name.span),
+                dcx.report(Diagnostic::UndefinedVariable {
+                    span: scope.span(name.span),
                     name: name.name.clone()
                 }).into()
             }
         }
 
-        ast::Expr::Tup(ref node) => rexpr_tup(ctx, scope, node),
+        ast::Expr::Tup(ref node) => rexpr_tup(dcx, scope, node),
 
         ast::Expr::String(ref node) => Item::Leaf(LeafItem::String(node.value.clone())),
 
@@ -135,44 +135,44 @@ pub fn rexpr(ctx: &dyn DiagnosticHandler, scope: &Scope, e: &ast::Expr) -> Item 
         }
 
         ast::Expr::Call(ref node) => {
-            let func = rexpr(ctx, scope, &node.func);
-            let arg = rexpr_tup(ctx, scope, &node.arg);
-            resolve_function_call(ctx, || Span::new(&scope.file, node.span), func, arg)
+            let func = rexpr(dcx, scope, &node.func);
+            let arg = rexpr_tup(dcx, scope, &node.arg);
+            resolve_function_call(dcx, || scope.span(node.span), func, arg)
         }
 
         ast::Expr::Value(ref node) => Expr::Const(Value::from_literal(&node.value)).into(),
         ast::Expr::Ignore(_) => Expr::ignored().into(),
 
-        ast::Expr::Typed(ref node) => resolve_expr_typed(ctx, scope, node),
-        ast::Expr::Flip(ref node) => resolve_expr_flip(ctx, scope, node),
-        ast::Expr::Range(ref node) => resolve_expr_range(ctx, scope, node),
-        ast::Expr::Union(ref node) => resolve_expr_union(ctx, scope, node),
-        ast::Expr::Choose(ref node) => resolve_expr_choose(ctx, scope, node),
-        ast::Expr::Concat(ref node) => resolve_expr_concat(ctx, scope, node),
-        ast::Expr::Bin(ref node) => resolve_expr_binary(ctx, scope, node),
+        ast::Expr::Typed(ref node) => resolve_expr_typed(dcx, scope, node),
+        ast::Expr::Flip(ref node) => resolve_expr_flip(dcx, scope, node),
+        ast::Expr::Range(ref node) => resolve_expr_range(dcx, scope, node),
+        ast::Expr::Union(ref node) => resolve_expr_union(dcx, scope, node),
+        ast::Expr::Choose(ref node) => resolve_expr_choose(dcx, scope, node),
+        ast::Expr::Concat(ref node) => resolve_expr_concat(dcx, scope, node),
+        ast::Expr::Bin(ref node) => resolve_expr_binary(dcx, scope, node),
 
         ast::Expr::Error(e) => Item::Leaf(LeafItem::Invalid(ErrorReported::from_ast(e))),
     }
 }
 
-fn resolve_expr_flip(ctx: &dyn DiagnosticHandler, scope: &Scope, node: &ast::ExprFlip) -> Item {
-    let dn = node.dn.as_ref().map_or(Ok(Expr::ignored()),  |dn| value(ctx, scope, dn));
-    let up = node.up.as_ref().map_or(Ok(Expr::ignored()),  |up| value(ctx, scope, up));
+fn resolve_expr_flip(dcx: &mut DiagnosticContext, scope: &Scope, node: &ast::ExprFlip) -> Item {
+    let dn = node.dn.as_ref().map_or(Ok(Expr::ignored()),  |dn| value(dcx, scope, dn));
+    let up = node.up.as_ref().map_or(Ok(Expr::ignored()),  |up| value(dcx, scope, up));
 
     let dn = try_item!(dn);
     let up = try_item!(up);
 
     let ty = Type::union(dn.get_type(), up.get_type())
-        .map_err(|err| err.report_at(ctx, Span::new(&scope.file, node.span)));
+        .map_err(|err| err.report_at(dcx, scope.span(node.span)));
     let ty = try_item!(ty);
 
     Expr::Expr(ty, ExprKind::Flip(Box::new(dn.inner()), Box::new(up.inner()))).into()
 }
 
-fn resolve_expr_range(ctx: &dyn DiagnosticHandler, scope: &Scope, node: &ast::ExprRange) -> Item {
-    let min = constant::<Number>(ctx, scope, &node.lo);
-    let max = constant::<Number>(ctx, scope, &node.hi);
-    let step = node.step.as_ref().map(|s| constant::<Number>(ctx, scope, s)).transpose();
+fn resolve_expr_range(dcx: &mut DiagnosticContext, scope: &Scope, node: &ast::ExprRange) -> Item {
+    let min = constant::<Number>(dcx, scope, &node.lo);
+    let max = constant::<Number>(dcx, scope, &node.hi);
+    let step = node.step.as_ref().map(|s| constant::<Number>(dcx, scope, s)).transpose();
 
     let min = try_item!(min);
     let max = try_item!(max);
@@ -180,71 +180,71 @@ fn resolve_expr_range(ctx: &dyn DiagnosticHandler, scope: &Scope, node: &ast::Ex
 
     let nt = match NumberType::from_scaled(min, max, step) {
         Ok(t) => t,
-        Err(NumberTypeError::BoundsNotMultipleOfStep) => return ctx.report(
+        Err(NumberTypeError::BoundsNotMultipleOfStep) => return dcx.report(
             Diagnostic::RangeNotMultipleOfStep {
-                min, min_span: Span::new(&scope.file, node.lo.span()),
-                max, max_span: Span::new(&scope.file, node.hi.span()),
+                min, min_span: scope.span(node.lo.span()),
+                max, max_span: scope.span(node.hi.span()),
                 step
             }
         ).into(),
-        Err(NumberTypeError::Order) => return ctx.report(
+        Err(NumberTypeError::Order) => return dcx.report(
             Diagnostic::RangeOrder {
-                min, min_span: Span::new(&scope.file, node.lo.span()),
-                max, max_span: Span::new(&scope.file, node.hi.span()),
+                min, min_span: scope.span(node.lo.span()),
+                max, max_span: scope.span(node.hi.span()),
             }).into(),
-        Err(NumberTypeError::StepIsZero) => return ctx.report(
+        Err(NumberTypeError::StepIsZero) => return dcx.report(
             Diagnostic::RangeStepZero {
-                step, step_span: Span::new(&scope.file, node.step.as_ref().unwrap().span()),
+                step, step_span: scope.span(node.step.as_ref().unwrap().span()),
             }).into(),
     };
 
     Expr::Expr(Type::Number(nt), ExprKind::Range(min, max)).into()
 }
 
-fn resolve_expr_typed(ctx: &dyn DiagnosticHandler, scope: &Scope, node: &ast::ExprTyped) -> Item {
-    let expr = value(ctx, scope, &node.expr);
-    let bound_expr = value(ctx, scope, &node.ty);
+fn resolve_expr_typed(dcx: &mut DiagnosticContext, scope: &Scope, node: &ast::ExprTyped) -> Item {
+    let expr = value(dcx, scope, &node.expr);
+    let bound_expr = value(dcx, scope, &node.ty);
 
     let expr = try_item!(expr);
     let bound = try_item!(bound_expr).get_type();
 
-    let span = || Span::new(&scope.file, node.span);
+    let span = || scope.span(node.span);
 
     match expr {
         Expr::Const(c) => {
             if bound.test(&c) {
                 Expr::Const(c).into()
             } else {
-                ctx.report(Diagnostic::TypeConstraint { span: span(), found: c.get_type(), bound }).into()
+                dcx.report(Diagnostic::TypeConstraint { span: span(), found: c.get_type(), bound }).into()
             }
         },
         Expr::Expr(t, e) => {
             match t.bound(bound) {
                 Ok(new_t) => Expr::Expr(new_t, e).into(),
                 Err((t, bound)) =>
-                    ctx.report(Diagnostic::TypeConstraint { span: span(), found: t, bound }).into(),
+                    dcx.report(Diagnostic::TypeConstraint { span: span(), found: t, bound }).into(),
             }
         },
     }
 }
 
-fn resolve_expr_union(ctx: &dyn DiagnosticHandler, scope: &Scope, node: &ast::ExprUnion) -> Item {
+fn resolve_expr_union(dcx: &mut DiagnosticContext, scope: &Scope, node: &ast::ExprUnion) -> Item {
     let opts: Vec<_> = try_item!(
-        collect_or_err(node.items.iter().map(|i| value(ctx, scope, i)))
+        collect_or_err(node.items.iter().map(|i| value(dcx, scope, i)))
     );
 
     let ty = Type::union_iter(opts.iter().map(|x| x.get_type()));
-    let ty = try_item!(ty.map_err(|err| err.report_at(ctx, Span::new(&scope.file, node.span))));
+    let ty = try_item!(ty.map_err(|err| err.report_at(dcx, scope.span(node.span))));
 
     Expr::Expr(ty, ExprKind::Union(opts.into_iter().map(|x| x.inner()).collect())).into()
 }
 
-fn resolve_expr_choose(ctx: &dyn DiagnosticHandler, scope: &Scope, node: &ast::ExprChoose) -> Item {
-    let e = value(ctx, scope, &node.e);
+fn resolve_expr_choose(dcx: &mut DiagnosticContext, scope: &Scope, node: &ast::ExprChoose) -> Item {
+    let e = value(dcx, scope, &node.e);
     let pairs = collect_or_err(
         node.choices.iter().map(|&(ref le, ref re)| {
-            let l = constant::<Value>(ctx, scope, le);
-            let r = constant::<Value>(ctx, scope, re);
+            let l = constant::<Value>(dcx, scope, le);
+            let r = constant::<Value>(dcx, scope, re);
             Ok((l?, r?))
         }
     ));
@@ -252,18 +252,18 @@ fn resolve_expr_choose(ctx: &dyn DiagnosticHandler, scope: &Scope, node: &ast::E
     let e = try_item!(e);
     let pairs: Vec<_> = try_item!(pairs);
 
-    let span = || Span::new(&scope.file, node.span);
+    let span = || scope.span(node.span);
 
     let lt = Type::union_iter(pairs.iter().map(|x| x.0.get_type()));
     let rt = Type::union_iter(pairs.iter().map(|x| x.1.get_type()));
 
-    let lt = try_item!(lt.map_err(|err| err.report_at(ctx, span())));
-    let rt = try_item!(rt.map_err(|err| err.report_at(ctx, span())));
+    let lt = try_item!(lt.map_err(|err| err.report_at(dcx, span())));
+    let rt = try_item!(rt.map_err(|err| err.report_at(dcx, span())));
 
     match e {
         Expr::Const(c) => {
             let Some(v) = eval_choose(&c, &pairs) else {
-                return ctx.report(crate::Diagnostic::ChooseNotCovered { span: span(), found: c.get_type() }).into();
+                return dcx.report(crate::Diagnostic::ChooseNotCovered { span: span(), found: c.get_type() }).into();
             };
 
             Expr::Const(v)
@@ -271,7 +271,7 @@ fn resolve_expr_choose(ctx: &dyn DiagnosticHandler, scope: &Scope, node: &ast::E
         Expr::Expr(ty, e) => {
             //TODO: doesn't check coverage of full number range
             if !(ty.is_subtype(&lt) && lt.is_subtype(&ty)) {
-                return ctx.report(crate::Diagnostic::ChooseNotCovered { span: span(), found: ty }).into();
+                return dcx.report(crate::Diagnostic::ChooseNotCovered { span: span(), found: ty }).into();
             }
 
             Expr::Expr(rt, ExprKind::Choose(Box::new(e), pairs))
@@ -279,7 +279,7 @@ fn resolve_expr_choose(ctx: &dyn DiagnosticHandler, scope: &Scope, node: &ast::E
     }.into()
 }
 
-fn resolve_expr_concat(ctx: &dyn DiagnosticHandler, scope: &Scope, node: &ast::ExprConcat) -> Item {
+fn resolve_expr_concat(dcx: &mut DiagnosticContext, scope: &Scope, node: &ast::ExprConcat) -> Item {
     enum ConcatBuilder {
         Const(Vec<Value>),
         Expr(Vec<ConcatElem<ExprKind>>),
@@ -319,14 +319,14 @@ fn resolve_expr_concat(ctx: &dyn DiagnosticHandler, scope: &Scope, node: &ast::E
     let mut elems = ConcatBuilder::Const(Vec::new());
 
     let it = node.elems.iter().map(|&(width, ref e)| {
-        let elem = value(ctx, scope, e)?;
-        let span = || Span::new(&scope.file, node.span);
+        let elem = value(dcx, scope, e)?;
+        let span = || scope.span(node.span);
 
         if let Some(w) = width {
             match elem {
                 Expr::Const(Value::Vector(vs)) if w as usize == vs.len() => {
                     for c in vs {
-                        elem_ty.union_with(c.get_type()).map_err(|err| err.report_at(ctx, span()))?;
+                        elem_ty.union_with(c.get_type()).map_err(|err| err.report_at(dcx, span()))?;
                         elems.push_const(c);
                         len += 1;
                     }
@@ -334,7 +334,7 @@ fn resolve_expr_concat(ctx: &dyn DiagnosticHandler, scope: &Scope, node: &ast::E
 
                 Expr::Expr(Type::Vector(w1, ty), e) if w == w1 => {
                     len += w;
-                    elem_ty.union_with(*ty).map_err(|err| err.report_at(ctx, span()))?;
+                    elem_ty.union_with(*ty).map_err(|err| err.report_at(dcx, span()))?;
 
                     match e {
                         // Flatten nested slice
@@ -352,7 +352,7 @@ fn resolve_expr_concat(ctx: &dyn DiagnosticHandler, scope: &Scope, node: &ast::E
                     elems.push(ConcatElem::Slice(e, w));
                 }
 
-                other => Err(ctx.report(Diagnostic::ExpectedVector {
+                other => Err(dcx.report(Diagnostic::ExpectedVector {
                     span: span(),
                     found: other.get_type(),
                 }))?
@@ -361,12 +361,12 @@ fn resolve_expr_concat(ctx: &dyn DiagnosticHandler, scope: &Scope, node: &ast::E
         } else {
             match elem {
                 Expr::Const(c) => {
-                    elem_ty.union_with(c.get_type()).map_err(|err| err.report_at(ctx, span()))?;
+                    elem_ty.union_with(c.get_type()).map_err(|err| err.report_at(dcx, span()))?;
                     len += 1;
                     elems.push_const(c);
                 }
                 Expr::Expr(ty, e) => {
-                    elem_ty.union_with(ty).map_err(|err| err.report_at(ctx, span()))?;
+                    elem_ty.union_with(ty).map_err(|err| err.report_at(dcx, span()))?;
                     len += 1;
                     elems.push(ConcatElem::Elem(e))
                 }
@@ -385,14 +385,14 @@ fn resolve_expr_concat(ctx: &dyn DiagnosticHandler, scope: &Scope, node: &ast::E
     }.into()
 }
 
-fn resolve_expr_binary(ctx: &dyn DiagnosticHandler, scope: &Scope, node: &ast::ExprBin) -> Item {
-    let lhs = value(ctx, scope, &node.l);
-    let rhs = value(ctx, scope, &node.r);
+fn resolve_expr_binary(dcx: &mut DiagnosticContext, scope: &Scope, node: &ast::ExprBin) -> Item {
+    let lhs = value(dcx, scope, &node.l);
+    let rhs = value(dcx, scope, &node.r);
 
     let lhs = try_item!(lhs);
     let rhs = try_item!(rhs);
 
-    let span = || Span::new(&scope.file, node.span);
+    let span = || scope.span(node.span);
 
     // Swap constant operand to the right, or constant-fold and return
     let (expr, expr_ty, expr_span, op, val, val_span) = match (lhs, rhs) {
@@ -400,18 +400,18 @@ fn resolve_expr_binary(ctx: &dyn DiagnosticHandler, scope: &Scope, node: &ast::E
             if let Some(v) = eval_binary(l.clone(), node.op, r.clone()) {
                 return Expr::Const(v).into()
             } else {
-                return ctx.report(
+                return dcx.report(
                 Diagnostic::BinaryInvalidType {
-                    span1: Span::new(&scope.file, node.l.span()),
+                    span1: scope.span(node.l.span()),
                     ty1: l.get_type(),
-                    span2: Span::new(&scope.file, node.r.span()),
+                    span2: scope.span(node.r.span()),
                     ty2: r.get_type(),
                  }
                 ).into()
             }
         }
         (Expr::Expr(..), Expr::Expr(..)) => {
-            return ctx.report(Diagnostic::BinaryOneSideMustBeConst { span: span() }).into();
+            return dcx.report(Diagnostic::BinaryOneSideMustBeConst { span: span() }).into();
         }
         (Expr::Expr(l_ty, l), Expr::Const(r)) => (l, l_ty, node.l.span(), node.op, r, node.r.span()),
         (Expr::Const(l), Expr::Expr(r_ty, r)) => (r, r_ty, node.r.span(), node.op.swap(), l, node.l.span()),
@@ -419,12 +419,12 @@ fn resolve_expr_binary(ctx: &dyn DiagnosticHandler, scope: &Scope, node: &ast::E
 
     let ty = match (expr_ty, &val) {
         (Type::Number(nt), Value::Number(c)) => {
-            let check_scale = |n: Option<NumberType>| {
+            let mut check_scale = |n: Option<NumberType>| {
                 n.ok_or_else(|| {
-                    ctx.report(Diagnostic::OperandNotMultipleOfScale {
-                        const_span: Span::new(&scope.file, val_span),
+                    dcx.report(Diagnostic::OperandNotMultipleOfScale {
+                        const_span: scope.span(val_span),
                         const_val: *c,
-                        var_span: Span::new(&scope.file, expr_span),
+                        var_span: scope.span(expr_span),
                         var_scale: nt.scale(),
                     })
                 })
@@ -437,8 +437,8 @@ fn resolve_expr_binary(ctx: &dyn DiagnosticHandler, scope: &Scope, node: &ast::E
 
                 BinOp::Mul => nt.mul(*c),
                 BinOp::Div => nt.mul(c.recip()),
-                BinOp::DivSwap => return ctx.report(Diagnostic::DivisionMustBeConst {
-                    span: Span::new(&scope.file, expr_span),
+                BinOp::DivSwap => return dcx.report(Diagnostic::DivisionMustBeConst {
+                    span: scope.span(expr_span),
                 }).into(),
             })
         }
@@ -447,11 +447,11 @@ fn resolve_expr_binary(ctx: &dyn DiagnosticHandler, scope: &Scope, node: &ast::E
         }
         (Type::Complex, Value::Number(..)) => Type::Complex,
         (Type::Number(..), Value::Complex(..)) => Type::Complex,
-        (expr_ty, _) => return ctx.report(
+        (expr_ty, _) => return dcx.report(
             Diagnostic::BinaryInvalidType {
-                span1: Span::new(&scope.file, expr_span),
+                span1: scope.span(expr_span),
                 ty1: expr_ty,
-                span2: Span::new(&scope.file, val_span),
+                span2: scope.span(val_span),
                 ty2: val.get_type(),
              }
         ).into()
@@ -460,24 +460,24 @@ fn resolve_expr_binary(ctx: &dyn DiagnosticHandler, scope: &Scope, node: &ast::E
     Expr::Expr(ty, ExprKind::BinaryConst(Box::new(expr), op, val)).into()
 }
 
-fn resolve_function_call(ctx: &dyn DiagnosticHandler, call_site_span: impl FnOnce() -> Span, func: Item, arg: Item) -> Item {
+fn resolve_function_call(dcx: &mut DiagnosticContext, call_site_span: impl FnOnce() -> Span, func: Item, arg: Item) -> Item {
     match func {
         Item::Leaf(LeafItem::Func(func_def)) => {
             match *func_def {
                 FunctionDef::Code(ref func) => {
                     let mut inner_scope = Scope { file: func.file.clone(), names: func.names.clone() };
-                    if let Err(_) = lexpr(ctx, &mut inner_scope, &func.args, &arg) {
+                    if let Err(_) = lexpr(dcx, &mut inner_scope, &func.args, &arg) {
                         // TODO: should be chained to inner error
-                        return ctx.report(Diagnostic::FunctionArgumentMismatch {
+                        return dcx.report(Diagnostic::FunctionArgumentMismatch {
                             span: call_site_span(),
                             def: Span::new(&func.file, func.args.span()),
                         }).into()
                     }
-                    rexpr(ctx, &inner_scope, &func.body)
+                    rexpr(dcx, &inner_scope, &func.body)
                 }
                 FunctionDef::Primitive(primitive) => {
                     primitive(arg).unwrap_or_else(|msg| {
-                        ctx.report(Diagnostic::ErrorInPrimitiveFunction {
+                        dcx.report(Diagnostic::ErrorInPrimitiveFunction {
                             span: call_site_span(),
                             msg: msg.into(),
                         }).into()
@@ -486,7 +486,7 @@ fn resolve_function_call(ctx: &dyn DiagnosticHandler, call_site_span: impl FnOnc
             }
         }
         e @ Item::Leaf(LeafItem::Invalid(_)) => e,
-        _ => ctx.report(Diagnostic::NotAFunction {
+        _ => dcx.report(Diagnostic::NotAFunction {
             span: call_site_span(),
             found: format!("{}", func)
         }).into()
@@ -494,11 +494,11 @@ fn resolve_function_call(ctx: &dyn DiagnosticHandler, call_site_span: impl FnOnc
 }
 
 pub fn zip_ast<T: Display>(
-    ctx: &dyn DiagnosticHandler,
+    dcx: &mut DiagnosticContext,
     file: &Arc<SourceFile>,
     ast: &ast::Expr,
     tree: &Tree<T>,
-    f: &mut impl FnMut(&ast::Expr, &Tree<T>) -> Result<(), ErrorReported>
+    f: &mut impl FnMut(&mut DiagnosticContext, &ast::Expr, &Tree<T>) -> Result<(), ErrorReported>
 ) -> Result<(), ErrorReported> {
     match (&ast, tree) {
         (ast::Expr::Tup(tup_ast), Tree::Tuple(t)) => {
@@ -509,28 +509,28 @@ pub fn zip_ast<T: Display>(
                 match (a.next(), t.next()) {
                     (None, None) => break,
                     (Some(ai), Some(ti)) => {
-                        res = zip_ast(ctx,  file, ai, ti, f).and(res);
+                        res = zip_ast(dcx,  file, ai, ti, f).and(res);
                     }
                     (Some(ai), None) => {
                         let (n, span) = a.fold((1, ai.span()), |(n, sp), e| (n + 1, sp.to(e.span())));
-                        return Err(ctx.report(Diagnostic::TupleTooFewPositional { span: Span::new(file, span), n }));
+                        return Err(dcx.report(Diagnostic::TupleTooFewPositional { span: Span::new(file, span), n }));
                     }
                     (None, Some(_)) => {
                         let span = tup_ast.close.as_ref().map(|a| a.span).unwrap_or(tup_ast.span);
                         let n = t.count() + 1;
-                        return Err(ctx.report(Diagnostic::TupleTooManyPositional { span: Span::new(file, span), n }));
+                        return Err(dcx.report(Diagnostic::TupleTooManyPositional { span: Span::new(file, span), n }));
                     }
                 }
             }
             res
         }
         (ast::Expr::Tup(tup_ast), t) if tup_ast.items.len() != 1 => {
-            Err(ctx.report(Diagnostic::ExpectedTuple {
+            Err(dcx.report(Diagnostic::ExpectedTuple {
                 span: Span::new(file, tup_ast.span),
                 found: t.to_string()
             }))
         }
-        (_, t) => f(ast, t)
+        (_, t) => f(dcx, ast, t)
     }
 }
 
@@ -541,7 +541,7 @@ pub fn zip_ast<T: Display>(
 /// tested against the predicates here. It's up to the caller to test it with the
 // returned predicate at runtime before entering the scope.
 pub fn lvalue_dn(
-    ctx: &dyn DiagnosticHandler,
+    dcx: &mut DiagnosticContext,
     scope: &mut Scope,
     pat: &ast::Expr,
     rhs: Expr
@@ -559,8 +559,8 @@ pub fn lvalue_dn(
 
             let r_ty = rhs.get_type();
             if !r_ty.test(&val) {
-                ctx.report(Diagnostic::TypeConstraint {
-                    span: Span::new(&scope.file, lit.span),
+                dcx.report(Diagnostic::TypeConstraint {
+                    span: scope.span(lit.span),
                     found: val.get_type(),
                     bound: r_ty
                 });
@@ -575,8 +575,8 @@ pub fn lvalue_dn(
 
             let elem_ty = match rhs.get_type() {
                 Type::Vector(ty_w, elem_ty) if pat_w == ty_w => *elem_ty,
-                expected_ty => return Err(ctx.report(Diagnostic::PatternExpectedVector {
-                    span: Span::new(&scope.file, node.span),
+                expected_ty => return Err(dcx.report(Diagnostic::PatternExpectedVector {
+                    span: scope.span(node.span),
                     found_width: pat_w,
                     expected: expected_ty,
                 }))
@@ -599,7 +599,7 @@ pub fn lvalue_dn(
                     );
 
                     // Flatten nested vector predicates
-                    match lvalue_dn(ctx, scope, e, ri) {
+                    match lvalue_dn(dcx, scope, e, ri) {
                         Ok(Predicate::Vector(inner)) => parts.extend(inner),
                         Ok(p) => parts.push(ConcatElem::Slice(p, width)),
                         Err(r) => { parts.push(ConcatElem::Slice(Predicate::Any, width)); err = Some(r) }
@@ -612,7 +612,7 @@ pub fn lvalue_dn(
                         ExprKind::VarDn(ExprDn::Index(Box::new(dn.clone()), i))
                     );
 
-                    match lvalue_dn(ctx, scope, e, ri) {
+                    match lvalue_dn(dcx, scope, e, ri) {
                         Ok(p) => parts.push(ConcatElem::Elem(p)),
                         Err(r) => { parts.push(ConcatElem::Elem(Predicate::Any)); err = Some(r) }
                     }
@@ -624,8 +624,8 @@ pub fn lvalue_dn(
             if let Some(r) = err { Err(r) } else {Ok(Predicate::Vector(parts))  }
         }
 
-        pat => Err(ctx.report(Diagnostic::NotAllowedInPattern {
-            span: Span::new(&scope.file, pat.span())
+        pat => Err(dcx.report(Diagnostic::NotAllowedInPattern {
+            span: scope.span(pat.span())
         }))
     }
 }
@@ -642,7 +642,7 @@ pub enum LValueSrc {
 /// leaving the scope to produce the up-evaluated values, either by capturing an
 /// upvalue in the scope, or a constant from the pattern.
 pub fn lvalue_up(
-    ctx: &dyn DiagnosticHandler,
+    dcx: &mut DiagnosticContext,
     scope: &mut Scope,
     pat: &ast::Expr,
     ty: Type,
@@ -659,8 +659,8 @@ pub fn lvalue_up(
             let val = Value::from_literal(&lit.value);
 
             if !ty.test(&val) {
-                ctx.report(Diagnostic::TypeConstraint {
-                    span: Span::new(&scope.file, lit.span),
+                dcx.report(Diagnostic::TypeConstraint {
+                    span: scope.span(lit.span),
                     found: val.get_type(),
                     bound: ty
                 });
@@ -674,8 +674,8 @@ pub fn lvalue_up(
 
             let elem_ty = match ty {
                 Type::Vector(ty_w, elem_ty) if pat_w == ty_w => *elem_ty,
-                expected_ty => return Err(ctx.report(Diagnostic::PatternExpectedVector {
-                    span: Span::new(&scope.file, node.span),
+                expected_ty => return Err(dcx.report(Diagnostic::PatternExpectedVector {
+                    span: scope.span(node.span),
                     found_width: pat_w,
                     expected: expected_ty,
                 }))
@@ -685,9 +685,9 @@ pub fn lvalue_up(
                 .map(|&(width, ref e)| {
                     if let Some(width) = width {
                         let ty_inner = Type::Vector(width, Box::new(elem_ty.clone()));
-                        Ok(ConcatElem::Slice(lvalue_up(ctx, scope, e, ty_inner, add_value_sink)?, width))
+                        Ok(ConcatElem::Slice(lvalue_up(dcx, scope, e, ty_inner, add_value_sink)?, width))
                     } else {
-                        Ok(ConcatElem::Elem(lvalue_up(ctx, scope, e, elem_ty.clone(), add_value_sink)?))
+                        Ok(ConcatElem::Elem(lvalue_up(dcx, scope, e, elem_ty.clone(), add_value_sink)?))
                     }
                 })
             );
@@ -695,8 +695,8 @@ pub fn lvalue_up(
             Ok(LValueSrc::Concat(parts?))
         }
 
-        pat => Err(ctx.report(Diagnostic::NotAllowedInPattern {
-            span: Span::new(&scope.file, pat.span())
+        pat => Err(dcx.report(Diagnostic::NotAllowedInPattern {
+            span: scope.span(pat.span())
         }))
     }
 }
@@ -705,7 +705,7 @@ pub fn lvalue_up(
 /// 
 /// Bind variables from `pat` in `scope`, and return whether the pattern matches a constant
 pub fn lvalue_const(
-    ctx: &dyn DiagnosticHandler,
+    dcx: &mut DiagnosticContext,
     scope: &mut Scope,
     pat: &ast::Expr,
     val: &Value,
@@ -734,9 +734,9 @@ pub fn lvalue_const(
             for (width, pat) in node.elems.iter() {
                 let res = if let Some(width) = width {
                     let slice = (0..*width).map(|_| elems.next().unwrap().clone()).collect();
-                    lvalue_const(ctx, scope, pat, &Value::Vector(slice))?
+                    lvalue_const(dcx, scope, pat, &Value::Vector(slice))?
                 } else {
-                    lvalue_const(ctx, scope, pat, elems.next().unwrap())?
+                    lvalue_const(dcx, scope, pat, elems.next().unwrap())?
                 };
 
                 if !res { return Ok(false) }
@@ -745,15 +745,15 @@ pub fn lvalue_const(
             Ok(true)
         }
 
-        pat => Err(ctx.report(Diagnostic::NotAllowedInPattern {
-            span: Span::new(&scope.file, pat.span())
+        pat => Err(dcx.report(Diagnostic::NotAllowedInPattern {
+            span: scope.span(pat.span())
         }))
     }
 }
 
 /// Destructures an item into an infallible left-hand-side binding, such as a `let` or function argument
-pub fn lexpr(ctx: &dyn DiagnosticHandler, scope: &mut Scope, pat: &ast::Expr, r: &Item) -> Result<(), ErrorReported> {
-    zip_ast(ctx, &scope.file.clone(), pat, r, &mut move |pat, r| {
+pub fn lexpr(dcx: &mut DiagnosticContext, scope: &mut Scope, pat: &ast::Expr, r: &Item) -> Result<(), ErrorReported> {
+    zip_ast(dcx, &scope.file.clone(), pat, r, &mut move |dcx, pat, r| {
         let pat = match pat {
             ast::Expr::Tup(t) if t.items.len() == 1 => &t.items[0],
             pat => pat,
@@ -768,24 +768,24 @@ pub fn lexpr(ctx: &dyn DiagnosticHandler, scope: &mut Scope, pat: &ast::Expr, r:
             }
 
             ast::Expr::Typed(ref node) => {
-                let ty = value(ctx, scope, &node.ty)?.get_type();
+                let ty = value(dcx, scope, &node.ty)?.get_type();
 
                 match r {
                     Item::Leaf(LeafItem::Value(ref rv)) => {
                         let found = rv.get_type();
                         if found.is_subtype(&ty) {
-                            lexpr(ctx, scope, &node.expr, r)
+                            lexpr(dcx, scope, &node.expr, r)
                         } else {
-                            Err(ctx.report(Diagnostic::TypeConstraint {
-                                span: Span::new(&scope.file, node.span),
+                            Err(dcx.report(Diagnostic::TypeConstraint {
+                                span: scope.span(node.span),
                                 found,
                                 bound: ty,
                             }))
                         }
                     }
                     Item::Leaf(LeafItem::Invalid(r)) => Err(r.clone()),
-                    non_value => Err(ctx.report(Diagnostic::ExpectedValue {
-                        span: Span::new(&scope.file, node.span),
+                    non_value => Err(dcx.report(Diagnostic::ExpectedValue {
+                        span: scope.span(node.span),
                         found: non_value.to_string()
                     }))
                 }
@@ -797,8 +797,8 @@ pub fn lexpr(ctx: &dyn DiagnosticHandler, scope: &mut Scope, pat: &ast::Expr, r:
                     Item::Leaf(LeafItem::Value(Expr::Const(ref rv))) if lval == *rv => Ok(()),
                     Item::Leaf(LeafItem::Invalid(r)) => Err(r.clone()),
                     non_match => {
-                        Err(ctx.report(Diagnostic::ExpectedConst {
-                            span: Span::new(&scope.file, lv.span),
+                        Err(dcx.report(Diagnostic::ExpectedConst {
+                            span: scope.span(lv.span),
                             found: non_match.to_string(),
                             expected: lval.to_string(),
                         }))
@@ -806,8 +806,8 @@ pub fn lexpr(ctx: &dyn DiagnosticHandler, scope: &mut Scope, pat: &ast::Expr, r:
                 }
             }
 
-            pat => Err(ctx.report(Diagnostic::NotAllowedInPattern {
-                span: Span::new(&scope.file, pat.span())
+            pat => Err(dcx.report(Diagnostic::NotAllowedInPattern {
+                span: scope.span(pat.span())
             }))
         }
     })

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::diagnostic::{Diagnostic, Collector};
+use crate::diagnostic::{DiagnosticContext, Diagnostics};
 use crate::syntax::{ ast, parse_module, SourceFile };
 use crate::core::Scope;
 use std::fmt::Debug;
@@ -11,7 +11,7 @@ pub struct FileScope {
     pub(crate) file: Arc<SourceFile>,
     pub(crate) names: ScopeNames,
     pub(crate) ast: ast::Module,
-    pub errors: Vec<Diagnostic>,
+    pub errors: DiagnosticContext,
 }
 
 impl FileScope {
@@ -19,19 +19,19 @@ impl FileScope {
         let ast = parse_module(file.source()).expect("parser failed");
         let mut scope = Scope { file, names: prelude.clone() };
 
-        let ctx = Collector::new();
-        crate::diagnostic::report_parse_errors(&ctx, &scope.file, &ast);
+        let mut dcx = DiagnosticContext::new();
+        crate::diagnostic::report_parse_errors(&mut dcx, &scope.file, &ast);
 
         for entry in &ast.entries {
             match entry {
                 ast::ModuleEntry::Let(letdef) => {
-                    super::resolve::action::resolve_letdef(&ctx, &mut scope, &letdef);
+                    super::resolve::action::resolve_letdef(&mut dcx, &mut scope, &letdef);
                 }
                 _ => {}
             }
         }
 
-        FileScope { file: scope.file, names: scope.names, ast, errors: ctx.diagnostics() }
+        FileScope { file: scope.file, names: scope.names, ast, errors: dcx }
     }
 
     pub fn protocols<'a>(self: &'a Arc<Self>) -> impl Iterator<Item=(ProtocolRef, &'a ast::Protocol)> + 'a {
@@ -55,6 +55,10 @@ impl FileScope {
             file: self.file.clone(),
             names: self.names.clone(),
         }
+    }
+
+    pub fn diagnostics(&self) -> Diagnostics {
+        self.errors.diagnostics()
     }
 }
 
