@@ -1,0 +1,17 @@
+//# type error
+with Seq(0, _) def target(const dir: #r | #w) = new Seq(0, dir[#r = #up, #w = #dn]) {}
+//                              ^^^^^^^^^^^^ `#x` does not match type `#r | #w
+
+@test(#up, ())
+with Seq(0, _) def bad_type() = new Seq(0, #up) {
+    target(#x)
+}
+
+with Seq(0, _) def target2(const dir: #r | #w) = new Seq(0, dir[#r = #up, #w = #dn]) {}
+
+@test(#up, ())
+with Seq(0, _) def propagate_invalid() = new Seq(0, #up) {
+//# undefined variable `missing`
+    target2(missing)
+//          ^^^^^^^ not found
+}

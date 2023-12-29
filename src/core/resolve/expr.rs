@@ -776,18 +776,25 @@ pub fn lexpr(dcx: &mut DiagnosticContext, scope: &mut Scope, pat: &ast::Expr, r:
                         if found.is_subtype(&ty) {
                             lexpr(dcx, scope, &node.expr, r)
                         } else {
-                            Err(dcx.report(Diagnostic::TypeConstraint {
+                            let reported = dcx.report(Diagnostic::TypeConstraint {
                                 span: scope.span(node.span),
                                 found,
                                 bound: ty,
-                            }))
+                            });
+                            lexpr(dcx, scope, &node.expr, &Tree::Leaf(LeafItem::Invalid(reported.clone())))?;
+                            Err(reported)
                         }
                     }
-                    Item::Leaf(LeafItem::Invalid(r)) => Err(r.clone()),
-                    non_value => Err(dcx.report(Diagnostic::ExpectedValue {
-                        span: scope.span(node.span),
-                        found: non_value.to_string()
-                    }))
+                    non_value => {
+                        let reported = if let Item::Leaf(LeafItem::Invalid(r)) = non_value { r.clone() } else {
+                            dcx.report(Diagnostic::ExpectedValue {
+                                span: scope.span(node.span),
+                                found: non_value.to_string()
+                            })
+                        };
+                        lexpr(dcx, scope, &node.expr, &Tree::Leaf(LeafItem::Invalid(reported.clone())))?;
+                        Err(reported)
+                    }
                 }
             }
 
