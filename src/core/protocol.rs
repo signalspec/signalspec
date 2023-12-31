@@ -1,6 +1,6 @@
 use indexmap::IndexMap;
 
-use crate::diagnostic::{ErrorReported, Span};
+use crate::diagnostic::ErrorReported;
 use crate::syntax::ast::{self, AstNode};
 use crate::{Index, Dir, DiagnosticContext, Diagnostic};
 use super::resolve::expr::{ constant, type_tree };
@@ -24,15 +24,6 @@ pub fn resolve(
                 protocol_name: ast.name.name.clone(),
             }))
         },
-        Err(InstantiateProtocolError::ArgsMismatch { found, protocol_def_span }) => {
-            //TODO: should be chained to previous error
-            Err(dcx.report(Diagnostic::ProtocolArgumentMismatch {
-                span: scope.span(ast.param.span()),
-                protocol_name: ast.name.name.clone(),
-                found: format!("{found}"),
-                def: protocol_def_span,
-            }))
-        }
         Err(InstantiateProtocolError::ErrorInProtocolBody(e)) => Err(e),
     }
 }
@@ -40,10 +31,6 @@ pub fn resolve(
 #[derive(Debug)]
 pub enum InstantiateProtocolError {
     ProtocolNotFound,
-    ArgsMismatch {
-        found: Item,
-        protocol_def_span: Span,
-    },
     ErrorInProtocolBody(ErrorReported),
 }
 
@@ -65,12 +52,7 @@ pub fn instantiate(
         .ok_or(InstantiateProtocolError::ProtocolNotFound)?;
     let protocol_ast = protocol.ast();
     let mut scope = protocol.file().scope();
-    if let Err(_) = lexpr(dcx, &mut scope, &protocol_ast.param, &args) {
-        return Err(InstantiateProtocolError::ArgsMismatch {
-            found: args,
-            protocol_def_span: scope.span(protocol_ast.param.span())
-        });
-    }
+    lexpr(dcx, &mut scope, &protocol_ast.param, &args);
 
     let mode = constant::<ShapeMode>(dcx, &scope, &protocol_ast.dir)?;
 

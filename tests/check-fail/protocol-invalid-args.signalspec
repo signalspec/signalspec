@@ -1,10 +1,11 @@
-//# invalid arguments to protocol `Seq`
 //# too many positional arguments passed
 //^* 1 unexpected positional arguments not matched
+
+//# expected constant #up | #dn | #sync | #async | #null
+//^* found `9`
+
 @test(#up, ())
 with Seq(_, _) def main() = new Seq(9, 9, 9) {}
-//                                 ^^^^^^^^^ found `(9, 9, 9)`
-// ^* definition site
 
 //# undefined variable `undefinedvar`
 @test(#up, ())

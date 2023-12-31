@@ -6,7 +6,7 @@ use crate::{core::{
     constant,
     index::FindDefError,
     protocol,
-    resolve::expr::{lvalue_dn, lvalue_up, zip_ast, LValueSrc},
+    resolve::expr::{lvalue_dn, lvalue_up, LValueSrc},
     rexpr, rexpr_tup,
     step::{analyze_unambiguous, AltDnArm, AltUpArm, Step, StepInfo},
     value, Dir, Expr, ExprDn, Item, LeafItem, Predicate, Scope, Shape, ShapeMsg, StepId, Type,
@@ -19,7 +19,7 @@ use crate::syntax::ast::{self, AstNode};
 use crate::tree::Tree;
 use crate::{Diagnostic, FileSpan, Index, SourceFile, TypeTree};
 
-use super::expr::{TryFromConstant, lvalue_const};
+use super::expr::{TryFromConstant, lvalue_const, zip_tuple_ast};
 
 enum AltMode {
     Const,
@@ -205,10 +205,10 @@ impl<'a> Builder<'a> {
                                 dn_vars.push(id);
                                 LeafItem::Value(Expr::var_dn(id, ty.clone()))
                             });
-                            self.bind_tree_fields_dn(&mut body_scope, &item, expr, &mut dn).ok();
+                            self.bind_tree_fields_dn(&mut body_scope, expr, &item,  &mut dn);
                         }
                         Dir::Up => {
-                            self.bind_tree_fields_up(&mut body_scope,  &param.ty, expr, &mut up_inner).ok();
+                            self.bind_tree_fields_up(&mut body_scope,  expr, &param.ty, &mut up_inner);
                         }
                     };
                 }
@@ -458,7 +458,7 @@ impl<'a> Builder<'a> {
                     Ok(AltMode::Const) => {
                         for arm in &node.arms {
                             let mut body_scope = sb.scope.child();
-                            if self.bind_tree_fields_const(&mut body_scope, &scrutinee, &arm.discriminant).unwrap_or(false) {
+                            if self.bind_tree_fields_const(&mut body_scope, &arm.discriminant, &scrutinee) {
                                 return self.resolve_seq(sb.with_scope(&body_scope), &arm.block);
                             }
                         }
@@ -486,7 +486,7 @@ impl<'a> Builder<'a> {
                         let arms = node.arms.iter().map(|arm| {
                             let mut body_scope = sb.scope.child();
                             let mut vals = Vec::new();
-                            self.bind_tree_fields_dn(&mut body_scope, &scrutinee, &arm.discriminant, &mut vals).ok();
+                            self.bind_tree_fields_dn(&mut body_scope, &arm.discriminant, &scrutinee, &mut vals);
 
                             let upvalues_scope = self.upvalues.len();
                             let body = self.resolve_seq(sb.with_scope(&body_scope), &arm.block);
@@ -517,7 +517,7 @@ impl<'a> Builder<'a> {
                             
                             let mut up_inner = Vec::new();
                             let ty = scrutinee.as_type_tree().unwrap_or(Tree::Leaf(Type::Ignored));
-                            self.bind_tree_fields_up(&mut body_scope, &ty, &arm.discriminant, &mut up_inner).ok();
+                            self.bind_tree_fields_up(&mut body_scope, &arm.discriminant, &ty, &mut up_inner);
 
                             let upvalues_scope = self.upvalues.len();
                             let body = self.resolve_seq(sb.with_scope(&body_scope), &arm.block);
@@ -544,117 +544,125 @@ impl<'a> Builder<'a> {
     fn bind_tree_fields_dn(
         &mut self,
         scope: &mut Scope,
-        rhs: &Item,
         pat: &ast::Expr,
+        rhs: &Item,
         dn: &mut Vec<Predicate>,
-    ) -> Result<(), ErrorReported> {
-        zip_ast(&mut self.dcx, &scope.file.clone(), pat, rhs, &mut |dcx, pat, r| {
-            match (pat, r) {
-                (pat, Tree::Leaf(LeafItem::Value(r))) => {
-                    match lvalue_dn(dcx, scope, pat, r.clone()){
-                        Ok(p) => { dn.push(p); Ok(()) }
-                        Err(r) => { dn.push(Predicate::Any); Err(r) }
-                    }
+    ) {
+        match (pat, rhs) {
+            (ast::Expr::Tup(pat_tup), r) => {
+                for (p, t) in zip_tuple_ast(&mut self.dcx, &scope.file, pat_tup, r) {
+                    self.bind_tree_fields_dn(scope, p, t, dn);
                 }
-                (ast::Expr::Ignore(_), t) => {
-                    t.for_each(&mut |_| {
-                        dn.push(Predicate::Any)
-                    });
-                    Ok(())
+            }
+            (pat, Tree::Leaf(LeafItem::Value(r))) => {
+                match lvalue_dn(&mut self.dcx, scope, pat, r.clone()){
+                    Ok(p) => { dn.push(p); }
+                    Err(_) => { dn.push(Predicate::Any); }
                 }
-                (ast::Expr::Var(ref name), t @ Tree::Tuple(_)) => {
-                    t.for_each(&mut |_| {
-                        dn.push(Predicate::Any)
-                    });
-                    scope.bind(&name.name, t.clone());
-                    Ok(())
-                }
-                (_, Tree::Leaf(LeafItem::Invalid(r))) => {
-                    dn.push(Predicate::Any);
-                    Err(r.clone())
-                }
-                (pat, e) => {
-                    dn.push(Predicate::Any);
-                    Err(dcx.report(Diagnostic::InvalidItemForPattern {
-                        span: scope.span(pat.span()),
-                        found: e.to_string(),
-                    }))
-                }
-            }  
-        })
+            }
+            (ast::Expr::Ignore(_), t) => {
+                t.for_each(&mut |_| {
+                    dn.push(Predicate::Any)
+                });
+            }
+            (ast::Expr::Var(ref name), t @ Tree::Tuple(_)) => {
+                t.for_each(&mut |_| {
+                    dn.push(Predicate::Any)
+                });
+                scope.bind(&name.name, t.clone());
+            }
+            (_, Tree::Leaf(LeafItem::Invalid(_))) => {
+                dn.push(Predicate::Any);
+            }
+            (pat, e) => {
+                dn.push(Predicate::Any);
+                self.dcx.report(Diagnostic::InvalidItemForPattern {
+                    span: scope.span(pat.span()),
+                    found: e.to_string(),
+                });
+            }
+        }
     }
 
     fn bind_tree_fields_const(
         &mut self,
         scope: &mut Scope,
-        rhs: &Item,
         pat: &ast::Expr,
-    ) -> Result<bool, ErrorReported> {
-        let mut matched = true;
-        zip_ast(&mut self.dcx, &scope.file.clone(), pat, rhs, &mut |dcx, pat, r| {
-            match (pat, r) {
-                (ast::Expr::Ignore(_), _) => Ok(()),
-                (ast::Expr::Var(ref name), t) => {
-                    scope.bind(&name.name, t.clone());
-                    Ok(())
+        rhs: &Item,
+    ) -> bool {
+        match (pat, rhs) {
+            (ast::Expr::Tup(pat_tup), r) => {
+                let mut matched = true;
+                for (p, t) in zip_tuple_ast(&mut self.dcx, &scope.file, pat_tup, r) {
+                    matched &= self.bind_tree_fields_const(scope, p, t);
                 }
-                (pat, Tree::Leaf(LeafItem::Value(Expr::Const(c)))) => {
-                    match lvalue_const(dcx, scope, pat, c) {
-                        Ok(p) => { matched &= p; Ok(()) } ,
-                        Err(r) => Err(r),
-                    }
-                }
-                (_, Tree::Leaf(LeafItem::Value(e))) => {
-                    Err(dcx.report(Diagnostic::ExpectedConst {
-                        span: scope.span(pat.span()),
-                        found: e.to_string(),
-                        expected: "value".into(),
-                    }))
-                }
-                (_, Tree::Leaf(LeafItem::Invalid(r))) => Err(r.clone()),
-                (pat, e) => {
-                    Err(dcx.report(Diagnostic::InvalidItemForPattern {
-                        span: scope.span(pat.span()),
-                        found: e.to_string(),
-                    }))
+                matched
+            }
+            (ast::Expr::Ignore(_), _) => true,
+            (ast::Expr::Var(ref name), t) => {
+                scope.bind(&name.name, t.clone());
+                true
+            }
+            (pat, Tree::Leaf(LeafItem::Value(Expr::Const(c)))) => {
+                match lvalue_const(&mut self.dcx, scope, pat, c) {
+                    Ok(p) => p,
+                    Err(_) => false,
                 }
             }
-        }).map(|()| matched)
+            (_, Tree::Leaf(LeafItem::Value(e))) => {
+                self.dcx.report(Diagnostic::ExpectedConst {
+                    span: scope.span(pat.span()),
+                    found: e.to_string(),
+                    expected: "value".into(),
+                });
+                false
+            }
+            (_, Tree::Leaf(LeafItem::Invalid(_))) => false,
+            (pat, e) => {
+                self.dcx.report(Diagnostic::InvalidItemForPattern {
+                    span: scope.span(pat.span()),
+                    found: e.to_string(),
+                });
+                false
+            }
+        }
     }
 
     fn bind_tree_fields_up(
         &mut self,
         scope: &mut Scope,
-        rhs: &TypeTree,
         pat: &ast::Expr,
+        rhs: &TypeTree,
         up: &mut Vec<LValueSrc>,
-    ) -> Result<(), ErrorReported> {
-        zip_ast(&mut self.dcx, &scope.file.clone(), pat, rhs, &mut |dcx, pat, r| {
-            match (pat, r) {
-                (pat, Tree::Leaf(t)) => {
-                    match lvalue_up(dcx, scope, pat, t.clone(), &mut || self.value_sink.push(())) {
-                        Ok(x) => { up.push(x); Ok(()) },
-                        Err(r) => { up.push(LValueSrc::Val(ExprDn::invalid())); Err(r) }
-                    }
-                }
-                (ast::Expr::Var(ref name), tup @ Tree::Tuple(_)) => {
-                    let e = tup.map_leaf(&mut |ty| {
-                        let id = self.value_sink.push(());
-                        up.push(LValueSrc::Var(id, name.span));
-                        LeafItem::Value(Expr::var_up(id, ty.clone()))
-                    });
-                    scope.bind(&name.name, e);
-                    Ok(())
-                }
-                (pat, ty) => {
-                    up.push(LValueSrc::Val(ExprDn::invalid()));
-                    Err(dcx.report(Diagnostic::InvalidItemForPattern {
-                        span: scope.span(pat.span()),
-                        found: ty.to_string(),
-                    }))
+    ) {
+        match (pat, rhs) {
+            (ast::Expr::Tup(pat_tup), r) => {
+                for (p, t) in zip_tuple_ast(&mut self.dcx, &scope.file, pat_tup, r) {
+                    self.bind_tree_fields_up(scope, p, t, up);
                 }
             }
-        })
+            (pat, Tree::Leaf(t)) => {
+                match lvalue_up(&mut self.dcx, scope, pat, t.clone(), &mut || self.value_sink.push(())) {
+                    Ok(x) => { up.push(x); },
+                    Err(_) => { up.push(LValueSrc::Val(ExprDn::invalid())); }
+                }
+            }
+            (ast::Expr::Var(ref name), tup @ Tree::Tuple(_)) => {
+                let e = tup.map_leaf(&mut |ty| {
+                    let id = self.value_sink.push(());
+                    up.push(LValueSrc::Var(id, name.span));
+                    LeafItem::Value(Expr::var_up(id, ty.clone()))
+                });
+                scope.bind(&name.name, e);
+            }
+            (pat, ty) => {
+                up.push(LValueSrc::Val(ExprDn::invalid()));
+                self.dcx.report(Diagnostic::InvalidItemForPattern {
+                    span: scope.span(pat.span()),
+                    found: ty.to_string(),
+                });
+            }
+        }
     }
 
     fn bind_tree_fields_up_finish(&mut self, up_inner: Vec<LValueSrc>, file: &Arc<SourceFile>) -> Vec<ExprDn> {
@@ -701,7 +709,7 @@ impl<'a> Builder<'a> {
 
                     let mut scope = def.file.scope();
 
-                    lexpr(&mut self.dcx, &mut scope, &def.protocol.param, &sb.shape_down.param).ok();
+                    lexpr(&mut self.dcx, &mut scope, &def.protocol.param, &sb.shape_down.param);
 
                     if def.params.len() != args.len() {
                         self.dcx.report(Diagnostic::ArgsMismatchCount {
@@ -718,7 +726,7 @@ impl<'a> Builder<'a> {
                             ast::DefParam::Var(node) => &node.expr,
                         };
 
-                        lexpr(&mut self.dcx, &mut scope, param_expr, &arg).ok();
+                        lexpr(&mut self.dcx, &mut scope, param_expr, &arg);
                     }
 
                     self.resolve_process(sb.with_scope(&scope), &def.implementation)

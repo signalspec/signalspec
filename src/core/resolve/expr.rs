@@ -1,4 +1,4 @@
-use std::{sync::Arc, fmt::Display};
+use std::{sync::Arc, fmt::Display, iter};
 
 use crate::{
     core::{
@@ -466,13 +466,7 @@ fn resolve_function_call(dcx: &mut DiagnosticContext, call_site_span: impl FnOnc
             match *func_def {
                 FunctionDef::Code(ref func) => {
                     let mut inner_scope = Scope { file: func.file.clone(), names: func.names.clone() };
-                    if let Err(_) = lexpr(dcx, &mut inner_scope, &func.args, &arg) {
-                        // TODO: should be chained to inner error
-                        return dcx.report(Diagnostic::FunctionArgumentMismatch {
-                            span: call_site_span(),
-                            def: Span::new(&func.file, func.args.span()),
-                        }).into()
-                    }
+                    lexpr(dcx, &mut inner_scope, &func.args, &arg);
                     rexpr(dcx, &inner_scope, &func.body)
                 }
                 FunctionDef::Primitive(primitive) => {
@@ -490,47 +484,6 @@ fn resolve_function_call(dcx: &mut DiagnosticContext, call_site_span: impl FnOnc
             span: call_site_span(),
             found: format!("{}", func)
         }).into()
-    }
-}
-
-pub fn zip_ast<T: Display>(
-    dcx: &mut DiagnosticContext,
-    file: &Arc<SourceFile>,
-    ast: &ast::Expr,
-    tree: &Tree<T>,
-    f: &mut impl FnMut(&mut DiagnosticContext, &ast::Expr, &Tree<T>) -> Result<(), ErrorReported>
-) -> Result<(), ErrorReported> {
-    match (&ast, tree) {
-        (ast::Expr::Tup(tup_ast), Tree::Tuple(t)) => {
-            let mut res = Ok(());
-            let mut a = tup_ast.items.iter();
-            let mut t = t.iter();
-            loop {
-                match (a.next(), t.next()) {
-                    (None, None) => break,
-                    (Some(ai), Some(ti)) => {
-                        res = zip_ast(dcx,  file, ai, ti, f).and(res);
-                    }
-                    (Some(ai), None) => {
-                        let (n, span) = a.fold((1, ai.span()), |(n, sp), e| (n + 1, sp.to(e.span())));
-                        return Err(dcx.report(Diagnostic::TupleTooFewPositional { span: Span::new(file, span), n }));
-                    }
-                    (None, Some(_)) => {
-                        let span = tup_ast.close.as_ref().map(|a| a.span).unwrap_or(tup_ast.span);
-                        let n = t.count() + 1;
-                        return Err(dcx.report(Diagnostic::TupleTooManyPositional { span: Span::new(file, span), n }));
-                    }
-                }
-            }
-            res
-        }
-        (ast::Expr::Tup(tup_ast), t) if tup_ast.items.len() != 1 => {
-            Err(dcx.report(Diagnostic::ExpectedTuple {
-                span: Span::new(file, tup_ast.span),
-                found: t.to_string()
-            }))
-        }
-        (_, t) => f(dcx, ast, t)
     }
 }
 
@@ -751,71 +704,129 @@ pub fn lvalue_const(
     }
 }
 
-/// Destructures an item into an infallible left-hand-side binding, such as a `let` or function argument
-pub fn lexpr(dcx: &mut DiagnosticContext, scope: &mut Scope, pat: &ast::Expr, r: &Item) -> Result<(), ErrorReported> {
-    zip_ast(dcx, &scope.file.clone(), pat, r, &mut move |dcx, pat, r| {
-        let pat = match pat {
-            ast::Expr::Tup(t) if t.items.len() == 1 => &t.items[0],
-            pat => pat,
-        };
-        match pat {
-            ast::Expr::Ignore(_) => Ok(()),
+pub fn zip_tuple_ast<'a, 't, T: Display>(
+    dcx: &mut DiagnosticContext,
+    file: &Arc<SourceFile>,
+    tup_ast: &'a ast::ExprTup,
+    tree: &'t Tree<T>,
+) -> impl Iterator<Item = (&'a ast::Expr, &'t Tree<T>)> {
+    enum IterRes<A, B> {
+        A(A),
+        B(B),
+        Empty,
+    }
 
-            ast::Expr::Var(ref name) => {
-                debug!("defined {} = {:?}", name.name, r);
-                scope.bind(&name.name, r.clone());
-                Ok(())
+    impl<A: Iterator, B: Iterator<Item = A::Item>> Iterator for IterRes<A, B> {
+        type Item = A::Item;
+
+        fn next(&mut self) -> Option<Self::Item> {
+            match self {
+                IterRes::A(a) => a.next(),
+                IterRes::B(b) => b.next(),
+                IterRes::Empty => None
             }
-
-            ast::Expr::Typed(ref node) => {
-                let ty = value(dcx, scope, &node.ty)?.get_type();
-
-                match r {
-                    Item::Leaf(LeafItem::Value(ref rv)) => {
-                        let found = rv.get_type();
-                        if found.is_subtype(&ty) {
-                            lexpr(dcx, scope, &node.expr, r)
-                        } else {
-                            let reported = dcx.report(Diagnostic::TypeConstraint {
-                                span: scope.span(node.span),
-                                found,
-                                bound: ty,
-                            });
-                            lexpr(dcx, scope, &node.expr, &Tree::Leaf(LeafItem::Invalid(reported.clone())))?;
-                            Err(reported)
-                        }
-                    }
-                    non_value => {
-                        let reported = if let Item::Leaf(LeafItem::Invalid(r)) = non_value { r.clone() } else {
-                            dcx.report(Diagnostic::ExpectedValue {
-                                span: scope.span(node.span),
-                                found: non_value.to_string()
-                            })
-                        };
-                        lexpr(dcx, scope, &node.expr, &Tree::Leaf(LeafItem::Invalid(reported.clone())))?;
-                        Err(reported)
-                    }
-                }
-            }
-
-            ast::Expr::Value(lv) => {
-                let lval = Value::from_literal(&lv.value);
-                match r {
-                    Item::Leaf(LeafItem::Value(Expr::Const(ref rv))) if lval == *rv => Ok(()),
-                    Item::Leaf(LeafItem::Invalid(r)) => Err(r.clone()),
-                    non_match => {
-                        Err(dcx.report(Diagnostic::ExpectedConst {
-                            span: scope.span(lv.span),
-                            found: non_match.to_string(),
-                            expected: lval.to_string(),
-                        }))
-                    }
-                }
-            }
-
-            pat => Err(dcx.report(Diagnostic::NotAllowedInPattern {
-                span: scope.span(pat.span())
-            }))
         }
-    })
+    }
+
+    match tree {
+        Tree::Tuple(t) => {
+            if tup_ast.items.len() < t.len() {
+                let n = t.len() - tup_ast.items.len();
+                let span = tup_ast.close.as_ref().map(|a| a.span).unwrap_or(tup_ast.span);
+                dcx.report(Diagnostic::TupleTooManyPositional { span: Span::new(file, span), n });
+
+            } else if tup_ast.items.len() > t.len() {
+                let n = tup_ast.items.len() - t.len();
+                let span = tup_ast.items[t.len()].span()
+                    .to(tup_ast.items.last().unwrap().span());
+                dcx.report(Diagnostic::TupleTooFewPositional { span: Span::new(file, span), n });
+            }
+
+            IterRes::A(tup_ast.items.iter().zip(t.iter()))
+        }
+        t if tup_ast.items.len() == 1 => {
+            IterRes::B(iter::once((&tup_ast.items[0], t)))
+        }
+        t => {
+            dcx.report(Diagnostic::ExpectedTuple {
+                span: Span::new(file, tup_ast.span),
+                found: t.to_string()
+            });
+            IterRes::Empty
+        }
+    }
+}
+
+pub fn lexpr_tup(dcx: &mut DiagnosticContext, scope: &mut Scope, tup_pat: &ast::ExprTup, r: &Item) {
+    for (pat, r) in zip_tuple_ast(dcx, &scope.file, tup_pat, r) {
+        lexpr(dcx, scope, pat, r);
+    }
+}
+
+/// Destructures an item into an infallible left-hand-side binding, such as a `let` or function argument
+pub fn lexpr(dcx: &mut DiagnosticContext, scope: &mut Scope, pat: &ast::Expr, r: &Item) {
+    match pat {
+        ast::Expr::Tup(tup_pat) => lexpr_tup(dcx, scope, tup_pat, r),
+        ast::Expr::Ignore(_) => {}
+
+        ast::Expr::Var(ref name) => {
+            debug!("defined {} = {:?}", name.name, r);
+            scope.bind(&name.name, r.clone());
+        }
+
+        ast::Expr::Typed(ref node) => {
+            let ty = match value(dcx, scope, &node.ty) {
+                Ok(v) => v.get_type(),
+                Err(reported) => {
+                    return lexpr(dcx, scope, &node.expr, &Tree::Leaf(LeafItem::Invalid(reported)));
+                }
+            };
+
+            match r {
+                Item::Leaf(LeafItem::Value(ref rv)) => {
+                    let found = rv.get_type();
+                    if found.is_subtype(&ty) {
+                        lexpr(dcx, scope, &node.expr, r)
+                    } else {
+                        let reported = dcx.report(Diagnostic::TypeConstraint {
+                            span: scope.span(node.span),
+                            found,
+                            bound: ty,
+                        });
+                        lexpr(dcx, scope, &node.expr, &Tree::Leaf(LeafItem::Invalid(reported)));
+                    }
+                }
+                non_value => {
+                    let reported = if let Item::Leaf(LeafItem::Invalid(r)) = non_value { r.clone() } else {
+                        dcx.report(Diagnostic::ExpectedValue {
+                            span: scope.span(node.span),
+                            found: non_value.to_string()
+                        })
+                    };
+                    lexpr(dcx, scope, &node.expr, &Tree::Leaf(LeafItem::Invalid(reported)));
+                }
+            }
+        }
+
+        ast::Expr::Value(lv) => {
+            let lval = Value::from_literal(&lv.value);
+            match r {
+                Item::Leaf(LeafItem::Value(Expr::Const(ref rv))) if lval == *rv => {},
+                Item::Leaf(LeafItem::Invalid(_)) => {},
+                non_match => {
+                    dcx.report(Diagnostic::ExpectedConst {
+                        span: scope.span(lv.span),
+                        found: non_match.to_string(),
+                        expected: lval.to_string(),
+                    });
+                }
+            }
+        }
+
+        pat => {
+            dcx.report(Diagnostic::NotAllowedInPattern {
+                span: scope.span(pat.span())
+            });
+        }
+    }
 }
