@@ -63,7 +63,7 @@ peg::parser!(pub grammar signalspec() for str {
       = start:pos()
         attributes:attribute()*
         tok_with:KW("with") _ bottom:protocol_ref() _
-        tok_def:KW("def") _ name:IDENTIFIER() _  params:def_params() _ "=" _ process:process()
+        tok_def:KW("def") _ name:IDENTIFIER() _  params:expr_tup() _ "=" _ process:process()
         end:pos()
         { ast::Def { span:FileSpan{start, end}, attributes, bottom, name, params, process } }
 
@@ -76,22 +76,18 @@ peg::parser!(pub grammar signalspec() for str {
         { ast::Protocol { span:FileSpan{start, end}, attributes, name, param: param.into(), dir, open, entries, close }}
       
       rule protocol_entry() -> ast::ProtocolEntry
-        = start:pos() name:IDENTIFIER() _ params:def_params() child:(_ ":" _ p:protocol_ref() {p})? end:pos()
+        = start:pos() name:IDENTIFIER() _ "(" _ params:COMMASEP(<message_param()>) _ ")" child:(_ ":" _ p:protocol_ref() {p})? end:pos()
           {ast::ProtocolEntry::Message( ast::ProtocolMessageDef { span: FileSpan{start, end}, name, params, child }) }
         / start:pos() name:IDENTIFIER() _ ":" _ child_protocol:protocol_ref() end:pos()
           { ast::ProtocolEntry::Child(ast::ProtocolChild { span: FileSpan { start, end }, name, child_protocol }) }
 
+      rule message_param() -> ast::MessageParam
+        = start:pos() "var" _ "(" _ direction:expr() _ ")" _ expr:expr() end:pos()
+          { ast::MessageParam { span: FileSpan{start, end}, direction, expr} }
+
   rule protocol_ref() -> ast::ProtocolRef
     = start:pos() name:IDENTIFIER() _ param:expr_tup() end:pos() { ast::ProtocolRef { span: FileSpan{ start, end }, name, param: param.into() } }
     
-  rule def_params() -> Vec<ast::DefParam>
-    = "(" _ params:COMMASEP(<def_param()>) _ ")" { params }
-
-    rule def_param() -> ast::DefParam
-      = start:pos() "const" _ expr:expr() end:pos() { ast::DefParam::Const(ast::ParamConst { span: FileSpan{start, end}, expr }) }
-      / start:pos() "var" _ "(" _ direction:expr() _ ")" _ expr:expr() end:pos()
-        { ast::DefParam::Var(ast::ParamVar{ span: FileSpan{start, end}, direction, expr}) }
-
   rule block() -> ast::Block
       = start:pos() open:tok_node("{") _
         lets:letstmt()**_ _

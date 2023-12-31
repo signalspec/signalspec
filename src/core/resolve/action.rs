@@ -19,7 +19,7 @@ use crate::syntax::ast::{self, AstNode};
 use crate::tree::Tree;
 use crate::{Diagnostic, FileSpan, Index, SourceFile, TypeTree};
 
-use super::expr::{TryFromConstant, lvalue_const, zip_tuple_ast};
+use super::expr::{TryFromConstant, lvalue_const, zip_tuple_ast, lexpr_tup};
 
 enum AltMode {
     Const,
@@ -694,7 +694,6 @@ impl<'a> Builder<'a> {
                         (self.add_step(Step::TokenTransaction { variant: msg_def.tag }), msg_def.child.clone() )
                     }
                 } else {
-                    let args: Vec<Item> = node.args.items.iter().map(|a| rexpr(&mut self.dcx, sb.scope, a)).collect();
                     let def = match self.index.find_def(sb.shape_down, &node.name.name) {
                         Ok(res) => res,
                         Err(FindDefError::NoDefinitionWithName) => {
@@ -707,27 +706,11 @@ impl<'a> Builder<'a> {
                         }
                     };
 
+                    let args = rexpr_tup(&mut self.dcx, sb.scope, &node.args);
+
                     let mut scope = def.file.scope();
-
                     lexpr(&mut self.dcx, &mut scope, &def.protocol.param, &sb.shape_down.param);
-
-                    if def.params.len() != args.len() {
-                        self.dcx.report(Diagnostic::ArgsMismatchCount {
-                            span: sb.scope.span(node.args.span),
-                            def_name: node.name.name.clone(),
-                            expected: def.params.len(),
-                            found: args.len(),
-                        });
-                    }
-
-                    for (param, arg) in def.params.iter().zip(args.iter()) {
-                        let param_expr = match param {
-                            ast::DefParam::Const(node) => &node.expr,
-                            ast::DefParam::Var(node) => &node.expr,
-                        };
-
-                        lexpr(&mut self.dcx, &mut scope, param_expr, &arg);
-                    }
+                    lexpr_tup(&mut self.dcx, &mut scope, &def.params, &args);
 
                     self.resolve_process(sb.with_scope(&scope), &def.implementation)
                 }

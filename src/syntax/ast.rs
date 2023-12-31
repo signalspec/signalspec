@@ -207,7 +207,7 @@ ast_node! {
         pub attributes: Vec<Attribute>,
         pub bottom: ProtocolRef,
         pub name: Identifier,
-        pub params: Vec<DefParam>,
+        pub params: ExprTup,
         pub process: Process,
     }
 }
@@ -236,8 +236,16 @@ ast_node!{
     pub struct ProtocolMessageDef {
         pub span: FileSpan,
         pub name: Identifier,
-        pub params: Vec<DefParam>,
+        pub params: Vec<MessageParam>,
         pub child: Option<ProtocolRef>,
+    }
+}
+
+ast_node!{
+    pub struct MessageParam {
+        pub span: FileSpan,
+        pub direction: Expr,
+        pub expr: Expr,
     }
 }
 
@@ -367,38 +375,6 @@ ast_node!{
         pub span: FileSpan,
         pub name: Identifier,
         pub args: ExprTup,
-    }
-}
-
-ast_node!{
-    pub enum DefParam {
-        Const(ParamConst),
-        Var(ParamVar),
-    }
-}
-
-ast_node!{
-    pub struct ParamConst {
-        pub span: FileSpan,
-        pub expr: Expr,
-    }
-}
-
-ast_node!{
-    pub struct ParamVar{
-        pub span: FileSpan,
-        pub direction: Expr,
-        pub expr: Expr,
-    }
-}
-
-ast_node!{
-    pub struct PrimitiveHeader {
-        pub span: FileSpan,
-        pub name: Identifier,
-        pub params: Vec<DefParam>,
-        pub top: Option<ProtocolRef>,
-        pub bottom: ProtocolRef,
     }
 }
 

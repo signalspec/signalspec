@@ -200,9 +200,9 @@ diagnostic_kinds!{
     ProtocolDataModeMismatch {
         span: Span,
         mode: crate::core::ShapeMode,
-        param_dir: crate::core::Dir
+        direction: crate::core::Dir
     } => "data direction not allowed by protocol mode" {
-        error "mode of this protocol is `{mode}` which can't have data with direction `{param_dir}`" at span
+        error "mode of this protocol is `{mode}` which can't have data with direction `{direction}`" at span
     }
 
     ProtocolChildModeMismatch {

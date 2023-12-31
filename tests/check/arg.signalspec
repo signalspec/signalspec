@@ -1,5 +1,5 @@
 with Seq(_:#a|#b, dir)
-def main(var(dir) a, var(dir) b) = {
+def main(a, b) = {
     val(a)
     val(b)
 }

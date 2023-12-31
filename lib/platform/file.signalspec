@@ -1,4 +1,4 @@
-with Base() def file(const dir: #r | #w, const name) = new Bytes(dir[#r = #up, #w = #dn]) {
+with Base() def file(dir: #r | #w, name) = new Bytes(dir[#r = #up, #w = #dn]) {
     alt #const dir {
         #r => { primitive file_read(name) }
         #w => { primitive file_write(name) }

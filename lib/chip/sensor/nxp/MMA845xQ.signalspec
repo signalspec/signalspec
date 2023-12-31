@@ -11,7 +11,7 @@ let CTRL_REG1 = 'h2A
 let CTRL_REG4 = 'h2D
 
 with I2C(role)
-def read_reg(var(#dn) reg, var(#up) val) = {
+def read_reg(reg, val) = {
     transaction() | {
         start(ADDR, #w)
         write(reg)
@@ -21,7 +21,7 @@ def read_reg(var(#dn) reg, var(#up) val) = {
 }
 
 with I2C(role)
-def write_reg(var(#dn) reg, var(#dn) val) = {
+def write_reg(reg, val) = {
     transaction() | {
         start(ADDR, #w)
         write(reg)

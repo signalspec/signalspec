@@ -1,7 +1,7 @@
 let x = #x
 
 with Seq(_:#x|#y|#z, dir)
-def main(var(dir) a) = {
+def main(a) = {
     let y = a
     let z = #z
     val(x)

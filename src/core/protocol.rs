@@ -70,25 +70,17 @@ pub fn instantiate(
                 }
 
                 let params = params.iter().map(|p| {
-                    let (ty_expr, direction) = match &p {
-                        ast::DefParam::Const(_) => {
-                            panic!("Not allowed here")
-                        }
-                        ast::DefParam::Var(node) => {
-                            let param_dir = constant::<Dir>(dcx, &scope, &node.direction)?;
+                    let direction = constant::<Dir>(dcx, &scope, &p.direction)?;
 
-                            if !mode.allows_data(param_dir) {
-                                Err(dcx.report(Diagnostic::ProtocolDataModeMismatch {
-                                    span: scope.span(p.span()),
-                                    mode,
-                                    param_dir
-                                }))?;
-                            }
+                    if !mode.allows_data(direction) {
+                        Err(dcx.report(Diagnostic::ProtocolDataModeMismatch {
+                            span: scope.span(p.span()),
+                            mode,
+                            direction,
+                        }))?;
+                    }
 
-                            (&node.expr, param_dir)
-                        }
-                    };
-                    let ty = type_tree(dcx, &scope, ty_expr)?;
+                    let ty = type_tree(dcx, &scope, &p.expr)?;
                     Ok(ShapeMsgParam { ty, direction })
                 }).collect::<Result<_, InstantiateProtocolError>>()?;
 

@@ -128,7 +128,7 @@ fn run_test(show_diagnostics: &dyn Fn(Diagnostics), index: &Index, file: &FileSc
         return Err("Test def must use Seq");
     }
 
-    if !def.params.is_empty() {
+    if !def.params.items.is_empty() {
         return Err("Test def must not have parameters");
     }
 

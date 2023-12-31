@@ -1,12 +1,12 @@
 with Seq(_:#a|#b, dir)
-def main(var(dir) a, var(dir) b) = {
+def main(a, b) = {
     val(a)
     other(a, b)
     val(b)
 }
 
 with Seq(_:#a|#b, dir)
-def other(var(dir) x, var(dir) y) = {
+def other(x, y) = {
     val(x)
     val(y)
 }

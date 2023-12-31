@@ -21,7 +21,7 @@ pub struct Index {
 pub(crate) struct Def {
     pub(crate) protocol: ast::ProtocolRef,
     pub(crate) name: ast::Identifier,
-    pub(crate) params: Vec<ast::DefParam>,
+    pub(crate) params: ast::ExprTup,
     pub(crate) file: Arc<FileScope>,
     pub(crate) implementation: ast::Process,
 }
@@ -110,7 +110,7 @@ impl Index {
                 protocol: def.bottom.clone(),
                 name: def.name.clone(),
                 file: file.clone(),
-                params: def.params.iter().map(|x| x.clone()).collect(),
+                params: def.params.clone(),
                 implementation: def.process.clone()
             });
         }
