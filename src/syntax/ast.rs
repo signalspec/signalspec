@@ -244,6 +244,7 @@ ast_node!{
 ast_node!{
     pub struct MessageParam {
         pub span: FileSpan,
+        pub name: Option<Identifier>,
         pub direction: Expr,
         pub expr: Expr,
     }
@@ -436,8 +437,16 @@ ast_node!{
     pub struct ExprTup {
         pub span: FileSpan,
         pub open: Token,
-        pub items: Vec<Expr>,
+        pub fields: Vec<TupleField>,
         pub close: Result<Token, Error>,
+    }
+}
+
+ast_node!{
+    pub struct TupleField {
+        pub span: FileSpan,
+        pub name: Option<Identifier>,
+        pub expr: Expr,
     }
 }
 

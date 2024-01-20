@@ -70,6 +70,7 @@ pub fn instantiate(
                 }
 
                 let params = params.iter().map(|p| {
+                    let name = p.name.as_ref().map(|n| n.name.clone());
                     let direction = constant::<Dir>(dcx, &scope, &p.direction)?;
 
                     if !mode.allows_data(direction) {
@@ -81,7 +82,7 @@ pub fn instantiate(
                     }
 
                     let ty = type_tree(dcx, &scope, &p.expr)?;
-                    Ok(ShapeMsgParam { ty, direction })
+                    Ok((name, ShapeMsgParam { ty, direction }))
                 }).collect::<Result<_, InstantiateProtocolError>>()?;
 
                 let child = if let Some(child) = child {

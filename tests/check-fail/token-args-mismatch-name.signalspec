@@ -1,0 +1,20 @@
+protocol Test() #up {
+    foo(var(#up) #a|#b, x = var(#up) 0..10, y = var(#up) bits(8))
+}
+
+@test(#up, ())
+with Seq(0..10, _) def main() = {
+    new Test() {} | {
+//# missing named field `y`
+        foo(#a, x = 1)
+//                   ^ expected additional named field
+
+//# missing named field `x`
+        foo(#a, y = '00000000)
+//                           ^ expected additional named field
+
+//# unexpected named field `z` passed
+        foo(#a, x = 1, y = '00000000, z = #foo)
+//                                    ^^^^^^^^ unexpected field not matched
+    }
+}

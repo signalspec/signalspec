@@ -3,9 +3,8 @@ use std::fmt;
 use std::default::Default;
 use std::sync::Arc;
 
-use crate::{Value, tree::Tree, TypeTree, diagnostic::ErrorReported, Type};
+use crate::{Value, tree::{Tree, TupleFields}, TypeTree, diagnostic::ErrorReported, Type};
 use super::{ Expr, FunctionDef };
-
 
 /// Non-tuple Item
 #[derive(Clone)]
@@ -38,7 +37,7 @@ impl Item {
     pub fn as_tuple(&self) -> &[Item] {
         match self {
             Item::Leaf(_) => slice::from_ref(self),
-            Item::Tuple(v) => &v[..],
+            Item::Tuple(TupleFields { positional, .. }) => &positional[..],
         }
     }
 
@@ -67,7 +66,7 @@ impl Item {
 
 impl Default for Item {
     fn default() -> Item {
-        Item::Tuple(Vec::new())
+        Item::Tuple(TupleFields::default())
     }
 }
 
@@ -127,11 +126,12 @@ impl<'a> TryFrom<Item> for (Item, Item) {
     type Error = &'static str;
     
     fn try_from(i: Item) -> Result<Self, Self::Error> {
-        if let Item::Tuple(t) = i {
-            let [i1, i2] = <[Item; 2]>::try_from(t).map_err(|_| "expected 2-tuple")?;
-            Ok((i1, i2))
-        } else {
-            Err("expected 2-tuple")
+        match i {
+            Item::Tuple(TupleFields { positional, named }) if named.is_empty()  => {
+                let [i1, i2] = <[Item; 2]>::try_from(positional).map_err(|_| "expected 2-tuple")?;
+                Ok((i1, i2))
+            }
+            _ => Err("expected 2-tuple"),
         }
     }
 }

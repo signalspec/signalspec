@@ -1,51 +1,49 @@
-use std::io::prelude::*;
-use std::io;
-use signalspec::{ Handle, ShapeMsg, Value, Dir, TypeTree };
+use std::{io::prelude::*, fmt::Display};
+use signalspec::{ Handle, Value, Dir, TypeTree, ChannelMessage, Shape };
 
 pub fn run(mut handle: Handle) -> Result<(), ()> {
     let stdout = ::std::io::stdout();
 
     if let Some(shape) = handle.shape().cloned() {
-        let shape_msg = &shape.messages[..];
-
-        while let Some(v) = handle.receive() {
+        while let Some(message) = handle.receive() {
             let mut w = stdout.lock();
-            format_message(&mut w, &v.values[..], &shape_msg[v.variant]).unwrap();
-            w.write_all(b"\n").unwrap();
+            writeln!(w, "{}", FormatMessage { message: &message, shape: &shape }).unwrap()
         }
     }
 
     handle.finish()
 }
 
-fn format_message<'a, 'b, 'c>(w: &mut dyn Write, values: &[Value], variant: &ShapeMsg) -> io::Result<()> {
-    let mut iter = values.iter();
-    write!(w, "{}(", variant.name)?;
-    for (i, param) in variant.params.iter().enumerate() {
-        if i > 0 { write!(w, ", ")?; }
-        match param.direction {
-            Dir::Dn => write!(w, "_")?,
-            Dir::Up => format_message_item(w, &mut iter, &param.ty)?,
-        }
-    }
-    write!(w, ")")
-           
+struct FormatMessage<'a> {
+    message: &'a ChannelMessage,
+    shape: &'a Shape,
 }
 
-fn format_message_item<'a, I: Iterator<Item=&'a Value>>(w: &mut dyn Write, values: &mut I, shape_msg: &TypeTree) -> io::Result<()> {
+impl<'a> Display for FormatMessage<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let variant = &self.shape.messages[self.message.variant];
+        let mut values = self.message.values.iter();
+
+        write!(f, "{}", variant.name)?;
+        variant.params.format(f, |param, f| {
+            match param.direction {
+                Dir::Dn => write!(f, "_"),
+                Dir::Up => format_message_item(f, &mut values, &param.ty),
+            }
+        })
+    }
+}
+
+fn format_message_item<'a>(f: &mut std::fmt::Formatter<'_>, values: &mut impl Iterator<Item=&'a Value>, shape_msg: &TypeTree) -> std::fmt::Result {
     match shape_msg {
         TypeTree::Tuple(ref t) => {
-            write!(w, "(")?;
-            for (i, v) in t.iter().enumerate() {
-                if i > 0 { write!(w, ", ")?; }
-                format_message_item(w, values, v)?;
-            }
-            write!(w, ")")?;
+            t.format(f, |v, f| {
+                format_message_item(f, values, v)
+            })
         }
         TypeTree::Leaf(_) => {
             let v = values.next().expect("message doesn't match shape");
-            write!(w, "{}", v)?;
+            write!(f, "{}", v)
         }
     }
-    Ok(())
 }

@@ -275,15 +275,6 @@ diagnostic_kinds!{
         error "definition" at def
     }
 
-    ArgsMismatchCount {
-        span: Span,
-        def_name: String,
-        expected: usize,
-        found: usize
-    } => "wrong number of arguments to `{def_name}`" {
-        error "expected {expected} arguments, but found {found}" at span
-    }
-
     ArgMismatchType {
         span: Span,
         def_name: String,
@@ -305,6 +296,20 @@ diagnostic_kinds!{
         n: usize
     } => "too few positional arguments passed" {
         error "expected {n} more positional arguments not passed" at span
+    }
+
+    TupleExtraNamed {
+        span: Span,
+        name: String
+    } => "unexpected named field `{name}` passed" {
+        error "unexpected field not matched" at span
+    }
+
+    TupleMissingNamed {
+        span: Span,
+        name: String
+    } => "missing named field `{name}`" {
+        error "expected additional named field" at span
     }
 
     ExpectedTuple {

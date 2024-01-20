@@ -82,8 +82,8 @@ peg::parser!(pub grammar signalspec() for str {
           { ast::ProtocolEntry::Child(ast::ProtocolChild { span: FileSpan { start, end }, name, child_protocol }) }
 
       rule message_param() -> ast::MessageParam
-        = start:pos() "var" _ "(" _ direction:expr() _ ")" _ expr:expr() end:pos()
-          { ast::MessageParam { span: FileSpan{start, end}, direction, expr} }
+        = start:pos() name:(name: IDENTIFIER() _ "=" _ {name})? "var" _ "(" _ direction:expr() _ ")" _ expr:expr() end:pos()
+          { ast::MessageParam { span: FileSpan{start, end}, name, direction, expr} }
 
   rule protocol_ref() -> ast::ProtocolRef
     = start:pos() name:IDENTIFIER() _ param:expr_tup() end:pos() { ast::ProtocolRef { span: FileSpan{ start, end }, name, param: param.into() } }
@@ -114,8 +114,12 @@ peg::parser!(pub grammar signalspec() for str {
 
   // Expressions
   rule expr_tup() -> ast::ExprTup
-      = start:pos() open:tok_node("(") items:COMMASEP(<(![')'] e:expr() {e})>) close:tok_node_or_err(")") end:pos()
-        { ast::ExprTup { span: FileSpan{start, end}, open, items, close }}
+      = start:pos() open:tok_node("(") fields:COMMASEP(<(![')'] e:tuple_field() {e})>) close:tok_node_or_err(")") end:pos()
+        { ast::ExprTup { span: FileSpan{start, end}, open, fields, close }}
+
+    rule tuple_field() -> ast::TupleField
+      = start:pos() name:(name: IDENTIFIER() _ "=" _ {name})? expr:expr() end:pos()
+        { ast::TupleField { span: FileSpan{start, end}, name, expr } }
 
   pub rule expr() -> ast::Expr = precedence! {
     start:position!() e:@ end:position!() { let e:ast::Expr = e; e.with_span(FileSpan::from(start..end)) }

@@ -14,6 +14,7 @@ pub(crate) use self::primitives::{ PrimitiveProcess, instantiate_primitive };
 use crate::core::ShapeMode;
 use crate::diagnostic::DiagnosticContext;
 use crate::diagnostic::Diagnostics;
+use crate::tree::TupleFields;
 use crate::{ Scope, ShapeMsg };
 use crate::syntax::{ SourceFile, parse_process, ast };
 pub use channel::{ Channel, ChannelMessage };
@@ -124,7 +125,7 @@ fn base_shape(index: &Index) -> Shape {
     let base = index.find_protocol("Base").cloned().expect("No `Base` protocol found in prelude");
     Shape {
         def: base,
-        param: Item::Tuple(vec![]),
+        param: Item::Tuple(TupleFields::default()),
         mode: ShapeMode::Null,
         tag_offset: 0,
         tag_count: 0,
@@ -140,7 +141,7 @@ fn seq_shape(index: &Index, ty_item: Item, dir: Dir) -> Result<Shape, ()> {
 
     Ok(Shape {
         def: base,
-        param: Item::Tuple(vec![ty_item, Item::symbol(match dir { Dir::Dn => "dn", Dir::Up => "up"})]),
+        param: Item::Tuple(vec![ty_item, Item::symbol(match dir { Dir::Dn => "dn", Dir::Up => "up"})].into()),
         mode: dir.into(),
         tag_offset: 0,
         tag_count: 1,
@@ -148,7 +149,7 @@ fn seq_shape(index: &Index, ty_item: Item, dir: Dir) -> Result<Shape, ()> {
             ShapeMsg {
                 name: "val".into(),
                 tag: 0,
-                params: vec![ShapeMsgParam { ty, direction: dir }],
+                params: vec![ShapeMsgParam { ty, direction: dir }].into(),
                 child: None,
             }
         ],

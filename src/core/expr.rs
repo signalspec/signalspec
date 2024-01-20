@@ -385,27 +385,22 @@ fn fn_signed(arg: Item) -> Result<Item, &'static str> {
 }
 
 fn fn_signed_unsigned(arg: Item, signed: SignMode) -> Result<Item, &'static str> {
-    match arg {
-        Item::Tuple(t) => {
-            match <[Item; 2]>::try_from(t) {
-                Ok([Item::Leaf(LeafItem::Value(Expr::Const(Value::Number(width)))), Item::Leaf(LeafItem::Value(v))]) => {
-                    let width = width.to_u32().ok_or("width must be a constant integer")?;
+    match <(Item, Item)>::try_from(arg) {
+        Ok((Item::Leaf(LeafItem::Value(Expr::Const(Value::Number(width)))), Item::Leaf(LeafItem::Value(v)))) => {
+            let width = width.to_u32().ok_or("width must be a constant integer")?;
 
-                    match v {
-                        Expr::Const(Value::Number(i)) => {
-                            Ok(Expr::Const(eval_int_to_bits(width, i)).into())
-                        }
-
-                        Expr::Expr(Type::Number(..), e) => {
-                            let op = ExprKind::Unary(Box::new(e), UnaryOp::IntToBits {width, signed });
-                            let ty = Type::bits(width);
-                            Ok(Expr::Expr(ty, op).into())
-                        }
-
-                        _ => Err("value must be a number")
-                    }
+            match v {
+                Expr::Const(Value::Number(i)) => {
+                    Ok(Expr::Const(eval_int_to_bits(width, i)).into())
                 }
-                _ => Err("invalid arguments to signed()")
+
+                Expr::Expr(Type::Number(..), e) => {
+                    let op = ExprKind::Unary(Box::new(e), UnaryOp::IntToBits {width, signed });
+                    let ty = Type::bits(width);
+                    Ok(Expr::Expr(ty, op).into())
+                }
+
+                _ => Err("value must be a number")
             }
         }
         _ => Err("invalid arguments to signed()")
@@ -413,25 +408,20 @@ fn fn_signed_unsigned(arg: Item, signed: SignMode) -> Result<Item, &'static str>
 }
 
 fn fn_chunks(arg: Item) -> Result<Item, &'static str> {
-    match arg {
-        Item::Tuple(t) => {
-            match <[Item; 2]>::try_from(t) {
-                Ok([Item::Leaf(LeafItem::Value(Expr::Const(Value::Number(width)))), Item::Leaf(LeafItem::Value(v))]) => {
-                    let width = width.to_u32().ok_or("width must be a constant integer")?;
+    match <(Item, Item)>::try_from(arg) {
+        Ok((Item::Leaf(LeafItem::Value(Expr::Const(Value::Number(width)))), Item::Leaf(LeafItem::Value(v)))) => {
+            let width = width.to_u32().ok_or("width must be a constant integer")?;
 
-                    match v {
-                        Expr::Const(Value::Vector(c)) => {
-                            Ok(Expr::Const(eval_chunks(width, c)).into())
-                        },
-                        Expr::Expr(Type::Vector(c, t), e) => {
-                            let op = ExprKind::Unary(Box::new(e), UnaryOp::Chunks { width });
-                            let ty = Type::Vector(c/width, Box::new(Type::Vector(width, t)));
-                            Ok(Expr::Expr(ty, op).into())
-                        },
-                        _ => Err("value must be a vector")
-                    }
-                }
-                _ => Err("invalid arguments to chunks()")
+            match v {
+                Expr::Const(Value::Vector(c)) => {
+                    Ok(Expr::Const(eval_chunks(width, c)).into())
+                },
+                Expr::Expr(Type::Vector(c, t), e) => {
+                    let op = ExprKind::Unary(Box::new(e), UnaryOp::Chunks { width });
+                    let ty = Type::Vector(c/width, Box::new(Type::Vector(width, t)));
+                    Ok(Expr::Expr(ty, op).into())
+                },
+                _ => Err("value must be a vector")
             }
         }
         _ => Err("invalid arguments to chunks()")
@@ -439,19 +429,14 @@ fn fn_chunks(arg: Item) -> Result<Item, &'static str> {
 }
 
 fn fn_complex(arg: Item) -> Result<Item, &'static str> {
-    match arg {
-        Item::Tuple(t) => {
-            match t[..] {
-                [
-                    Item::Leaf(LeafItem::Value(Expr::Const(Value::Number(re)))),
-                    Item::Leaf(LeafItem::Value(Expr::Const(Value::Number(im))))
-                 ] => {
-                    Ok(Item::Leaf(LeafItem::Value(Expr::Const(Value::Complex(Complex::new(re, im))))))
-                }
-                _ => Err("invalid arguments to complex(re, im): expected two number constants")
-            }
+    match <(Item, Item)>::try_from(arg) {
+        Ok((
+            Item::Leaf(LeafItem::Value(Expr::Const(Value::Number(re)))),
+            Item::Leaf(LeafItem::Value(Expr::Const(Value::Number(im))))
+         )) => {
+            Ok(Item::Leaf(LeafItem::Value(Expr::Const(Value::Complex(Complex::new(re, im))))))
         }
-        _ => Err("invalid arguments to complex()")
+        _ => Err("invalid arguments to complex(re, im): expected two number constants")
     }
 }
 

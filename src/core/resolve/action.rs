@@ -19,7 +19,7 @@ use crate::syntax::ast::{self, AstNode};
 use crate::tree::Tree;
 use crate::{Diagnostic, FileSpan, Index, SourceFile, TypeTree};
 
-use super::expr::{TryFromConstant, lvalue_const, zip_tuple_ast, lexpr_tup};
+use super::expr::{TryFromConstant, lvalue_const, zip_tuple_ast, lexpr_tup, zip_tuple_ast_fields};
 
 enum AltMode {
     Const,
@@ -182,22 +182,13 @@ impl<'a> Builder<'a> {
                     return self.add_step(Step::Invalid(r));
                 };
 
-                if args.items.len() != msg_def.params.len() {
-                    self.dcx.report(Diagnostic::ArgsMismatchCount {
-                        span: sb.scope.span(args.span),
-                        def_name: node.name.name.clone(),
-                        expected: msg_def.params.len(),
-                        found: args.items.len(),
-                    });
-                }
-
                 let mut body_scope = sb.scope.child();
 
                 let mut dn_vars = Vec::new();
                 let mut dn = Vec::new();
                 let mut up_inner = Vec::new();
 
-                for (param, expr) in msg_def.params.iter().zip(&args.items) {
+                for (expr, param) in zip_tuple_ast_fields(&mut self.dcx, &sb.scope.file, &args, &msg_def.params, false) {
                     match param.direction {
                         Dir::Dn => {
                             let item = param.ty.map_leaf(&mut |ty| {
@@ -565,7 +556,7 @@ impl<'a> Builder<'a> {
                     dn.push(Predicate::Any)
                 });
             }
-            (ast::Expr::Var(ref name), t @ Tree::Tuple(_)) => {
+            (ast::Expr::Var(ref name), t @ Tree::Tuple(..)) => {
                 t.for_each(&mut |_| {
                     dn.push(Predicate::Any)
                 });
@@ -647,7 +638,7 @@ impl<'a> Builder<'a> {
                     Err(_) => { up.push(LValueSrc::Val(ExprDn::invalid())); }
                 }
             }
-            (ast::Expr::Var(ref name), tup @ Tree::Tuple(_)) => {
+            (ast::Expr::Var(ref name), tup @ Tree::Tuple(..)) => {
                 let e = tup.map_leaf(&mut |ty| {
                     let id = self.value_sink.push(());
                     up.push(LValueSrc::Var(id, name.span));
@@ -788,19 +779,10 @@ impl<'a> Builder<'a> {
     }
 
     pub fn resolve_token(&mut self, msg_def: &ShapeMsg, scope: &Scope, node: &ast::ProcessCall) -> (Vec<ExprDn>, Vec<(Predicate, ValueSrcId)>) {
-        if node.args.items.len() != msg_def.params.len() {
-            self.dcx.report(Diagnostic::ArgsMismatchCount {
-                span: scope.span(node.args.span),
-                def_name: node.name.name.clone(),
-                expected: msg_def.params.len(),
-                found: node.args.items.len(),
-            });
-        }
-
         let mut dn = Vec::new();
         let mut up = Vec::new();
 
-        for (param, arg_ast) in msg_def.params.iter().zip(node.args.items.iter()) {
+        for (arg_ast, param) in zip_tuple_ast_fields(&mut self.dcx, &scope.file, &node.args, &msg_def.params, true) {
             let arg = rexpr(&mut self.dcx, scope, arg_ast);
 
             let mut valid = true;

@@ -128,7 +128,7 @@ fn run_test(show_diagnostics: &dyn Fn(Diagnostics), index: &Index, file: &FileSc
         return Err("Test def must use Seq");
     }
 
-    if !def.params.items.is_empty() {
+    if !def.params.fields.is_empty() {
         return Err("Test def must not have parameters");
     }
 
@@ -137,7 +137,7 @@ fn run_test(show_diagnostics: &dyn Fn(Diagnostics), index: &Index, file: &FileSc
     let scope = file.scope();
 
     let seq_ty = match &def.bottom.param {
-        ast::Expr::Tup(t) if t.items.len() == 2 => rexpr(&mut dcx, &scope, &t.items[0]),
+        ast::Expr::Tup(t) if t.fields.len() == 2 => rexpr(&mut dcx, &scope, &t.fields[0].expr),
         _ => return Err("Seq takes two arguments"),
     };
 

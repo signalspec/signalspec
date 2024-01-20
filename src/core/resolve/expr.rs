@@ -11,7 +11,7 @@ use crate::{
         ast::{self, AstNode, BinOp},
         Number,
     },
-    tree::Tree,
+    tree::{Tree, TupleFields},
     FileSpan, SourceFile, Type, Value,
 };
 
@@ -92,11 +92,16 @@ pub fn collect_or_err<T, C: FromIterator<T>>(iter: impl Iterator<Item=Result<T, 
 }
 
 pub fn rexpr_tup(dcx: &mut DiagnosticContext, scope: &Scope, node: &ast::ExprTup) -> Item {
-    let values: Vec<Item> = node.items.iter().map(|i| rexpr(dcx, scope, i)).collect();
-    if values.len() == 1 {
-        values.into_iter().next().unwrap()
+    if node.fields.len() == 1 && node.fields[0].name.is_none() {
+        // Unwrap singleton tuple
+        rexpr(dcx, scope, &node.fields[0].expr)
     } else {
-        Item::Tuple(values)
+        Item::Tuple(node.fields.iter()
+            .map(|f| (
+                f.name.as_ref().map(|n| n.name.clone()),
+                rexpr(dcx, scope, &f.expr)
+            )).collect()
+        )
     }
 }
 
@@ -729,23 +734,11 @@ pub fn zip_tuple_ast<'a, 't, T: Display>(
     }
 
     match tree {
-        Tree::Tuple(t) => {
-            if tup_ast.items.len() < t.len() {
-                let n = t.len() - tup_ast.items.len();
-                let span = tup_ast.close.as_ref().map(|a| a.span).unwrap_or(tup_ast.span);
-                dcx.report(Diagnostic::TupleTooManyPositional { span: Span::new(file, span), n });
-
-            } else if tup_ast.items.len() > t.len() {
-                let n = tup_ast.items.len() - t.len();
-                let span = tup_ast.items[t.len()].span()
-                    .to(tup_ast.items.last().unwrap().span());
-                dcx.report(Diagnostic::TupleTooFewPositional { span: Span::new(file, span), n });
-            }
-
-            IterRes::A(tup_ast.items.iter().zip(t.iter()))
+        Tree::Tuple(f) => {
+            IterRes::A(zip_tuple_ast_fields(dcx, file, tup_ast, f, false))
         }
-        t if tup_ast.items.len() == 1 => {
-            IterRes::B(iter::once((&tup_ast.items[0], t)))
+        t if tup_ast.fields.len() == 1 && tup_ast.fields[0].name.is_none() => {
+            IterRes::B(iter::once((&tup_ast.fields[0].expr, t)))
         }
         t => {
             dcx.report(Diagnostic::ExpectedTuple {
@@ -755,6 +748,68 @@ pub fn zip_tuple_ast<'a, 't, T: Display>(
             IterRes::Empty
         }
     }
+}
+
+pub fn zip_tuple_ast_fields<'a, 't, T>(
+    dcx: &mut DiagnosticContext,
+    file: &Arc<SourceFile>,
+    tup_ast: &'a ast::ExprTup,
+    f: &'t TupleFields<T>,
+    is_call_site: bool,
+) -> impl Iterator<Item = (&'a ast::Expr, &'t T)> {
+    let ast_positional_count = tup_ast.fields.iter().filter(|i| i.name.is_none()).count();
+
+    if ast_positional_count < f.positional.len() {
+        let n = f.positional.len() - tup_ast.fields.len();
+        let span = tup_ast.close.as_ref().map(|a| a.span).unwrap_or(tup_ast.span);
+        if is_call_site {
+            dcx.report(Diagnostic::TupleTooFewPositional { span: Span::new(file, span), n });
+        } else {
+            dcx.report(Diagnostic::TupleTooManyPositional { span: Span::new(file, span), n });
+        }
+
+    } else if ast_positional_count > f.positional.len() {
+        let n = tup_ast.fields.len() - f.positional.len();
+        let span = tup_ast.fields.iter().filter(|i| i.name.is_none()).nth(f.positional.len()).unwrap().span()
+            .to(tup_ast.fields.last().unwrap().span());
+        if is_call_site {
+            dcx.report(Diagnostic::TupleTooManyPositional { span: Span::new(file, span), n });
+        } else {
+            dcx.report(Diagnostic::TupleTooFewPositional { span: Span::new(file, span), n });
+        }
+    }
+
+    for name in f.named.keys() {
+        if !tup_ast.fields.iter().any(|field_ast| field_ast.name.as_ref().is_some_and(|i| &i.name == name)) {
+            let span = tup_ast.close.as_ref().map(|a| a.span).unwrap_or(tup_ast.span);
+            if is_call_site {
+                dcx.report(Diagnostic::TupleMissingNamed { span: Span::new(file, span), name: name.clone() });
+            } else {
+                dcx.report(Diagnostic::TupleExtraNamed { span: Span::new(file, span), name: name.clone() });
+            }
+        }
+    }
+
+    for (name, span) in tup_ast.fields.iter().filter_map(|a| a.name.as_ref().map(|i| (&i.name, a.span))) {
+        if !f.named.contains_key(name) {
+            if is_call_site {
+                dcx.report(Diagnostic::TupleExtraNamed { span: Span::new(file, span), name: name.clone() });
+            } else {
+                dcx.report(Diagnostic::TupleMissingNamed { span: Span::new(file, span), name: name.clone() });
+            }
+        }
+    }
+
+    tup_ast.fields.iter()
+        .filter(|i| i.name.is_none())
+        .map(|i| &i.expr)
+        .zip(f.positional.iter())
+        .chain(f.named.iter().filter_map(|(name, v)| {
+            let field = tup_ast.fields.iter()
+                .find(|field_ast| field_ast.name.as_ref().is_some_and(|i| &i.name == name));
+
+           Some((&field?.expr, v))
+        }))
 }
 
 pub fn lexpr_tup(dcx: &mut DiagnosticContext, scope: &mut Scope, tup_pat: &ast::ExprTup, r: &Item) {
