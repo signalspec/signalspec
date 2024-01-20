@@ -1,10 +1,10 @@
 @test(#up, (9))
 with Seq(0..10, _) def main() = {
-//# too many positional arguments passed
+//# too many positional fields
     val(0, 0)
-//         ^ 1 unexpected positional arguments not matched
+//         ^ 1 unexpected positional fields
 
-//# too few positional arguments passed
+//# too few positional fields
     val()
-//      ^ expected 1 more positional arguments not passed
+//      ^ expected 1 more positional fields
 }

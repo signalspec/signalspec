@@ -1,5 +1,5 @@
-//# too many positional arguments passed
-//^* 1 unexpected positional arguments not matched
+//# too few positional fields
+//^* expected 1 more positional fields
 
 //# expected constant #up | #dn | #sync | #async | #null
 //^* found `9`

@@ -15,6 +15,6 @@ with Seq(0..10, _) def main() = {
 
 //# unexpected named field `z` passed
         foo(#a, x = 1, y = '00000000, z = #foo)
-//                                    ^^^^^^^^ unexpected field not matched
+//                                    ^^^^^^^^ unexpected field
     }
 }

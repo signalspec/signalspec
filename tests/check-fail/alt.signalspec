@@ -7,13 +7,13 @@ with Seq(0..10, _) def main() = {
 
         (a, b, c) => {}
 
-//# too many positional arguments passed
+//# too few positional fields
         (_, _) => {}
-//           ^ 1 unexpected positional arguments not matched
+//           ^ expected 1 more positional fields
 
-//# too few positional arguments passed
+//# too many positional fields
         (_, _, _, _, _) => {}
-//                ^^^^ expected 2 more positional arguments not passed
+//                ^^^^ 2 unexpected positional fields
 
 //# invalid item not matched
         (1, 2, 3) => {}

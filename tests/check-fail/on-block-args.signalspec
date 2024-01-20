@@ -1,0 +1,20 @@
+@test(#up, ())
+with Seq(_, _) def main() = new Seq(#x, #up) {
+//# too many positional fields
+    on val(x, y) {
+//            ^ 1 unexpected positional fields
+        val(x)
+        val(y)
+    }
+
+//# unexpected named field `y` passed
+    on val(x, y = #y) {
+//            ^^^^^^ unexpected field
+        val(x)
+    }
+
+//# too few positional fields
+    on val() {}
+//         ^ expected 1 more positional fields
+
+}

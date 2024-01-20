@@ -442,6 +442,12 @@ ast_node!{
     }
 }
 
+impl ExprTup {
+    pub fn positional(&self) -> impl Iterator<Item = &Expr> {
+        self.fields.iter().filter(|i| i.name.is_none()).map(|i| &i.expr)
+    }
+}
+
 ast_node!{
     pub struct TupleField {
         pub span: FileSpan,

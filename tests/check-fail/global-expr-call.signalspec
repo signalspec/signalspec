@@ -1,11 +1,20 @@
 //# expected constant #x
-//# too many positional arguments passed
+//# too few positional fields
 //# expected a tuple
 let f = (#x, (y, z)) => #x
 //       ^^ found `1`
 //           ^^^^^^ passed a single value `2`
-//                 ^ 1 unexpected positional arguments not matched
+//                 ^ expected 1 more positional fields
 let t1 = f(1, 2, 3)
+
+//# unexpected named field `b`
+//# missing named field `z`
+let f2 = (a = a, b = b) => #x
+//                    ^ expected additional named field
+//               ^^^^^ unexpected field
+
+
+let t2 = f2(a = #a, z = #z)
 
 //# function error: invalid arguments to signed()
 let t2 = unsigned(#not_number)

@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use itertools::EitherOrBoth;
 use num_traits::Signed;
 
 use crate::{core::{
@@ -188,7 +189,36 @@ impl<'a> Builder<'a> {
                 let mut dn = Vec::new();
                 let mut up_inner = Vec::new();
 
-                for (expr, param) in zip_tuple_ast_fields(&mut self.dcx, &sb.scope.file, &args, &msg_def.params, false) {
+                for m in zip_tuple_ast_fields(&mut self.dcx, &sb.scope.file, &args, &msg_def.params) {
+                    let (expr, param) = match m {
+                        EitherOrBoth::Both(expr, param) => (expr, param),
+                        EitherOrBoth::Left(expr) => {
+                            // unexpected param: declare its variables with invalid
+                            // reported in zip_tuple_ast_fields
+                            let reported = ErrorReported::error_reported();
+                            lexpr(&mut self.dcx, &mut body_scope, expr, &reported.into());
+                            continue;
+                        },
+                        EitherOrBoth::Right(param) => {
+                            // missing param: pad `up` or `down`
+                            match param.direction {
+                                Dir::Dn => {
+                                    param.ty.for_each(&mut |_| {
+                                        let id = self.add_value_src();
+                                        dn_vars.push(id);
+                                        dn.push(Predicate::Any);
+                                    });
+                                }
+                                Dir::Up => {
+                                    param.ty.for_each(&mut |_| {
+                                        up_inner.push(LValueSrc::Val(ExprDn::invalid()));
+                                    });
+                                }
+                            }
+                            continue;
+                        }
+                    };
+
                     match param.direction {
                         Dir::Dn => {
                             let item = param.ty.map_leaf(&mut |ty| {
@@ -196,7 +226,7 @@ impl<'a> Builder<'a> {
                                 dn_vars.push(id);
                                 LeafItem::Value(Expr::var_dn(id, ty.clone()))
                             });
-                            self.bind_tree_fields_dn(&mut body_scope, expr, &item,  &mut dn);
+                            self.bind_tree_fields_dn(&mut body_scope, expr, &item, &mut dn);
                         }
                         Dir::Up => {
                             self.bind_tree_fields_up(&mut body_scope,  expr, &param.ty, &mut up_inner);
@@ -541,8 +571,19 @@ impl<'a> Builder<'a> {
     ) {
         match (pat, rhs) {
             (ast::Expr::Tup(pat_tup), r) => {
-                for (p, t) in zip_tuple_ast(&mut self.dcx, &scope.file, pat_tup, r) {
-                    self.bind_tree_fields_dn(scope, p, t, dn);
+                for m in zip_tuple_ast(&mut self.dcx, &scope.file, pat_tup, r) {
+                    match m {
+                        EitherOrBoth::Both(p, t) => self.bind_tree_fields_dn(scope, p, t, dn),
+                        EitherOrBoth::Left(p) => {
+                            // reported in zip_tuple_ast
+                            let reported = ErrorReported::error_reported();
+                            self.bind_tree_fields_dn(scope, p, &reported.into(), dn);
+                        }
+                        EitherOrBoth::Right(t) => {
+                            // pad `dn` for missing fields
+                            t.for_each(&mut |_| { dn.push(Predicate::Any) })
+                        }
+                    }
                 }
             }
             (pat, Tree::Leaf(LeafItem::Value(r))) => {
@@ -565,11 +606,14 @@ impl<'a> Builder<'a> {
             (_, Tree::Leaf(LeafItem::Invalid(_))) => {
                 dn.push(Predicate::Any);
             }
-            (pat, e) => {
-                dn.push(Predicate::Any);
+            (pat, t) => {
+                t.for_each(&mut |_| {
+                    dn.push(Predicate::Any)
+                });
+                
                 self.dcx.report(Diagnostic::InvalidItemForPattern {
                     span: scope.span(pat.span()),
-                    found: e.to_string(),
+                    found: t.to_string(),
                 });
             }
         }
@@ -584,8 +628,21 @@ impl<'a> Builder<'a> {
         match (pat, rhs) {
             (ast::Expr::Tup(pat_tup), r) => {
                 let mut matched = true;
-                for (p, t) in zip_tuple_ast(&mut self.dcx, &scope.file, pat_tup, r) {
-                    matched &= self.bind_tree_fields_const(scope, p, t);
+                for m in zip_tuple_ast(&mut self.dcx, &scope.file, pat_tup, r) {
+                    match m {
+                        EitherOrBoth::Both(p, t) => {
+                            matched &= self.bind_tree_fields_const(scope, p, t);
+                        }
+                        EitherOrBoth::Left(_) => {
+                            matched = false;
+                            // reported in zip_tuple_ast
+                            let reported = ErrorReported::error_reported();
+                            self.bind_tree_fields_const(scope, pat, &reported.into());
+                        }
+                        EitherOrBoth::Right(_) => {
+                            matched = false;
+                        }
+                    }
                 }
                 matched
             }
@@ -628,8 +685,17 @@ impl<'a> Builder<'a> {
     ) {
         match (pat, rhs) {
             (ast::Expr::Tup(pat_tup), r) => {
-                for (p, t) in zip_tuple_ast(&mut self.dcx, &scope.file, pat_tup, r) {
-                    self.bind_tree_fields_up(scope, p, t, up);
+                for m in zip_tuple_ast(&mut self.dcx, &scope.file, pat_tup, r) {
+                    match m {
+                        EitherOrBoth::Both(p, t) => self.bind_tree_fields_up(scope, p, t, up),
+                        EitherOrBoth::Left(p) => {
+                            self.bind_tree_fields_up(scope, p, &Tree::Leaf(Type::Ignored), up);
+                        }
+                        EitherOrBoth::Right(_) => {
+                            // pad `up` for missing fields
+                            up.push(LValueSrc::Val(ExprDn::invalid()))
+                        }
+                    }
                 }
             }
             (pat, Tree::Leaf(t)) => {
@@ -782,8 +848,23 @@ impl<'a> Builder<'a> {
         let mut dn = Vec::new();
         let mut up = Vec::new();
 
-        for (arg_ast, param) in zip_tuple_ast_fields(&mut self.dcx, &scope.file, &node.args, &msg_def.params, true) {
-            let arg = rexpr(&mut self.dcx, scope, arg_ast);
+        for m in zip_tuple_ast_fields(&mut self.dcx, &scope.file, &node.args, &msg_def.params) {
+            let (arg, param, span) = match m {
+                EitherOrBoth::Both(arg_ast, param) => {
+                    let arg = rexpr(&mut self.dcx, scope, arg_ast);
+                    (arg, param, arg_ast.span())
+                }
+                EitherOrBoth::Left(_) => {
+                    // unexpected parameter passed and already reported: ignore it
+                    continue
+                }
+                EitherOrBoth::Right(param) => {
+                    // missing expected parameter
+                    // reported in zip_tuple_ast_fields
+                    let reported = ErrorReported::error_reported();
+                    (reported.into(), param, node.args.span)
+                },
+            };
 
             let mut valid = true;
             param.ty.zip(&arg, &mut |m| { match m {
@@ -793,7 +874,7 @@ impl<'a> Builder<'a> {
                 ) if v.get_type().is_subtype(ty) => {
                     match param.direction {
                         Dir::Dn => {
-                            dn.push(self.require_down(scope, arg_ast.span(), v));
+                            dn.push(self.require_down(scope, span, v));
                         }
                         Dir::Up => {
                             let predicate = v.predicate().expect("Value cannot be up-evaluated as a predicate");
@@ -817,7 +898,7 @@ impl<'a> Builder<'a> {
 
             if !valid {
                 self.dcx.report(Diagnostic::ArgMismatchType {
-                    span: scope.span(arg_ast.span()),
+                    span: scope.span(span),
                     def_name: node.name.name.clone(),
                     expected: format!("{}", param.ty),
                     found: format!("{arg}")

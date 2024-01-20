@@ -287,22 +287,22 @@ diagnostic_kinds!{
     TupleTooManyPositional {
         span: Span,
         n: usize
-    } => "too many positional arguments passed" {
-        error "{n} unexpected positional arguments not matched" at span
+    } => "too many positional fields" {
+        error "{n} unexpected positional fields" at span
     }
 
     TupleTooFewPositional {
         span: Span,
         n: usize
-    } => "too few positional arguments passed" {
-        error "expected {n} more positional arguments not passed" at span
+    } => "too few positional fields" {
+        error "expected {n} more positional fields" at span
     }
 
     TupleExtraNamed {
         span: Span,
         name: String
     } => "unexpected named field `{name}` passed" {
-        error "unexpected field not matched" at span
+        error "unexpected field" at span
     }
 
     TupleMissingNamed {

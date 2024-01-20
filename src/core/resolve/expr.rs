@@ -1,5 +1,7 @@
 use std::{sync::Arc, fmt::Display, iter};
 
+use itertools::{Itertools, EitherOrBoth};
+
 use crate::{
     core::{
         expr::{eval_binary, eval_choose, ExprKind},
@@ -709,12 +711,15 @@ pub fn lvalue_const(
     }
 }
 
+/// Match the fields of a tuple expression `tup_ast` with `tree`.
+/// 
+/// The fields will be iterated in the order of `tree`.
 pub fn zip_tuple_ast<'a, 't, T: Display>(
     dcx: &mut DiagnosticContext,
     file: &Arc<SourceFile>,
     tup_ast: &'a ast::ExprTup,
     tree: &'t Tree<T>,
-) -> impl Iterator<Item = (&'a ast::Expr, &'t Tree<T>)> {
+) -> impl Iterator<Item = EitherOrBoth<&'a ast::Expr, &'t Tree<T>>> {
     enum IterRes<A, B> {
         A(A),
         B(B),
@@ -735,10 +740,10 @@ pub fn zip_tuple_ast<'a, 't, T: Display>(
 
     match tree {
         Tree::Tuple(f) => {
-            IterRes::A(zip_tuple_ast_fields(dcx, file, tup_ast, f, false))
+            IterRes::A(zip_tuple_ast_fields(dcx, file, tup_ast, f))
         }
         t if tup_ast.fields.len() == 1 && tup_ast.fields[0].name.is_none() => {
-            IterRes::B(iter::once((&tup_ast.fields[0].expr, t)))
+            IterRes::B(iter::once(EitherOrBoth::Both(&tup_ast.fields[0].expr, t)))
         }
         t => {
             dcx.report(Diagnostic::ExpectedTuple {
@@ -755,66 +760,57 @@ pub fn zip_tuple_ast_fields<'a, 't, T>(
     file: &Arc<SourceFile>,
     tup_ast: &'a ast::ExprTup,
     f: &'t TupleFields<T>,
-    is_call_site: bool,
-) -> impl Iterator<Item = (&'a ast::Expr, &'t T)> {
-    let ast_positional_count = tup_ast.fields.iter().filter(|i| i.name.is_none()).count();
+) -> impl Iterator<Item = EitherOrBoth<&'a ast::Expr, &'t T>> {
+    let ast_positional_count = tup_ast.positional().count();
 
     if ast_positional_count < f.positional.len() {
         let n = f.positional.len() - tup_ast.fields.len();
         let span = tup_ast.close.as_ref().map(|a| a.span).unwrap_or(tup_ast.span);
-        if is_call_site {
-            dcx.report(Diagnostic::TupleTooFewPositional { span: Span::new(file, span), n });
-        } else {
-            dcx.report(Diagnostic::TupleTooManyPositional { span: Span::new(file, span), n });
-        }
+        dcx.report(Diagnostic::TupleTooFewPositional { span: Span::new(file, span), n });
 
     } else if ast_positional_count > f.positional.len() {
         let n = tup_ast.fields.len() - f.positional.len();
         let span = tup_ast.fields.iter().filter(|i| i.name.is_none()).nth(f.positional.len()).unwrap().span()
             .to(tup_ast.fields.last().unwrap().span());
-        if is_call_site {
-            dcx.report(Diagnostic::TupleTooManyPositional { span: Span::new(file, span), n });
-        } else {
-            dcx.report(Diagnostic::TupleTooFewPositional { span: Span::new(file, span), n });
-        }
+        dcx.report(Diagnostic::TupleTooManyPositional { span: Span::new(file, span), n });
     }
 
     for name in f.named.keys() {
         if !tup_ast.fields.iter().any(|field_ast| field_ast.name.as_ref().is_some_and(|i| &i.name == name)) {
             let span = tup_ast.close.as_ref().map(|a| a.span).unwrap_or(tup_ast.span);
-            if is_call_site {
-                dcx.report(Diagnostic::TupleMissingNamed { span: Span::new(file, span), name: name.clone() });
-            } else {
-                dcx.report(Diagnostic::TupleExtraNamed { span: Span::new(file, span), name: name.clone() });
-            }
+            dcx.report(Diagnostic::TupleMissingNamed { span: Span::new(file, span), name: name.clone() });
         }
     }
 
     for (name, span) in tup_ast.fields.iter().filter_map(|a| a.name.as_ref().map(|i| (&i.name, a.span))) {
         if !f.named.contains_key(name) {
-            if is_call_site {
-                dcx.report(Diagnostic::TupleExtraNamed { span: Span::new(file, span), name: name.clone() });
-            } else {
-                dcx.report(Diagnostic::TupleMissingNamed { span: Span::new(file, span), name: name.clone() });
-            }
+            dcx.report(Diagnostic::TupleExtraNamed { span: Span::new(file, span), name: name.clone() });
         }
     }
 
-    tup_ast.fields.iter()
-        .filter(|i| i.name.is_none())
-        .map(|i| &i.expr)
-        .zip(f.positional.iter())
-        .chain(f.named.iter().filter_map(|(name, v)| {
-            let field = tup_ast.fields.iter()
-                .find(|field_ast| field_ast.name.as_ref().is_some_and(|i| &i.name == name));
-
-           Some((&field?.expr, v))
+    tup_ast.positional()
+        .zip_longest(f.positional.iter())
+        .chain(f.named.iter().map(|(name, v)| {
+            tup_ast.fields.iter()
+                .find(|field_ast| field_ast.name.as_ref().is_some_and(|i| &i.name == name))
+                .map_or(EitherOrBoth::Right(v), |f| EitherOrBoth::Both(&f.expr, v))
         }))
+        .chain(tup_ast.fields.iter().filter(|a| {
+            a.name.as_ref().is_some_and(|n| !f.named.contains_key(&n.name))
+        }).map(|a| EitherOrBoth::Left(&a.expr)))
 }
 
 pub fn lexpr_tup(dcx: &mut DiagnosticContext, scope: &mut Scope, tup_pat: &ast::ExprTup, r: &Item) {
-    for (pat, r) in zip_tuple_ast(dcx, &scope.file, tup_pat, r) {
-        lexpr(dcx, scope, pat, r);
+    for m in zip_tuple_ast(dcx, &scope.file, tup_pat, r) {
+        match m {
+            EitherOrBoth::Both(pat, r) => lexpr(dcx, scope, pat, r),
+            EitherOrBoth::Left(pat) => {
+                // reported in zip_tuple_ast
+                let reported = ErrorReported::error_reported();
+                lexpr(dcx, scope, pat, &Tree::Leaf(LeafItem::Invalid(reported)))
+            }
+            EitherOrBoth::Right(_) => {}
+        }
     }
 }
 
