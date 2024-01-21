@@ -54,7 +54,7 @@ impl PrimitiveProcess for SeqDownProcess {
         let expected = self.0.clone();
         Box::pin(async move {
             let mut received = vec![];
-            while let Some(msg) = chan.receive().await {
+            while let Some(msg) = chan.receive().await.pop_if(1) {
                 received.push(msg);
             }
 

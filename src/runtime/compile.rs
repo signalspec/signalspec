@@ -21,9 +21,6 @@ pub enum Insn {
     /// consuming the message or writing variables. If not matched, jump.
     Test(ChanId, MessagePatternSet, InsnId),
 
-    ChannelOpen(ChanId),
-    ChannelClose(ChanId),
-
     Primitive(PrimitiveId, Vec<ChanId>),
 
     CounterReset(CounterId, i64),
@@ -183,14 +180,6 @@ impl Compiler<'_> {
                 let hi_info = &self.program.step_info[hi];
                 let (c_dn, c_up) = self.new_channels(shape);
 
-                if let Some(c) = c_up {
-                    self.emit(Insn::ChannelOpen(c));
-                }
-
-                if let Some(c) = c_dn {
-                    self.emit(Insn::ChannelOpen(c));
-                }
-
                 let i = self.emit_placeholder();
                 let task = self.new_task();
 
@@ -203,7 +192,10 @@ impl Compiler<'_> {
                 self.seq_prep(channels_hi, &None, &hi_info.first);
                 self.compile_step(hi, channels_hi);
                 if let Some(c) = c_dn {
-                    self.emit(Insn::ChannelClose(c));
+                    self.emit(Insn::Send(c, 0, vec![]));
+                }
+                if let Some(c) = c_up {
+                    self.emit(Insn::Consume(c, 0, vec![]));
                 }
                 self.emit(Insn::End);
 
@@ -217,8 +209,11 @@ impl Compiler<'_> {
                 };
                 self.seq_prep(channels_lo, &None, &lo_info.first);
                 self.compile_step(lo, channels_lo);
+                if let Some(c) = c_dn {
+                    self.emit(Insn::Consume(c, 0, vec![]));
+                }
                 if let Some(c) = c_up {
-                    self.emit(Insn::ChannelClose(c));
+                    self.emit(Insn::Send(c, 0, vec![]));
                 }
                 self.emit(Insn::Join(task));
             }
@@ -409,9 +404,6 @@ pub fn compile(program: &ProcessChain) -> CompiledProgram {
 
     compiler.seq_prep(channels, &None, &program.step_info[program.root].first);
     compiler.compile_step(program.root, channels);
-    if let Some(up_tx) = channels.up_tx {
-        compiler.emit(Insn::ChannelClose(up_tx));
-    }
     compiler.emit(Insn::End);
 
     for (ip, insn) in compiler.insns.iter() {
@@ -507,16 +499,8 @@ impl ProgramExec {
                     self.channels[chan].send(ChannelMessage { variant, values });
                 }
                 Insn::Consume(chan, variant, ref exprs) => {
-                    ready!(self.channels[chan].poll_receive(cx));
-
-                    let mut rx = self.channels[chan].read();
-
-                    if rx.is_end() {
-                        debug!("  consume at end");
-                        return Poll::Ready(Err(()))
-                    }
-                    
-                    let rx = rx.pop().unwrap();
+                    let rx = ready!(self.channels[chan].poll_receive(cx));
+                    let rx = rx.pop();
                     debug!("  Consume {rx:?}");
     
                     if rx.variant != variant {
@@ -534,31 +518,18 @@ impl ProgramExec {
                     };
                 }
                 Insn::Test(chan, ref pat, if_false) => {
-                    ready!(self.channels[chan].poll_receive(cx));
+                    let rx = ready!(self.channels[chan].poll_receive(cx));
+                    let msg = rx.peek();
 
-                    let read = self.channels[chan].read();
-
-                    let matched = if read.is_end() {
-                        false
-                    } else {
-                        let rx = read.peek().unwrap();
-    
-                        pat.iter().any(|p| {
-                            p.variant == rx.variant && p.fields.iter().zip(rx.values.iter()).all(|(p, v)| {
-                                self.registers.up_eval_test(p, v)
-                            })
+                    let matched = pat.iter().any(|p| {
+                        p.variant == msg.variant && p.fields.iter().zip(msg.values.iter()).all(|(p, v)| {
+                            self.registers.up_eval_test(p, v)
                         })
-                    };
+                    });
 
                     if !matched {
                         next_ip = if_false;
                     }
-                }
-                Insn::ChannelOpen(ch) => {
-                    self.channels[ch].set_closed(false)
-                }
-                Insn::ChannelClose(ch) => {
-                    self.channels[ch].set_closed(true)
                 }
                 Insn::Primitive(id, ref channels) => {
                     let ch = channels.iter().map(|&id| self.channels[id].clone()).collect();

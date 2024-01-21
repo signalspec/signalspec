@@ -5,14 +5,14 @@ use async_fs::File;
 
 use crate::{Item, Shape};
 use crate::runtime::channel::Channel;
-use crate::runtime::{ PrimitiveProcess };
+use crate::runtime::PrimitiveProcess;
 
 pub(crate) struct ReaderProcess(PathBuf);
 
 impl ReaderProcess {
     pub fn instantiate(args: Item, _shape_dn: &Shape, shape_up: Option<&Shape>) -> Result<Arc<dyn PrimitiveProcess>, String> {
         let name: String = args.try_into()?;
-        assert!(shape_up.unwrap().tag_offset == 0);
+        assert!(shape_up.unwrap().tag_offset == 1);
         Ok(Arc::new(ReaderProcess(PathBuf::from(name))))
     }
 }
@@ -28,7 +28,6 @@ impl PrimitiveProcess for ReaderProcess {
             Ok(())
         })
     }
-    
 }
 
 impl ::std::fmt::Debug for ReaderProcess {
@@ -42,7 +41,7 @@ pub(crate) struct WriterProcess(PathBuf);
 impl WriterProcess {
     pub fn instantiate(args: Item, _shape_dn: &Shape, shape_up: Option<&Shape>) -> Result<Arc<dyn PrimitiveProcess>, String> {
         let name: String = args.try_into()?;
-        assert!(shape_up.unwrap().tag_offset == 0);
+        assert!(shape_up.unwrap().tag_offset == 1);
         Ok(Arc::new(WriterProcess(PathBuf::from(name))))
     }
 }

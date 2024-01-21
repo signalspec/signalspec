@@ -21,16 +21,19 @@ struct FormatMessage<'a> {
 
 impl<'a> Display for FormatMessage<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let variant = &self.shape.messages[self.message.variant];
-        let mut values = self.message.values.iter();
-
-        write!(f, "{}", variant.name)?;
-        variant.params.format(f, |param, f| {
-            match param.direction {
-                Dir::Dn => write!(f, "_"),
-                Dir::Up => format_message_item(f, &mut values, &param.ty),
-            }
-        })
+        if let Some(variant) = self.shape.messages.iter().find(|m| m.tag == self.message.variant) {
+            let mut values = self.message.values.iter();
+    
+            write!(f, "{}", variant.name)?;
+            variant.params.format(f, |param, f| {
+                match param.direction {
+                    Dir::Dn => write!(f, "_"),
+                    Dir::Up => format_message_item(f, &mut values, &param.ty),
+                }
+            })
+        } else {
+            write!(f, "{:?}", self.message)
+        }
     }
 }
 

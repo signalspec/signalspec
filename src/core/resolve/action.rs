@@ -804,7 +804,7 @@ impl<'a> Builder<'a> {
             }
 
             ast::Process::New(node) => {
-                let top_shape = match protocol::resolve(&mut self.dcx, self.index, sb.scope, &node.top, 0) {
+                let top_shape = match protocol::resolve(&mut self.dcx, self.index, sb.scope, &node.top, 1) {
                     Ok(shape) => shape,
                     Err(r) => return (self.add_step(Step::Invalid(r)), None),
                 };

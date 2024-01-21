@@ -13,7 +13,7 @@ pub(crate) struct I2CProcess{
 impl I2CProcess {
     pub fn instantiate(args: Item, _shape_dn: &Shape, shape_up: Option<&Shape>) -> Result<Arc<dyn PrimitiveProcess>, String> {
         let devname: String = args.try_into()?;
-        assert!(shape_up.unwrap().tag_offset == 0);
+        assert!(shape_up.unwrap().tag_offset == 1);
         Ok(Arc::new(I2CProcess{ devname: PathBuf::from(devname) }))
     }
 }
@@ -31,9 +31,15 @@ struct Message {
     size: usize,
 }
 
+const TAG_STOP: usize = 1;
+const TAG_START: usize = 2;
+const TAG_READ: usize = 3;
+const TAG_WRITE: usize = 4;
+
 impl PrimitiveProcess for I2CProcess {
     fn run(&self, chan: Vec<Channel>) -> std::pin::Pin<Box<dyn Future<Output = Result<(), ()>>>> {
         let [chan_up, chan_dn] = <[_; 2]>::try_from(chan).map_err(|_| "wrong channels").unwrap();
+
         let fname = self.devname.clone();
         Box::pin(async move {
             let mut dev = match LinuxI2CBus::new(fname) {
@@ -49,11 +55,13 @@ impl PrimitiveProcess for I2CProcess {
                 ops.clear();
 
                 'transaction: loop {
-                    match chan_dn.receive().await {
-                        None => {
+                    let rx = chan_dn.receive().await;
+                    match rx.peek().variant {
+                        0 => {
                             break 'process;
                         }
-                        Some(ChannelMessage { variant: 0, values }) => { // start
+                        TAG_START => {
+                            let values = rx.pop().values;
                             let addr = values[0].as_bits(7).expect("i2cdev: invalid address on receive channel") as u8;
                             let op = match values[1].as_symbol() {
                                 Some("r") => Operation::Read,
@@ -63,7 +71,8 @@ impl PrimitiveProcess for I2CProcess {
                             debug!("< start {addr:x} {op:?}");
                             ops.push(Message { addr, op, size: 0});
                         }
-                        Some(ChannelMessage { variant: 1, .. }) => { // read
+                        TAG_READ => {
+                            rx.pop();
                             let Some(message) = ops.last_mut() else {
                                 error!("read without start");
                                 return Err(())
@@ -76,7 +85,8 @@ impl PrimitiveProcess for I2CProcess {
                             buf.push(0);
                             message.size += 1;
                         }
-                        Some(ChannelMessage { variant: 2, values }) => { // write
+                        TAG_WRITE => {
+                            let values = rx.pop().values;
                             let Some(message) = ops.last_mut() else {
                                 error!("write without start");
                                 return Err(())
@@ -90,11 +100,12 @@ impl PrimitiveProcess for I2CProcess {
                             buf.push(v);
                             message.size += 1;
                         }
-                        Some(ChannelMessage { variant: 3, .. }) => { // stop
+                        TAG_STOP => {
+                            rx.pop();
                             debug!("< stop");
                             break 'transaction;
                         }
-                        Some(e) => panic!("i2cdev: unexpected message {e:?}"),
+                        e => panic!("i2cdev: unexpected message tag {e:?}"),
                     }
                 }
 
@@ -119,26 +130,26 @@ impl PrimitiveProcess for I2CProcess {
 
                 let mut pos = 0;
                 for m in &ops {
-                    chan_up.send(ChannelMessage { variant: 0, values: vec![] });
+                    chan_up.send(ChannelMessage { variant: TAG_START, values: vec![] });
 
                     match m.op {
                         Operation::Read => {
                             for &b in &buf[pos..pos+m.size] {
                                 debug!("> read {b:x}");
-                                chan_up.send(ChannelMessage { variant: 1, values: vec![Value::from_byte(b)] });
+                                chan_up.send(ChannelMessage { variant: TAG_READ, values: vec![Value::from_byte(b)] });
                             }
                         },
                         Operation::Write => {
                             for _ in 0..m.size {
                                 debug!("> write ..");
-                                chan_up.send(ChannelMessage { variant: 2, values: vec![] });
+                                chan_up.send(ChannelMessage { variant: TAG_WRITE, values: vec![] });
                             }
                         },
                     }
                     pos += m.size;
                 }
 
-                chan_up.send(ChannelMessage { variant: 3, values: vec![] });
+                chan_up.send(ChannelMessage { variant: TAG_STOP, values: vec![] });
             }
 
             debug!("end");

@@ -166,8 +166,7 @@ fn run_test(show_diagnostics: &dyn Fn(Diagnostics), index: &Index, file: &FileSc
 
         match h.finish() {
             Ok(()) => {
-                let mut read = channel.read();
-                let data = std::iter::from_fn(|| read.pop()).collect();
+                let data = channel.take_all();
                 (Some(data), TestState::Pass)
             },
             Err(()) => {
@@ -182,7 +181,7 @@ fn run_test(show_diagnostics: &dyn Fn(Diagnostics), index: &Index, file: &FileSc
             return TestState::CompileError;
         };
         for m in messages { channel.send(m); }
-        channel.set_closed(true);
+        channel.send(ChannelMessage { variant: 0, values: vec![] });
         let h = match handle.compile_run( index, &scope, &def.process) {
             Ok(h) => h,
             Err(d) => {

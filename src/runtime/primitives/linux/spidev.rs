@@ -12,10 +12,13 @@ pub(crate) struct SpiProcess{
 impl SpiProcess {
     pub fn instantiate(args: Item, _shape_dn: &Shape, shape_up: Option<&Shape>) -> Result<Arc<dyn PrimitiveProcess>, String> {
         let devname: String = args.try_into()?;
-        assert!(shape_up.unwrap().tag_offset == 0);
+        assert!(shape_up.unwrap().tag_offset == 1);
         Ok(Arc::new(SpiProcess{ devname: PathBuf::from(devname) }))
     }
 }
+
+const TAG_DATA: usize = 2;
+const TAG_END: usize = 1;
 
 impl PrimitiveProcess for SpiProcess {
     fn run(&self, chan: Vec<Channel>) -> std::pin::Pin<Box<dyn Future<Output = Result<(), ()>>>> {
@@ -41,20 +44,23 @@ impl PrimitiveProcess for SpiProcess {
                 rx_buf.clear();
 
                 'transaction: loop {
-                    match chan_dn.receive().await {
-                        None => {
+                    let rx = chan_dn.receive().await ;
+                    match rx.peek().variant {
+                        0 => {
                             break 'process;
                         }
-                        Some(ChannelMessage { variant: 0, values }) => { // data
+                        TAG_DATA => {
+                            let values = rx.pop().values;
                             debug!("data byte");
                             tx_buf.push(values[0].as_byte().expect("invalid value on spidev receive channel"));
                             rx_buf.push(0u8);
                         }
-                        Some(ChannelMessage { variant: 1, .. }) => { // end
+                        TAG_END => {
+                            rx.pop();
                             debug!("end transaction");
                             break 'transaction;  
-                        } 
-                        Some(e) => panic!("spidev: unexpected message {e:?}"),
+                        }
+                        e => panic!("spidev: unexpected message {e:?}"),
                     }
                 }
                 
@@ -63,9 +69,9 @@ impl PrimitiveProcess for SpiProcess {
 
 
                 for &b in &rx_buf {
-                    chan_up.send(ChannelMessage { variant: 0, values: vec![Value::from_byte(b)] });
+                    chan_up.send(ChannelMessage { variant: TAG_DATA, values: vec![Value::from_byte(b)] });
                 }
-                chan_up.send(ChannelMessage { variant: 1, values: vec![] });
+                chan_up.send(ChannelMessage { variant: TAG_END, values: vec![] });
 
             }
 

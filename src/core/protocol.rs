@@ -58,7 +58,7 @@ pub fn instantiate(
 
     let mut messages = vec![];
     let mut children = IndexMap::new();
-    let mut tag = tag_offset;
+    let mut next_tag = tag_offset;
 
     for entry in &protocol_ast.entries {
         match *entry {
@@ -85,8 +85,10 @@ pub fn instantiate(
                     Ok((name, ShapeMsgParam { ty, direction }))
                 }).collect::<Result<_, InstantiateProtocolError>>()?;
 
+                let tag = next_tag;
+
                 let child = if let Some(child) = child {
-                    let shape = resolve(dcx, index, &scope, &child, tag)?;
+                    let shape = resolve(dcx, index, &scope, &child, tag + 1)?;
 
                     if !mode.allows_child(shape.mode) {
                         Err(dcx.report(Diagnostic::ProtocolChildModeMismatch {
@@ -97,15 +99,16 @@ pub fn instantiate(
                         }))?
                     }
 
-                    tag += shape.tag_count;
+                    next_tag += shape.tag_count;
                     Some(shape)
                 } else { None };
 
+                debug!("Assigning tag {tag} to {name}", name = name.name);
                 messages.push(ShapeMsg { name: name.name.clone(), params, tag, child });
-                tag += 1;
+                next_tag += 1;
             }
             ast::ProtocolEntry::Child(ref node) => {
-                let inner_shape = resolve(dcx, index, &scope, &node.child_protocol, tag)?;
+                let inner_shape = resolve(dcx, index, &scope, &node.child_protocol, next_tag)?;
 
                 if !mode.allows_child(inner_shape.mode) {
                     Err(dcx.report(Diagnostic::ProtocolChildModeMismatch {
@@ -116,7 +119,9 @@ pub fn instantiate(
                     }))?
                 }
 
-                tag += inner_shape.tag_count;
+                debug!("Assigning tag range {next_tag}..={t} to {name}", t = next_tag + inner_shape.tag_count - 1, name = node.name.name);
+
+                next_tag += inner_shape.tag_count;
                 children.insert(node.name.name.clone(), inner_shape);
             }
         }
@@ -126,7 +131,7 @@ pub fn instantiate(
         def: protocol.clone(),
         mode,
         tag_offset,
-        tag_count: tag - tag_offset,
+        tag_count: next_tag - tag_offset,
         messages,
         children,
         param: args

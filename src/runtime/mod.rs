@@ -18,7 +18,6 @@ use crate::tree::TupleFields;
 use crate::{ Scope, ShapeMsg };
 use crate::syntax::{ SourceFile, parse_process, ast };
 pub use channel::{ Channel, ChannelMessage };
-use futures_lite::ready;
 use indexmap::IndexMap;
 
 use crate::core::{ Dir, Index, Item, Shape, compile_process, ShapeMsgParam};
@@ -97,22 +96,24 @@ impl<'a> Handle<'a> {
 
     pub fn finish(mut self) -> Result<(), ()> {
         if let Some(ref ch) = self.channels.dn {
-            ch.set_closed(true);
+            ch.send(ChannelMessage { variant: 0, values: vec![] });
         }
         futures_lite::future::block_on(poll_fn(|cx| { self.poll(cx) }))
     }
 
     pub fn receive(&mut self) -> Option<ChannelMessage> {
         futures_lite::future::block_on(poll_fn(|cx| {
-            if let Poll::Ready(Err(())) = self.poll(cx) {
-                return Poll::Ready(None);
-            }
+            let done = self.poll(cx).is_ready();
+
             if let Some(ch) = self.channels.up.as_ref() {
-                ready!(ch.poll_receive(cx));
-                Poll::Ready(ch.read().pop())
-            } else {
-                Poll::Ready(None)
+                if let Poll::Ready(rx) = ch.poll_receive(cx) {
+                    if rx.peek().variant != 0 {
+                        return Poll::Ready(Some(rx.pop()))
+                    }
+                }
             }
+
+            if done { Poll::Ready(None) } else { Poll::Pending }
         }))
     }
 
@@ -143,12 +144,12 @@ fn seq_shape(index: &Index, ty_item: Item, dir: Dir) -> Result<Shape, ()> {
         def: base,
         param: Item::Tuple(vec![ty_item, Item::symbol(match dir { Dir::Dn => "dn", Dir::Up => "up"})].into()),
         mode: dir.into(),
-        tag_offset: 0,
+        tag_offset: 1,
         tag_count: 1,
         messages: vec![
             ShapeMsg {
                 name: "val".into(),
-                tag: 0,
+                tag: 1,
                 params: vec![ShapeMsgParam { ty, direction: dir }].into(),
                 child: None,
             }
