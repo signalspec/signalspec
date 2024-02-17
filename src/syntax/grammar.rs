@@ -148,7 +148,7 @@ peg::parser!(pub grammar signalspec() for str {
     start:pos() value:literal() end:pos() { ast::ExprLiteral { span: FileSpan { start, end }, value }.into() }
     start:pos() value:STRING() end:pos() { ast::ExprString { span: FileSpan { start, end }, value }.into() }
     start:pos() "_" end:pos() { ast::ExprIgnore { span: FileSpan { start, end } }.into() }
-    start:pos() "[" elems:COMMASEP(<concat_elem()>) "]" end:pos() { ast::ExprConcat { span: FileSpan { start, end }, elems }.into() }
+    start:pos() "[" _ elems:COMMASEP(<concat_elem()>) _ "]" end:pos() { ast::ExprConcat { span: FileSpan { start, end }, elems }.into() }
     i:IDENTIFIER() { i.into() }
     e:expr_tup() { e.into() }
   } / e:recover("expression", <action_recovery_set() / [',' | ')' | ']' | '}'] {}>) { e.into() }
