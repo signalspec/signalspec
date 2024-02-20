@@ -2,8 +2,8 @@ protocol Base() #null {
 
 }
 
-protocol Seq(T, dir) dir {
-    val(var(dir) T)
+protocol Seq(T, mode) mode[#up=#up, #dn=#dn, #pull=#sync] {
+    val(var(mode[#up=#up, #dn=#dn, #pull=#up]) T)
 }
 
 protocol Bytes(dir) dir {

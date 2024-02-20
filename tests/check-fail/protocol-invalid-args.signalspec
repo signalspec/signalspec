@@ -1,8 +1,8 @@
 //# too few positional fields
 //^* expected 1 more positional fields
 
-//# expected constant #up | #dn | #sync | #async | #null
-//^* found `9`
+//# type error
+//^* `9` does not match type `#up | #dn | #pull`
 
 @test(#up, ())
 with Seq(_, _) def main() = new Seq(9, 9, 9) {}
