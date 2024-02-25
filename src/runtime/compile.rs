@@ -421,12 +421,13 @@ pub fn compile(program: &ProcessChain) -> CompiledProgram {
 }
 
 use std::{task::{Context, Poll}, sync::Arc, future::Future, pin::Pin};
-use futures_lite::{ready, FutureExt};
+use futures_lite::FutureExt;
 use crate::Value;
 use super::channel::{Channel, ChannelMessage, SeqChannels};
 
 pub struct ProgramExec {
     program: Arc<CompiledProgram>,
+    failed: bool,
     tasks: EntityMap<TaskId, InsnId>,
     registers: EntityMap<ValueSrcId, Option<Value>>,
     channels: EntityMap<ChanId, Channel>,
@@ -434,7 +435,7 @@ pub struct ProgramExec {
     primitives: EntityMap<PrimitiveId, Option<Pin<Box<dyn Future<Output = Result<(), ()>>>>>>,
 }
 
-const INVALID_IP: InsnId = InsnId::from(u32::MAX);
+const DONE_IP: InsnId = InsnId::from(u32::MAX);
 const INITIAL_TASK: TaskId = TaskId::from(0);
 
 impl EntityMap<ValueSrcId, Option<Value>> {
@@ -455,11 +456,12 @@ impl ProgramExec {
         channels.extend([channels_lo.dn, channels_lo.up, channels_hi.dn, channels_hi.up].into_iter().flatten());
         channels.resize_with(program.channels.len(), Channel::new);
 
-        let mut tasks: EntityMap<TaskId, InsnId> = program.tasks.iter().map(|_| INVALID_IP).collect();
+        let mut tasks: EntityMap<TaskId, InsnId> = program.tasks.iter().map(|_| DONE_IP).collect();
         tasks[INITIAL_TASK] = InsnId::from(0);
 
         ProgramExec {     
             tasks,
+            failed: false,
             registers: program.vars.iter().map(|_| None).collect(),
             channels: channels.into(),
             counters: program.counters.iter().map(|_| 0).collect(),
@@ -469,23 +471,26 @@ impl ProgramExec {
     }
 
     pub fn poll_all(&mut self, cx: &mut Context) -> Poll<Result<(), ()>> {
+        if self.failed {
+            return Poll::Ready(Err(()));
+        }
+
         for task in self.tasks.keys() {
-            if self.tasks[task] != INVALID_IP {
-                match self.poll_task(cx, task) {
-                    Poll::Ready(Ok(_)) | Poll::Pending => {},
-                    Poll::Ready(Err(_)) => return Poll::Ready(Err(())),
-                }
+            if self.tasks[task] != DONE_IP {
+                self.poll_task(cx, task);
             }
         }
-    
-        if self.tasks[INITIAL_TASK] != INVALID_IP {
-            Poll::Pending
-        } else {
+
+        if self.failed {
+            return Poll::Ready(Err(()));
+        } else if self.tasks[INITIAL_TASK] == DONE_IP {
             Poll::Ready(Result::Ok(()))
+        } else {
+            Poll::Pending
         }
     }
     
-    fn poll_task(&mut self, cx: &mut Context, task: TaskId) -> Poll<Result<(), ()>> {
+    fn poll_task(&mut self, cx: &mut Context, task: TaskId) {
         let p = &*self.program;
         loop {
             let ip = self.tasks[task];
@@ -499,12 +504,13 @@ impl ProgramExec {
                     self.channels[chan].send(ChannelMessage { variant, values });
                 }
                 Insn::Consume(chan, variant, ref exprs) => {
-                    let rx = ready!(self.channels[chan].poll_receive(cx));
+                    let Poll::Ready(rx) = self.channels[chan].poll_receive(cx) else { return };
                     let rx = rx.pop();
                     debug!("  Consume {rx:?}");
     
                     if rx.variant != variant {
-                        return Poll::Ready(Err(()));
+                        self.failed = true;
+                        return;
                     };
     
                     assert_eq!(rx.values.len(), exprs.len());
@@ -512,13 +518,14 @@ impl ProgramExec {
                     for ((p, id), v) in exprs.iter().zip(rx.values.into_iter()) {
                         if !self.registers.up_eval_test(p, &v) {
                             debug!("  failed to match");
-                            return Poll::Ready(Err(()));
+                            self.failed = true;
+                            return;
                         }
                         self.registers[*id] = Some(v);
                     };
                 }
                 Insn::Test(chan, ref pat, if_false) => {
-                    let rx = ready!(self.channels[chan].poll_receive(cx));
+                    let Poll::Ready(rx) = self.channels[chan].poll_receive(cx) else { return };
                     let msg = rx.peek();
 
                     let matched = pat.iter().any(|p| {
@@ -534,19 +541,14 @@ impl ProgramExec {
                 Insn::Primitive(id, ref channels) => {
                     let ch = channels.iter().map(|&id| self.channels[id].clone()).collect();
                     let fut = self.primitives[id].get_or_insert_with(|| p.primitives[id].run(ch));
-                    match ready!(fut.poll(cx)) {
-                        Ok(_) => drop(self.primitives[id].take()),
-                        Err(_) => {
-                            struct FailedFuture;
-                            impl Future for FailedFuture {
-                                type Output = Result<(), ()>;
-
-                                fn poll(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Self::Output> {
-                                    Poll::Ready(Err(()))
-                                }
-                            }
-                            self.primitives[id] = Some(Box::pin(FailedFuture));
-                            return Poll::Ready(Err(()))
+                    match fut.poll(cx) {
+                        Poll::Pending => return,
+                        Poll::Ready(Ok(_)) => {
+                            drop(self.primitives[id].take());
+                        }
+                        Poll::Ready(Err(_)) => {
+                            self.failed = true;
+                            return;
                         }
                     }
                 }
@@ -556,7 +558,8 @@ impl ProgramExec {
                 Insn::CounterUpEval(counter, min, max, id) => {
                     let v = self.counters[counter];
                     if v < min || v > max.unwrap_or(i64::MAX) {
-                        return Poll::Ready(Err(()))
+                        self.failed = true;
+                        return;
                     }
                     self.registers[id] = Some(v.into());
                 }
@@ -584,25 +587,26 @@ impl ProgramExec {
                         next_ip = if_false;
                     }
                 }
-                Insn::Fork(task, dest) => {
-                    self.tasks[task] = next_ip;
+                Insn::Fork(other, dest) => {
+                    self.tasks[other] = next_ip;
                     next_ip = dest;
                 }
-                Insn::Join(task) => {
-                    if self.tasks[task] != INVALID_IP {
-                        return Poll::Pending;
+                Insn::Join(other) => {
+                    if self.tasks[other] != DONE_IP {
+                        return;
                     }
                 }
                 Insn::End => {
-                    self.tasks[task] = INVALID_IP;
+                    self.tasks[task] = DONE_IP;
                     cx.waker().wake_by_ref(); // Wake the joining task
-                    return Poll::Ready(Ok(()));
+                    return;
                 }
                 Insn::Jump(dest) => {
                     next_ip = dest;
                 }
                 Insn::Fail => {
-                    return Poll::Ready(Err(()));
+                    self.failed = true;
+                    return;
                 }
             }
             self.tasks[task] = next_ip;
