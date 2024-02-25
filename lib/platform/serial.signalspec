@@ -1,0 +1,3 @@
+with Base() def serialport(dev, rate) = new Serial(#io) {
+    primitive serialdev(dev, rate)
+}

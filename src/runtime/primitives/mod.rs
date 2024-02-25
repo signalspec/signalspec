@@ -4,6 +4,7 @@ use super::Channel;
 
 mod file_io;
 mod seq;
+mod serial;
 #[cfg(target_os = "linux")] mod linux;
 
 pub trait PrimitiveProcess: Debug + Send + Sync {
@@ -28,6 +29,8 @@ pub(crate) fn instantiate_primitive(
 
         #[cfg(target_os = "linux")]
         "i2cdev" => linux::i2cdev::I2CProcess::instantiate,
+
+        "serialdev" => serial::SerialProcess::instantiate,
 
         _ => return Err("primitive does not exist on this platform".into())
     };

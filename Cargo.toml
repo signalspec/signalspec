@@ -17,6 +17,7 @@ num-rational = { version = "0.4.1", default_features = false }
 num-traits = "0.2.15"
 indexmap = "2.0.0"
 itertools = "0.12.0"
+serial2 = "0.2.19"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 spidev = "0.6.0"

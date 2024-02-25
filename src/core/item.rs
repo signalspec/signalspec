@@ -3,7 +3,7 @@ use std::fmt;
 use std::default::Default;
 use std::sync::Arc;
 
-use crate::{Value, tree::{Tree, TupleFields}, TypeTree, diagnostic::ErrorReported, Type};
+use crate::{Value, tree::{Tree, TupleFields}, TypeTree, diagnostic::ErrorReported, Type, syntax::Number};
 use super::{ Expr, FunctionDef };
 
 /// Non-tuple Item
@@ -111,6 +111,14 @@ impl<T: Into<Item>> From<Result<T, ErrorReported>> for Item {
             Ok(v) => v.into(),
             Err(r) => r.into(),
         }
+    }
+}
+
+impl<'a> TryFrom<Item> for Value {
+    type Error = &'static str;
+
+    fn try_from(i: Item) -> Result<Self, Self::Error> {
+        if let Item::Leaf(LeafItem::Value(Expr::Const(v))) = i { Ok(v) } else { Err("expected constant value") }
     }
 }
 

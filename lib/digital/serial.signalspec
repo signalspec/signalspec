@@ -1,0 +1,4 @@
+protocol Serial(role: #io) #sync {
+    tx: Seq(byte, #dn),
+    rx: Seq(byte, #pull),
+}
