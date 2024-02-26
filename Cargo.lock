@@ -651,6 +651,7 @@ dependencies = [
  "codespan-reporting",
  "env_logger",
  "log",
+ "num-traits",
  "signalspec",
 ]
 

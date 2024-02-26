@@ -30,7 +30,7 @@ def write_reg(reg, val) = {
 }
 
 with I2C(role)
-def MMA845xQ() = new Seq((-4.0..4.0, -4.0..4.0, -4.0..4.0), #up) {
+def MMA845xQ() = new Seq((-4.0..4.0 by 1/16384.0, -4.0..4.0 by 1/16384.0 , -4.0..4.0 by 1/16384.0), #up) {
     read_reg(WHO_AM_I, <:'h2a);
     write_reg(CTRL_REG1, 'h31);
     write_reg(XYZ_DATA_CFG, 'h00);

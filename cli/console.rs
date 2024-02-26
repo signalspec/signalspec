@@ -1,5 +1,6 @@
-use std::{io::prelude::*, fmt::Display};
-use signalspec::{ Handle, Value, Dir, TypeTree, ChannelMessage, Shape };
+use std::{io::prelude::*, fmt::Display, ops::Neg};
+use signalspec::{ Handle, Value, Dir, TypeTree, ChannelMessage, Shape, Type };
+use num_traits::ToPrimitive;
 
 pub fn run(mut handle: Handle) -> Result<(), ()> {
     let stdout = ::std::io::stdout();
@@ -44,9 +45,23 @@ fn format_message_item<'a>(f: &mut std::fmt::Formatter<'_>, values: &mut impl It
                 format_message_item(f, values, v)
             })
         }
-        TypeTree::Leaf(_) => {
+        TypeTree::Leaf(t) => {
             let v = values.next().expect("message doesn't match shape");
-            write!(f, "{}", v)
+
+            match (t, v) {
+                (Type::Number(nt), Value::Number(v)) => {
+                    let value = v.to_f64().unwrap_or(f64::NAN);
+                    let scale = nt.scale().to_f64().unwrap_or(1.0);
+                    let signed = nt.min() < 0;
+                    let max = nt.max() as f64 * scale;
+                    let digits = max.log10().max(0.0).ceil() as usize;
+                    let decimals = scale.log10().min(0.0).neg().ceil() as usize;
+                    let width = digits + decimals + if decimals > 0 { 1 } else { 0 } + if signed { 1 } else { 0 };
+
+                    write!(f, "{value:width$.*}", decimals)
+                }
+                (_, v) => write!(f, "{}", v)
+            }
         }
     }
 }
