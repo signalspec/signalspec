@@ -122,7 +122,7 @@ impl Compiler<'_> {
     fn seq_prep(&mut self, channels: ChannelIds, prev_followlast: &Option<MatchSet>, next_first: &MatchSet) {
         match (prev_followlast, next_first) {
             (None, MatchSet::MessageUp { .. }) => { },
-            (None, MatchSet::MessageDn { variant, send, .. }) => {
+            (None | Some(MatchSet::MessageUp { .. }), MatchSet::MessageDn { variant, send, .. }) => {
                 if let Some(c) = channels.dn_tx {
                     self.emit(Insn::Send(c, *variant, send.clone()));
                 }

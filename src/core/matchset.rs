@@ -78,6 +78,11 @@ impl MatchSet {
               MatchSet::MessageUp { .. }
             ) => {}
 
+            (
+              Some(MatchSet::MessageUp { .. }),
+              MatchSet::MessageDn { .. }
+            ) => {}
+
             (s, o) => panic!("Follow conflict: {:?} <> {:?}", s, o)
         }
     }
@@ -123,6 +128,13 @@ impl MatchSet {
                     Some(MatchSet::MessageUp { receive: r2 })
                 ) => {
                     Some(MatchSet::MessageUp { receive: MessagePatternSet::union(r1, r2) })
+                }
+
+                (
+                    Some(MatchSet::MessageUp { .. }),
+                    None
+                ) => {
+                    None
                 }
 
                 (s, o) => panic!("Followlast conflict: {:?} <> {:?}", s, o)
