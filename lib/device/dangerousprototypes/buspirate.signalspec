@@ -1,0 +1,93 @@
+with Serial(#io)
+def buspirate_i2c() = new I2C(#controller) {
+    repeat #dn 20 {
+        tx|val('h00)
+    }
+
+    for b = chunks(8, 'h4242494f31) { // BBIO1
+        rx|val(b)
+    }
+
+    tx|val('h02) // I2C mode
+
+    // Flush repeated BBIO1 if already in binary mode
+    repeat {
+        for b = chunks(8, 'h4242494f31) { // BBIO1
+            rx|val(b)
+        }
+    }
+
+    for b = chunks(8, 'h49324331) { // I2C1
+        rx|val(b)
+    }
+
+    // power and pull-up on
+    tx|val('01001000)
+    rx|val('h01)
+
+    tx|val('01100000) //5Khz
+    rx|val('h01)
+
+    repeat {
+        on transaction() {
+            repeat {
+                alt #up () {
+                    () => {
+                        on start(addr, #w) {
+                            // start bit
+                            tx|val('00000010)
+                            rx|val('h01)
+
+                            tx|val('00010000) // bulk write 1 byte
+                            tx|val([7:addr, 0])
+                            rx|val('h01)
+                            rx|val('h00)
+                        }
+
+                        repeat {
+                            on write(d) {
+                                tx|val('00010000) // bulk write 1 byte
+                                tx|val(d)
+                                rx|val('h01)
+                                rx|val('h00) // ack
+                            }
+                        }
+                    }
+                    () => {
+                        on start(addr, #r) {
+                            // start bit
+                            tx|val('00000010)
+                            rx|val('h01)
+
+                            tx|val('00010000) // bulk write 1 byte
+                            tx|val([7:addr, 1])
+                            rx|val('h01)
+                            rx|val('h00)
+                        }
+
+                        on read(d) {
+                            tx|val('00000100) // read
+                            rx|val(d)
+                        }
+
+                        repeat {
+                            on read(d) {
+                                tx|val('00000110) //ack
+                                rx|val('h01)
+
+                                tx|val('00000100) // read
+                                rx|val(d)
+                            }
+                        }
+
+                        tx|val('00000111) //nack
+                        rx|val('h01)
+                    }
+                }
+            }
+        }
+        // stop bit
+        tx|val('00000011)
+        rx|val('h01)
+    }
+}
