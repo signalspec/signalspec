@@ -10,50 +10,21 @@ let WHO_AM_I = 'h0D
 let CTRL_REG1 = 'h2A
 let CTRL_REG4 = 'h2D
 
-with I2C(role)
-def read_reg(reg, val) = {
-    transaction() | {
-        start(ADDR, #w)
-        write(reg)
-        start(ADDR, #r)
-        read(val)
-    }
-}
+with I2C(role) def MMA845xQ() = device(ADDR) | MMA845xQ()
 
-with I2C(role)
-def write_reg(reg, val) = {
-    transaction() | {
-        start(ADDR, #w)
-        write(reg)
-        write(val)
-    }
-}
-
-with I2C(role)
+with I2CDevice(role)
 def MMA845xQ() = new Seq((-4.0..4.0 by 1/16384.0, -4.0..4.0 by 1/16384.0 , -4.0..4.0 by 1/16384.0), #up) {
-    read_reg(WHO_AM_I, <:'h2a);
-    write_reg(CTRL_REG1, 'h31);
-    write_reg(XYZ_DATA_CFG, 'h00);
-    write_reg(CTRL_REG4, 'h01);
+    write_read([WHO_AM_I], <:['h2a]);
+    write([CTRL_REG1, 'h31]);
+    write([XYZ_DATA_CFG, 'h00]);
+    write([CTRL_REG4, 'h01]);
     repeat #dn 100000 {
         on val((x, y, z)) {
-            transaction() | {
-                start(ADDR, #w);
-                write(OUT_X_MSB);
-                start(ADDR, #r);
-
-                for b = chunks(8, signed(16, x * 16384.0)) {
-                    read(b)
-                }
-
-                for b = chunks(8, signed(16, y * 16384.0)) {
-                    read(b)
-                }
-
-                for b = chunks(8, signed(16, z * 16384.0)) {
-                    read(b)
-                }
-            }
+            write_read([OUT_X_MSB], [
+                2:chunks(8, signed(16, x * 16384.0)),
+                2:chunks(8, signed(16, y * 16384.0)),
+                2:chunks(8, signed(16, z * 16384.0))
+            ])
         }
     }
 }

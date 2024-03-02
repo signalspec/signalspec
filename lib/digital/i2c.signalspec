@@ -10,3 +10,75 @@ protocol I2CTransaction(role: #controller | #async_controller | #monitor) role[#
     read(var(role[#controller=#up, #async_controller=#up, #monitor=#up]) byte),
     write(var(role[#controller=#dn, #async_controller=#dn, #monitor=#up]) byte),
 }
+
+with I2C(role)
+def device(addr: bits(7)) = new I2CDevice(role) {
+    repeat {
+        on transaction() {
+            transaction() | {
+                repeat #up 1..1000 {
+                    alt #up () {
+                        () => {
+                            on start(#r) {
+                                start(addr, #r)
+                            }
+
+                            repeat {
+                                on read(b) {
+                                    read(b)
+                                }
+                            }
+                        }
+                        () => {
+                            on start(#w) {
+                                start(addr, #w)
+                            }
+
+                            repeat {
+                                on write(b) {
+                                    write(b)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+protocol I2CDevice(role: #controller | #async_controller | #monitor) role[#controller=#sync, #async_controller=#async, #monitor=#up] {
+    transaction() : I2CDeviceTransaction(role),
+}
+
+protocol I2CDeviceTransaction(role: #controller | #async_controller | #monitor) role[#controller=#sync, #async_controller=#async, #monitor=#up] {
+    start(
+        var(role[#controller=#dn, #async_controller=#dn, #monitor=#up]) #w|#r,
+    ),
+    read(var(role[#controller=#up, #async_controller=#up, #monitor=#up]) byte),
+    write(var(role[#controller=#dn, #async_controller=#dn, #monitor=#up]) byte),
+}
+
+with I2CDevice(_)
+def write(wr) = {
+    transaction() | {
+        start(#w)
+        for b=wr {
+            write(b)
+        }
+    }
+}
+
+with I2CDevice(_)
+def write_read(wr, rd) = {
+    transaction() | {
+        start(#w)
+        for b=wr {
+            write(b)
+        }
+        start(#r)
+        for b=rd {
+            read(b)
+        }
+    }
+}

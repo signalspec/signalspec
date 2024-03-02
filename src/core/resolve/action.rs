@@ -813,7 +813,7 @@ impl<'a> Builder<'a> {
             }
 
             ast::Process::Seq(ref block) => {
-                let block = self.resolve_seq(sb.with_upper(sb.scope, None), block);
+                let block = self.resolve_seq(sb, block);
                 (block, None)
             }
 
@@ -949,6 +949,10 @@ pub fn compile_process(index: &Index, scope: &Scope, shape_dn: Shape, ast: &ast:
         let mut buf = String::new();
         crate::core::step::write_tree(&mut buf, 0, &builder.steps, step).unwrap();
         debug!("Steps:\n{}", buf);
+    }
+
+    if builder.dcx.has_errors() {
+        return Err(builder.dcx.diagnostics());
     }
 
     let step_info = analyze_unambiguous(&builder.steps);
