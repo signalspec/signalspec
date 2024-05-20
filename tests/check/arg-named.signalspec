@@ -1,0 +1,13 @@
+with Seq(_:#a|#b|#c, dir)
+def named_args(a=(x=xi, y=yi), b=b) = {
+    val(xi)
+    val(yi)
+    val(b)
+}
+
+@test(#both, (#a, #b, #c))
+@test(#up_fail, (#a, #a, #a))
+with Seq(_:#a|#b|#c, dir) def test_named_args() = {
+    named_args(a=(x=#a, y=#b), b=#c)
+}
+

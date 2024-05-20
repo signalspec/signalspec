@@ -15,3 +15,18 @@ def t2() = {
     val(#a | #b)
     val(#c)
 }
+
+with Seq(_:0..16, dir)
+def flatten() = new Seq(((_:0..16, _:0..16), v=(x=_:0..16, y=_:0..16, z=_:0..16)), dir) {
+    on val(((a, b), v=(x=x, y=y, z=z))) {
+        val(a)
+        val(b)
+        val(x)
+        val(y)
+        val(z)
+    }
+}
+
+@test(#both, (1, 2, 3, 4, 5))
+with Seq(0..16, _)
+def test_flatten() = flatten() | { val(((1, 2), v=(x=3, y=4, z=5))) }
