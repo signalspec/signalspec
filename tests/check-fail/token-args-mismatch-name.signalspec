@@ -16,5 +16,13 @@ with Seq(0..10, _) def main() = {
 //# unexpected named field `z` passed
         foo(#a, x = 1, y = '00000000, z = #foo)
 //                                    ^^^^^^^^ unexpected field
+
+//# too many positional fields
+        foo(#a, #b, x = 1, y = '00000000)
+//              ^^ 1 unexpected positional fields
+
+//# too few positional fields
+        foo(x = 1, y = '00000000)
+//                              ^ expected 1 more positional fields
     }
 }

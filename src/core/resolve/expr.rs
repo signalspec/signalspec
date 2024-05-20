@@ -764,14 +764,14 @@ pub fn zip_tuple_ast_fields<'a, 't, T>(
     let ast_positional_count = tup_ast.positional().count();
 
     if ast_positional_count < f.positional.len() {
-        let n = f.positional.len() - tup_ast.fields.len();
+        let n = f.positional.len() - ast_positional_count;
         let span = tup_ast.close.as_ref().map(|a| a.span).unwrap_or(tup_ast.span);
         dcx.report(Diagnostic::TupleTooFewPositional { span: Span::new(file, span), n });
 
     } else if ast_positional_count > f.positional.len() {
-        let n = tup_ast.fields.len() - f.positional.len();
-        let span = tup_ast.fields.iter().filter(|i| i.name.is_none()).nth(f.positional.len()).unwrap().span()
-            .to(tup_ast.fields.last().unwrap().span());
+        let n = ast_positional_count - f.positional.len();
+        let span = tup_ast.positional().nth(f.positional.len()).unwrap().span()
+            .to(tup_ast.positional().last().unwrap().span());
         dcx.report(Diagnostic::TupleTooManyPositional { span: Span::new(file, span), n });
     }
 
