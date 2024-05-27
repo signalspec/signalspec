@@ -11,6 +11,8 @@ entity_key!(pub PrimitiveId);
 
 #[derive(Debug)]
 pub enum Insn {
+    Nop,
+
     /// Down-evaluate a message and send it on the specified channel
     Send(ChanId, VariantId, Vec<ExprDn>),
 
@@ -121,17 +123,18 @@ impl Compiler<'_> {
 
     fn seq_prep(&mut self, channels: ChannelIds, prev_followlast: &Option<MatchSet>, next_first: &MatchSet) {
         match (prev_followlast, next_first) {
-            (None, MatchSet::MessageUp { .. }) => { },
-            (None | Some(MatchSet::MessageUp { .. }), MatchSet::MessageDn { variant, send, .. }) => {
+            (None, MatchSet::Receive { .. }) => { },
+            (None | Some(MatchSet::Receive { .. }), MatchSet::Send { dir: Dir::Dn, variant, send, .. }) => {
                 if let Some(c) = channels.dn_tx {
                     self.emit(Insn::Send(c, *variant, send.clone()));
                 }
             }
+            (None | Some(MatchSet::Receive { .. }), MatchSet::Send { dir: Dir::Up, .. }) => {}
             (None, MatchSet::Process) => {}
-            (Some(MatchSet::MessageUp { .. }), MatchSet::MessageUp { .. }) => {}
-            (Some(MatchSet::MessageDn { variant: v1, send: s1, .. }),
-             MatchSet::MessageDn { variant: v2, send: s2, .. })
-             if v1 == v2 && s1 == s2 => {}
+            (Some(MatchSet::Receive { .. }), MatchSet::Receive { .. }) => {}
+            (Some(MatchSet::Send { dir: d1, variant: v1, send: s1, .. }),
+             MatchSet::Send { dir: d2, variant: v2, send: s2, .. })
+             if d1 == d2 && v1 == v2 && s1 == s2 => {}
             (Some(_), _) => {
                 panic!("Invalid followlast -> first: {prev_followlast:?} {next_first:?}")
             }
@@ -140,11 +143,11 @@ impl Compiler<'_> {
 
     fn test_matchset(&self, channels: ChannelIds, m: &MatchSet, if_false: InsnId) -> Insn {
         match m {
-            MatchSet::Process => todo!(),
-            MatchSet::MessageUp { receive } => {
+            MatchSet::Process | MatchSet::Send { .. } => Insn::Nop,
+            MatchSet::Receive { dir: Dir::Up, receive } => {
                 Insn::Test(channels.up_rx.unwrap(), receive.clone(), if_false)
             }
-            MatchSet::MessageDn { receive, .. } => {
+            MatchSet::Receive { dir: Dir::Dn, receive, .. } => {
                 Insn::Test(channels.dn_rx.unwrap(), receive.clone(), if_false)
             },
         }
@@ -155,27 +158,6 @@ impl Compiler<'_> {
             Step::Invalid(_) => panic!("Compiling invalid step"),
             Step::Pass => todo!(),
             Step::Stack { lo, ref shape, hi} => {
-                if let Step::TokenTransaction { variant } = self.program.steps[lo] {
-                    if let (ShapeMode::Async, Some(dn_rx), Some(dn_tx)) = (shape.mode, channels.dn_rx, channels.dn_tx) {
-                        // For ShapeMode::Async, emit all downward sends before upward receives
-                        self.compile_step(hi, channels.only_downward());
-                        self.emit(Insn::Send(dn_tx, variant, vec![]));
-                        self.compile_step(hi, channels.only_upward());
-                        self.emit(Insn::Consume(dn_rx, variant, vec![]));
-                    } else {
-                        self.compile_step(hi, channels);
-
-                        if let Some(c) = channels.dn_tx {
-                            self.emit(Insn::Send(c, variant, vec![]));
-                        }
-
-                        if let Some(c) = channels.dn_rx {
-                            self.emit(Insn::Consume(c, variant, vec![]));
-                        }
-                    }
-                    return;
-                }
-
                 let lo_info = &self.program.step_info[lo];
                 let hi_info = &self.program.step_info[hi];
                 let (c_dn, c_up) = self.new_channels(shape);
@@ -224,47 +206,25 @@ impl Compiler<'_> {
                 self.emit(Insn::Primitive(id, chans));
             }
 
-            Step::Token { variant, ref up, .. }=> {
+            Step::Send { dir: Dir::Dn, .. } => {
+                // handled in seq_prep
+            }
+
+            Step::Send { dir: Dir::Up, variant, ref msg  } => {
+                if let Some(c) = channels.up_tx {
+                    self.emit(Insn::Send(c, variant, msg.clone()));
+                }
+            }
+
+            Step::Receive { dir: Dir::Dn, variant, ref msg, .. }=> {
                 if let Some(c) = channels.dn_rx {
-                    self.emit(Insn::Consume(c, variant, up.clone()));
+                    self.emit(Insn::Consume(c, variant, msg.clone()));
                 }
             }
 
-            Step::TokenTop { inner_mode, variant, ref dn_vars, ref dn, ref up, inner } => {
-                let inner_info = &self.program.step_info[inner];
-
-                match inner_mode {
-                    ShapeMode::Up | ShapeMode::Null => {},
-                    ShapeMode::Dn | ShapeMode::Sync | ShapeMode::Async => {
-                        if let Some(c) = channels.up_rx {
-                            let dn_and_vars = dn.iter().cloned().zip(dn_vars.iter().cloned()).collect();
-                            self.emit(Insn::Consume(c, variant, dn_and_vars));
-                        }
-
-                        self.seq_prep(channels.without_up(), &None, &inner_info.first);
-                    },
-                }
-
-                self.compile_step(inner, channels.without_up());
-
-                if let Some(c) = channels.up_tx {
-                    self.emit(Insn::Send(c, variant, up.clone()));
-                }
-            }
-
-            Step::TokenTransaction { .. } => {
-                todo!(); // like `pass`, normally handled in `stack`
-            }
-
-            Step::TokenTopTransaction { variant, inner, .. } => {
-                self.compile_step(inner, channels);
-
+            Step::Receive { dir: Dir::Up, variant, ref msg } => {
                 if let Some(c) = channels.up_rx {
-                    self.emit(Insn::Consume(c, variant, vec![]));
-                }
-
-                if let Some(c) = channels.up_tx {
-                    self.emit(Insn::Send(c, variant, vec![]));
+                    self.emit(Insn::Consume(c, variant, msg.clone()));
                 }
             }
 
@@ -422,7 +382,7 @@ pub fn compile(program: &ProcessChain) -> CompiledProgram {
 
 use std::{task::{Context, Poll}, sync::Arc, future::Future, pin::Pin};
 use futures_lite::FutureExt;
-use crate::Value;
+use crate::{Dir, Value};
 use super::channel::{Channel, ChannelMessage, SeqChannels};
 
 pub struct ProgramExec {
@@ -497,6 +457,7 @@ impl ProgramExec {
             let mut next_ip = InsnId::from(u32::from(ip) + 1);
             debug!("Task {task:3}: {ip:4} {insn:?}", task = u32::from(task), ip = u32::from(ip), insn = p.insns[ip]);
             match p.insns[ip] {
+                Insn::Nop => {}
                 Insn::Send(chan, variant, ref expr) => {
                     let values = expr.iter().map(|e| {
                         self.registers.down_eval(e)

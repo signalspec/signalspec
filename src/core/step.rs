@@ -3,6 +3,7 @@ use std::sync::Arc;
 use crate::diagnostic::ErrorReported;
 use crate::entitymap::{entity_key, EntityMap};
 use crate::runtime::PrimitiveProcess;
+use crate::Dir;
 use super::{ExprDn, MatchSet, Shape, Predicate, ValueSrcId, ShapeMode};
 
 entity_key!(pub StepId);
@@ -20,14 +21,13 @@ pub struct AltUpArm {
 }
 
 #[derive(Debug)]
+
 pub enum Step {
     Invalid(ErrorReported),
     Pass,
     Stack { lo: StepId, shape: Shape, hi: StepId },
-    Token { variant: usize, dn: Vec<ExprDn>, up: Vec<(Predicate, ValueSrcId)> },
-    TokenTop { inner_mode: ShapeMode, variant: usize, dn_vars: Vec<ValueSrcId> , dn: Vec<Predicate>, up: Vec<ExprDn>, inner: StepId },
-    TokenTransaction { variant: usize },
-    TokenTopTransaction { inner_mode: ShapeMode, variant: usize, inner: StepId },
+    Send { dir: Dir, variant: usize, msg: Vec<ExprDn> },
+    Receive { dir: Dir, variant: usize, msg: Vec<(Predicate, ValueSrcId)> },
     Primitive(Arc<dyn PrimitiveProcess + 'static>),
     Seq(Vec<StepId>),
     RepeatDn {
@@ -57,19 +57,11 @@ pub fn write_tree(f: &mut dyn std::fmt::Write, indent: u32, steps: &EntityMap<St
         Step::Primitive(_) => {
             writeln!(f, "{}Primitive", i)?
         }
-        Step::Token { variant, ref dn, ref up } => {
-            writeln!(f, "{}Token: {:?} {:?} {:?}", i, variant, dn, up)?;
+        Step::Send { dir, variant, ref msg } => {
+            writeln!(f, "{}Send: {:?} {:?} {:?}", i, dir, variant, msg)?;
         }
-        Step::TokenTop { variant, ref dn, ref up, inner, .. } => {
-            writeln!(f, "{}Up: {:?} {:?} {:?}", i, variant, dn, up)?;
-            write_tree(f, indent+1, steps, inner)?;
-        }
-        Step::TokenTransaction { variant } => {
-            writeln!(f, "{}TokenTransaction: {:?}", i, variant,)?;
-        }
-        Step::TokenTopTransaction { variant, inner, .. } => {
-            writeln!(f, "{}UpTransaction: {:?}", i, variant)?;
-            write_tree(f, indent+1, steps, inner)?;
+        Step::Receive { dir, variant, ref msg } => {
+            writeln!(f, "{}Receive: {:?} {:?} {:?}", i, dir, variant, msg)?;
         }
         Step::Seq(ref inner) => {
             writeln!(f, "{}Seq", i)?;
@@ -132,79 +124,29 @@ pub fn analyze_unambiguous(steps: &EntityMap<StepId, Step>) -> EntityMap<StepId,
                 }
             }
             Step::Stack { lo, hi, .. } => {
-                if let Step::TokenTransaction { variant } = steps[lo] {
-                    let inner = get(hi);
-                    StepInfo {
-                        first: MatchSet::merge_first([
-                            Some(&inner.first),
-                            inner.nullable.then(|| MatchSet::lower(variant, vec![], vec![])).as_ref()
-                        ].into_iter().flatten()),
-                        followlast: None,
-                        nullable: false,
-                    }
-                } else {
-                    StepInfo {
-                        first: MatchSet::proc(),
-                        followlast: None,
-                        nullable: false,
-                    }
-                }
-            },
-            Step::Token { variant, ref dn, ref up} => {
-                StepInfo {
-                    first: MatchSet::lower(variant, dn.clone(), up.iter().map(|(p, _)| p.clone()).collect()),
-                    followlast: None,
-                    nullable: false,
-                }
-            },
-            Step::TokenTop { inner_mode, variant, ref dn, inner, .. } => {
-                let inner = get(inner);
-                match inner_mode {
-                    ShapeMode::Up | ShapeMode::Null => {
-                        StepInfo {
-                            first: inner.first.clone(),
-                            followlast: inner.followlast.clone(),
-                            nullable: inner.nullable,
-                        }
-                    },
-                    ShapeMode::Dn | ShapeMode::Sync | ShapeMode::Async => {
-                        StepInfo {
-                            first: MatchSet::upper(variant, dn.clone()),
-                            followlast: inner.followlast.clone(),
-                            nullable: false,
-                        }
-                    },
-                }
-            },
-            Step::TokenTransaction { .. } => {
                 StepInfo {
                     first: MatchSet::proc(),
                     followlast: None,
                     nullable: false,
                 }
-            },
-            Step::TokenTopTransaction { inner_mode, variant, inner } => {
-                let inner = get(inner);
-                match inner_mode {
-                    ShapeMode::Up | ShapeMode::Null => {
-                        StepInfo {
-                            first: inner.first.clone(),
-                            followlast: inner.followlast.clone(),
-                            nullable: inner.nullable,
-                        }
-                    },
-                    ShapeMode::Dn | ShapeMode::Sync | ShapeMode::Async => {
-                        StepInfo {
-                            first: MatchSet::merge_first([
-                                Some(&inner.first),
-                                inner.nullable.then(|| MatchSet::upper(variant, vec![])).as_ref()
-                            ].into_iter().flatten()),
-                            followlast: None, //inner.followlast.clone(),
-                            nullable: false,
-                        }
-                    },
+            }
+
+            Step::Send { dir, variant, ref msg } => {
+                StepInfo {
+                    first: MatchSet::send(dir, variant, msg.clone()),
+                    followlast: None,
+                    nullable: false,
                 }
-            },
+            }
+
+            Step::Receive { dir, variant, ref msg } => {
+                StepInfo {
+                    first: MatchSet::receive(dir, variant, msg.iter().map(|(p, _)| p.clone()).collect()),
+                    followlast: None,
+                    nullable: false,
+                }
+            }
+
             Step::Primitive(_) => {
                 StepInfo {
                     first: MatchSet::proc(),

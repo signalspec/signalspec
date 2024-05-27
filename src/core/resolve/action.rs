@@ -242,14 +242,29 @@ impl<'a> Builder<'a> {
 
                 let up = self.bind_tree_fields_up_finish(up_inner, &sb.scope.file);
 
+                let mut seq = vec![];
+
                 if msg_def.child.is_some() {
                     assert!(dn_vars.is_empty());
                     assert!(dn.is_empty());
                     assert!(up.is_empty());
-                    self.add_step(Step::TokenTopTransaction { inner_mode: shape_up.mode, variant: msg_def.tag, inner })
-                } else {
-                    self.add_step(Step::TokenTop { inner_mode: shape_up.mode, variant: msg_def.tag, dn_vars, dn, up, inner })
+                    seq.push(inner);
                 }
+
+                if shape_up.mode.has_dn_channel() {
+                    let msg = dn.into_iter().zip(dn_vars.into_iter()).collect();
+                    seq.push(self.add_step(Step::Receive { dir: Dir::Up, variant: msg_def.tag, msg }));
+                }
+
+                if msg_def.child.is_none() {
+                    seq.push(inner);
+                }
+
+                if shape_up.mode.has_up_channel() {
+                    seq.push(self.add_step(Step::Send { dir: Dir::Up, variant: msg_def.tag, msg: up}));
+                }
+
+                self.add_step(Step::Seq(seq))
             }
 
             ast::Action::On(ref node @ ast::ActionOn { args: None, ..}) => {
@@ -745,11 +760,23 @@ impl<'a> Builder<'a> {
             ast::Process::Call(node) => {
                 if let Some(msg_def) = sb.shape_down.variant_named(&node.name.name) {
                     let (dn, up) = self.resolve_token(msg_def, sb.scope, &node);
-                    if msg_def.child.is_none() {
-                        (self.add_step(Step::Token { variant: msg_def.tag, dn, up }), None)
-                    } else {
-                        (self.add_step(Step::TokenTransaction { variant: msg_def.tag }), msg_def.child.clone() )
+                    let mut seq = Vec::new();
+
+                    if msg_def.child.is_some() {
+                        assert!(dn.is_empty());
+                        assert!(up.is_empty());
+                        seq.push(self.add_step(Step::Pass))
                     }
+                    
+                    if sb.shape_down.mode.has_dn_channel() {
+                        seq.push(self.add_step(Step::Send { dir: Dir::Dn, variant: msg_def.tag, msg: dn }));
+                    }
+
+                    if sb.shape_down.mode.has_up_channel() {
+                        seq.push(self.add_step(Step::Receive { dir: Dir::Dn, variant: msg_def.tag, msg: up }));
+                    }
+
+                    (self.add_step(Step::Seq(seq)), msg_def.child.clone())
                 } else {
                     let def = match self.index.find_def(sb.shape_down, &node.name.name) {
                         Ok(res) => res,
@@ -833,8 +860,11 @@ impl<'a> Builder<'a> {
 
                 let (hi, shape_up) = self.resolve_process(sb.with_lower(sb.scope, &shape), &node.upper);
 
-                match self.steps[lo] {
+                match &self.steps[lo] {
                     Step::Pass => (hi, shape_up),
+                    Step::Seq(s) if matches!(s.first().map(|i| &self.steps[*i]), Some(Step::Pass)) => {
+                        (self.add_step(Step::Seq(std::iter::once(hi).chain(s.iter().copied().skip(1)).collect())), shape_up)
+                    },
                     _ => {
                         let stack = self.add_step(Step::Stack { lo, shape, hi });
                         (stack, shape_up)

@@ -2,10 +2,12 @@ with Seq(_:#h|#l, dir)
 def pulses() = new Seq(1..10, dir) {
     repeat {
         on val(len) {
-            repeat dir 1!1..10 {
+            val(#l)
+            repeat dir <: 0 {
                 val(#l)
             }
-            repeat dir len {
+            val(#h)
+            repeat dir len-1 {
                 val(#h)
             }
         }

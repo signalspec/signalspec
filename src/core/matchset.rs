@@ -1,10 +1,10 @@
-use super::{ExprDn, Predicate};
+use super::{ExprDn, Predicate, Dir};
 
 #[derive(Clone, Debug)]
 pub enum MatchSet {
     Process,
-    MessageUp { receive: MessagePatternSet },
-    MessageDn { variant: usize, send: Vec<ExprDn>, receive: MessagePatternSet },
+    Send { dir: Dir, variant: usize, send: Vec<ExprDn>, },
+    Receive { dir: Dir, receive: MessagePatternSet },
 }
 
 #[derive(Clone, Debug)]
@@ -52,16 +52,19 @@ impl MessagePatternSet {
 
 impl MatchSet {
     pub fn proc() -> MatchSet { MatchSet::Process }
-    pub fn lower(variant: usize, dn: Vec<ExprDn>, up: Vec<Predicate>) -> MatchSet {
-        MatchSet::MessageDn {
+
+    pub fn send(dir: Dir, variant: usize, send: Vec<ExprDn>) -> MatchSet {
+        MatchSet::Send {
+            dir,
             variant,
-            send: dn,
-            receive: MessagePatternSet::one(MessagePattern { variant, fields: up })
+            send,
         }
     }
-    pub fn upper(variant: usize, dn: Vec<Predicate>) -> MatchSet {
-        MatchSet::MessageUp {
-            receive: MessagePatternSet::one(MessagePattern { variant, fields: dn }),
+
+    pub fn receive(dir: Dir, variant: usize, recv: Vec<Predicate>) -> MatchSet {
+        MatchSet::Receive {
+            dir,
+            receive: MessagePatternSet::one(MessagePattern { variant, fields: recv }),
         }
     }
 
@@ -69,19 +72,19 @@ impl MatchSet {
         match (prev_followlast, next_first) {
             (None, _) => {}
             (
-              Some(MatchSet::MessageDn { variant: v1, send: s1, .. }),
-              MatchSet::MessageDn { variant: v2, send: s2, .. }
-            ) if v1 == v2 && s1 == s2 => {}
+              Some(MatchSet::Send { dir: d1, variant: v1, send: s1, .. }),
+              MatchSet::Send { dir: d2, variant: v2, send: s2, .. }
+            ) if d1 == d2 && v1 == v2 && s1 == s2 => {}
 
             (
-              Some(MatchSet::MessageUp { .. }),
-              MatchSet::MessageUp { .. }
-            ) => {}
+              Some(MatchSet::Receive { dir: d1, .. }),
+              MatchSet::Receive { dir: d2, .. }
+            ) if d1 == d2 => {}
 
             (
-              Some(MatchSet::MessageUp { .. }),
-              MatchSet::MessageDn { .. }
-            ) => {}
+                Some(MatchSet::Receive { dir: d1, .. }),
+                MatchSet::Send { dir: d2, ..},
+            ) if *d1 != *d2 => {}
 
             (s, o) => panic!("Follow conflict: {:?} <> {:?}", s, o)
         }
@@ -92,17 +95,17 @@ impl MatchSet {
         i.fold(first.clone(), |m, v| {
             match (m, v) {
                 (
-                MatchSet::MessageDn { variant: v1, send: s1, receive:  r1 },
-                MatchSet::MessageDn { variant: v2, send: s2, receive: r2 }
-                ) if v1 == *v2 && &s1 == s2 => {
-                    MatchSet::MessageDn { variant: v1, send: s1, receive: MessagePatternSet::merge_disjoint(r1, r2) }
+                MatchSet::Send { dir: d1, variant: v1, send: s1 },
+                MatchSet::Send { dir: d2, variant: v2, send: s2 }
+                ) if d1 == *d2 && v1 == *v2 && &s1 == s2 => {
+                    MatchSet::Send { dir: d1, variant: v1, send: s1 }
                 }
 
                 (
-                MatchSet::MessageUp { receive: r1 },
-                MatchSet::MessageUp { receive: r2 }
-                ) => {
-                    MatchSet::MessageUp { receive: MessagePatternSet::merge_disjoint(r1, r2) }
+                MatchSet::Receive { dir: d1, receive: r1 },
+                MatchSet::Receive { dir: d2, receive: r2 }
+                ) if d1 == *d2 => {
+                    MatchSet::Receive { dir: d1, receive: MessagePatternSet::merge_disjoint(r1, r2) }
                 }
 
                 (s, o) => panic!("First conflict: {:?} <> {:?}", s, o)
@@ -117,21 +120,21 @@ impl MatchSet {
                 (None, None) => None,
 
                 (
-                    Some(MatchSet::MessageDn { variant: v1, send: s1, receive:  r1 }),
-                    Some(MatchSet::MessageDn { variant: v2, send: s2, receive: r2 })
-                ) if v1 == *v2 && &s1 == s2 => {
-                    Some(MatchSet::MessageDn { variant: v1, send: s1, receive: MessagePatternSet::union(r1, r2) })
+                    Some(MatchSet::Send { dir: d1, variant: v1, send: s1 }),
+                    Some(MatchSet::Send { dir: d2, variant: v2, send: s2 })
+                ) if d1 == *d2 && v1 == *v2 && &s1 == s2 => {
+                    Some(MatchSet::Send { dir: d1, variant: v1, send: s1 })
                 }
 
                 (
-                    Some(MatchSet::MessageUp { receive: r1 }),
-                    Some(MatchSet::MessageUp { receive: r2 })
-                ) => {
-                    Some(MatchSet::MessageUp { receive: MessagePatternSet::union(r1, r2) })
+                    Some(MatchSet::Receive { dir: d1, receive: r1 }),
+                    Some(MatchSet::Receive { dir: d2, receive: r2 })
+                ) if d1 == *d2 => {
+                    Some(MatchSet::Receive { dir: d1, receive: MessagePatternSet::union(r1, r2) })
                 }
 
                 (
-                    Some(MatchSet::MessageUp { .. }),
+                    Some(MatchSet::Receive { .. }),
                     None
                 ) => {
                     None

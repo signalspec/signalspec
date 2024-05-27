@@ -4,8 +4,9 @@ def main() = new Seq(0..3, d) {
     on val(v) {
       val(#h)
       repeat d v { val(#h) }
+      val(#l)
     }
-    repeat #up 1..10 { val(#l) }
+    repeat { val(#l) }
   }
 }
 
