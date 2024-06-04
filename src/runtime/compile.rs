@@ -155,7 +155,10 @@ impl Compiler<'_> {
 
     fn compile_step(&mut self, step: StepId, channels: ChannelIds) {
         match self.program.steps[step] {
-            Step::Invalid(_) => panic!("Compiling invalid step"),
+            Step::Fail => {
+                self.emit(Insn::Fail);
+            }
+            Step::Accept => {}
             Step::Pass => todo!(),
             Step::Stack { lo, ref shape, hi} => {
                 let lo_info = &self.program.step_info[lo];
@@ -228,19 +231,13 @@ impl Compiler<'_> {
                 }
             }
 
-            Step::Seq(ref steps) => {
-                let mut prev_followlast = None;
-                for &step in steps.iter() {
-                    let inner_info = &self.program.step_info[step];
+            Step::Seq(s1, s2) => {
+                let i1 = &self.program.step_info[s1];
+                let i2 = &self.program.step_info[s2];
 
-                    if let Some(prev_followlast) = prev_followlast {
-                        self.seq_prep(channels, prev_followlast, &inner_info.first);
-                    }
-
-                    self.compile_step(step, channels);
-
-                    prev_followlast = Some(&inner_info.followlast);
-                }
+                self.compile_step(s1, channels);
+                self.seq_prep(channels, &i1.followlast, &i2.first);
+                self.compile_step(s2, channels);
             }
 
             Step::RepeatUp { min, max, inner, count } => {

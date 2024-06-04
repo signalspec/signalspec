@@ -4,15 +4,8 @@ use itertools::EitherOrBoth;
 use num_traits::Signed;
 
 use crate::{core::{
-    constant,
-    index::FindDefError,
-    protocol,
-    resolve::expr::{lvalue_dn, lvalue_up, LValueSrc},
-    rexpr, rexpr_tup,
-    step::{analyze_unambiguous, AltDnArm, AltUpArm, Step, StepInfo},
-    value, Dir, Expr, ExprDn, Item, LeafItem, Predicate, Scope, Shape, ShapeMsg, StepId, Type,
-    ValueSrcId, expr::ExprKind, ConcatElem, lexpr,
-}, Value, diagnostic::{DiagnosticContext, Diagnostics}};
+    constant, expr::ExprKind, index::FindDefError, lexpr, protocol, resolve::expr::{lvalue_dn, lvalue_up, LValueSrc}, rexpr, rexpr_tup, step::{analyze_unambiguous, AltDnArm, AltUpArm, Step, StepBuilder, StepInfo}, value, ConcatElem, Dir, Expr, ExprDn, Item, LeafItem, Predicate, Scope, Shape, ShapeMsg, StepId, Type, ValueSrcId
+}, diagnostic::{DiagnosticContext, Diagnostics}, Value};
 use crate::diagnostic::{ErrorReported, Span};
 use crate::entitymap::{entity_key, EntityMap};
 use crate::runtime::instantiate_primitive;
@@ -70,7 +63,7 @@ entity_key!(pub ValueSinkId);
 pub struct Builder<'a> {
     dcx: DiagnosticContext,
     index: &'a Index,
-    steps: EntityMap<StepId, Step>,
+    steps: StepBuilder,
     value_src: EntityMap<ValueSrcId, ()>,
     value_sink: EntityMap<ValueSinkId, ()>,
     upvalues: Vec<(ValueSinkId, ExprDn)>,
@@ -81,20 +74,16 @@ impl<'a> Builder<'a> {
         Self {
             dcx: DiagnosticContext::new(),
             index,
-            steps: EntityMap::new(),
+            steps: StepBuilder::new(),
             value_src: EntityMap::new(),
             value_sink: EntityMap::new(),
             upvalues: Vec::new(),
         }
     }
 
-    fn add_step(&mut self, step: Step) -> StepId {
-        self.steps.push(step)
-    }
-
     fn err_step(&mut self, diag: Diagnostic) -> StepId {
         let r = self.dcx.report(diag);
-        self.add_step(Step::Invalid(r))
+        self.steps.invalid(r)
     }
 
     fn add_value_src(&mut self) -> ValueSrcId {
@@ -168,19 +157,17 @@ impl<'a> Builder<'a> {
 
             ast::Action::On(ref node @ ast::ActionOn { args: Some(args), ..}) => {
                 let Some(shape_up) = sb.shape_up else {
-                    let r = self.dcx.report(Diagnostic::OnBlockWithoutUpSignal{
+                    return self.err_step(Diagnostic::OnBlockWithoutUpSignal{
                         span: sb.scope.span(node.span)
                     });
-                    return self.add_step(Step::Invalid(r));
                 };
 
                 let Some(msg_def) = shape_up.variant_named(&node.name.name) else {
-                    let r = self.dcx.report(Diagnostic::NoVariantNamed {
+                    return self.err_step(Diagnostic::NoVariantNamed {
                         span: sb.scope.span(node.name.span),
                         protocol_name: shape_up.def.ast().name.name.to_owned(),
                         name: node.name.name.to_owned(),
                     });
-                    return self.add_step(Step::Invalid(r));
                 };
 
                 let mut body_scope = sb.scope.child();
@@ -237,57 +224,57 @@ impl<'a> Builder<'a> {
                 let inner = if let &Some(ref body) = &node.block {
                     self.resolve_seq(sb.with_upper(&body_scope, msg_def.child.as_ref()), body)
                 } else {
-                    self.add_step(Step::Seq(vec![]))
+                    self.steps.accepting()
                 };
-
-                let up = self.bind_tree_fields_up_finish(up_inner, &sb.scope.file);
-
-                let mut seq = vec![];
 
                 if msg_def.child.is_some() {
                     assert!(dn_vars.is_empty());
                     assert!(dn.is_empty());
-                    assert!(up.is_empty());
-                    seq.push(inner);
+                    assert!(up_inner.is_empty());
                 }
-
-                if shape_up.mode.has_dn_channel() {
+                
+                let receive = if shape_up.mode.has_dn_channel() {
                     let msg = dn.into_iter().zip(dn_vars.into_iter()).collect();
-                    seq.push(self.add_step(Step::Receive { dir: Dir::Up, variant: msg_def.tag, msg }));
-                }
+                    self.steps.receive(Dir::Up, msg_def.tag, msg)
+                } else {
+                    assert!(dn.is_empty());
+                    self.steps.accepting()
+                };
+                
+                let send = if shape_up.mode.has_up_channel() {
+                    let up = self.bind_tree_fields_up_finish(up_inner, &sb.scope.file);
+                    self.steps.send(Dir::Up, msg_def.tag, up)
+                } else {
+                    assert!(up_inner.is_empty());
+                    self.steps.accepting()
+                };
 
-                if msg_def.child.is_none() {
-                    seq.push(inner);
+                if msg_def.child.is_some() {
+                    self.steps.seq_from([inner, receive, send])
+                } else {
+                    self.steps.seq_from([receive, inner, send])
                 }
-
-                if shape_up.mode.has_up_channel() {
-                    seq.push(self.add_step(Step::Send { dir: Dir::Up, variant: msg_def.tag, msg: up}));
-                }
-
-                self.add_step(Step::Seq(seq))
             }
 
             ast::Action::On(ref node @ ast::ActionOn { args: None, ..}) => {
                 let Some(shape_up) = sb.shape_up else {
-                    let r = self.dcx.report(Diagnostic::OnBlockWithoutUpSignal{
+                    return self.err_step(Diagnostic::OnBlockWithoutUpSignal{
                         span: sb.scope.span(node.span)
                     });
-                    return self.add_step(Step::Invalid(r));
                 };
 
                 let Some(inner_shape_up) = shape_up.child_named(&node.name.name) else {
-                    let r = self.dcx.report(Diagnostic::NoChildNamed {
+                    return self.err_step(Diagnostic::NoChildNamed {
                         span: sb.scope.span(node.name.span),
                         protocol_name: shape_up.def.ast().name.name.to_owned(),
                         name: node.name.name.to_owned(),
                     });
-                    return self.add_step(Step::Invalid(r));
                 };
 
                 if let &Some(ref body) = &node.block {
                     self.resolve_seq(sb.with_upper(&sb.scope, Some(inner_shape_up)), body)
                 } else {
-                    self.add_step(Step::Seq(vec![]))
+                    self.steps.accepting()
                 }
             }
 
@@ -313,7 +300,7 @@ impl<'a> Builder<'a> {
 
                 let count = match count {
                     Ok(count) => count,
-                    Err(r) => return self.add_step(Step::Invalid(r)),
+                    Err(r) => return self.steps.invalid(r),
                 };
 
                 match count.get_type() {
@@ -322,11 +309,10 @@ impl<'a> Builder<'a> {
                     Type::NumberSet(s) if s.iter().all(|v| v.is_integer() && !v.is_negative()) => {}
                     Type::Ignored => {}
                     found => {
-                        let r = self.dcx.report(Diagnostic::InvalidRepeatCountType {
+                        return self.err_step(Diagnostic::InvalidRepeatCountType {
                             span: sb.scope.span(count_span),
                             found,
                         });
-                        return self.add_step(Step::Invalid(r));
                     }
                 }
 
@@ -342,20 +328,19 @@ impl<'a> Builder<'a> {
                                 && !min.is_negative()
                                 && max.is_integer() => (*min.numer(), Some(*max.numer())),
                             _ => {
-                                let r = self.dcx.report(Diagnostic::InvalidRepeatCountPredicate {
+                                return self.err_step(Diagnostic::InvalidRepeatCountPredicate {
                                     span: sb.scope.span(count_span),
                                 });
-                                return self.add_step(Step::Invalid(r));
                             }
                         };
                         let count_src = self.up_value_src(&count);
-                        self.add_step(Step::RepeatUp { min, max, inner, count: count_src })
+                        self.steps.steps.push(Step::RepeatUp { min, max, inner, count: count_src })
                     }
                     Ok(Dir::Dn) => {
                         let count = self.require_down(&sb.scope, count_span, &count);
-                        self.add_step(Step::RepeatDn { count, inner })
+                        self.steps.steps.push(Step::RepeatDn { count, inner })
                     }
-                    Err(r) => return self.add_step(Step::Invalid(r))
+                    Err(r) => return self.steps.invalid(r)
                 }
             }
 
@@ -476,7 +461,7 @@ impl<'a> Builder<'a> {
                     }
                 }
 
-                self.add_step(Step::Seq(seq))
+                self.steps.seq_from(seq)
             }
 
             ast::Action::Alt(ref node) => {
@@ -484,10 +469,9 @@ impl<'a> Builder<'a> {
                 let scrutinee = rexpr(&mut self.dcx, sb.scope, &node.expr);
 
                 if node.arms.is_empty() {
-                    let r = self.dcx.report(Diagnostic::AltZeroArms {
+                    return self.err_step(Diagnostic::AltZeroArms {
                         span: sb.scope.span(node.span)
                     });
-                    return self.add_step(Step::Invalid(r));
                 }
 
                 match dir {
@@ -532,7 +516,7 @@ impl<'a> Builder<'a> {
                             }
                             AltDnArm { vals, body }
                         }).collect();
-                        self.add_step(Step::AltDn(scrutinee_dn, arms))
+                        self.steps.steps.push(Step::AltDn(scrutinee_dn, arms))
                     }
                     Ok(AltMode::Var(Dir::Up)) => {
                         let scrutinee_src = scrutinee.flatten(&mut |e| {
@@ -566,14 +550,14 @@ impl<'a> Builder<'a> {
                             }
                             AltUpArm { vals, body }
                         }).collect();
-                        self.add_step(Step::AltUp(arms, scrutinee_src))
+                        self.steps.steps.push(Step::AltUp(arms, scrutinee_src))
                     }
                     Err(r) => {
-                        return self.add_step(Step::Invalid(r));
+                        return self.steps.invalid(r);
                     }
                 }
             }
-            ast::Action::Error(r) => self.add_step(Step::Invalid(ErrorReported::from_ast(r))),
+            ast::Action::Error(r) => self.steps.invalid(ErrorReported::from_ast(r)),
         }
     }
 
@@ -760,33 +744,43 @@ impl<'a> Builder<'a> {
             ast::Process::Call(node) => {
                 if let Some(msg_def) = sb.shape_down.variant_named(&node.name.name) {
                     let (dn, up) = self.resolve_token(msg_def, sb.scope, &node);
-                    let mut seq = Vec::new();
 
                     if msg_def.child.is_some() {
                         assert!(dn.is_empty());
                         assert!(up.is_empty());
-                        seq.push(self.add_step(Step::Pass))
-                    }
-                    
-                    if sb.shape_down.mode.has_dn_channel() {
-                        seq.push(self.add_step(Step::Send { dir: Dir::Dn, variant: msg_def.tag, msg: dn }));
                     }
 
-                    if sb.shape_down.mode.has_up_channel() {
-                        seq.push(self.add_step(Step::Receive { dir: Dir::Dn, variant: msg_def.tag, msg: up }));
-                    }
+                    let send = if sb.shape_down.mode.has_dn_channel() {
+                        self.steps.send(Dir::Dn, msg_def.tag, dn)
+                    } else {
+                        self.steps.accepting()
+                    };
 
-                    (self.add_step(Step::Seq(seq)), msg_def.child.clone())
+                    let receive = if sb.shape_down.mode.has_up_channel() {
+                        self.steps.receive(Dir::Dn, msg_def.tag, up)
+                    } else {
+                        self.steps.accepting()
+                    };
+
+                    let step = self.steps.seq(send, receive);
+
+                    if msg_def.child.is_some() {
+                        let pass = self.steps.pass();
+                        let step = self.steps.seq(pass, step);
+                        (step, msg_def.child.clone())
+                    } else {
+                        (step, None)
+                    }
                 } else {
                     let def = match self.index.find_def(sb.shape_down, &node.name.name) {
                         Ok(res) => res,
                         Err(FindDefError::NoDefinitionWithName) => {
-                            let r = self.dcx.report(Diagnostic::NoDefNamed {
+                            let step = self.err_step(Diagnostic::NoDefNamed {
                                 span: sb.scope.span(node.name.span),
                                 protocol_name: sb.shape_down.def.ast().name.name.to_owned(),
                                 def_name: node.name.name.to_owned(),
                             });
-                            return (self.add_step(Step::Invalid(r)), None)
+                            return (step, None)
                         }
                     };
 
@@ -802,15 +796,15 @@ impl<'a> Builder<'a> {
 
             ast::Process::Child(node) => {
                 let Some(child_shape) = sb.shape_down.child_named(&node.name.name) else {
-                    let r = self.dcx.report(Diagnostic::NoDefNamed {
+                    let step = self.err_step(Diagnostic::NoDefNamed {
                         span: sb.scope.span(node.name.span),
                         protocol_name: sb.shape_down.def.ast().name.name.to_owned(),
                         def_name: node.name.name.to_owned(),
                     });
-                    return (self.add_step(Step::Invalid(r)), None)
+                    return (step, None)
                 };
 
-                (self.add_step(Step::Pass), Some(child_shape.clone()))
+                (self.steps.pass(), Some(child_shape.clone()))
             }
 
             ast::Process::Primitive(node) => {
@@ -819,21 +813,21 @@ impl<'a> Builder<'a> {
                 let prim = match instantiate_primitive(&node.name, arg, sb.shape_down, sb.shape_up) {
                     Ok(p) => p,
                     Err(msg) => {
-                        let r = self.dcx.report(Diagnostic::ErrorInPrimitiveProcess {
+                        let step = self.err_step(Diagnostic::ErrorInPrimitiveProcess {
                             span: sb.scope.span(node.span),
                             msg
                         });
-                        return (self.add_step(Step::Invalid(r)), None);
+                        return (step, None);
 
                     }
                 };
-                (self.add_step(Step::Primitive(prim)), None)
+                (self.steps.steps.push(Step::Primitive(prim)), None)
             }
 
             ast::Process::New(node) => {
                 let top_shape = match protocol::resolve(&mut self.dcx, self.index, sb.scope, &node.top, 1) {
                     Ok(shape) => shape,
-                    Err(r) => return (self.add_step(Step::Invalid(r)), None),
+                    Err(r) => return (self.steps.invalid(r), None),
                 };
                 let block = self.resolve_seq(sb.with_upper(sb.scope, Some(&top_shape)), &node.block);
                 (block, Some(top_shape))
@@ -848,28 +842,18 @@ impl<'a> Builder<'a> {
                 let (lo, shape) = self.resolve_process(sb, &node.lower);
 
                 let Some(shape) = shape else {
-                    if let Step::Invalid(_) = &self.steps[lo] {
+                    if lo == StepBuilder::FAIL {
                         return (lo, shape);
                     } else {
-                        let r = self.dcx.report(Diagnostic::StackWithoutBaseSignal {
+                        let step = self.err_step(Diagnostic::StackWithoutBaseSignal {
                             span: sb.scope.span(node.lower.span()),
                         });
-                        return (self.add_step(Step::Invalid(r)), None)
+                        return (step, None)
                     }
                 };
 
                 let (hi, shape_up) = self.resolve_process(sb.with_lower(sb.scope, &shape), &node.upper);
-
-                match &self.steps[lo] {
-                    Step::Pass => (hi, shape_up),
-                    Step::Seq(s) if matches!(s.first().map(|i| &self.steps[*i]), Some(Step::Pass)) => {
-                        (self.add_step(Step::Seq(std::iter::once(hi).chain(s.iter().copied().skip(1)).collect())), shape_up)
-                    },
-                    _ => {
-                        let stack = self.add_step(Step::Stack { lo, shape, hi });
-                        (stack, shape_up)
-                    }
-                }
+                (self.steps.stack(lo, shape, hi), shape_up)
             }
         }
     }
@@ -946,11 +930,11 @@ impl<'a> Builder<'a> {
             resolve_letdef(&mut self.dcx, &mut scope, &ld);
         }
 
-        let steps = block.actions.iter().map(|action| {
+        let steps: Vec<_> = block.actions.iter().map(|action| {
             self.resolve_action(sb.with_scope(&scope), &action)
         }).collect();
 
-        self.add_step(Step::Seq(steps))
+        self.steps.seq_from(steps)
     }
 }
 
@@ -977,7 +961,7 @@ pub fn compile_process(index: &Index, scope: &Scope, shape_dn: Shape, ast: &ast:
 
     if log_enabled!(log::Level::Debug) {
         let mut buf = String::new();
-        crate::core::step::write_tree(&mut buf, 0, &builder.steps, step).unwrap();
+        crate::core::step::write_tree(&mut buf, 0, &builder.steps.steps, step).unwrap();
         debug!("Steps:\n{}", buf);
     }
 
@@ -985,14 +969,14 @@ pub fn compile_process(index: &Index, scope: &Scope, shape_dn: Shape, ast: &ast:
         return Err(builder.dcx.diagnostics());
     }
 
-    let step_info = analyze_unambiguous(&builder.steps);
+    let step_info = analyze_unambiguous(&builder.steps.steps);
 
     if builder.dcx.has_errors() {
         return Err(builder.dcx.diagnostics());
     }
 
     Ok(ProcessChain {
-        steps: builder.steps,
+        steps: builder.steps.steps,
         vars: builder.value_src,
         step_info,
         root: step,

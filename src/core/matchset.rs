@@ -108,6 +108,13 @@ impl MatchSet {
                     MatchSet::Receive { dir: d1, receive: MessagePatternSet::merge_disjoint(r1, r2) }
                 }
 
+                (
+                MatchSet::Receive { dir: d1, receive: r1 },
+                MatchSet::Send { .. }
+                ) => {
+                    MatchSet::Receive { dir: d1, receive: r1 }
+                }
+
                 (s, o) => panic!("First conflict: {:?} <> {:?}", s, o)
             }
         })
