@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
-use itertools::EitherOrBoth;
+use itertools::{EitherOrBoth, Itertools};
 use num_traits::Signed;
 
 use crate::{core::{
-    constant, expr::ExprKind, index::FindDefError, lexpr, protocol, resolve::expr::{lvalue_dn, lvalue_up, LValueSrc}, rexpr, rexpr_tup, step::{analyze_unambiguous, AltDnArm, AltUpArm, Step, StepBuilder, StepInfo}, value, ConcatElem, Dir, Expr, ExprDn, Item, LeafItem, Predicate, Scope, Shape, ShapeMsg, StepId, Type, ValueSrcId
-}, diagnostic::{DiagnosticContext, Diagnostics}, Value};
+    constant, expr::ExprKind, index::FindDefError, lexpr, protocol, resolve::expr::{lvalue_dn, lvalue_up, LValueSrc}, rexpr, rexpr_tup, step::{analyze_unambiguous, Step, StepBuilder, StepInfo}, value, ConcatElem, Dir, Expr, ExprDn, Item, LeafItem, Predicate, Scope, Shape, ShapeMsg, StepId, Type, ValueSrcId
+}, diagnostic::{DiagnosticContext, Diagnostics}, syntax::Number, Value};
 use crate::diagnostic::{ErrorReported, Span};
 use crate::entitymap::{entity_key, EntityMap};
 use crate::runtime::instantiate_primitive;
@@ -35,6 +35,28 @@ impl TryFrom<Value> for AltMode {
 
 impl TryFromConstant for AltMode {
     const EXPECTED_MSG: &'static str = "#up | #dn | #const";
+}
+
+enum RepeatMode {
+    Up(bool),
+    Dn,
+}
+
+impl TryFrom<Value> for RepeatMode {
+    type Error = ();
+
+    fn try_from(value: Value) -> Result<Self, ()> {
+        match value.as_symbol() {
+            Some("dn") => Ok(RepeatMode::Dn),
+            Some("up") => Ok(RepeatMode::Up(true)),
+            Some("up1") => Ok(RepeatMode::Up(false)),
+            _ => Err(()),
+        }
+    }
+}
+
+impl TryFromConstant for RepeatMode {
+    const EXPECTED_MSG: &'static str = "#up | #dn | #up1";
 }
 
 #[derive(Clone, Copy)]
@@ -94,10 +116,14 @@ impl<'a> Builder<'a> {
         self.value_sink.push(())
     }
 
-    fn up_value_src(&mut self, e: &Expr) -> ValueSrcId {
+    fn up_value_src(&mut self, e: &Expr) -> (ValueSrcId, bool) {
         let src = self.add_value_src();
-        e.up(ExprDn::Variable(src), &mut |snk, x| self.set_upvalue(snk, x));
-        src
+        let mut used = false;
+        e.up(ExprDn::Variable(src), &mut |snk, x| {
+            used = true;
+            self.set_upvalue(snk, x)
+        });
+        (src, used)
     }
 
     pub fn set_upvalue(&mut self, snk: ValueSinkId, val: ExprDn) {
@@ -282,10 +308,10 @@ impl<'a> Builder<'a> {
                 let (dir, count) = match &node.dir_count {
                     Some((dir_ast, count_ast)) => {
                         let count = value(&mut self.dcx, sb.scope, count_ast);
-                        let dir = constant::<Dir>(&mut self.dcx, sb.scope, dir_ast);
+                        let dir = constant::<RepeatMode>(&mut self.dcx, sb.scope, dir_ast);
                         (dir, count)
                     }
-                    None => (Ok(Dir::Up), Ok(Expr::ignored()))
+                    None => (Ok(RepeatMode::Up(true)), Ok(Expr::ignored()))
                 };
 
                 let upvalues_scope = self.upvalues.len();
@@ -317,7 +343,7 @@ impl<'a> Builder<'a> {
                 }
 
                 match dir {
-                    Ok(Dir::Up) => {
+                    Ok(RepeatMode::Up(nullable)) => {
                         let (min, max) = match count.predicate() {
                             Some(Predicate::Any) => (0, None),
                             Some(Predicate::Number(n))
@@ -333,12 +359,67 @@ impl<'a> Builder<'a> {
                                 });
                             }
                         };
-                        let count_src = self.up_value_src(&count);
-                        self.steps.steps.push(Step::RepeatUp { min, max, inner, count: count_src })
+                        
+                        let (count_src, count_used) = self.up_value_src(&count);
+                        
+                        let (init, increment, exit_guard) = if count_used || max.is_some() {
+                            let init = self.steps.assign(
+                                count_src,
+                                ExprDn::Const(Value::Number(0.into()))
+                            );
+                            let increment = self.steps.assign(
+                                count_src, 
+                                ExprDn::BinaryConstNumber(
+                                    Box::new(ExprDn::Variable(count_src)),
+                                    ast::BinOp::Add,
+                                    1.into()
+                                )
+                            );
+                            let exit_guard = self.steps.guard(ExprDn::Variable(count_src), count.predicate().unwrap());
+                            (init, increment, exit_guard)
+                        } else {
+                            (self.steps.accepting(), self.steps.accepting(), self.steps.accepting())
+                        };
+                        
+                        let body = self.steps.seq(inner, increment);
+                        let repeat = self.steps.repeat(body, nullable);
+                        self.steps.seq_from([init, repeat, exit_guard])
                     }
-                    Ok(Dir::Dn) => {
+                    Ok(RepeatMode::Dn) => {
+                        let count_var = self.add_value_src();
                         let count = self.require_down(&sb.scope, count_span, &count);
-                        self.steps.steps.push(Step::RepeatDn { count, inner })
+
+                        match count {
+                            ExprDn::Const(Value::Number(n)) if n == 0.into() => {
+                                self.steps.accepting()
+                            }
+                            ExprDn::Const(Value::Number(n)) if n == 1.into() => {
+                                inner
+                            }
+                            count => {
+                                let init = self.steps.assign(count_var, count);
+                                let loop_guard = self.steps.guard(
+                                    ExprDn::Variable(count_var),
+                                    Predicate::Range(1.into(), i64::MAX.into()),
+                                );
+                                let decrement = self.steps.assign(
+                                    count_var,
+                                    ExprDn::BinaryConstNumber(
+                                        Box::new(ExprDn::Variable(count_var)),
+                                        ast::BinOp::Sub,
+                                        1.into()
+                                    )
+                                );
+                                let exit_guard = self.steps.guard(
+                                    ExprDn::Variable(count_var),
+                                    Predicate::Range(0.into(), 1.into()),
+                                );
+        
+                                let body = self.steps.seq_from([loop_guard, inner, decrement]);
+                                let repeat = self.steps.repeat(body, true);
+                                self.steps.seq_from([init, repeat, exit_guard])
+                            }
+                        }
                     }
                     Err(r) => return self.steps.invalid(r)
                 }
@@ -487,26 +568,26 @@ impl<'a> Builder<'a> {
                         })
                     }
                     Ok(AltMode::Var(Dir::Dn)) => {
-                        let scrutinee_dn = scrutinee.flatten(&mut |e| {
-                            match e {
-                                LeafItem::Value(v) => {
-                                    self.require_down(&sb.scope, node.expr.span(), v)
-                                }
-                                LeafItem::Invalid(_) => ExprDn::invalid(),
-                                t => {
-                                    self.dcx.report(Diagnostic::ExpectedValue {
-                                        span: sb.scope.span(node.expr.span()),
-                                        found: t.to_string()
-                                    });
-                                    ExprDn::invalid()
-                                }
+                        let scrutinee_dn = match &scrutinee {
+                            Tree::Leaf(LeafItem::Value(v)) => {
+                                self.require_down(&sb.scope, node.expr.span(), v)
                             }
-                        });
+                            Tree::Leaf(LeafItem::Invalid(_)) => ExprDn::invalid(),
+                            t => {
+                                self.dcx.report(Diagnostic::ExpectedValue {
+                                    span: sb.scope.span(node.expr.span()),
+                                    found: t.to_string()
+                                });
+                                ExprDn::invalid()
+                            }
+                        };
 
                         let arms = node.arms.iter().map(|arm| {
                             let mut body_scope = sb.scope.child();
+
                             let mut vals = Vec::new();
                             self.bind_tree_fields_dn(&mut body_scope, &arm.discriminant, &scrutinee, &mut vals);
+                            let predicate = vals.pop().unwrap();
 
                             let upvalues_scope = self.upvalues.len();
                             let body = self.resolve_seq(sb.with_scope(&body_scope), &arm.block);
@@ -514,24 +595,27 @@ impl<'a> Builder<'a> {
                                 // TODO: could support if all arms set the same upvalues, and we insert phi nodes to join them
                                 panic!("Upvalues set in alt arm");
                             }
-                            AltDnArm { vals, body }
+                            let guard = self.steps.guard(scrutinee_dn.clone(), predicate);
+                            self.steps.seq(guard, body)
                         }).collect();
-                        self.steps.steps.push(Step::AltDn(scrutinee_dn, arms))
+                        self.steps.alt(arms)
                     }
                     Ok(AltMode::Var(Dir::Up)) => {
-                        let scrutinee_src = scrutinee.flatten(&mut |e| {
-                            match e {
-                                LeafItem::Value(v) => self.up_value_src(&v),
-                                LeafItem::Invalid(_) => self.add_value_src(),
-                                t => {
-                                    self.dcx.report(Diagnostic::ExpectedValue {
-                                        span: sb.scope.span(node.expr.span()),
-                                        found: t.to_string()
-                                    });
-                                    self.add_value_src()
-                                }
+                        let scrutinee_src = match &scrutinee {
+                            Tree::Tuple(t) if t.is_empty() => None,
+                            Tree::Leaf(LeafItem::Value(v)) => {
+                                let (src, used) = self.up_value_src(&v);
+                                used.then_some(src)
                             }
-                        });
+                            Tree::Leaf(LeafItem::Invalid(_)) => None,
+                            t => {
+                                self.dcx.report(Diagnostic::ExpectedValue {
+                                    span: sb.scope.span(node.expr.span()),
+                                    found: t.to_string()
+                                });
+                                None
+                            }
+                        };
                         let arms = node.arms.iter().map(|arm| {
                             let mut body_scope = sb.scope.child();
                             
@@ -548,9 +632,15 @@ impl<'a> Builder<'a> {
                                 // TODO: could support if all arms set the same upvalues, and we insert phi nodes to join them
                                 panic!("Upvalues set in alt arm");
                             }
-                            AltUpArm { vals, body }
+                            let exit = if let Some(scrutinee_src) = scrutinee_src {
+                                let val = vals.into_iter().next().unwrap();
+                                self.steps.assign(scrutinee_src, val)
+                            } else {
+                                self.steps.accepting()
+                            };
+                            self.steps.seq(body, exit)
                         }).collect();
-                        self.steps.steps.push(Step::AltUp(arms, scrutinee_src))
+                        self.steps.alt(arms)
                     }
                     Err(r) => {
                         return self.steps.invalid(r);
@@ -892,7 +982,7 @@ impl<'a> Builder<'a> {
                         }
                         Dir::Up => {
                             let predicate = v.predicate().expect("Value cannot be up-evaluated as a predicate");
-                            let src = self.up_value_src(&v);
+                            let (src, _) = self.up_value_src(&v);
                             up.push((predicate, src));
                         }
                     }

@@ -14,7 +14,7 @@ def spi() = new SPI(dir[#up = #monitor, #dn = #generate]) {
   repeat dir <: 10 { val((#h, <: #l, <: #l, <: #l)) }
   repeat {
     on transaction() {
-      repeat #up 1..1000 {
+      repeat #up1 _ {
         on data(pico_byte, poci_byte) {
           for pico_bit=pico_byte, poci_bit=poci_byte {
             let pico_level = pico_bit[0=#l, 1=#h]

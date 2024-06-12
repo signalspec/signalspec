@@ -75,27 +75,6 @@ with Seq(_:#a|#b, _) def test2() = {
     simple() | { val(#a) }
 }
 
-with Seq(_:#a|#b|#x|#y, dir)
-def tuple() = new Seq((#a|#b, #a|#b|#x|#y), dir) {
-    on val(z) {
-        alt dir z {
-            (#a, w) => {
-                val(#a)
-                val(w)
-            }
-            (#b, w) => {
-                val(#b)
-                val(w)
-            }
-        }
-    }
-}
-
-@test(#both, (#b, #x))
-with Seq(_:#a|#b|#x|#y, _) def test_tuple() = {
-    tuple() | { val((#b, #x)) }
-}
-
 with Seq(_:#a|#b, dir)
 def ambiguous() = new Seq(#a | #b, dir) {
     on val(x) {

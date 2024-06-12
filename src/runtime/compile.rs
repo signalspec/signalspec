@@ -1,5 +1,5 @@
 use crate::entitymap::{EntityMap, entity_key};
-use crate::core::{Shape, ExprDn, ProcessChain, MatchSet, MessagePatternSet, StepId, Step, AltUpArm, AltDnArm, Predicate, ValueSrcId, ShapeMode};
+use crate::core::{Shape, ExprDn, ProcessChain, MatchSet, MessagePatternSet, StepId, Step, Predicate, ValueSrcId, ShapeMode};
 use super::PrimitiveProcess;
 
 type VariantId = usize;
@@ -25,14 +25,9 @@ pub enum Insn {
 
     Primitive(PrimitiveId, Vec<ChanId>),
 
-    CounterReset(CounterId, i64),
-    CounterUpEval(CounterId, i64, Option<i64>, ValueSrcId),
-    CounterDownEval(CounterId, ExprDn),
-    CounterDecrement(CounterId, InsnId),
-    CounterIncrement(CounterId),
-
     Assign(ValueSrcId, ExprDn),
-    TestVal(ExprDn, Predicate, InsnId),
+    TestVal(ExprDn, Vec<Predicate>, InsnId),
+    TestValOrFail(ExprDn, Predicate),
 
     /// Start a new thread of execution
     Fork(TaskId, InsnId),
@@ -130,8 +125,11 @@ impl Compiler<'_> {
                 }
             }
             (None | Some(MatchSet::Receive { .. }), MatchSet::Send { dir: Dir::Up, .. }) => {}
+            (None | Some(MatchSet::Receive { .. }), MatchSet::Guard { .. }) => {}
             (None, MatchSet::Process) => {}
+            (None, MatchSet::Guard {..}) => {}
             (Some(MatchSet::Receive { .. }), MatchSet::Receive { .. }) => {}
+            (Some(MatchSet::Guard { .. }), MatchSet::Guard { .. }) => {}
             (Some(MatchSet::Send { dir: d1, variant: v1, send: s1, .. }),
              MatchSet::Send { dir: d2, variant: v2, send: s2, .. })
              if d1 == d2 && v1 == v2 && s1 == s2 => {}
@@ -150,6 +148,10 @@ impl Compiler<'_> {
             MatchSet::Receive { dir: Dir::Dn, receive, .. } => {
                 Insn::Test(channels.dn_rx.unwrap(), receive.clone(), if_false)
             },
+            MatchSet::Guard { expr, test } => {
+                Insn::TestVal(expr.clone(), test.clone(), if_false)
+            },
+            
         }
     }
 
@@ -240,92 +242,49 @@ impl Compiler<'_> {
                 self.compile_step(s2, channels);
             }
 
-            Step::RepeatUp { min, max, inner, count } => {
+            Step::Repeat(inner, _) => {
                 let inner_info = &self.program.step_info[inner];
-                let counter = self.new_counter();
 
-                self.emit(Insn::CounterReset(counter, 0));
                 let test_ip = self.emit_placeholder();
+
                 self.compile_step(inner, channels);
                 self.seq_prep(channels, &inner_info.followlast, &inner_info.first);
-                self.emit(Insn::CounterIncrement(counter));
                 self.emit(Insn::Jump(test_ip));
 
                 self.backpatch(test_ip, self.test_matchset(channels, &inner_info.first, self.next_ip()));
-                self.emit(Insn::CounterUpEval(counter, min, max, count));
             }
 
-            Step::RepeatDn{ ref count, inner } => {
-                let inner_info = &self.program.step_info[inner];
-                let counter = self.new_counter();
-                self.emit(Insn::CounterDownEval(counter, count.clone()));
-                let test_ip = self.emit_placeholder();
-
-                self.seq_prep(channels, &None, &inner_info.first);
-                self.compile_step(inner, channels);
-                self.emit(Insn::Jump(test_ip));
-
-                self.backpatch(test_ip, Insn::CounterDecrement(counter, self.next_ip()));
-            }
-
-            Step::AltUp(ref opts, ref dests) => {
+            Step::Alt(ref opts) => {
                 let mut jumps_to_final = vec![];
 
-                fn inner(s: &mut Compiler, body: StepId, channels: ChannelIds, dests: &Vec<ValueSrcId>, vals: &Vec<ExprDn>) {
-                    s.compile_step(body, channels);
-
-                    for (&id, e) in dests.iter().zip(vals.iter()) {
-                        s.emit(Insn::Assign(id, e.clone()));
-                    }
-                }
-
                 // resolve checks that there is at least one alt arm
-                let (last, rest) = opts.split_last().unwrap();
+                let (&last, rest) = opts.split_last().unwrap();
 
-                for &AltUpArm { ref vals, body } in rest {
+                for &body in rest {
                     let inner_info = &self.program.step_info[body];
                     let test = self.emit_placeholder();
 
-                    inner(self, body, channels, dests, vals);
+                    self.compile_step(body, channels);
 
                     jumps_to_final.push(self.emit_placeholder());
 
                     self.backpatch(test, self.test_matchset(channels, &inner_info.first, self.next_ip()));
                 }
 
-                {
-                    // Final arm doesn't need a test or jump to end
-                    let &AltUpArm { ref vals, body } = last;
-                    inner(self, body, channels, dests, vals);
-                }
+                // Final arm doesn't need a test or jump to end
+                self.compile_step(last, channels);
 
                 for ip in jumps_to_final {
                     self.backpatch(ip, Insn::Jump(self.next_ip()));
                 }
             }
 
-            Step::AltDn(ref srcs, ref opts) => {
-                let mut jumps_to_final = vec![];
+            Step::Assign(dst, ref src) => {
+                self.emit(Insn::Assign(dst, src.clone()))
+            }
 
-                for &AltDnArm { ref vals, body } in opts {
-                    let inner_info = &self.program.step_info[body];
-                    let jumps_to_next: Vec<_> = vals.iter().map(|_| self.emit_placeholder()).collect();
-
-                    self.seq_prep(channels, &None, &inner_info.first);
-                    self.compile_step(body, channels);
-
-                    jumps_to_final.push(self.emit_placeholder());
-
-                    for ((e, pred), &test_ip) in srcs.iter().zip(vals).zip(jumps_to_next.iter()) {
-                        self.backpatch(test_ip, Insn::TestVal(e.clone(), pred.clone(), self.next_ip()));
-                    }
-
-                }
-                self.emit(Insn::Fail);
-
-                for ip in jumps_to_final {
-                    self.backpatch(ip, Insn::Jump(self.next_ip()));
-                }
+            Step::Guard(ref val, ref pred) => {
+                self.emit(Insn::TestValOrFail(val.clone(), pred.clone()))
             }
         }
     }
@@ -335,7 +294,6 @@ pub struct CompiledProgram {
     insns: EntityMap<InsnId, Insn>,
     vars: EntityMap<ValueSrcId, ()>,
     tasks: EntityMap<TaskId, ()>,
-    counters: EntityMap<CounterId, ()>,
     channels: EntityMap<ChanId, ()>,
     primitives: EntityMap<PrimitiveId, Arc<dyn PrimitiveProcess>>,
 }
@@ -371,7 +329,6 @@ pub fn compile(program: &ProcessChain) -> CompiledProgram {
         insns: compiler.insns,
         vars: program.vars.clone(),
         tasks: compiler.tasks,
-        counters: compiler.counters,
         channels: compiler.channels,
         primitives: compiler.primitives,
     }
@@ -388,7 +345,6 @@ pub struct ProgramExec {
     tasks: EntityMap<TaskId, InsnId>,
     registers: EntityMap<ValueSrcId, Option<Value>>,
     channels: EntityMap<ChanId, Channel>,
-    counters: EntityMap<CounterId, i64>,
     primitives: EntityMap<PrimitiveId, Option<Pin<Box<dyn Future<Output = Result<(), ()>>>>>>,
 }
 
@@ -421,7 +377,6 @@ impl ProgramExec {
             failed: false,
             registers: program.vars.iter().map(|_| None).collect(),
             channels: channels.into(),
-            counters: program.counters.iter().map(|_| 0).collect(),
             primitives: program.primitives.iter().map(|_| None).collect(),
             program,
         }
@@ -510,39 +465,23 @@ impl ProgramExec {
                         }
                     }
                 }
-                Insn::CounterReset(counter, val) => {
-                    self.counters[counter] = val;
-                }
-                Insn::CounterUpEval(counter, min, max, id) => {
-                    let v = self.counters[counter];
-                    if v < min || v > max.unwrap_or(i64::MAX) {
-                        self.failed = true;
-                        return;
-                    }
-                    self.registers[id] = Some(v.into());
-                }
-                Insn::CounterDownEval(counter, ref expr) => {
-                    let v = self.registers.down_eval(expr);
-                    self.counters[counter] = i64::try_from(v).unwrap().try_into().unwrap();
-                }
-                Insn::CounterDecrement(counter, if_zero) => {
-                    if self.counters[counter] == 0 {
-                        next_ip = if_zero;
-                    } else {
-                        self.counters[counter] -= 1;
-                    }
-                }
-                Insn::CounterIncrement(counter) => {
-                    self.counters[counter] += 1;
-                }
                 Insn::Assign(l, ref r) => {
                     let v = self.registers.down_eval(r);
+                    log::debug!("assigned {l:?} = {v}");
                     self.registers[l] = Some(v);
                 }
-                Insn::TestVal(ref e, ref pred, if_false) => {
+                Insn::TestVal(ref e, ref preds, if_false) => {
                     let v = self.registers.down_eval(e);
-                    if !self.registers.up_eval_test(pred, &v) {
+                    if !preds.iter().any(|pred| self.registers.up_eval_test(pred, &v)) {
                         next_ip = if_false;
+                    }
+                }
+                Insn::TestValOrFail(ref e, ref pred) => {
+                    let v = self.registers.down_eval(e);
+                    log::debug!("testing value {v}");
+                    if !self.registers.up_eval_test(pred, &v) {
+                        self.failed = true;
+                        return;
                     }
                 }
                 Insn::Fork(other, dest) => {

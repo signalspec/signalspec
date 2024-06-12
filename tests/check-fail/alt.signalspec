@@ -1,59 +1,56 @@
 @test(#dn, ())
 with Seq(0..10, _) def main() = {
 //# undefined variable `missing`
-    alt #dn (1, (#x, #y), missing) {
-//                        ^^^^^^^ not found
+    alt #dn missing {
+//          ^^^^^^^ not found
         _ => { }
 
-        (a, b, c) => {}
+        1 => {}
+    }
 
-//# too few positional fields
-        (_, _) => {}
-//           ^ expected 1 more positional fields
-
-//# too many positional fields
-        (_, _, _, _, _) => {}
-//                ^^^^ 2 unexpected positional fields
-
-//# invalid item not matched
-        (1, 2, 3) => {}
-//          ^ found `(#x, #y)`, incompatible with pattern
-
+    alt #dn 1 {
 //# type error
-        (#a, _, _) => {}
-//       ^^ `#a` does not match type `1`
+        #a => {}
+//      ^^ `#a` does not match type `1`
 
-//# invalid item not matched
+//# expression type not supported as a pattern
         "foo" => {}
-//      ^^^^^ found `(1, (#x, #y), <error>)`, incompatible with pattern
+//      ^^^^^ not allowed here
 
 //# expected type `1`
-        ([x, y], _, _) => {}
-//       ^^^^^^ can't destructure into vector of width 2
+        [x, y] => {}
+//      ^^^^^^ can't destructure into vector of width 2
     }
 }
 
 @test(#up, ())
 with Seq(0..10, _) def main() = {
-    //# undefined variable `missing`
-    alt #up (_, missing) {
-//              ^^^^^^^ not found
+//# undefined variable `missing`
+    alt #up missing {
+//          ^^^^^^^ not found
+        1 => {}
+    }
 
+    alt #up _ {
 //# no value for up-direction variable provided
-//# no value for up-direction variable provided
-        (a, b) => { val(1) }
-//          ^ must be up-evaluated exactly once in this block
-//       ^ must be up-evaluated exactly once in this block
-
-        (#x, #y) => { val(2) }
+        a => { val(1) }
+//      ^ must be up-evaluated exactly once in this block
 
 //# expression type not supported as a pattern
-        (_, #x) => { val(3) }
-//       ^ not allowed here
+        _ => {}
+//      ^ not allowed here
 
 //# expected type `_`
-        ([x, y], #x) => { val(4) }
-//       ^^^^^^ can't destructure into vector of width 2
+        [x, y] => { val(4) }
+//      ^^^^^^ can't destructure into vector of width 2
+    }
+
+    alt #up [_, _] {
+//# no value for up-direction variable provided
+//# no value for up-direction variable provided
+        [a, b] => { val(1) }
+//          ^ must be up-evaluated exactly once in this block
+//       ^ must be up-evaluated exactly once in this block
     }
 }
 

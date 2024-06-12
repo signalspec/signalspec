@@ -5,6 +5,7 @@ pub enum MatchSet {
     Process,
     Send { dir: Dir, variant: usize, send: Vec<ExprDn>, },
     Receive { dir: Dir, receive: MessagePatternSet },
+    Guard { expr: ExprDn, test: Vec<Predicate> },
 }
 
 #[derive(Clone, Debug)]
@@ -68,6 +69,10 @@ impl MatchSet {
         }
     }
 
+    pub fn guard(expr: ExprDn, predicate: Predicate) -> MatchSet {
+        MatchSet::Guard { expr, test: vec![predicate] }
+    }
+
     pub fn check_compatible(prev_followlast: &Option<MatchSet>, next_first: &MatchSet) {
         match (prev_followlast, next_first) {
             (None, _) => {}
@@ -109,8 +114,23 @@ impl MatchSet {
                 }
 
                 (
+                MatchSet::Guard { expr: e1,  test: mut t1},
+                MatchSet::Guard { expr: e2, test: t2 }
+                ) if e1 == *e2 => {
+                    t1.extend(t2.iter().cloned());
+                    MatchSet::Guard { expr: e1, test: t1 }
+                }
+
+                (
                 MatchSet::Receive { dir: d1, receive: r1 },
                 MatchSet::Send { .. }
+                ) => {
+                    MatchSet::Receive { dir: d1, receive: r1 }
+                }
+
+                (
+                MatchSet::Receive { dir: d1, receive: r1 },
+                MatchSet::Guard { .. }
                 ) => {
                     MatchSet::Receive { dir: d1, receive: r1 }
                 }
