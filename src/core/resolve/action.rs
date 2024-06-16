@@ -547,7 +547,6 @@ impl<'a> Builder<'a> {
 
             ast::Action::Alt(ref node) => {
                 let dir = constant::<AltMode>(&mut self.dcx, sb.scope, &node.dir);
-                let scrutinee = rexpr(&mut self.dcx, sb.scope, &node.expr);
 
                 if node.arms.is_empty() {
                     return self.err_step(Diagnostic::AltZeroArms {
@@ -557,6 +556,8 @@ impl<'a> Builder<'a> {
 
                 match dir {
                     Ok(AltMode::Const) => {
+                        let scrutinee = rexpr(&mut self.dcx, sb.scope, &node.expr);
+
                         for arm in &node.arms {
                             let mut body_scope = sb.scope.child();
                             if self.bind_tree_fields_const(&mut body_scope, &arm.discriminant, &scrutinee) {
@@ -568,26 +569,14 @@ impl<'a> Builder<'a> {
                         })
                     }
                     Ok(AltMode::Var(Dir::Dn)) => {
-                        let scrutinee_dn = match &scrutinee {
-                            Tree::Leaf(LeafItem::Value(v)) => {
-                                self.require_down(&sb.scope, node.expr.span(), v)
-                            }
-                            Tree::Leaf(LeafItem::Invalid(_)) => ExprDn::invalid(),
-                            t => {
-                                self.dcx.report(Diagnostic::ExpectedValue {
-                                    span: sb.scope.span(node.expr.span()),
-                                    found: t.to_string()
-                                });
-                                ExprDn::invalid()
-                            }
-                        };
+                        let scrutinee = value(&mut self.dcx, sb.scope, &node.expr)
+                            .unwrap_or(Expr::Expr(Type::Ignored, ExprKind::VarDn(ExprDn::invalid())));
+                        let scrutinee_dn = self.require_down(&sb.scope, node.expr.span(), &scrutinee);
 
                         let arms = node.arms.iter().map(|arm| {
                             let mut body_scope = sb.scope.child();
 
-                            let mut vals = Vec::new();
-                            self.bind_tree_fields_dn(&mut body_scope, &arm.discriminant, &scrutinee, &mut vals);
-                            let predicate = vals.pop().unwrap();
+                            let predicate = lvalue_dn(&mut self.dcx, &mut body_scope, &arm.discriminant, scrutinee.clone()).unwrap_or(Predicate::Any);
 
                             let upvalues_scope = self.upvalues.len();
                             let body = self.resolve_seq(sb.with_scope(&body_scope), &arm.block);
@@ -601,39 +590,30 @@ impl<'a> Builder<'a> {
                         self.steps.alt(arms)
                     }
                     Ok(AltMode::Var(Dir::Up)) => {
-                        let scrutinee_src = match &scrutinee {
-                            Tree::Tuple(t) if t.is_empty() => None,
-                            Tree::Leaf(LeafItem::Value(v)) => {
-                                let (src, used) = self.up_value_src(&v);
-                                used.then_some(src)
-                            }
-                            Tree::Leaf(LeafItem::Invalid(_)) => None,
-                            t => {
-                                self.dcx.report(Diagnostic::ExpectedValue {
-                                    span: sb.scope.span(node.expr.span()),
-                                    found: t.to_string()
-                                });
-                                None
-                            }
-                        };
+                        let scrutinee = value(&mut self.dcx, sb.scope, &node.expr)
+                            .unwrap_or(Expr::ignored());
+
+                        let (src, used) = self.up_value_src(&scrutinee);
+                        let scrutinee_src = used.then_some(src);
+
+                        let ty = scrutinee.get_type();
+
                         let arms = node.arms.iter().map(|arm| {
                             let mut body_scope = sb.scope.child();
                             
-                            let mut up_inner = Vec::new();
-                            let ty = scrutinee.as_type_tree().unwrap_or(Tree::Leaf(Type::Ignored));
-                            self.bind_tree_fields_up(&mut body_scope, &arm.discriminant, &ty, &mut up_inner);
+                            let binding = lvalue_up(&mut self.dcx, &mut body_scope, &arm.discriminant, ty.clone(), &mut || self.value_sink.push(()))
+                                .unwrap_or(LValueSrc::Val(ExprDn::invalid()));
 
                             let upvalues_scope = self.upvalues.len();
                             let body = self.resolve_seq(sb.with_scope(&body_scope), &arm.block);
 
-                            let vals = self.bind_tree_fields_up_finish(up_inner, &sb.scope.file);
+                            let val = self.finish_lvalue_src(binding, &sb.scope.file);
 
                             if self.upvalues.len() > upvalues_scope {
                                 // TODO: could support if all arms set the same upvalues, and we insert phi nodes to join them
                                 panic!("Upvalues set in alt arm");
                             }
                             let exit = if let Some(scrutinee_src) = scrutinee_src {
-                                let val = vals.into_iter().next().unwrap();
                                 self.steps.assign(scrutinee_src, val)
                             } else {
                                 self.steps.accepting()
