@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
-use itertools::{EitherOrBoth, Itertools};
+use itertools::EitherOrBoth;
 use num_traits::Signed;
 
 use crate::{core::{
-    constant, expr::ExprKind, index::FindDefError, lexpr, protocol, resolve::expr::{lvalue_dn, lvalue_up, LValueSrc}, rexpr, rexpr_tup, step::{analyze_unambiguous, Step, StepBuilder, StepInfo}, value, ConcatElem, Dir, Expr, ExprDn, Item, LeafItem, Predicate, Scope, Shape, ShapeMsg, StepId, Type, ValueSrcId
-}, diagnostic::{DiagnosticContext, Diagnostics}, syntax::Number, Value};
+    constant, expr::ExprKind, index::FindDefError, lexpr, protocol, resolve::expr::{lvalue_dn, lvalue_up, LValueSrc}, rexpr, rexpr_tup, step::{analyze_unambiguous, Step, StepBuilder, StepInfo}, value, ConcatElem, Dir, Expr, ExprDn, Item, LeafItem, Predicate, Scope, Shape, ShapeMsg, StepId, Type, ValueSrc, ValueSrcId
+}, diagnostic::{DiagnosticContext, Diagnostics}, Value};
 use crate::diagnostic::{ErrorReported, Span};
 use crate::entitymap::{entity_key, EntityMap};
 use crate::runtime::instantiate_primitive;
@@ -82,6 +82,24 @@ impl<'a> ResolveCx<'a> {
 
 entity_key!(pub ValueSinkId);
 
+struct ReceiveMsg {
+    src: ValueSrcId,
+    predicates: Vec<Predicate>,
+}
+
+impl ReceiveMsg {
+    fn add_field(&mut self, predicate: Predicate) -> ExprDn {
+        let i = self.predicates.len() as u32;
+        self.predicates.push(predicate);
+        ExprDn::Variable(ValueSrc(self.src, i))
+    }
+
+    fn with_field(&mut self, f: impl FnOnce(ExprDn) -> Predicate) {
+        let i = self.predicates.len() as u32;
+        self.predicates.push(f(ExprDn::Variable(ValueSrc(self.src, i))));
+    }
+}
+
 pub struct Builder<'a> {
     dcx: DiagnosticContext,
     index: &'a Index,
@@ -112,6 +130,13 @@ impl<'a> Builder<'a> {
         self.value_src.push(())
     }
 
+    fn add_receive(&mut self) -> ReceiveMsg {
+        ReceiveMsg {
+            src: self.add_value_src(),
+            predicates: Vec::new(),
+        }
+    }
+
     fn add_value_sink(&mut self) -> ValueSinkId {
         self.value_sink.push(())
     }
@@ -119,7 +144,7 @@ impl<'a> Builder<'a> {
     fn up_value_src(&mut self, e: &Expr) -> (ValueSrcId, bool) {
         let src = self.add_value_src();
         let mut used = false;
-        e.up(ExprDn::Variable(src), &mut |snk, x| {
+        e.up(ExprDn::Variable(ValueSrc(src, 0)), &mut |snk, x| {
             used = true;
             self.set_upvalue(snk, x)
         });
@@ -128,6 +153,12 @@ impl<'a> Builder<'a> {
 
     pub fn set_upvalue(&mut self, snk: ValueSinkId, val: ExprDn) {
         self.upvalues.push((snk, val))
+    }
+
+    fn provide_up(&mut self, v: &Expr, val: ExprDn) {
+        v.up(val, &mut |snk, x| {
+            self.set_upvalue(snk, x)
+        });
     }
 
     pub fn take_upvalue_optional(&mut self, snk: ValueSinkId, file: &Arc<SourceFile>, span: FileSpan) -> Option<ExprDn> {
@@ -198,9 +229,9 @@ impl<'a> Builder<'a> {
 
                 let mut body_scope = sb.scope.child();
 
-                let mut dn_vars = Vec::new();
-                let mut dn = Vec::new();
                 let mut up_inner = Vec::new();
+                
+                let mut dn = self.add_receive();
 
                 for m in zip_tuple_ast_fields(&mut self.dcx, &sb.scope.file, &args, &msg_def.params) {
                     let (expr, param) = match m {
@@ -217,9 +248,7 @@ impl<'a> Builder<'a> {
                             match param.direction {
                                 Dir::Dn => {
                                     param.ty.for_each(&mut |_| {
-                                        let id = self.add_value_src();
-                                        dn_vars.push(id);
-                                        dn.push(Predicate::Any);
+                                        dn.add_field(Predicate::Any);
                                     });
                                 }
                                 Dir::Up => {
@@ -234,12 +263,7 @@ impl<'a> Builder<'a> {
 
                     match param.direction {
                         Dir::Dn => {
-                            let item = param.ty.map_leaf(&mut |ty| {
-                                let id = self.add_value_src();
-                                dn_vars.push(id);
-                                LeafItem::Value(Expr::var_dn(id, ty.clone()))
-                            });
-                            self.bind_tree_fields_dn(&mut body_scope, expr, &item, &mut dn);
+                            self.bind_tree_fields_dn(&mut body_scope, expr, &param.ty, &mut dn);
                         }
                         Dir::Up => {
                             self.bind_tree_fields_up(&mut body_scope,  expr, &param.ty, &mut up_inner);
@@ -254,16 +278,14 @@ impl<'a> Builder<'a> {
                 };
 
                 if msg_def.child.is_some() {
-                    assert!(dn_vars.is_empty());
-                    assert!(dn.is_empty());
+                    assert!(dn.predicates.is_empty());
                     assert!(up_inner.is_empty());
                 }
                 
                 let receive = if shape_up.mode.has_dn_channel() {
-                    let msg = dn.into_iter().zip(dn_vars.into_iter()).collect();
-                    self.steps.receive(Dir::Up, msg_def.tag, msg)
+                    self.steps.receive(Dir::Up, msg_def.tag, dn.src, dn.predicates)
                 } else {
-                    assert!(dn.is_empty());
+                    assert!(dn.predicates.is_empty());
                     self.steps.accepting()
                 };
                 
@@ -370,12 +392,12 @@ impl<'a> Builder<'a> {
                             let increment = self.steps.assign(
                                 count_src, 
                                 ExprDn::BinaryConstNumber(
-                                    Box::new(ExprDn::Variable(count_src)),
+                                    Box::new(ExprDn::Variable(ValueSrc(count_src, 0))),
                                     ast::BinOp::Add,
                                     1.into()
                                 )
                             );
-                            let exit_guard = self.steps.guard(ExprDn::Variable(count_src), count.predicate().unwrap());
+                            let exit_guard = self.steps.guard(ExprDn::Variable(ValueSrc(count_src, 0)), count.predicate().unwrap());
                             (init, increment, exit_guard)
                         } else {
                             (self.steps.accepting(), self.steps.accepting(), self.steps.accepting())
@@ -399,19 +421,19 @@ impl<'a> Builder<'a> {
                             count => {
                                 let init = self.steps.assign(count_var, count);
                                 let loop_guard = self.steps.guard(
-                                    ExprDn::Variable(count_var),
+                                    ExprDn::Variable(ValueSrc(count_var, 0)),
                                     Predicate::Range(1.into(), i64::MAX.into()),
                                 );
                                 let decrement = self.steps.assign(
                                     count_var,
                                     ExprDn::BinaryConstNumber(
-                                        Box::new(ExprDn::Variable(count_var)),
+                                        Box::new(ExprDn::Variable(ValueSrc(count_var, 0))),
                                         ast::BinOp::Sub,
                                         1.into()
                                     )
                                 );
                                 let exit_guard = self.steps.guard(
-                                    ExprDn::Variable(count_var),
+                                    ExprDn::Variable(ValueSrc(count_var, 0)),
                                     Predicate::Range(0.into(), 1.into()),
                                 );
         
@@ -635,49 +657,43 @@ impl<'a> Builder<'a> {
         &mut self,
         scope: &mut Scope,
         pat: &ast::Expr,
-        rhs: &Item,
-        dn: &mut Vec<Predicate>,
+        rhs: &TypeTree,
+        dn: &mut ReceiveMsg,
     ) {
         match (pat, rhs) {
             (ast::Expr::Tup(pat_tup), r) => {
                 for m in zip_tuple_ast(&mut self.dcx, &scope.file, pat_tup, r) {
                     match m {
                         EitherOrBoth::Both(p, t) => self.bind_tree_fields_dn(scope, p, t, dn),
-                        EitherOrBoth::Left(p) => {
-                            // reported in zip_tuple_ast
-                            let reported = ErrorReported::error_reported();
-                            self.bind_tree_fields_dn(scope, p, &reported.into(), dn);
+                        EitherOrBoth::Left(_) => {
+                            //TODO: bind variables with invalid
                         }
                         EitherOrBoth::Right(t) => {
                             // pad `dn` for missing fields
-                            t.for_each(&mut |_| { dn.push(Predicate::Any) })
+                            t.for_each(&mut |_| { dn.add_field(Predicate::Any); })
                         }
                     }
                 }
             }
-            (pat, Tree::Leaf(LeafItem::Value(r))) => {
-                match lvalue_dn(&mut self.dcx, scope, pat, r.clone()){
-                    Ok(p) => { dn.push(p); }
-                    Err(_) => { dn.push(Predicate::Any); }
-                }
+            (pat, Tree::Leaf(ty)) => {
+                dn.with_field(|v| {
+                    lvalue_dn(&mut self.dcx, scope, pat, Expr::Expr(ty.clone(), ExprKind::VarDn(v)))
+                        .unwrap_or(Predicate::Any)
+                })
             }
             (ast::Expr::Ignore(_), t) => {
                 t.for_each(&mut |_| {
-                    dn.push(Predicate::Any)
+                    dn.add_field(Predicate::Any);
                 });
             }
             (ast::Expr::Var(ref name), t @ Tree::Tuple(..)) => {
-                t.for_each(&mut |_| {
-                    dn.push(Predicate::Any)
-                });
-                scope.bind(&name.name, t.clone());
-            }
-            (_, Tree::Leaf(LeafItem::Invalid(_))) => {
-                dn.push(Predicate::Any);
+                scope.bind(&name.name, t.map_leaf(&mut |t| {
+                    LeafItem::Value(Expr::Expr(t.clone(), ExprKind::VarDn(dn.add_field(Predicate::Any))))
+                }));
             }
             (pat, t) => {
                 t.for_each(&mut |_| {
-                    dn.push(Predicate::Any)
+                    dn.add_field(Predicate::Any);
                 });
                 
                 self.dcx.report(Diagnostic::InvalidItemForPattern {
@@ -817,7 +833,7 @@ impl<'a> Builder<'a> {
 
                     if msg_def.child.is_some() {
                         assert!(dn.is_empty());
-                        assert!(up.is_empty());
+                        assert!(up.predicates.is_empty());
                     }
 
                     let send = if sb.shape_down.mode.has_dn_channel() {
@@ -827,7 +843,7 @@ impl<'a> Builder<'a> {
                     };
 
                     let receive = if sb.shape_down.mode.has_up_channel() {
-                        self.steps.receive(Dir::Dn, msg_def.tag, up)
+                        self.steps.receive(Dir::Dn, msg_def.tag, up.src, up.predicates)
                     } else {
                         self.steps.accepting()
                     };
@@ -928,9 +944,9 @@ impl<'a> Builder<'a> {
         }
     }
 
-    pub fn resolve_token(&mut self, msg_def: &ShapeMsg, scope: &Scope, node: &ast::ProcessCall) -> (Vec<ExprDn>, Vec<(Predicate, ValueSrcId)>) {
+    fn resolve_token(&mut self, msg_def: &ShapeMsg, scope: &Scope, node: &ast::ProcessCall) -> (Vec<ExprDn>, ReceiveMsg) {
         let mut dn = Vec::new();
-        let mut up = Vec::new();
+        let mut up = self.add_receive();
 
         for m in zip_tuple_ast_fields(&mut self.dcx, &scope.file, &node.args, &msg_def.params) {
             let (arg, param, span) = match m {
@@ -962,8 +978,7 @@ impl<'a> Builder<'a> {
                         }
                         Dir::Up => {
                             let predicate = v.predicate().expect("Value cannot be up-evaluated as a predicate");
-                            let (src, _) = self.up_value_src(&v);
-                            up.push((predicate, src));
+                            self.provide_up(v, up.add_field(predicate));
                         }
                     }
                 },
@@ -971,7 +986,10 @@ impl<'a> Builder<'a> {
                 crate::tree::Zip::Both(_, &Item::Leaf(LeafItem::Invalid(_))) => {
                     match param.direction {
                         Dir::Dn => dn.push(ExprDn::invalid()),
-                        Dir::Up => up.push((Predicate::Any, self.add_value_src())),
+                        Dir::Up => {
+                            let this = &mut up;
+                            this.add_field(Predicate::Any);
+                        },
                     }
                 }
 

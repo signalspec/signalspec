@@ -1,5 +1,5 @@
 use crate::entitymap::{EntityMap, entity_key};
-use crate::core::{Shape, ExprDn, ProcessChain, MatchSet, MessagePatternSet, StepId, Step, Predicate, ValueSrcId, ShapeMode};
+use crate::core::{Shape, ExprDn, ProcessChain, MatchSet, MessagePatternSet, StepId, Step, Predicate, ValueSrcId};
 use super::PrimitiveProcess;
 
 type VariantId = usize;
@@ -17,7 +17,7 @@ pub enum Insn {
     Send(ChanId, VariantId, Vec<ExprDn>),
 
     /// Wait for data ready on channel, consume message from channel and set variables
-    Consume(ChanId, VariantId, Vec<(Predicate, ValueSrcId)>),
+    Consume(ChanId, VariantId, Option<ValueSrcId>, Vec<Predicate>),
 
     /// Wait for data ready on channel, test received message from channel by up-evaluating expression, without
     /// consuming the message or writing variables. If not matched, jump.
@@ -127,7 +127,6 @@ impl Compiler<'_> {
             (None | Some(MatchSet::Receive { .. }), MatchSet::Send { dir: Dir::Up, .. }) => {}
             (None | Some(MatchSet::Receive { .. }), MatchSet::Guard { .. }) => {}
             (None, MatchSet::Process) => {}
-            (None, MatchSet::Guard {..}) => {}
             (Some(MatchSet::Receive { .. }), MatchSet::Receive { .. }) => {}
             (Some(MatchSet::Guard { .. }), MatchSet::Guard { .. }) => {}
             (Some(MatchSet::Send { dir: d1, variant: v1, send: s1, .. }),
@@ -182,7 +181,7 @@ impl Compiler<'_> {
                     self.emit(Insn::Send(c, 0, vec![]));
                 }
                 if let Some(c) = c_up {
-                    self.emit(Insn::Consume(c, 0, vec![]));
+                    self.emit(Insn::Consume(c, 0, None, vec![]));
                 }
                 self.emit(Insn::End);
 
@@ -197,7 +196,7 @@ impl Compiler<'_> {
                 self.seq_prep(channels_lo, &None, &lo_info.first);
                 self.compile_step(lo, channels_lo);
                 if let Some(c) = c_dn {
-                    self.emit(Insn::Consume(c, 0, vec![]));
+                    self.emit(Insn::Consume(c, 0, None, vec![]));
                 }
                 if let Some(c) = c_up {
                     self.emit(Insn::Send(c, 0, vec![]));
@@ -221,15 +220,15 @@ impl Compiler<'_> {
                 }
             }
 
-            Step::Receive { dir: Dir::Dn, variant, ref msg, .. }=> {
+            Step::Receive { dir: Dir::Dn, variant, val, ref msg}=> {
                 if let Some(c) = channels.dn_rx {
-                    self.emit(Insn::Consume(c, variant, msg.clone()));
+                    self.emit(Insn::Consume(c, variant, Some(val), msg.clone()));
                 }
             }
 
-            Step::Receive { dir: Dir::Up, variant, ref msg } => {
+            Step::Receive { dir: Dir::Up, variant, val, ref msg } => {
                 if let Some(c) = channels.up_rx {
-                    self.emit(Insn::Consume(c, variant, msg.clone()));
+                    self.emit(Insn::Consume(c, variant, Some(val), msg.clone()));
                 }
             }
 
@@ -343,7 +342,7 @@ pub struct ProgramExec {
     program: Arc<CompiledProgram>,
     failed: bool,
     tasks: EntityMap<TaskId, InsnId>,
-    registers: EntityMap<ValueSrcId, Option<Value>>,
+    registers: EntityMap<ValueSrcId, Vec<Value>>,
     channels: EntityMap<ChanId, Channel>,
     primitives: EntityMap<PrimitiveId, Option<Pin<Box<dyn Future<Output = Result<(), ()>>>>>>,
 }
@@ -351,10 +350,10 @@ pub struct ProgramExec {
 const DONE_IP: InsnId = InsnId::from(u32::MAX);
 const INITIAL_TASK: TaskId = TaskId::from(0);
 
-impl EntityMap<ValueSrcId, Option<Value>> {
+impl EntityMap<ValueSrcId, Vec<Value>> {
     fn down_eval(&self, expr: &ExprDn) -> Value {
         expr.eval(&|var| {
-            self[var].clone().unwrap()
+            self[var.0][var.1 as usize].clone()
         })
     }
 
@@ -375,7 +374,7 @@ impl ProgramExec {
         ProgramExec {     
             tasks,
             failed: false,
-            registers: program.vars.iter().map(|_| None).collect(),
+            registers: program.vars.iter().map(|_| Vec::new()).collect(),
             channels: channels.into(),
             primitives: program.primitives.iter().map(|_| None).collect(),
             program,
@@ -416,7 +415,7 @@ impl ProgramExec {
                     }).collect();
                     self.channels[chan].send(ChannelMessage { variant, values });
                 }
-                Insn::Consume(chan, variant, ref exprs) => {
+                Insn::Consume(chan, variant, reg, ref exprs) => {
                     let Poll::Ready(rx) = self.channels[chan].poll_receive(cx) else { return };
                     let rx = rx.pop();
                     debug!("  Consume {rx:?}");
@@ -428,14 +427,17 @@ impl ProgramExec {
     
                     assert_eq!(rx.values.len(), exprs.len());
     
-                    for ((p, id), v) in exprs.iter().zip(rx.values.into_iter()) {
-                        if !self.registers.up_eval_test(p, &v) {
+                    for (p, v) in exprs.iter().zip(&rx.values) {
+                        if !self.registers.up_eval_test(p, v) {
                             debug!("  failed to match");
                             self.failed = true;
                             return;
                         }
-                        self.registers[*id] = Some(v);
-                    };
+                    }
+                    
+                    if let Some(reg) = reg {
+                        self.registers[reg] = rx.values;
+                    }
                 }
                 Insn::Test(chan, ref pat, if_false) => {
                     let Poll::Ready(rx) = self.channels[chan].poll_receive(cx) else { return };
@@ -468,7 +470,8 @@ impl ProgramExec {
                 Insn::Assign(l, ref r) => {
                     let v = self.registers.down_eval(r);
                     log::debug!("assigned {l:?} = {v}");
-                    self.registers[l] = Some(v);
+                    self.registers[l].clear();
+                    self.registers[l].push(v);
                 }
                 Insn::TestVal(ref e, ref preds, if_false) => {
                     let v = self.registers.down_eval(e);

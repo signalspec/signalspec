@@ -2,7 +2,7 @@ use std::{fmt, collections::{HashSet, HashMap}, sync::Arc};
 use num_complex::Complex;
 use num_traits::cast::ToPrimitive;
 use crate::{syntax::{BinOp, Number }, core::{PrimitiveFn, FunctionDef}, Value};
-use super::{ Item, Type, LeafItem, predicate::Predicate, resolve::action::ValueSinkId, ValueSrcId };
+use super::{ predicate::Predicate, resolve::action::ValueSinkId, Item, LeafItem, Type, ValueSrc };
 
 /// Element of Expr::Concat
 #[derive(PartialEq, Eq, Hash, Debug, Clone)]
@@ -203,7 +203,7 @@ impl Expr {
         Expr::Expr(Type::Ignored, ExprKind::Ignored)
     }
 
-    pub fn var_dn(id: ValueSrcId, ty: Type) -> Self {
+    pub fn var_dn(id: ValueSrc, ty: Type) -> Self {
         Expr::Expr(ty, ExprKind::VarDn(ExprDn::Variable(id)))
     }
 
@@ -298,7 +298,7 @@ impl ExprKind {
 #[derive(PartialEq, Debug, Clone)]
 pub enum ExprDn {
     Const(Value),
-    Variable(ValueSrcId),
+    Variable(ValueSrc),
     Choose(Box<ExprDn>, Vec<(Value, Value)>),
     Concat(Vec<ConcatElem<ExprDn>>),
     Index(Box<ExprDn>, u32),
@@ -309,11 +309,11 @@ pub enum ExprDn {
 
 impl ExprDn {
     pub fn invalid() -> ExprDn {
-        ExprDn::Variable(u32::MAX.into())
+        ExprDn::Variable(ValueSrc(u32::MAX.into(), u32::MAX))
     }
 
     /// Down-evaluate the expression with variables from the given value function.
-    pub fn eval(&self, state: &dyn Fn(ValueSrcId)->Value) -> Value {
+    pub fn eval(&self, state: &dyn Fn(ValueSrc)->Value) -> Value {
         match *self {
             ExprDn::Variable(id) => state(id),
             ExprDn::Const(ref v) => v.clone(),

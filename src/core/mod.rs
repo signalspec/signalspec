@@ -78,3 +78,6 @@ impl Dir {
 }
 
 entity_key!(pub ValueSrcId);
+
+#[derive(Eq, PartialEq, Hash, Debug, Clone, Copy)]
+pub struct ValueSrc(pub ValueSrcId, pub u32);

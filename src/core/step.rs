@@ -1,12 +1,11 @@
 use std::collections::HashMap;
-use std::iter;
 use std::sync::Arc;
 
 use crate::diagnostic::ErrorReported;
 use crate::entitymap::{entity_key, EntityMap};
 use crate::runtime::PrimitiveProcess;
 use crate::Dir;
-use super::{ExprDn, MatchSet, Shape, Predicate, ValueSrcId, ShapeMode};
+use super::{ExprDn, MatchSet, Shape, Predicate, ValueSrcId};
 
 entity_key!(pub StepId);
 
@@ -18,7 +17,7 @@ pub enum Step {
     Pass,
     Stack { lo: StepId, shape: Shape, hi: StepId },
     Send { dir: Dir, variant: usize, msg: Vec<ExprDn> },
-    Receive { dir: Dir, variant: usize, msg: Vec<(Predicate, ValueSrcId)> },
+    Receive { dir: Dir, variant: usize, val: ValueSrcId, msg: Vec<Predicate> },
     Primitive(Arc<dyn PrimitiveProcess + 'static>),
     Seq(StepId, StepId),
     Assign(ValueSrcId, ExprDn),
@@ -76,8 +75,8 @@ impl StepBuilder {
             .unwrap_or(self.accepting())
     }
     
-    pub(crate) fn receive(&mut self, dir: Dir, variant: usize, msg: Vec<(Predicate, ValueSrcId)>) -> StepId {
-        self.steps.push(Step::Receive { dir, variant, msg })
+    pub(crate) fn receive(&mut self, dir: Dir, variant: usize, val: ValueSrcId, msg: Vec<Predicate>) -> StepId {
+        self.steps.push(Step::Receive { dir, variant, val, msg })
     }
     
     pub(crate) fn send(&mut self, dir: Dir, variant: usize, msg: Vec<ExprDn>) -> StepId {
@@ -156,8 +155,8 @@ pub fn write_tree(f: &mut dyn std::fmt::Write, indent: u32, steps: &EntityMap<St
         Step::Send { dir, variant, ref msg } => {
             writeln!(f, "{}Send: {:?} {:?} {:?}", i, dir, variant, msg)?;
         }
-        Step::Receive { dir, variant, ref msg } => {
-            writeln!(f, "{}Receive: {:?} {:?} {:?}", i, dir, variant, msg)?;
+        Step::Receive { dir, variant, ref val, ref msg } => {
+            writeln!(f, "{}Receive: {:?} {:?} {:?} {:?}", i, dir, variant, val, msg)?;
         }
         Step::Assign(dst, ref src) => {
             writeln!(f, "{}Assign {dst:?} = {src:?}", i)?;
@@ -235,9 +234,9 @@ pub fn analyze_unambiguous(steps: &EntityMap<StepId, Step>) -> EntityMap<StepId,
                 }
             }
 
-            Step::Receive { dir, variant, ref msg } => {
+            Step::Receive { dir, variant, ref msg, .. } => {
                 StepInfo {
-                    first: MatchSet::receive(dir, variant, msg.iter().map(|(p, _)| p.clone()).collect()),
+                    first: MatchSet::receive(dir, variant, msg.clone()),
                     followlast: None,
                     nullable: false,
                 }
