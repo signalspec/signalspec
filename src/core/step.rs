@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+use std::iter;
 use std::sync::Arc;
 
 use crate::diagnostic::ErrorReported;
@@ -22,11 +24,13 @@ pub enum Step {
     Assign(ValueSrcId, ExprDn),
     Guard(ExprDn, Predicate),
     Repeat(StepId, bool),
-    Alt(Vec<StepId>),
+    Alt(Box<[StepId]>),
 }
 
 pub(crate) struct StepBuilder {
-    pub steps: EntityMap<StepId, Step>
+    pub steps: EntityMap<StepId, Step>,
+    seq: HashMap<(StepId, StepId), StepId>,
+    alt: HashMap<Box<[StepId]>, StepId>,
 }
 
 impl StepBuilder {
@@ -37,7 +41,7 @@ impl StepBuilder {
         let mut steps = EntityMap::new();
         assert_eq!(steps.push(Step::Fail), Self::FAIL);
         assert_eq!(steps.push(Step::Accept), Self::ACCEPT);
-        Self { steps }
+        Self { steps, seq: HashMap::new(), alt: HashMap::new() }
     }
     
     pub(crate) fn invalid(&self, _r: ErrorReported) -> StepId {
@@ -61,7 +65,9 @@ impl StepBuilder {
             return self.seq(a, s1)
         }
 
-        self.steps.push(Step::Seq(first, second))
+        *self.seq.entry((first, second)).or_insert_with(|| {
+            self.steps.push(Step::Seq(first, second))
+        })
     }
 
     pub(crate) fn seq_from<I>(&mut self, i: I) -> StepId where I: IntoIterator<Item = StepId>, I::IntoIter: DoubleEndedIterator {
@@ -90,7 +96,26 @@ impl StepBuilder {
     }
 
     pub(crate) fn alt(&mut self, arms: Vec<StepId>) -> StepId {
-        self.steps.push(Step::Alt(arms))
+        let mut new_arms = Vec::with_capacity(arms.len());
+        for arm in arms {
+            match &self.steps[arm] {
+                Step::Fail => {}
+                Step::Alt(inner) => new_arms.extend_from_slice(inner),
+                _ => new_arms.push(arm),
+            }
+        }
+        new_arms.sort_unstable();
+        new_arms.dedup();
+
+        if new_arms.len() == 0 {
+            StepBuilder::FAIL
+        } else if new_arms.len() == 1 {
+            new_arms[0]
+        } else {
+            *self.alt.entry(new_arms.into_boxed_slice()).or_insert_with_key(|k| {
+                self.steps.push(Step::Alt(k.clone()))
+            })
+        }
     }
 
     pub(crate) fn repeat(&mut self, inner: StepId, nullable: bool) -> StepId {
@@ -151,7 +176,7 @@ pub fn write_tree(f: &mut dyn std::fmt::Write, indent: u32, steps: &EntityMap<St
         }
         Step::Alt(ref arms) => {
             writeln!(f, "{}Alt", i)?;
-            for &arm in arms {
+            for &arm in arms.iter() {
                 write_tree(f, indent + 1, steps, arm)?;
             }
         }
