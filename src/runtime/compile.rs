@@ -53,18 +53,6 @@ struct ChannelIds {
 }
 
 impl ChannelIds {
-    fn without_up(self) -> ChannelIds {
-        Self { up_rx: None, up_tx: None, ..self }
-    }
-
-    fn only_downward(self) -> ChannelIds {
-        ChannelIds { dn_rx: None, up_tx: None, ..self }
-    }
-
-    fn only_upward(self) -> ChannelIds {
-        ChannelIds { dn_tx: None, up_rx: None, ..self }
-    }
-
     fn to_vec(self) -> Vec<ChanId> {
         [self.dn_tx, self.dn_rx, self.up_tx, self.up_rx].into_iter().flatten().collect()
     }
@@ -74,7 +62,6 @@ struct Compiler<'a> {
     program: &'a ProcessChain,
     insns: EntityMap<InsnId, Insn>,
     tasks: EntityMap<TaskId, ()>,
-    counters: EntityMap<CounterId, ()>,
     channels: EntityMap<ChanId, ()>,
     primitives: EntityMap<PrimitiveId, Arc<dyn PrimitiveProcess + 'static>>,
 }
@@ -98,10 +85,6 @@ impl Compiler<'_> {
 
     fn new_task(&mut self) -> TaskId {
         self.tasks.push(())
-    }
-
-    fn new_counter(&mut self) -> CounterId {
-        self.counters.push(())
     }
 
     fn new_channel(&mut self) -> ChanId {
@@ -301,7 +284,6 @@ pub fn compile(program: &ProcessChain) -> CompiledProgram {
     let mut compiler = Compiler {
         program,
         insns: EntityMap::new(),
-        counters: EntityMap::new(),
         tasks: EntityMap::new(),
         channels: EntityMap::new(),
         primitives: EntityMap::new(),

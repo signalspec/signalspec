@@ -366,7 +366,7 @@ impl<'a> Builder<'a> {
 
                 match dir {
                     Ok(RepeatMode::Up(nullable)) => {
-                        let (min, max) = match count.predicate() {
+                        let (_, max) = match count.predicate() {
                             Some(Predicate::Any) => (0, None),
                             Some(Predicate::Number(n))
                                 if n.is_integer()

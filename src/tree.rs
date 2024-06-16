@@ -29,10 +29,6 @@ impl<T> TupleFields<T> {
         }
         write!(f, ")")
     }
-    
-    pub(crate) fn is_empty(&self) -> bool {
-        self.positional.is_empty() && self.named.is_empty()
-    } 
 }
 
 impl<T> Default for TupleFields<T> {

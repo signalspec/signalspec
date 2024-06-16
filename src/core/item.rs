@@ -3,7 +3,7 @@ use std::fmt;
 use std::default::Default;
 use std::sync::Arc;
 
-use crate::{Value, tree::{Tree, TupleFields}, TypeTree, diagnostic::ErrorReported, Type, syntax::Number};
+use crate::{Value, tree::{Tree, TupleFields}, TypeTree, diagnostic::ErrorReported, Type};
 use super::{ Expr, FunctionDef };
 
 /// Non-tuple Item
