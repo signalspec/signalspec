@@ -164,9 +164,16 @@ pub fn write_tree(f: &mut dyn std::fmt::Write, indent: u32, steps: &EntityMap<St
         Step::Guard(ref src, ref pred) => {
             writeln!(f, "{}Guard {src:?} is {pred:?}", i)?;
         }
-        Step::Seq(s1, s2) => {
+        Step::Seq(s1, mut s2) => {
             writeln!(f, "{}Seq", i)?;
             write_tree(f, indent+1, steps, s1)?;
+
+            // Flatten nested seq for readability
+            while let Step::Seq(i1, i2) = steps[s2] {
+                write_tree(f, indent+1, steps, i1)?;
+                s2 = i2;
+            }
+
             write_tree(f, indent+1, steps, s2)?;
         }
         Step::Repeat(inner, nullable) => {
