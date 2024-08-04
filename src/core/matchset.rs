@@ -1,10 +1,10 @@
-use super::{ExprDn, Predicate, Dir};
+use super::{step::ChannelId, ExprDn, Predicate};
 
 #[derive(Clone, Debug)]
 pub enum MatchSet {
     Process,
-    Send { dir: Dir, variant: usize, send: Vec<ExprDn>, },
-    Receive { dir: Dir, receive: MessagePatternSet },
+    Send { chan: ChannelId, variant: usize, send: Vec<ExprDn>, },
+    Receive { chan: ChannelId, receive: MessagePatternSet },
     Guard { expr: ExprDn, test: Vec<Predicate> },
 }
 
@@ -54,17 +54,17 @@ impl MessagePatternSet {
 impl MatchSet {
     pub fn proc() -> MatchSet { MatchSet::Process }
 
-    pub fn send(dir: Dir, variant: usize, send: Vec<ExprDn>) -> MatchSet {
+    pub fn send(chan: ChannelId, variant: usize, send: Vec<ExprDn>) -> MatchSet {
         MatchSet::Send {
-            dir,
+            chan,
             variant,
             send,
         }
     }
 
-    pub fn receive(dir: Dir, variant: usize, recv: Vec<Predicate>) -> MatchSet {
+    pub fn receive(chan: ChannelId, variant: usize, recv: Vec<Predicate>) -> MatchSet {
         MatchSet::Receive {
-            dir,
+            chan,
             receive: MessagePatternSet::one(MessagePattern { variant, fields: recv }),
         }
     }
@@ -77,18 +77,18 @@ impl MatchSet {
         match (prev_followlast, next_first) {
             (None, _) => {}
             (
-              Some(MatchSet::Send { dir: d1, variant: v1, send: s1, .. }),
-              MatchSet::Send { dir: d2, variant: v2, send: s2, .. }
+              Some(MatchSet::Send { chan: d1, variant: v1, send: s1, .. }),
+              MatchSet::Send { chan: d2, variant: v2, send: s2, .. }
             ) if d1 == d2 && v1 == v2 && s1 == s2 => {}
 
             (
-              Some(MatchSet::Receive { dir: d1, .. }),
-              MatchSet::Receive { dir: d2, .. }
+              Some(MatchSet::Receive { chan: d1, .. }),
+              MatchSet::Receive { chan: d2, .. }
             ) if d1 == d2 => {}
 
             (
-                Some(MatchSet::Receive { dir: d1, .. }),
-                MatchSet::Send { dir: d2, ..},
+                Some(MatchSet::Receive { chan: d1, .. }),
+                MatchSet::Send { chan: d2, ..},
             ) if *d1 != *d2 => {}
 
             (s, o) => panic!("Follow conflict: {:?} <> {:?}", s, o)
@@ -100,17 +100,17 @@ impl MatchSet {
         i.fold(first.clone(), |m, v| {
             match (m, v) {
                 (
-                MatchSet::Send { dir: d1, variant: v1, send: s1 },
-                MatchSet::Send { dir: d2, variant: v2, send: s2 }
+                MatchSet::Send { chan: d1, variant: v1, send: s1 },
+                MatchSet::Send { chan: d2, variant: v2, send: s2 }
                 ) if d1 == *d2 && v1 == *v2 && &s1 == s2 => {
-                    MatchSet::Send { dir: d1, variant: v1, send: s1 }
+                    MatchSet::Send { chan: d1, variant: v1, send: s1 }
                 }
 
                 (
-                MatchSet::Receive { dir: d1, receive: r1 },
-                MatchSet::Receive { dir: d2, receive: r2 }
+                MatchSet::Receive { chan: d1, receive: r1 },
+                MatchSet::Receive { chan: d2, receive: r2 }
                 ) if d1 == *d2 => {
-                    MatchSet::Receive { dir: d1, receive: MessagePatternSet::merge_disjoint(r1, r2) }
+                    MatchSet::Receive { chan: d1, receive: MessagePatternSet::merge_disjoint(r1, r2) }
                 }
 
                 (
@@ -122,17 +122,17 @@ impl MatchSet {
                 }
 
                 (
-                MatchSet::Receive { dir: d1, receive: r1 },
+                MatchSet::Receive { chan: d1, receive: r1 },
                 MatchSet::Send { .. }
                 ) => {
-                    MatchSet::Receive { dir: d1, receive: r1 }
+                    MatchSet::Receive { chan: d1, receive: r1 }
                 }
 
                 (
-                MatchSet::Receive { dir: d1, receive: r1 },
+                MatchSet::Receive { chan: d1, receive: r1 },
                 MatchSet::Guard { .. }
                 ) => {
-                    MatchSet::Receive { dir: d1, receive: r1 }
+                    MatchSet::Receive { chan: d1, receive: r1 }
                 }
 
                 (s, o) => panic!("First conflict: {:?} <> {:?}", s, o)
@@ -147,17 +147,17 @@ impl MatchSet {
                 (None, None) => None,
 
                 (
-                    Some(MatchSet::Send { dir: d1, variant: v1, send: s1 }),
-                    Some(MatchSet::Send { dir: d2, variant: v2, send: s2 })
+                    Some(MatchSet::Send { chan: d1, variant: v1, send: s1 }),
+                    Some(MatchSet::Send { chan: d2, variant: v2, send: s2 })
                 ) if d1 == *d2 && v1 == *v2 && &s1 == s2 => {
-                    Some(MatchSet::Send { dir: d1, variant: v1, send: s1 })
+                    Some(MatchSet::Send { chan: d1, variant: v1, send: s1 })
                 }
 
                 (
-                    Some(MatchSet::Receive { dir: d1, receive: r1 }),
-                    Some(MatchSet::Receive { dir: d2, receive: r2 })
+                    Some(MatchSet::Receive { chan: d1, receive: r1 }),
+                    Some(MatchSet::Receive { chan: d2, receive: r2 })
                 ) if d1 == *d2 => {
-                    Some(MatchSet::Receive { dir: d1, receive: MessagePatternSet::union(r1, r2) })
+                    Some(MatchSet::Receive { chan: d1, receive: MessagePatternSet::union(r1, r2) })
                 }
 
                 (

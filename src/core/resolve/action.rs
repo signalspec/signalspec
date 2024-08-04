@@ -4,7 +4,7 @@ use itertools::EitherOrBoth;
 use num_traits::Signed;
 
 use crate::{core::{
-    constant, expr::ExprKind, index::FindDefError, lexpr, protocol, resolve::expr::{lvalue_dn, lvalue_up, LValueSrc}, rexpr, rexpr_tup, step::{analyze_unambiguous, Step, StepBuilder, StepInfo}, value, ConcatElem, Dir, Expr, ExprDn, Item, LeafItem, Predicate, Scope, Shape, ShapeMsg, StepId, Type, ValueSrc, ValueSrcId
+    constant, expr::ExprKind, index::FindDefError, lexpr, protocol, resolve::expr::{lvalue_dn, lvalue_up, LValueSrc}, rexpr, rexpr_tup, step::{analyze_unambiguous, ConnectionId, Step, StepBuilder, StepInfo}, value, ConcatElem, Dir, Expr, ExprDn, Item, LeafItem, Predicate, Scope, Shape, ShapeMsg, StepId, Type, ValueSrc, ValueSrcId
 }, diagnostic::{DiagnosticContext, Diagnostics}, Value};
 use crate::diagnostic::{ErrorReported, Span};
 use crate::entitymap::{entity_key, EntityMap};
@@ -60,19 +60,29 @@ impl TryFromConstant for RepeatMode {
 }
 
 #[derive(Clone, Copy)]
+struct Conn<'a> {
+    shape: &'a Shape,
+    conn: ConnectionId,
+}
+
+#[derive(Clone, Copy)]
 struct ResolveCx<'a> {
     scope: &'a Scope,
-    shape_down: &'a Shape,
-    shape_up: Option<&'a Shape>,
+    down: Conn<'a>,
+    up: Option<Conn<'a>>,
 }
 
 impl<'a> ResolveCx<'a> {
-    fn with_lower<'b>(&'b self, scope: &'b Scope, shape_down: &'b Shape) -> ResolveCx<'b> {
-        ResolveCx { scope, shape_down, ..*self }
+    fn with_lower<'b>(&'b self, scope: &'b Scope, shape: &'b Shape, conn: ConnectionId) -> ResolveCx<'b> {
+        ResolveCx { scope, down: Conn { shape, conn }, ..*self }
     }
 
-    fn with_upper<'b>(&'b self, scope: &'b Scope, shape_up: Option<&'b Shape>) -> ResolveCx<'b> {
-        ResolveCx { scope, shape_up, ..*self }
+    fn with_upper<'b>(&'b self, scope: &'b Scope, shape: &'b Shape, conn: ConnectionId) -> ResolveCx<'b> {
+        ResolveCx { scope, up: Some(Conn { shape, conn }), ..*self }
+    }
+
+    fn without_upper<'b>(&'b self, scope: &'b Scope) -> ResolveCx<'b> {
+        ResolveCx { scope, up: None, ..*self }
     }
 
     fn with_scope<'b>(&'b self, scope: &'b Scope) -> ResolveCx<'b> {
@@ -213,7 +223,7 @@ impl<'a> Builder<'a> {
             }
 
             ast::Action::On(ref node @ ast::ActionOn { args: Some(args), ..}) => {
-                let Some(shape_up) = sb.shape_up else {
+                let Some(Conn { shape: shape_up, conn: conn_up }) = sb.up else {
                     return self.err_step(Diagnostic::OnBlockWithoutUpSignal{
                         span: sb.scope.span(node.span)
                     });
@@ -271,19 +281,24 @@ impl<'a> Builder<'a> {
                     };
                 }
 
+                let inner_sb = if let &Some(ref child_shape) = &msg_def.child {
+                    assert!(dn.predicates.is_empty());
+                    assert!(up_inner.is_empty());
+                    sb.with_upper(&body_scope, child_shape, conn_up)
+                } else {
+                    sb.without_upper(&body_scope)
+                };
+
                 let inner = if let &Some(ref body) = &node.block {
-                    self.resolve_seq(sb.with_upper(&body_scope, msg_def.child.as_ref()), body)
+                    self.resolve_seq(inner_sb, body)
                 } else {
                     self.steps.accepting()
                 };
 
-                if msg_def.child.is_some() {
-                    assert!(dn.predicates.is_empty());
-                    assert!(up_inner.is_empty());
-                }
+
                 
                 let receive = if shape_up.mode.has_dn_channel() {
-                    self.steps.receive(Dir::Up, msg_def.tag, dn.src, dn.predicates)
+                    self.steps.receive(conn_up.dn(), msg_def.tag, dn.src, dn.predicates)
                 } else {
                     assert!(dn.predicates.is_empty());
                     self.steps.accepting()
@@ -291,7 +306,7 @@ impl<'a> Builder<'a> {
                 
                 let send = if shape_up.mode.has_up_channel() {
                     let up = self.bind_tree_fields_up_finish(up_inner, &sb.scope.file);
-                    self.steps.send(Dir::Up, msg_def.tag, up)
+                    self.steps.send(conn_up.up(), msg_def.tag, up)
                 } else {
                     assert!(up_inner.is_empty());
                     self.steps.accepting()
@@ -305,7 +320,7 @@ impl<'a> Builder<'a> {
             }
 
             ast::Action::On(ref node @ ast::ActionOn { args: None, ..}) => {
-                let Some(shape_up) = sb.shape_up else {
+                let Some(Conn { shape: shape_up, conn: conn_up }) = sb.up else {
                     return self.err_step(Diagnostic::OnBlockWithoutUpSignal{
                         span: sb.scope.span(node.span)
                     });
@@ -320,7 +335,7 @@ impl<'a> Builder<'a> {
                 };
 
                 if let &Some(ref body) = &node.block {
-                    self.resolve_seq(sb.with_upper(&sb.scope, Some(inner_shape_up)), body)
+                    self.resolve_seq(sb.with_upper(&sb.scope, inner_shape_up, conn_up), body)
                 } else {
                     self.steps.accepting()
                 }
@@ -825,10 +840,10 @@ impl<'a> Builder<'a> {
         }
     }
 
-    fn resolve_process(&mut self, sb: ResolveCx<'_>, process_ast: &ast::Process) -> (StepId, Option<Shape>) {
+    fn resolve_process(&mut self, sb: ResolveCx<'_>, process_ast: &ast::Process) -> (StepId, Option<(Shape, ConnectionId)>) {
         match process_ast {
             ast::Process::Call(node) => {
-                if let Some(msg_def) = sb.shape_down.variant_named(&node.name.name) {
+                if let Some(msg_def) = sb.down.shape.variant_named(&node.name.name) {
                     let (dn, up) = self.resolve_token(msg_def, sb.scope, &node);
 
                     if msg_def.child.is_some() {
@@ -836,34 +851,34 @@ impl<'a> Builder<'a> {
                         assert!(up.predicates.is_empty());
                     }
 
-                    let send = if sb.shape_down.mode.has_dn_channel() {
-                        self.steps.send(Dir::Dn, msg_def.tag, dn)
+                    let send = if sb.down.shape.mode.has_dn_channel() {
+                        self.steps.send(sb.down.conn.dn(), msg_def.tag, dn)
                     } else {
                         self.steps.accepting()
                     };
 
-                    let receive = if sb.shape_down.mode.has_up_channel() {
-                        self.steps.receive(Dir::Dn, msg_def.tag, up.src, up.predicates)
+                    let receive = if sb.down.shape.mode.has_up_channel() {
+                        self.steps.receive(sb.down.conn.up(), msg_def.tag, up.src, up.predicates)
                     } else {
                         self.steps.accepting()
                     };
 
                     let step = self.steps.seq(send, receive);
 
-                    if msg_def.child.is_some() {
+                    if let Some(child_shape) = &msg_def.child {
                         let pass = self.steps.pass();
                         let step = self.steps.seq(pass, step);
-                        (step, msg_def.child.clone())
+                        (step, Some((child_shape.clone(), sb.down.conn)))
                     } else {
                         (step, None)
                     }
                 } else {
-                    let def = match self.index.find_def(sb.shape_down, &node.name.name) {
+                    let def = match self.index.find_def(sb.down.shape, &node.name.name) {
                         Ok(res) => res,
                         Err(FindDefError::NoDefinitionWithName) => {
                             let step = self.err_step(Diagnostic::NoDefNamed {
                                 span: sb.scope.span(node.name.span),
-                                protocol_name: sb.shape_down.def.ast().name.name.to_owned(),
+                                protocol_name: sb.down.shape.def.ast().name.name.to_owned(),
                                 def_name: node.name.name.to_owned(),
                             });
                             return (step, None)
@@ -873,7 +888,7 @@ impl<'a> Builder<'a> {
                     let args = rexpr_tup(&mut self.dcx, sb.scope, &node.args);
 
                     let mut scope = def.file.scope();
-                    lexpr(&mut self.dcx, &mut scope, &def.protocol.param, &sb.shape_down.param);
+                    lexpr(&mut self.dcx, &mut scope, &def.protocol.param, &sb.down.shape.param);
                     lexpr_tup(&mut self.dcx, &mut scope, &def.params, &args);
 
                     self.resolve_process(sb.with_scope(&scope), &def.implementation)
@@ -881,22 +896,22 @@ impl<'a> Builder<'a> {
             }
 
             ast::Process::Child(node) => {
-                let Some(child_shape) = sb.shape_down.child_named(&node.name.name) else {
+                let Some(child_shape) = sb.down.shape.child_named(&node.name.name) else {
                     let step = self.err_step(Diagnostic::NoDefNamed {
                         span: sb.scope.span(node.name.span),
-                        protocol_name: sb.shape_down.def.ast().name.name.to_owned(),
+                        protocol_name: sb.down.shape.def.ast().name.name.to_owned(),
                         def_name: node.name.name.to_owned(),
                     });
                     return (step, None)
                 };
 
-                (self.steps.pass(), Some(child_shape.clone()))
+                (self.steps.pass(), Some((child_shape.clone(), sb.down.conn)))
             }
 
             ast::Process::Primitive(node) => {
                 let arg = rexpr_tup(&mut self.dcx, sb.scope, &node.args);
                 debug!("instantiating primitive {} with {}", node.name.name, arg);
-                let prim = match instantiate_primitive(&node.name, arg, sb.shape_down, sb.shape_up) {
+                let prim = match instantiate_primitive(&node.name, arg, sb.down.shape, sb.up.as_ref().map(|u| u.shape)) {
                     Ok(p) => p,
                     Err(msg) => {
                         let step = self.err_step(Diagnostic::ErrorInPrimitiveProcess {
@@ -907,7 +922,15 @@ impl<'a> Builder<'a> {
 
                     }
                 };
-                (self.steps.steps.push(Step::Primitive(prim)), None)
+
+                let channels = [
+                    sb.down.shape.mode.has_dn_channel().then_some(sb.down.conn.dn()),
+                    sb.down.shape.mode.has_up_channel().then_some(sb.down.conn.up()),
+                    sb.up.and_then(|u| u.shape.mode.has_up_channel().then_some(u.conn.up())),
+                    sb.up.and_then(|u| u.shape.mode.has_dn_channel().then_some(u.conn.dn())),
+                ].into_iter().flatten().collect();
+
+                (self.steps.steps.push(Step::Primitive(prim, channels)), None)
             }
 
             ast::Process::New(node) => {
@@ -915,8 +938,9 @@ impl<'a> Builder<'a> {
                     Ok(shape) => shape,
                     Err(r) => return (self.steps.invalid(r), None),
                 };
-                let block = self.resolve_seq(sb.with_upper(sb.scope, Some(&top_shape)), &node.block);
-                (block, Some(top_shape))
+                let conn = self.steps.add_connection(top_shape.clone());
+                let block = self.resolve_seq(sb.with_upper(sb.scope, &top_shape, conn), &node.block);
+                (block, Some((top_shape, conn)))
             }
 
             ast::Process::Seq(ref block) => {
@@ -925,11 +949,11 @@ impl<'a> Builder<'a> {
             }
 
             ast::Process::Stack(node) => {
-                let (lo, shape) = self.resolve_process(sb, &node.lower);
+                let (lo, up) = self.resolve_process(sb, &node.lower);
 
-                let Some(shape) = shape else {
+                let Some((shape, conn)) = up else {
                     if lo == StepBuilder::FAIL {
-                        return (lo, shape);
+                        return (lo, None);
                     } else {
                         let step = self.err_step(Diagnostic::StackWithoutBaseSignal {
                             span: sb.scope.span(node.lower.span()),
@@ -938,8 +962,8 @@ impl<'a> Builder<'a> {
                     }
                 };
 
-                let (hi, shape_up) = self.resolve_process(sb.with_lower(sb.scope, &shape), &node.upper);
-                (self.steps.stack(lo, shape, hi), shape_up)
+                let (hi, shape_up) = self.resolve_process(sb.with_lower(sb.scope, &shape, conn), &node.upper);
+                (self.steps.stack(lo, conn, hi), shape_up)
             }
         }
     }
@@ -1039,13 +1063,16 @@ pub struct ProcessChain {
     pub vars: EntityMap<ValueSrcId, ()>,
     pub step_info: EntityMap<StepId, StepInfo>,
     pub shape_dn: Shape,
-    pub shape_up: Option<Shape>,
+    pub conn_dn: ConnectionId,
+    pub up: Option<(Shape, ConnectionId)>,
+    pub connections: EntityMap<ConnectionId, Shape>,
 }
 
 pub fn compile_process(index: &Index, scope: &Scope, shape_dn: Shape, ast: &ast::Process) -> Result<ProcessChain, Diagnostics> {
     let mut builder = Builder::new(index);
-    let sb = ResolveCx { scope, shape_up: None, shape_down: &shape_dn };
-    let (step, shape_up) = builder.resolve_process(sb, ast);
+    let conn_dn = builder.steps.add_connection(shape_dn.clone());
+    let sb = ResolveCx { scope, up: None, down: Conn { shape: &shape_dn, conn: conn_dn }};
+    let (step, up) = builder.resolve_process(sb, ast);
 
     if log_enabled!(log::Level::Debug) {
         let mut buf = String::new();
@@ -1068,7 +1095,9 @@ pub fn compile_process(index: &Index, scope: &Scope, shape_dn: Shape, ast: &ast:
         vars: builder.value_src,
         step_info,
         root: step,
+        conn_dn,
         shape_dn,
-        shape_up,
+        up,
+        connections: builder.steps.connections,
     })
 }

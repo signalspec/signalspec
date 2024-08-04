@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::fmt::Debug;
 use std::sync::Arc;
 
 use crate::diagnostic::ErrorReported;
@@ -8,6 +9,55 @@ use crate::Dir;
 use super::{ExprDn, MatchSet, Shape, Predicate, ValueSrcId};
 
 entity_key!(pub StepId);
+entity_key!(pub ConnectionId);
+
+impl ConnectionId {
+    pub fn dn(self) -> ChannelId { ChannelId::new(self, Dir::Dn) }
+    pub fn up(self) -> ChannelId { ChannelId::new(self, Dir::Up) }
+}
+
+/// [`ConnectionId`] and [`Dir`] packed into a u32.
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ChannelId(u32);
+
+impl Debug for ChannelId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("ChannelId")
+            .field(&self.connection())
+            .field(&self.dir())
+            .finish()
+    }
+}
+
+impl crate::entitymap::EntityKey for ChannelId {
+    #[inline]
+    fn new(index: usize) -> Self {
+        assert!(index < (u32::MAX as usize));
+        ChannelId(index as u32)
+    }
+
+    #[inline]
+    fn index(self) -> usize {
+        self.0 as usize
+    }
+}
+
+impl ChannelId {
+    pub fn new(conn: ConnectionId, dir: Dir) -> ChannelId {
+        ChannelId(conn.0 << 1 | match dir {
+            Dir::Up => 1,
+            Dir::Dn => 0,
+        })
+    }
+
+    pub fn dir(self) -> Dir {
+        if self.0 & 0x1 == 1 { Dir::Up } else { Dir::Dn }
+    }
+
+    pub fn connection(self) -> ConnectionId {
+        ConnectionId(self.0 >> 1)
+    }
+}
 
 #[derive(Debug)]
 
@@ -15,10 +65,10 @@ pub enum Step {
     Fail,
     Accept,
     Pass,
-    Stack { lo: StepId, shape: Shape, hi: StepId },
-    Send { dir: Dir, variant: usize, msg: Vec<ExprDn> },
-    Receive { dir: Dir, variant: usize, val: ValueSrcId, msg: Vec<Predicate> },
-    Primitive(Arc<dyn PrimitiveProcess + 'static>),
+    Stack { lo: StepId, conn: ConnectionId, hi: StepId },
+    Send { chan: ChannelId, variant: usize, msg: Vec<ExprDn> },
+    Receive { chan: ChannelId, variant: usize, val: ValueSrcId, msg: Vec<Predicate> },
+    Primitive(Arc<dyn PrimitiveProcess + 'static>, Vec<ChannelId>),
     Seq(StepId, StepId),
     Assign(ValueSrcId, ExprDn),
     Guard(ExprDn, Predicate),
@@ -30,6 +80,7 @@ pub(crate) struct StepBuilder {
     pub steps: EntityMap<StepId, Step>,
     seq: HashMap<(StepId, StepId), StepId>,
     alt: HashMap<Box<[StepId]>, StepId>,
+    pub connections: EntityMap<ConnectionId, Shape>,
 }
 
 impl StepBuilder {
@@ -40,7 +91,9 @@ impl StepBuilder {
         let mut steps = EntityMap::new();
         assert_eq!(steps.push(Step::Fail), Self::FAIL);
         assert_eq!(steps.push(Step::Accept), Self::ACCEPT);
-        Self { steps, seq: HashMap::new(), alt: HashMap::new() }
+
+        let connections = EntityMap::new();
+        Self { steps, seq: HashMap::new(), alt: HashMap::new(), connections }
     }
     
     pub(crate) fn invalid(&self, _r: ErrorReported) -> StepId {
@@ -75,12 +128,12 @@ impl StepBuilder {
             .unwrap_or(self.accepting())
     }
     
-    pub(crate) fn receive(&mut self, dir: Dir, variant: usize, val: ValueSrcId, msg: Vec<Predicate>) -> StepId {
-        self.steps.push(Step::Receive { dir, variant, val, msg })
+    pub(crate) fn receive(&mut self, chan: ChannelId, variant: usize, val: ValueSrcId, msg: Vec<Predicate>) -> StepId {
+        self.steps.push(Step::Receive { chan, variant, val, msg })
     }
     
-    pub(crate) fn send(&mut self, dir: Dir, variant: usize, msg: Vec<ExprDn>) -> StepId {
-        self.steps.push(Step::Send { dir, variant, msg })
+    pub(crate) fn send(&mut self, chan: ChannelId, variant: usize, msg: Vec<ExprDn>) -> StepId {
+        self.steps.push(Step::Send { chan, variant, msg })
     }
 
     pub(crate) fn assign(&mut self, dest: ValueSrcId, src: ExprDn) -> StepId {
@@ -125,7 +178,7 @@ impl StepBuilder {
         self.steps.push(Step::Pass)
     }
     
-    pub(crate) fn stack(&mut self, lo: StepId, shape: Shape, hi: StepId) -> StepId {
+    pub(crate) fn stack(&mut self, lo: StepId, conn: ConnectionId, hi: StepId) -> StepId {
         match (&self.steps[lo], &self.steps[hi]) {
             (Step::Fail, _) | (_, Step::Fail) => Self::FAIL,
             (Step::Pass, _) => hi,
@@ -133,8 +186,12 @@ impl StepBuilder {
             (Step::Seq(a, b), _) if matches!(self.steps[*a], Step::Pass) => {
                 self.seq(hi, *b)
             }
-            _ => self.steps.push(Step::Stack { lo, shape, hi })
+            _ => self.steps.push(Step::Stack { lo, conn, hi })
         }
+    }
+    
+    pub(crate) fn add_connection(&mut self, shape: Shape) -> ConnectionId {
+        self.connections.push(shape)
     }
 }
 
@@ -149,14 +206,14 @@ pub fn write_tree(f: &mut dyn std::fmt::Write, indent: u32, steps: &EntityMap<St
             write_tree(f, indent+2, steps, lo)?;
             write_tree(f, indent+2, steps, hi)?;
         }
-        Step::Primitive(_) => {
+        Step::Primitive(_, _) => {
             writeln!(f, "{}Primitive", i)?
         }
-        Step::Send { dir, variant, ref msg } => {
-            writeln!(f, "{}Send: {:?} {:?} {:?}", i, dir, variant, msg)?;
+        Step::Send { chan, variant, ref msg } => {
+            writeln!(f, "{}Send: {:?} {:?} {:?}", i, chan, variant, msg)?;
         }
-        Step::Receive { dir, variant, ref val, ref msg } => {
-            writeln!(f, "{}Receive: {:?} {:?} {:?} {:?}", i, dir, variant, val, msg)?;
+        Step::Receive { chan, variant, ref val, ref msg } => {
+            writeln!(f, "{}Receive: {:?} {:?} {:?} {:?}", i, chan, variant, val, msg)?;
         }
         Step::Assign(dst, ref src) => {
             writeln!(f, "{}Assign {dst:?} = {src:?}", i)?;
@@ -233,17 +290,17 @@ pub fn analyze_unambiguous(steps: &EntityMap<StepId, Step>) -> EntityMap<StepId,
                 }
             }
 
-            Step::Send { dir, variant, ref msg } => {
+            Step::Send { chan, variant, ref msg } => {
                 StepInfo {
-                    first: MatchSet::send(dir, variant, msg.clone()),
+                    first: MatchSet::send(chan, variant, msg.clone()),
                     followlast: None,
                     nullable: false,
                 }
             }
 
-            Step::Receive { dir, variant, ref msg, .. } => {
+            Step::Receive { chan, variant, ref msg, .. } => {
                 StepInfo {
-                    first: MatchSet::receive(dir, variant, msg.clone()),
+                    first: MatchSet::receive(chan, variant, msg.clone()),
                     followlast: None,
                     nullable: false,
                 }
@@ -265,7 +322,7 @@ pub fn analyze_unambiguous(steps: &EntityMap<StepId, Step>) -> EntityMap<StepId,
                 }
             }
 
-            Step::Primitive(_) => {
+            Step::Primitive(_, _) => {
                 StepInfo {
                     first: MatchSet::proc(),
                     followlast: None,

@@ -27,7 +27,7 @@ pub use self::item::{Item, LeafItem};
 pub use self::expr::{ Expr, ExprDn, ConcatElem };
 pub use self::resolve::expr::{ rexpr, rexpr_tup, lexpr, value, constant };
 pub use self::function::{ PrimitiveFn, FunctionDef, Func };
-pub use self::step::{ Step, StepId, write_tree };
+pub use self::step::{ Step, StepId, ChannelId, ConnectionId, write_tree };
 pub use self::resolve::{ compile_process, ProcessChain };
 pub use self::value::Value;
 pub use self::data::{ Type, TypeTree };

@@ -60,9 +60,10 @@ impl<'a> Handle<'a> {
         let program = compile_process(index, scope, shape.clone(), process)?;
 
         let compiled = Arc::new(compile::compile(&program));
-        let channels_hi = program.shape_up.as_ref().map_or(SeqChannels::null(), SeqChannels::for_shape);
+        let shape_up = program.up.map(|u| u.0);
+        let channels_hi = shape_up.as_ref().map_or(SeqChannels::null(), SeqChannels::for_shape);
         let future = compile::ProgramExec::new(compiled, self.channels.clone(), channels_hi.clone() );
-        Ok(Handle { shape: program.shape_up, channels: channels_hi, parent: Some(self), future: Some(future) })
+        Ok(Handle { shape: shape_up, channels: channels_hi, parent: Some(self), future: Some(future) })
     }
 
     pub fn parse_compile_run<'x: 'a>(&'x mut self, index: &Index, call: &str) -> Result<Handle<'x>, Diagnostics> {
