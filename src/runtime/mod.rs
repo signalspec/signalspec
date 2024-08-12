@@ -1,7 +1,7 @@
 mod test_runner;
 mod primitives;
-mod compile;
 mod channel;
+mod fsm_exec;
 
 use std::sync::Arc;
 use std::task::Poll;
@@ -25,7 +25,7 @@ use crate::core::{ Dir, Index, Item, Shape, compile_process, ShapeMsgParam};
 pub struct Handle<'a> {
     shape: Option<Shape>,
     channels: SeqChannels,
-    future: Option<compile::ProgramExec>,
+    future: Option<fsm_exec::FsmExec>,
     parent: Option<&'a mut Handle<'a>>,
 }
 
@@ -59,10 +59,9 @@ impl<'a> Handle<'a> {
         let shape = self.shape.as_ref().expect("no shape");
         let program = compile_process(index, scope, shape.clone(), process)?;
 
-        let compiled = Arc::new(compile::compile(&program));
-        let shape_up = program.up.map(|u| u.0);
+        let shape_up = program.up.as_ref().map(|u| u.0.clone());
         let channels_hi = shape_up.as_ref().map_or(SeqChannels::null(), SeqChannels::for_shape);
-        let future = compile::ProgramExec::new(compiled, self.channels.clone(), channels_hi.clone() );
+        let future = fsm_exec::FsmExec::new(Arc::new(program), self.channels.clone(), channels_hi.clone() );
         Ok(Handle { shape: shape_up, channels: channels_hi, parent: Some(self), future: Some(future) })
     }
 
@@ -83,7 +82,7 @@ impl<'a> Handle<'a> {
 
     fn poll(&mut self, cx: &mut std::task::Context) -> Poll<Result<(), ()>> {
         if let Some(future) = &mut self.future {
-            if let Poll::Ready(v) = future.poll_all(cx) {
+            if let Poll::Ready(v) = future.poll(cx) {
                 return Poll::Ready(v)
             }
         }
@@ -97,8 +96,9 @@ impl<'a> Handle<'a> {
 
     pub fn finish(mut self) -> Result<(), ()> {
         if let Some(ref ch) = self.channels.dn {
-            ch.send(ChannelMessage { variant: 0, values: vec![] });
+           ch.send(ChannelMessage { variant: 0, values: vec![] });
         }
+
         futures_lite::future::block_on(poll_fn(|cx| { self.poll(cx) }))
     }
 

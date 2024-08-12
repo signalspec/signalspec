@@ -6,12 +6,12 @@ mod file;
 mod index;
 pub(crate) mod protocol;
 mod function;
-mod matchset;
 mod data;
 mod value;
 mod shape;
 mod resolve;
 mod predicate;
+mod derivs;
 
 use std::collections::HashMap;
 
@@ -27,13 +27,13 @@ pub use self::item::{Item, LeafItem};
 pub use self::expr::{ Expr, ExprDn, ConcatElem };
 pub use self::resolve::expr::{ rexpr, rexpr_tup, lexpr, value, constant };
 pub use self::function::{ PrimitiveFn, FunctionDef, Func };
-pub use self::step::{ Step, StepId, ChannelId, ConnectionId, write_tree };
+pub use self::step::{ Step, StepId, ChannelId, write_tree };
 pub use self::resolve::{ compile_process, ProcessChain };
 pub use self::value::Value;
 pub use self::data::{ Type, TypeTree };
 pub use self::shape::{ ShapeMode, Shape, ShapeMsg, ShapeMsgParam };
-pub use self::matchset::{ MatchSet, MessagePatternSet };
 pub use self::predicate::Predicate;
+pub(crate) use self::derivs::Derivatives;
 
 pub type ScopeNames = HashMap<String, Item>;
 

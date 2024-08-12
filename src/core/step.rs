@@ -6,7 +6,7 @@ use crate::diagnostic::ErrorReported;
 use crate::entitymap::{entity_key, EntityMap};
 use crate::runtime::PrimitiveProcess;
 use crate::Dir;
-use super::{ExprDn, MatchSet, Shape, Predicate, ValueSrcId};
+use super::{ExprDn, Shape, Predicate, ValueSrcId};
 
 entity_key!(pub StepId);
 entity_key!(pub ConnectionId);
@@ -67,7 +67,7 @@ pub enum Step {
     Pass,
     Stack { lo: StepId, conn: ConnectionId, hi: StepId },
     Send { chan: ChannelId, variant: usize, msg: Vec<ExprDn> },
-    Receive { chan: ChannelId, variant: usize, val: ValueSrcId, msg: Vec<Predicate> },
+    Receive { chan: ChannelId, variant: usize, var: ValueSrcId, msg: Vec<Predicate> },
     Primitive(Arc<dyn PrimitiveProcess + 'static>, Vec<ChannelId>),
     Seq(StepId, StepId),
     Assign(ValueSrcId, ExprDn),
@@ -80,7 +80,14 @@ pub(crate) struct StepBuilder {
     pub steps: EntityMap<StepId, Step>,
     seq: HashMap<(StepId, StepId), StepId>,
     alt: HashMap<Box<[StepId]>, StepId>,
+    stack: HashMap<(StepId, ConnectionId, StepId), StepId>,
+    repeat: HashMap<(StepId, bool), StepId>,
     pub connections: EntityMap<ConnectionId, Shape>,
+}
+
+fn add_step(steps: &mut EntityMap<StepId, Step>, s: Step) -> StepId {
+    log::debug!("Add step {:6}: {:?}", steps.len(), s);
+    steps.push(s)
 }
 
 impl StepBuilder {
@@ -93,7 +100,13 @@ impl StepBuilder {
         assert_eq!(steps.push(Step::Accept), Self::ACCEPT);
 
         let connections = EntityMap::new();
-        Self { steps, seq: HashMap::new(), alt: HashMap::new(), connections }
+        Self { steps,
+            seq: HashMap::new(),
+            alt: HashMap::new(),
+            stack: HashMap::new(),
+            repeat: HashMap::new(),
+            connections
+        }
     }
     
     pub(crate) fn invalid(&self, _r: ErrorReported) -> StepId {
@@ -118,7 +131,7 @@ impl StepBuilder {
         }
 
         *self.seq.entry((first, second)).or_insert_with(|| {
-            self.steps.push(Step::Seq(first, second))
+            add_step(&mut self.steps, Step::Seq(first, second))
         })
     }
 
@@ -129,21 +142,21 @@ impl StepBuilder {
     }
     
     pub(crate) fn receive(&mut self, chan: ChannelId, variant: usize, val: ValueSrcId, msg: Vec<Predicate>) -> StepId {
-        self.steps.push(Step::Receive { chan, variant, val, msg })
+        add_step(&mut self.steps, Step::Receive { chan, variant, var: val, msg })
     }
     
     pub(crate) fn send(&mut self, chan: ChannelId, variant: usize, msg: Vec<ExprDn>) -> StepId {
-        self.steps.push(Step::Send { chan, variant, msg })
+        add_step(&mut self.steps, Step::Send { chan, variant, msg })
     }
 
     pub(crate) fn assign(&mut self, dest: ValueSrcId, src: ExprDn) -> StepId {
-        self.steps.push(Step::Assign(dest, src))
+        add_step(&mut self.steps, Step::Assign(dest, src))
     }
 
     pub(crate) fn guard(&mut self, src: ExprDn, pred: Predicate) -> StepId {
         match pred {
             Predicate::Any => self.accepting(),
-            pred => self.steps.push(Step::Guard(src, pred))
+            pred => add_step(&mut self.steps, Step::Guard(src, pred))
         }
     }
 
@@ -165,17 +178,19 @@ impl StepBuilder {
             new_arms[0]
         } else {
             *self.alt.entry(new_arms.into_boxed_slice()).or_insert_with_key(|k| {
-                self.steps.push(Step::Alt(k.clone()))
+                add_step(&mut self.steps, Step::Alt(k.clone()))
             })
         }
     }
 
     pub(crate) fn repeat(&mut self, inner: StepId, nullable: bool) -> StepId {
-        self.steps.push(Step::Repeat(inner, nullable))
+        *self.repeat.entry((inner, nullable)).or_insert_with(|| {
+            add_step(&mut self.steps, Step::Repeat(inner, nullable))
+        })
     }
     
     pub(crate) fn pass(&mut self) -> StepId {
-        self.steps.push(Step::Pass)
+        add_step(&mut self.steps, Step::Pass)
     }
     
     pub(crate) fn stack(&mut self, lo: StepId, conn: ConnectionId, hi: StepId) -> StepId {
@@ -186,7 +201,11 @@ impl StepBuilder {
             (Step::Seq(a, b), _) if matches!(self.steps[*a], Step::Pass) => {
                 self.seq(hi, *b)
             }
-            _ => self.steps.push(Step::Stack { lo, conn, hi })
+            _ => {
+                *self.stack.entry((lo, conn, hi)).or_insert_with(|| {
+                    add_step(&mut self.steps, Step::Stack { lo, conn, hi })
+                })
+            }
         }
     }
     
@@ -198,31 +217,31 @@ impl StepBuilder {
 pub fn write_tree(f: &mut dyn std::fmt::Write, indent: u32, steps: &EntityMap<StepId, Step>, step: StepId) -> Result<(), std::fmt::Error> {
     let i: String = " ".repeat(indent as usize);
     match steps[step] {
-        Step::Fail => writeln!(f, "{}Fail", i)?,
-        Step::Accept => writeln!(f, "{}Accept", i)?,
-        Step::Pass => writeln!(f, "{}Pass", i)?,
+        Step::Fail => writeln!(f, "{:6} {}Fail", step.0, i)?,
+        Step::Accept => writeln!(f, "{:6} {}Accept", step.0, i)?,
+        Step::Pass => writeln!(f, "{:6} {}Pass", step.0, i)?,
         Step::Stack{ lo, hi, ..} => {
-            writeln!(f, "{}Stack:", i)?;
+            writeln!(f, "{:6} {}Stack:", step.0, i)?;
             write_tree(f, indent+2, steps, lo)?;
             write_tree(f, indent+2, steps, hi)?;
         }
         Step::Primitive(_, _) => {
-            writeln!(f, "{}Primitive", i)?
+            writeln!(f, "{:6} {}Primitive", step.0, i)?
         }
         Step::Send { chan, variant, ref msg } => {
-            writeln!(f, "{}Send: {:?} {:?} {:?}", i, chan, variant, msg)?;
+            writeln!(f, "{:6} {}Send: {:?} {:?} {:?}", step.0, i, chan, variant, msg)?;
         }
-        Step::Receive { chan, variant, ref val, ref msg } => {
-            writeln!(f, "{}Receive: {:?} {:?} {:?} {:?}", i, chan, variant, val, msg)?;
+        Step::Receive { chan, variant, var: ref val, ref msg } => {
+            writeln!(f, "{:6} {}Receive: {:?} {:?} {:?} {:?}", step.0, i, chan, variant, val, msg)?;
         }
         Step::Assign(dst, ref src) => {
-            writeln!(f, "{}Assign {dst:?} = {src:?}", i)?;
+            writeln!(f, "{:6} {}Assign {dst:?} = {src:?}", step.0, i)?;
         },
         Step::Guard(ref src, ref pred) => {
-            writeln!(f, "{}Guard {src:?} is {pred:?}", i)?;
+            writeln!(f, "{:6} {}Guard {src:?} is {pred:?}", step.0, i)?;
         }
         Step::Seq(s1, mut s2) => {
-            writeln!(f, "{}Seq", i)?;
+            writeln!(f, "{:6} {}Seq", step.0, i)?;
             write_tree(f, indent+1, steps, s1)?;
 
             // Flatten nested seq for readability
@@ -234,136 +253,15 @@ pub fn write_tree(f: &mut dyn std::fmt::Write, indent: u32, steps: &EntityMap<St
             write_tree(f, indent+1, steps, s2)?;
         }
         Step::Repeat(inner, nullable) => {
-            writeln!(f, "{}Repeat accepting={nullable}", i)?;
+            writeln!(f, "{:6} {}Repeat accepting={nullable}", step.0, i)?;
             write_tree(f, indent + 1, steps, inner)?;
         }
         Step::Alt(ref arms) => {
-            writeln!(f, "{}Alt", i)?;
+            writeln!(f, "{:6} {}Alt", step.0, i)?;
             for &arm in arms.iter() {
                 write_tree(f, indent + 1, steps, arm)?;
             }
         }
     }
     Ok(())
-}
-
-#[derive(Debug)]
-pub struct StepInfo {
-    pub(crate) nullable: bool,
-    pub(crate) first: MatchSet,
-    pub(crate) followlast: Option<MatchSet>,
-}
-
-pub fn analyze_unambiguous(steps: &EntityMap<StepId, Step>) -> EntityMap<StepId, StepInfo> {
-    let mut res = EntityMap::with_capacity(steps.len());
-
-    for (_, step) in steps {
-        let get = |id: StepId| -> &StepInfo {&res[id]};
-
-        let info = match *step {
-            Step::Fail => {
-                StepInfo {
-                    first: MatchSet::proc(),
-                    followlast: None,
-                    nullable: false,
-                }
-            }
-            Step::Accept => {
-                StepInfo {
-                    first: MatchSet::proc(),
-                    followlast: None,
-                    nullable: true,
-                }
-            }
-            Step::Pass => {
-                StepInfo {
-                    first: MatchSet::proc(),
-                    followlast: None,
-                    nullable: false,
-                }
-            }
-            Step::Stack { .. } => {
-                StepInfo {
-                    first: MatchSet::proc(),
-                    followlast: None,
-                    nullable: false,
-                }
-            }
-
-            Step::Send { chan, variant, ref msg } => {
-                StepInfo {
-                    first: MatchSet::send(chan, variant, msg.clone()),
-                    followlast: None,
-                    nullable: false,
-                }
-            }
-
-            Step::Receive { chan, variant, ref msg, .. } => {
-                StepInfo {
-                    first: MatchSet::receive(chan, variant, msg.clone()),
-                    followlast: None,
-                    nullable: false,
-                }
-            }
-
-            Step::Assign(..) => {
-                StepInfo {
-                    first: MatchSet::proc(),
-                    followlast: None,
-                    nullable: false,
-                }
-            }
-
-            Step::Guard(ref expr, ref predicate) => {
-                StepInfo {
-                    first: MatchSet::guard(expr.clone(), predicate.clone()),
-                    followlast: None,
-                    nullable: false,
-                }
-            }
-
-            Step::Primitive(_, _) => {
-                StepInfo {
-                    first: MatchSet::proc(),
-                    followlast: None,
-                    nullable: false,
-                }
-            },
-            Step::Seq(s1, s2) => {
-                let i1 = get(s1);
-                let i2 = get(s2);
-
-                StepInfo {
-                    first: if i1.nullable {
-                        MatchSet::merge_first([&i1.first, &i2.first].into_iter())
-                    } else {
-                        i1.first.clone()
-                    },
-                    followlast: i2.followlast.clone(),
-                    nullable: i1.nullable && i2.nullable,
-                }
-            },
-            Step::Repeat(inner, nullable) => {
-                let inner = get(inner);
-
-                MatchSet::check_compatible(&inner.followlast, &inner.first);
-
-                StepInfo {
-                    first: inner.first.clone(),
-                    followlast: Some(inner.first.clone()),
-                    nullable: inner.nullable || nullable,
-                }
-            },
-            Step::Alt(ref opts) => {
-                let first = MatchSet::merge_first(opts.iter().map(|&x| &get(x).first));
-                let followlast = MatchSet::merge_followlast(opts.iter().map(|&x| &get(x).followlast));
-                let nullable = opts.iter().all(|&x| get(x).nullable);
-
-                StepInfo { first, nullable, followlast }
-            },
-        };
-        res.push(info);
-    }
-
-    res
 }
