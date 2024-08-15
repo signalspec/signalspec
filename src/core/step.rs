@@ -10,6 +10,7 @@ use super::{ExprDn, Shape, Predicate, ValueSrcId};
 
 entity_key!(pub StepId);
 entity_key!(pub ConnectionId);
+entity_key!(pub ProcId);
 
 impl ConnectionId {
     pub fn dn(self) -> ChannelId { ChannelId::new(self, Dir::Dn) }
@@ -59,6 +60,11 @@ impl ChannelId {
     }
 }
 
+pub struct SubProc {
+    pub func: Arc<dyn PrimitiveProcess + 'static>,
+    pub channels: Vec<ChannelId>,
+}
+
 #[derive(Debug)]
 
 pub enum Step {
@@ -68,7 +74,7 @@ pub enum Step {
     Stack { lo: StepId, conn: ConnectionId, hi: StepId },
     Send { chan: ChannelId, variant: usize, msg: Vec<ExprDn> },
     Receive { chan: ChannelId, variant: usize, var: ValueSrcId, msg: Vec<Predicate> },
-    Primitive(Arc<dyn PrimitiveProcess + 'static>, Vec<ChannelId>),
+    Process(ProcId),
     Seq(StepId, StepId),
     Assign(ValueSrcId, ExprDn),
     Guard(ExprDn, Predicate),
@@ -83,6 +89,7 @@ pub(crate) struct StepBuilder {
     stack: HashMap<(StepId, ConnectionId, StepId), StepId>,
     repeat: HashMap<(StepId, bool), StepId>,
     pub connections: EntityMap<ConnectionId, Shape>,
+    pub processes: EntityMap<ProcId, SubProc>,
 }
 
 fn add_step(steps: &mut EntityMap<StepId, Step>, s: Step) -> StepId {
@@ -105,7 +112,8 @@ impl StepBuilder {
             alt: HashMap::new(),
             stack: HashMap::new(),
             repeat: HashMap::new(),
-            connections
+            connections,
+            processes: EntityMap::new(),
         }
     }
     
@@ -147,6 +155,11 @@ impl StepBuilder {
     
     pub(crate) fn send(&mut self, chan: ChannelId, variant: usize, msg: Vec<ExprDn>) -> StepId {
         add_step(&mut self.steps, Step::Send { chan, variant, msg })
+    }
+
+    pub(crate) fn add_process(&mut self, func: Arc<dyn PrimitiveProcess + 'static>, channels: Vec<ChannelId>) -> StepId {
+        let id = self.processes.push(SubProc { func, channels });
+        add_step(&mut self.steps, Step::Process(id))
     }
 
     pub(crate) fn assign(&mut self, dest: ValueSrcId, src: ExprDn) -> StepId {
@@ -225,8 +238,8 @@ pub fn write_tree(f: &mut dyn std::fmt::Write, indent: u32, steps: &EntityMap<St
             write_tree(f, indent+2, steps, lo)?;
             write_tree(f, indent+2, steps, hi)?;
         }
-        Step::Primitive(_, _) => {
-            writeln!(f, "{:6} {}Primitive", step.0, i)?
+        Step::Process(id) => {
+            writeln!(f, "{:6} {}Primitive {id:?}", step.0, i)?
         }
         Step::Send { chan, variant, ref msg } => {
             writeln!(f, "{:6} {}Send: {:?} {:?} {:?}", step.0, i, chan, variant, msg)?;

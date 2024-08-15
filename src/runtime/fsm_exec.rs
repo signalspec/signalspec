@@ -1,8 +1,9 @@
-use std::{sync::Arc, task::{ready, Context, Poll}};
+use std::{future::Future, pin::Pin, sync::Arc, task::{ready, Context, Poll}};
 
+use futures_lite::FutureExt;
 use itertools::Itertools;
 
-use crate::{core::{ChannelId, Derivatives, ExprDn, Predicate, ProcessChain, StepId, ValueSrcId}, entitymap::EntityMap, Value};
+use crate::{core::{ChannelId, Derivatives, ExprDn, Predicate, ProcId, ProcessChain, StepId, ValueSrcId}, entitymap::EntityMap, Value};
 
 use super::{channel::SeqChannels, Channel, ChannelMessage};
 
@@ -23,6 +24,7 @@ pub struct FsmExec {
     channels: EntityMap<ChannelId, Channel>,
     state: StepId,
     registers: EntityMap<ValueSrcId, Vec<Value>>,
+    processes: EntityMap<ProcId, Option<Pin<Box<dyn Future<Output = Result<(), ()>>>>>>,
 }
 
 impl FsmExec {
@@ -37,6 +39,7 @@ impl FsmExec {
         FsmExec {
             state: program.root,
             registers: program.vars.iter().map(|_| Vec::new()).collect(),
+            processes: program.processes.iter().map(|_| None).collect(),
             program,
             channels,
         }
@@ -80,6 +83,21 @@ impl FsmExec {
                     } else {
                         debug!("{stateno:6} Receive {chan:?} {msg:?} - skip");
                         other
+                    }
+                }
+                Derivatives::Process { id, next, err } => {
+                    let fut = self.processes[id].get_or_insert_with(|| {
+                        debug!("{stateno:6} Process {id:?} - start");
+                        let def = &self.program.processes[id];
+                        let ch = def.channels.iter().map(|&cid| self.channels[cid].clone()).collect();
+                        def.func.run(ch)
+                    });
+                    let r = ready!(fut.poll(cx));
+                    debug!("{stateno:6} Process {id:?} - end {r:?}");
+                    drop(self.processes[id].take());
+                    match r {
+                        Ok(()) => next,
+                        Err(()) => err,
                     }
                 }
                 Derivatives::Assign { var, ref val, next } => {

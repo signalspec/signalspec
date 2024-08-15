@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use indexmap::indexset;
 
-use super::{step::StepBuilder, ChannelId, ExprDn, Predicate, Step, StepId, ValueSrcId};
+use super::{step::{ProcId, StepBuilder}, ChannelId, ExprDn, Predicate, Step, StepId, ValueSrcId};
 
 #[derive(Debug)]
 pub(crate) enum Derivatives {
@@ -19,6 +19,12 @@ pub(crate) enum Derivatives {
         chan: ChannelId,
         arms: Vec<ReceiveArm>,
         other: StepId,
+    },
+
+    Process {
+        id: ProcId,
+        next: StepId,
+        err: StepId,
     },
 
     Assign {
@@ -53,6 +59,7 @@ impl Derivatives {
     fn follow(&self, mut f: impl FnMut(StepId)) {
         match *self {
             Derivatives::End => {},
+            Derivatives::Process { next, err, ..} => { f(next); f(err) },
             Derivatives::Send { next, .. } => f(next),
             Derivatives::Assign { next , .. } => f(next),
             Derivatives::Receive { ref arms, other, .. } => {
@@ -73,6 +80,7 @@ impl Derivatives {
     fn follow_mut(&mut self, mut f: impl FnMut(&mut StepId)) {
         match self {
             Derivatives::End => {},
+            Derivatives::Process { next, err, ..} => { f(next); f(err) },
             Derivatives::Send { next, .. } => f(next),
             Derivatives::Assign { next , .. } => f(next),
             Derivatives::Receive { arms, other, .. } => {
@@ -105,7 +113,7 @@ impl StepBuilder {
             Step::Stack { lo, hi, .. } => self.nullable(lo) && self.nullable(hi),
             Step::Send { .. } => false,
             Step::Receive { .. } => false,
-            Step::Primitive(_, _) => false,
+            Step::Process(_) => false,
             Step::Seq(a, b) => self.nullable(a) && self.nullable(b),
             Step::Assign(_, _) => false,
             Step::Guard(_, _) => false,
@@ -188,8 +196,8 @@ impl StepBuilder {
                 let arms = vec![ReceiveArm { variant, predicates: msg.clone(), var, next: StepBuilder::ACCEPT }];
                 Derivatives::Receive { chan, arms, other: StepBuilder::FAIL }
             }
-            Step::Primitive(_, _) => {
-                todo!()
+            Step::Process(id) => {
+                Derivatives::Process { id, next: StepBuilder::ACCEPT, err: StepBuilder::FAIL }
             }
             Step::Seq(a, b) => {
                 let da = self.derivative(a);

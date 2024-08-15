@@ -4,7 +4,7 @@ use itertools::EitherOrBoth;
 use num_traits::Signed;
 
 use crate::{core::{
-    constant, derivs::Derivatives, expr::ExprKind, index::FindDefError, lexpr, protocol, resolve::expr::{lvalue_dn, lvalue_up, LValueSrc}, rexpr, rexpr_tup, step::{ConnectionId, Step, StepBuilder}, value, ConcatElem, Dir, Expr, ExprDn, Item, LeafItem, Predicate, Scope, Shape, ShapeMsg, StepId, Type, ValueSrc, ValueSrcId
+    constant, derivs::Derivatives, expr::ExprKind, index::FindDefError, lexpr, protocol, resolve::expr::{lvalue_dn, lvalue_up, LValueSrc}, rexpr, rexpr_tup, step::{ConnectionId, Step, StepBuilder, SubProc}, value, ConcatElem, Dir, Expr, ExprDn, Item, LeafItem, Predicate, ProcId, Scope, Shape, ShapeMsg, StepId, Type, ValueSrc, ValueSrcId
 }, diagnostic::{DiagnosticContext, Diagnostics}, Value};
 use crate::diagnostic::{ErrorReported, Span};
 use crate::entitymap::{entity_key, EntityMap};
@@ -930,7 +930,7 @@ impl<'a> Builder<'a> {
                     sb.up.and_then(|u| u.shape.mode.has_dn_channel().then_some(u.conn.dn())),
                 ].into_iter().flatten().collect();
 
-                (self.steps.steps.push(Step::Primitive(prim, channels)), None)
+                (self.steps.add_process(prim, channels), None)
             }
 
             ast::Process::New(node) => {
@@ -1067,6 +1067,7 @@ pub struct ProcessChain {
     pub conn_dn: ConnectionId,
     pub up: Option<(Shape, ConnectionId)>,
     pub connections: EntityMap<ConnectionId, Shape>,
+    pub processes: EntityMap<ProcId, SubProc>,
 }
 
 pub fn compile_process(index: &Index, scope: &Scope, shape_dn: Shape, ast: &ast::Process) -> Result<ProcessChain, Diagnostics> {
@@ -1101,5 +1102,6 @@ pub fn compile_process(index: &Index, scope: &Scope, shape_dn: Shape, ast: &ast:
         shape_dn,
         up,
         connections: builder.steps.connections,
+        processes: builder.steps.processes,
     })
 }
