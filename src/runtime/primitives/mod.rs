@@ -18,8 +18,10 @@ pub(crate) fn instantiate_primitive(
     shape_up: Option<&Shape>
 ) -> Result<Arc<dyn PrimitiveProcess>, String> {
     let instantiate_fn = match name.name.as_str() {
-        "const_seq_dn" => seq::SeqDownProcess::instantiate,
-        "const_seq_up" => seq::SeqUpProcess::instantiate,
+        "const_seq_rx_dn" => seq::SeqRxProcess::dn,
+        "const_seq_rx_up" => seq::SeqRxProcess::up,
+        "const_seq_tx_dn" => seq::SeqTxProcess::dn,
+        "const_seq_tx_up" => seq::SeqTxProcess::up,
 
         "file_read" => file_io::ReaderProcess::instantiate,
         "file_write" => file_io::WriterProcess::instantiate,
