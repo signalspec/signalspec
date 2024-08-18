@@ -11,3 +11,25 @@ with Seq(_:#x|#y|#z, dir) def tx2() = {
 @test(#up, (#x, #y, #z))
 with Seq(_:#x|#y|#z, dir) def rx() = { primitive const_seq_rx_dn(_:#x|#y|#z, (#x, #y, #z)) }
 
+
+@test(#dn, (#x, #y, #z))
+with Seq(_:#x|#y|#z, dir) def dn_chain()
+    = new Seq(_:#x|#y|#z, #dn) { primitive seq_pass() }
+    | primitive const_seq_tx_dn(_:#x|#y|#z, (#x, #y, #z))
+
+@test(#up, (#x, #y, #z))
+with Seq(_:#x|#y|#z, dir) def up_chain()
+    = new Seq(_:#x|#y|#z, #up) { primitive seq_pass() }
+    | primitive const_seq_rx_dn(_:#x|#y|#z, (#x, #y, #z))
+
+@test(#dn, (#x, #y, #z))
+with Seq(_:#x|#y|#z, #dn) def dn_chain2()
+    = new Seq(_:#x|#y|#z, #dn) { primitive seq_pass() }
+    | new Seq(_:#x|#y|#z, #dn) { primitive seq_pass() }
+    | primitive const_seq_tx_dn(_:#x|#y|#z, (#x, #y, #z))
+
+@test(#up, (#x, #y, #z))
+with Seq(_:#x|#y|#z, #up) def up_chain2()
+    = new Seq(_:#x|#y|#z, #up) { primitive seq_pass() }
+    | new Seq(_:#x|#y|#z, #up) { primitive seq_pass() }
+    | primitive const_seq_rx_dn(_:#x|#y|#z, (#x, #y, #z))

@@ -72,6 +72,16 @@ impl ShapeMode {
             ShapeMode::Async => true,
         }
     }
+
+    pub fn control_dir(self) -> Option<Dir> {
+        match self {
+            ShapeMode::Null => None,
+            ShapeMode::Dn => Some(Dir::Dn),
+            ShapeMode::Up => Some(Dir::Up),
+            ShapeMode::Sync => Some(Dir::Dn),
+            ShapeMode::Async => Some(Dir::Dn),
+        }
+    }
 }
 
 impl TryFrom<Value> for ShapeMode {

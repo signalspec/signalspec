@@ -54,6 +54,16 @@ impl Channel {
         }
     }
 
+    pub fn send_end(&self) -> bool {
+        let mut i = self.inner.borrow_mut();
+        if i.value.back().map(|m| m.variant) == Some(0) { return false; }
+        i.value.push_back(ChannelMessage { variant: 0, values: Vec::new() });
+        if let Some(waker) = i.read_waker.take() {
+            waker.wake();
+        }
+        true
+    }
+
     pub fn read_bytes(&mut self) -> ReadBytes { ReadBytes(self) }
     pub fn write_bytes(&mut self) -> WriteBytes { WriteBytes(self) }
 

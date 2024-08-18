@@ -1,7 +1,7 @@
 use std::future::Future;
 use std::sync::Arc;
 
-use crate::{ Item, Shape };
+use crate::{ Dir, Item, Shape };
 use crate::runtime::channel::Channel;
 use crate::runtime::{ChannelMessage, PrimitiveProcess};
 use super::super::channel::item_to_msgs;
@@ -93,5 +93,39 @@ impl PrimitiveProcess for SeqRxProcess {
             }
         })
     }
+}
 
+
+#[derive(Debug)]
+pub(crate) struct SeqPassProcess(Dir);
+
+impl SeqPassProcess {
+    pub fn new(args: Item, shape_dn: &Shape, _shape_up: Option<&Shape>) -> Result<Arc<dyn PrimitiveProcess>, String> {
+        if shape_dn.tag_offset != 1 {
+            return Err("can only be used on root shapes".into());
+        }
+
+        let Some(dir) = shape_dn.mode.control_dir() else {
+            return Err("invalid mode for Seq".into());
+        };
+
+        Ok(Arc::new(SeqPassProcess(dir)))
+    }
+}
+
+impl PrimitiveProcess for SeqPassProcess {
+    fn run(&self, chan: Vec<Channel>) -> std::pin::Pin<Box<dyn Future<Output = Result<(), ()>>>> {
+        let [chan0, chan1] = <[Channel; 2]>::try_from(chan).map_err(|_|()).unwrap();
+        let (rx_chan, tx_chan) = match self.0 {
+            Dir::Up => (chan0, chan1),
+            Dir::Dn => (chan1, chan0),
+        };
+
+        Box::pin(async move {
+            while let Some(msg) = rx_chan.receive().await.pop_if(1) {
+                tx_chan.send(msg)
+            }
+            Ok(())
+        })
+    }
 }

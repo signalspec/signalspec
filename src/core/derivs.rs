@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use indexmap::indexset;
 
-use super::{step::{ProcId, StepBuilder}, ChannelId, ExprDn, Predicate, Step, StepId, ValueSrcId};
+use super::{step::{ProcId, StepBuilder}, ChannelId, Dir, ExprDn, Predicate, Step, StepId, ValueSrcId};
 
 #[derive(Debug)]
 pub(crate) enum Derivatives {
@@ -13,6 +13,10 @@ pub(crate) enum Derivatives {
         variant: usize,
         dn: Vec<ExprDn>,
         next: StepId,
+    },
+
+    SendEnd {
+        chan: ChannelId,
     },
 
     Receive {
@@ -38,6 +42,10 @@ pub(crate) enum Derivatives {
         arms: Vec<SwitchArm>,
         other: StepId,
     },
+
+    Select {
+        branches: Vec<Derivatives>,
+    },
 }
 
 #[derive(Debug)]
@@ -56,9 +64,9 @@ pub(crate) struct SwitchArm {
 }
 
 impl Derivatives {
-    fn follow(&self, mut f: impl FnMut(StepId)) {
+    fn follow(&self, f: &mut impl FnMut(StepId)) {
         match *self {
-            Derivatives::End => {},
+            Derivatives::End | Derivatives::SendEnd { .. } => {},
             Derivatives::Process { next, err, ..} => { f(next); f(err) },
             Derivatives::Send { next, .. } => f(next),
             Derivatives::Assign { next , .. } => f(next),
@@ -74,12 +82,17 @@ impl Derivatives {
                 }
                 f(other)
             },
+            Derivatives::Select { ref branches } => {
+                for b in branches {
+                    b.follow(f)
+                }
+            },
         }
     }
 
-    fn follow_mut(&mut self, mut f: impl FnMut(&mut StepId)) {
+    fn follow_mut(&mut self, f: &mut impl FnMut(&mut StepId)) {
         match self {
-            Derivatives::End => {},
+            Derivatives::End | Derivatives::SendEnd { .. } => {},
             Derivatives::Process { next, err, ..} => { f(next); f(err) },
             Derivatives::Send { next, .. } => f(next),
             Derivatives::Assign { next , .. } => f(next),
@@ -95,11 +108,16 @@ impl Derivatives {
                 }
                 f(other)
             },
+            Derivatives::Select { branches } => {
+                for b in branches {
+                    b.follow_mut(f)
+                }
+            },
         }
     }
 
     fn map_follow(mut self, mut f: impl FnMut(StepId) -> StepId) -> Derivatives {
-        self.follow_mut(|m| *m = f(*m));
+        self.follow_mut(&mut |m| *m = f(*m));
         self
     }
 }
@@ -121,12 +139,13 @@ impl StepBuilder {
             Step::Alt(ref arms) => arms.iter().any(|&s| self.nullable(s)),
         }
     }
-    
+
     fn derivative(&mut self, step: StepId) -> Derivatives {
         match self.steps[step] {
             Step::Fail | Step::Accept => Derivatives::End,
             Step::Pass => todo!(),
             Step::Stack { lo, conn, hi } => {
+                let control_dir = self.connections[conn].mode.control_dir();
                 let dlo = self.derivative(lo);
                 let dhi = self.derivative(hi);
 
@@ -179,6 +198,33 @@ impl StepBuilder {
                             Derivatives::Switch { src: dn, arms, other }
                         }
                     },
+
+                    (dlo @ (Derivatives::Process { .. } | Derivatives::Select { .. }), Derivatives::End) => {
+                        if control_dir == Some(Dir::Dn) {
+                            let a = dlo.map_follow(|nlo| self.stack(nlo, conn, hi));
+                            let b = Derivatives::SendEnd { chan: conn.dn() };
+                            self.select(a, b)
+                        } else {
+                            Derivatives::End
+                        }
+                    }
+
+                    (Derivatives::End, dhi @ (Derivatives::Process { .. } | Derivatives::Select { .. })) => {
+                        if control_dir == Some(Dir::Up)  {
+                            let a = Derivatives::SendEnd { chan: conn.up() };
+                            let b = dhi.map_follow(|nhi| self.stack(lo, conn, nhi));
+                            self.select(a, b)
+                        } else {
+                            Derivatives::End
+                        }
+                    }
+
+                    (dlo @ (Derivatives::Process { .. } | Derivatives::Select { .. }), dhi) |
+                    (dlo, dhi @ (Derivatives::Process { .. } | Derivatives::Select { .. })) => {
+                        let a = dlo.map_follow(|nlo| self.stack(nlo, conn, hi));
+                        let b = dhi.map_follow(|nhi| self.stack(lo, conn, nhi));
+                        self.select(a, b)
+                    }
 
                     // lo is blocked, advance hi
                     (Derivatives::Send { chan, .. }, dhi) if chan == conn.up() => dhi.map_follow(|hi| self.stack(lo, conn, hi)),
@@ -288,6 +334,37 @@ impl StepBuilder {
         }
     }
 
+    fn select(&mut self, a: Derivatives, b: Derivatives) -> Derivatives {
+        match (a, b) {
+            (Derivatives::End, x) | (x, Derivatives::End) => x,
+
+            // Assign and Switch complete immediately, so they can be chosen
+            // arbitrarily and the alternatives ignored.
+            (i @ (Derivatives::Assign {..} | Derivatives::Switch {..}), _) |
+            (_, i @ (Derivatives::Assign {..} | Derivatives::Switch {..})) => i,
+
+            // Merge Selects
+            (
+                Derivatives::Select { branches: mut b1 },
+                Derivatives::Select { branches: b2 }
+            ) => {
+                b1.extend(b2.into_iter());
+                Derivatives::Select { branches: b1 }
+            }
+
+            // If one side is already a Select, flatten into it
+            (Derivatives::Select { mut branches }, other) |
+            (other, Derivatives::Select { mut branches }) => {
+                branches.push(other);
+                Derivatives::Select { branches }
+            }
+
+            (a, b) => {
+                Derivatives::Select { branches: vec![a, b] }
+            }
+        }
+    }
+
     pub(crate) fn fsm(&mut self, start: StepId) -> (BTreeMap<StepId, Derivatives>, BTreeSet<StepId>) {
         let mut queue = indexset![start];
         let mut known = BTreeMap::new();
@@ -299,7 +376,7 @@ impl StepBuilder {
 
             log::info!("Derivatives of {s:?}: {d:?}");
 
-            d.follow(|f| {
+            d.follow(&mut |f| {
                 if f != s && !known.contains_key(&f) {
                     queue.insert(f);
                 }

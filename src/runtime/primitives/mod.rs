@@ -22,6 +22,7 @@ pub(crate) fn instantiate_primitive(
         "const_seq_rx_up" => seq::SeqRxProcess::up,
         "const_seq_tx_dn" => seq::SeqTxProcess::dn,
         "const_seq_tx_up" => seq::SeqTxProcess::up,
+        "seq_pass" => seq::SeqPassProcess::new,
 
         "file_read" => file_io::ReaderProcess::instantiate,
         "file_write" => file_io::WriterProcess::instantiate,
