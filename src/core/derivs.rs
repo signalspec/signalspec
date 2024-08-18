@@ -188,16 +188,16 @@ impl StepBuilder {
                     (dlo, _) => dlo.map_follow(|lo| self.stack(lo, conn, hi))
                 }
             }
-            
+
             Step::Send { chan, variant, ref msg } => {
-                Derivatives::Send { chan, variant, dn: msg.clone(), next: StepBuilder::ACCEPT }
+                Derivatives::Send { chan, variant, dn: msg.clone(), next: StepId::ACCEPT }
             }
             Step::Receive { chan, variant, var, ref msg } => {
-                let arms = vec![ReceiveArm { variant, predicates: msg.clone(), var, next: StepBuilder::ACCEPT }];
-                Derivatives::Receive { chan, arms, other: StepBuilder::FAIL }
+                let arms = vec![ReceiveArm { variant, predicates: msg.clone(), var, next: StepId::ACCEPT }];
+                Derivatives::Receive { chan, arms, other: StepId::FAIL }
             }
             Step::Process(id) => {
-                Derivatives::Process { id, next: StepBuilder::ACCEPT, err: StepBuilder::FAIL }
+                Derivatives::Process { id, next: StepId::ACCEPT, err: StepId::FAIL }
             }
             Step::Seq(a, b) => {
                 let da = self.derivative(a);
@@ -209,11 +209,11 @@ impl StepBuilder {
                 }
             }
             Step::Assign(var, ref val) => {
-                Derivatives::Assign { var, val: val.clone(), next: StepBuilder::ACCEPT }
+                Derivatives::Assign { var, val: val.clone(), next: StepId::ACCEPT }
             }
             Step::Guard(ref val, ref predicate) => {
-                let arms = vec![SwitchArm { predicates: vec![predicate.clone()], var: None, next: StepBuilder::ACCEPT }];
-                Derivatives::Switch { src: vec![val.clone()], arms, other: StepBuilder::FAIL }
+                let arms = vec![SwitchArm { predicates: vec![predicate.clone()], var: None, next: StepId::ACCEPT }];
+                Derivatives::Switch { src: vec![val.clone()], arms, other: StepId::FAIL }
             }
             Step::Repeat(inner, _) => {
                 let d = self.derivative(inner);
@@ -270,7 +270,7 @@ impl StepBuilder {
                 arms1.extend(arms2.into_iter());
                 Derivatives::Receive { chan: chan1, arms: arms1, other: self.alt(vec![other1, other2]) }
             }
-            
+
             // TODO: disallow for symmetric alt?
             (Derivatives::Receive { chan, arms, other }, _) => {
                 Derivatives::Receive { chan, arms, other: self.alt(vec![other, b]) }

@@ -9,6 +9,12 @@ use crate::Dir;
 use super::{ExprDn, Shape, Predicate, ValueSrcId};
 
 entity_key!(pub StepId);
+
+impl StepId {
+    pub(crate) const FAIL: StepId = StepId(0);
+    pub(crate) const ACCEPT: StepId = StepId(1);
+}
+
 entity_key!(pub ConnectionId);
 entity_key!(pub ProcId);
 
@@ -98,13 +104,10 @@ fn add_step(steps: &mut EntityMap<StepId, Step>, s: Step) -> StepId {
 }
 
 impl StepBuilder {
-    pub(crate) const FAIL: StepId = StepId(0);
-    pub(crate) const ACCEPT: StepId = StepId(1);
-
     pub(crate) fn new() -> Self {
         let mut steps = EntityMap::new();
-        assert_eq!(steps.push(Step::Fail), Self::FAIL);
-        assert_eq!(steps.push(Step::Accept), Self::ACCEPT);
+        assert_eq!(steps.push(Step::Fail), StepId::FAIL);
+        assert_eq!(steps.push(Step::Accept), StepId::ACCEPT);
 
         let connections = EntityMap::new();
         Self { steps,
@@ -118,18 +121,18 @@ impl StepBuilder {
     }
     
     pub(crate) fn invalid(&self, _r: ErrorReported) -> StepId {
-        Self::FAIL
+        StepId::FAIL
     }
     
     pub(crate) fn accepting(&self) -> StepId {
-        Self::ACCEPT
+        StepId::ACCEPT
     }
     
     pub(crate) fn seq(&mut self, first: StepId, second: StepId) -> StepId {
         match (first, second) {
-            (Self::ACCEPT, _) => return second,
-            (_, Self::ACCEPT) => return first,
-            (Self::FAIL, _) => return Self::FAIL,
+            (StepId::ACCEPT, _) => return second,
+            (_, StepId::ACCEPT) => return first,
+            (StepId::FAIL, _) => return StepId::FAIL,
             _ => {}
         }
 
@@ -186,7 +189,7 @@ impl StepBuilder {
         new_arms.dedup();
 
         if new_arms.len() == 0 {
-            StepBuilder::FAIL
+            StepId::FAIL
         } else if new_arms.len() == 1 {
             new_arms[0]
         } else {
@@ -208,7 +211,8 @@ impl StepBuilder {
     
     pub(crate) fn stack(&mut self, lo: StepId, conn: ConnectionId, hi: StepId) -> StepId {
         match (&self.steps[lo], &self.steps[hi]) {
-            (Step::Fail, _) | (_, Step::Fail) => Self::FAIL,
+            (Step::Fail, _) | (_, Step::Fail) => StepId::FAIL,
+            (Step::Accept, Step::Accept) => StepId::ACCEPT,
             (Step::Pass, _) => hi,
             (_, Step::Pass) => lo,
             (Step::Seq(a, b), _) if matches!(self.steps[*a], Step::Pass) => {

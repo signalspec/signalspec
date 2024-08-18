@@ -952,7 +952,7 @@ impl<'a> Builder<'a> {
                 let (lo, up) = self.resolve_process(sb, &node.lower);
 
                 let Some((shape, conn)) = up else {
-                    if lo == StepBuilder::FAIL {
+                    if lo == StepId::FAIL {
                         return (lo, None);
                     } else {
                         let step = self.err_step(Diagnostic::StackWithoutBaseSignal {
