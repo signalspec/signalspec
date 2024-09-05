@@ -96,7 +96,7 @@ impl<'a> Handle<'a> {
 
     pub fn finish(mut self) -> Result<(), ()> {
         if let Some(ref ch) = self.channels.dn {
-           ch.send(ChannelMessage { variant: 0, values: vec![] });
+           ch.end(true);
         }
 
         futures_lite::future::block_on(poll_fn(|cx| { self.poll(cx) }))

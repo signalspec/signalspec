@@ -15,10 +15,6 @@ pub(crate) enum Derivatives {
         next: StepId,
     },
 
-    SendEnd {
-        chan: ChannelId,
-    },
-
     Receive {
         chan: ChannelId,
         arms: Vec<ReceiveArm>,
@@ -45,6 +41,7 @@ pub(crate) enum Derivatives {
 
     Select {
         branches: Vec<Derivatives>,
+        end: Vec<ChannelId>,
     },
 }
 
@@ -66,7 +63,7 @@ pub(crate) struct SwitchArm {
 impl Derivatives {
     fn follow(&self, f: &mut impl FnMut(StepId)) {
         match *self {
-            Derivatives::End | Derivatives::SendEnd { .. } => {},
+            Derivatives::End => {},
             Derivatives::Process { next, err, ..} => { f(next); f(err) },
             Derivatives::Send { next, .. } => f(next),
             Derivatives::Assign { next , .. } => f(next),
@@ -82,7 +79,7 @@ impl Derivatives {
                 }
                 f(other)
             },
-            Derivatives::Select { ref branches } => {
+            Derivatives::Select { ref branches, .. } => {
                 for b in branches {
                     b.follow(f)
                 }
@@ -92,7 +89,7 @@ impl Derivatives {
 
     fn follow_mut(&mut self, f: &mut impl FnMut(&mut StepId)) {
         match self {
-            Derivatives::End | Derivatives::SendEnd { .. } => {},
+            Derivatives::End => {},
             Derivatives::Process { next, err, ..} => { f(next); f(err) },
             Derivatives::Send { next, .. } => f(next),
             Derivatives::Assign { next , .. } => f(next),
@@ -108,7 +105,7 @@ impl Derivatives {
                 }
                 f(other)
             },
-            Derivatives::Select { branches } => {
+            Derivatives::Select { branches, .. } => {
                 for b in branches {
                     b.follow_mut(f)
                 }
@@ -202,8 +199,7 @@ impl StepBuilder {
                     (dlo @ (Derivatives::Process { .. } | Derivatives::Select { .. }), Derivatives::End) => {
                         if control_dir == Some(Dir::Dn) {
                             let a = dlo.map_follow(|nlo| self.stack(nlo, conn, hi));
-                            let b = Derivatives::SendEnd { chan: conn.dn() };
-                            self.select(a, b)
+                            self.select_end(a, conn.dn())
                         } else {
                             Derivatives::End
                         }
@@ -211,9 +207,8 @@ impl StepBuilder {
 
                     (Derivatives::End, dhi @ (Derivatives::Process { .. } | Derivatives::Select { .. })) => {
                         if control_dir == Some(Dir::Up)  {
-                            let a = Derivatives::SendEnd { chan: conn.up() };
                             let b = dhi.map_follow(|nhi| self.stack(lo, conn, nhi));
-                            self.select(a, b)
+                            self.select_end(b, conn.up())
                         } else {
                             Derivatives::End
                         }
@@ -345,23 +340,33 @@ impl StepBuilder {
 
             // Merge Selects
             (
-                Derivatives::Select { branches: mut b1 },
-                Derivatives::Select { branches: b2 }
+                Derivatives::Select { branches: mut b1, end: mut e1 },
+                Derivatives::Select { branches: b2, end: e2 }
             ) => {
                 b1.extend(b2.into_iter());
-                Derivatives::Select { branches: b1 }
+                e1.extend(e2.into_iter());
+                Derivatives::Select { branches: b1, end: e1 }
             }
 
             // If one side is already a Select, flatten into it
-            (Derivatives::Select { mut branches }, other) |
-            (other, Derivatives::Select { mut branches }) => {
+            (Derivatives::Select { mut branches, end }, other) |
+            (other, Derivatives::Select { mut branches, end }) => {
                 branches.push(other);
-                Derivatives::Select { branches }
+                Derivatives::Select { branches, end }
             }
 
             (a, b) => {
-                Derivatives::Select { branches: vec![a, b] }
+                Derivatives::Select { branches: vec![a, b], end: vec![] }
             }
+        }
+    }
+
+    pub(crate) fn select_end(&self, inner: Derivatives, chan: ChannelId) -> super::Derivatives {
+        if let Derivatives::Select { branches, mut end } = inner {
+            end.push(chan);
+            Derivatives::Select { branches, end }
+        } else {
+            Derivatives::Select { branches: vec![inner], end: vec![chan] }
         }
     }
 

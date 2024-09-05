@@ -11,6 +11,7 @@ pub struct ChannelMessage {
 
 struct ChannelInner {
     value: VecDeque<ChannelMessage>,
+    end: bool,
     read_waker: Option<Waker>,
 }
 
@@ -28,13 +29,14 @@ impl Channel {
         let inner = Rc::new(RefCell::new(ChannelInner {
             value: VecDeque::new(),
             read_waker: None,
+            end: false,
         }));
         Channel { inner }
     }
 
     pub fn poll_receive(&self, cx: &mut Context) -> Poll<ChannelReadRef> {
         let mut inner = self.inner.borrow_mut();
-        if inner.value.is_empty() {
+        if inner.value.is_empty() && !inner.end {
             inner.read_waker = Some(cx.waker().clone());
             Poll::Pending
         } else {
@@ -48,20 +50,16 @@ impl Channel {
 
     pub fn send(&self, m: ChannelMessage) {
         let mut i = self.inner.borrow_mut();
+        debug_assert!(!i.end);
         i.value.push_back(m);
         if let Some(waker) = i.read_waker.take() {
             waker.wake();
         }
     }
 
-    pub fn send_end(&self) -> bool {
+    pub fn end(&self, end: bool) {
         let mut i = self.inner.borrow_mut();
-        if i.value.back().map(|m| m.variant) == Some(0) { return false; }
-        i.value.push_back(ChannelMessage { variant: 0, values: Vec::new() });
-        if let Some(waker) = i.read_waker.take() {
-            waker.wake();
-        }
-        true
+        i.end = end;
     }
 
     pub fn read_bytes(&mut self) -> ReadBytes { ReadBytes(self) }
@@ -74,7 +72,11 @@ impl Channel {
 
 impl<'a> ChannelReadRef<'a> {
     pub fn peek(&self) -> &ChannelMessage {
-        self.inner.value.front().unwrap()
+        if self.inner.end && self.inner.value.is_empty() {
+            const { &ChannelMessage { variant: 0, values: Vec::new() } }
+        } else {
+            self.inner.value.front().unwrap()
+        }
     }
 
     pub fn pop(mut self) -> ChannelMessage {

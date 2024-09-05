@@ -90,12 +90,6 @@ fn poll_once(
             channels[chan].send(ChannelMessage { variant, values });
             next
         }
-        Derivatives::SendEnd { chan } => {
-            if channels[chan].send_end() {
-                debug!("{stateno:6} Send {chan:?} - end");
-            }
-            return Poll::Pending;
-        }
         Derivatives::Receive { chan, ref arms, other } => {
             let rx = ready!(channels[chan].poll_receive(cx));
             let msg = rx.peek();
@@ -160,10 +154,18 @@ fn poll_once(
 
             arm.map_or(other, |arm| arm.next)
         }
-        Derivatives::Select { ref branches } => {
+        Derivatives::Select { ref branches, ref end } => {
+            for ch in end {
+                channels[*ch].end(true);
+            }
             for b in branches {
                 match poll_once(cx, state, b, program, registers, channels, processes) {
-                    Poll::Ready(next) => return Poll::Ready(next),
+                    Poll::Ready(next) => {
+                        for ch in end {
+                            channels[*ch].end(false);
+                        }
+                        return Poll::Ready(next);
+                    }
                     Poll::Pending => continue,
                 }
             }

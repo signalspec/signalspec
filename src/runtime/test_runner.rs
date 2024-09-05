@@ -181,7 +181,7 @@ fn run_test(show_diagnostics: &dyn Fn(Diagnostics), index: &Index, file: &FileSc
             return TestState::CompileError;
         };
         for m in messages { channel.send(m); }
-        channel.send(ChannelMessage { variant: 0, values: vec![] });
+        channel.end(true);
         let h = match handle.compile_run( index, &scope, &def.process) {
             Ok(h) => h,
             Err(d) => {
