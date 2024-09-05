@@ -100,7 +100,7 @@ impl PrimitiveProcess for SeqRxProcess {
 pub(crate) struct SeqPassProcess(Dir);
 
 impl SeqPassProcess {
-    pub fn new(args: Item, shape_dn: &Shape, _shape_up: Option<&Shape>) -> Result<Arc<dyn PrimitiveProcess>, String> {
+    pub fn new(_args: Item, shape_dn: &Shape, _shape_up: Option<&Shape>) -> Result<Arc<dyn PrimitiveProcess>, String> {
         if shape_dn.tag_offset != 1 {
             return Err("can only be used on root shapes".into());
         }

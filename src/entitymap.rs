@@ -66,10 +66,6 @@ impl <K:EntityKey, V> EntityMap<K, V> {
         self.v.len()
     }
 
-    pub(crate) fn next_key(&self) -> K {
-        K::new(self.len())
-    }
-
     pub fn push(&mut self, v: V) -> K {
         let k = K::new(self.v.len());
         self.v.push(v);

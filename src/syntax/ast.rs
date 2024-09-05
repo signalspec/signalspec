@@ -17,7 +17,7 @@ impl<T> AstWalk for Vec<T> where T:AstWalk {
 
 impl<T> AstWalk for Option<T> where T:AstWalk {
     fn walk<'a>(&'a self, res: &mut Vec<&'a dyn AstNode>) {
-        for i in self {
+        if let Some(i) = self {
             i.walk(res);
         }
     }

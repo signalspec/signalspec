@@ -4,7 +4,7 @@ use itertools::EitherOrBoth;
 use num_traits::Signed;
 
 use crate::{core::{
-    constant, derivs::Derivatives, expr::ExprKind, index::FindDefError, lexpr, protocol, resolve::expr::{lvalue_dn, lvalue_up, LValueSrc}, rexpr, rexpr_tup, step::{ConnectionId, Step, StepBuilder, SubProc}, value, ConcatElem, Dir, Expr, ExprDn, Item, LeafItem, Predicate, ProcId, Scope, Shape, ShapeMsg, StepId, Type, ValueSrc, ValueSrcId
+    constant, derivs::Derivatives, expr::ExprKind, index::FindDefError, lexpr, protocol, resolve::expr::{lvalue_dn, lvalue_up, LValueSrc}, rexpr, rexpr_tup, step::{ConnectionId, StepBuilder, SubProc}, value, ConcatElem, Dir, Expr, ExprDn, Item, LeafItem, Predicate, ProcId, Scope, Shape, ShapeMsg, StepId, Type, ValueSrc, ValueSrcId
 }, diagnostic::{DiagnosticContext, Diagnostics}, Value};
 use crate::diagnostic::{ErrorReported, Span};
 use crate::entitymap::{entity_key, EntityMap};
@@ -1058,12 +1058,10 @@ pub fn resolve_letdef(dcx: &mut DiagnosticContext, scope: &mut Scope, ld: &ast::
 }
 
 pub struct ProcessChain {
-    pub steps: EntityMap<StepId, Step>,
     pub root: StepId,
     pub fsm: BTreeMap<StepId, Derivatives>,
     pub accepting: BTreeSet<StepId>,
     pub vars: EntityMap<ValueSrcId, ()>,
-    pub shape_dn: Shape,
     pub conn_dn: ConnectionId,
     pub up: Option<(Shape, ConnectionId)>,
     pub connections: EntityMap<ConnectionId, Shape>,
@@ -1093,13 +1091,11 @@ pub fn compile_process(index: &Index, scope: &Scope, shape_dn: Shape, ast: &ast:
     }
 
     Ok(ProcessChain {
-        steps: builder.steps.steps,
         vars: builder.value_src,
         root: step,
         fsm,
         accepting,
         conn_dn,
-        shape_dn,
         up,
         connections: builder.steps.connections,
         processes: builder.steps.processes,
