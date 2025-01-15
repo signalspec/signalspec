@@ -381,7 +381,7 @@ fn resolve_expr_concat(dcx: &mut DiagnosticContext, scope: &Scope, node: &ast::E
             Ok(())
         }
     });
-    try_item!(collect_or_err(it));
+    try_item!(collect_or_err::<(), ()>(it));
 
     match elems {
         ConcatBuilder::Const(v) => Expr::Const(Value::Vector(v)),
