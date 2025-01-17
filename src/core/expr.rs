@@ -1,4 +1,4 @@
-use std::{fmt, collections::{HashSet, HashMap}, sync::Arc};
+use std::{collections::{BTreeSet, HashMap}, fmt, sync::Arc};
 use num_complex::Complex;
 use num_traits::cast::ToPrimitive;
 use crate::{syntax::{BinOp, Number }, core::{PrimitiveFn, FunctionDef}, Value};
@@ -265,7 +265,7 @@ impl ExprKind {
             ExprKind::Const(ref v) => Predicate::from_value(v),
             ExprKind::Range(lo, hi) => Some(Predicate::Range(lo, hi)),
             ExprKind::Union(ref u) => {
-                let mut set = HashSet::new();
+                let mut set = BTreeSet::new();
                 for e in u {
                     match e.predicate()? {
                         Predicate::SymbolSet(s) => set.extend(s),
@@ -295,7 +295,7 @@ impl ExprKind {
 }
 
 /// An expression representing a runtime computation
-#[derive(PartialEq, Debug, Clone)]
+#[derive(PartialEq, Eq, Hash, Debug, Clone)]
 pub enum ExprDn {
     Const(Value),
     Variable(ValueSrc),

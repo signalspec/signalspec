@@ -1,9 +1,10 @@
 
-use std::collections::HashSet;
+use std::collections::BTreeSet;
+
 use crate::{syntax::Number, Value};
 use super::ConcatElem;
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum Predicate {
     /// Always matches
     Any,
@@ -16,7 +17,7 @@ pub enum Predicate {
     Number(Number),
 
     /// Symbol: in set
-    SymbolSet(HashSet<String>),
+    SymbolSet(BTreeSet<String>),
 
     /// Vector: test each slice / element
     Vector(Vec<ConcatElem<Predicate>>),

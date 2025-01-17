@@ -1,4 +1,5 @@
-use std::{marker::PhantomData, ops::Range};
+use std::{marker::PhantomData, ops::Range, hash::Hash};
+use indexmap::IndexSet;
 
 pub trait EntityKey: Copy + Eq {
     fn new(id: usize) -> Self;
@@ -54,12 +55,12 @@ pub struct EntityMap<K, V> {
 }
 
 impl <K:EntityKey, V> EntityMap<K, V> {
-    pub fn new() -> Self { 
-        Self { k: PhantomData, v:Vec::new() }
+    pub fn new() -> Self {
+        Self { k: PhantomData, v: Vec::new() }
     }
 
-    pub fn with_capacity(cap: usize) -> Self { 
-        Self { k: PhantomData, v:Vec::with_capacity(cap) }
+    pub fn with_capacity(cap: usize) -> Self {
+        Self { k: PhantomData, v: Vec::with_capacity(cap) }
     }
 
     pub fn len(&self) -> usize {
@@ -143,3 +144,38 @@ impl <K, V> From<EntityMap<K, V>> for Vec<V> {
     }
 }
 
+#[derive(Clone)]
+pub struct EntityIntern<K, V> {
+    k: PhantomData<K>,
+    v: IndexSet<V>,
+}
+
+impl <K:EntityKey, V: Hash + Eq> EntityIntern<K, V> {
+    pub fn new() -> Self {
+        Self { k: PhantomData, v: IndexSet::new() }
+    }
+
+    pub fn with_capacity(cap: usize) -> Self {
+        Self { k: PhantomData, v: IndexSet::with_capacity(cap) }
+    }
+
+    pub fn len(&self) -> usize {
+        self.v.len()
+    }
+
+    pub fn insert(&mut self, v: V) -> K {
+        K::new(self.v.insert_full(v).0)
+    }
+
+    pub fn keys(&self) -> Keys<K> {
+        (0..self.len()).map(K::new)
+    }
+}
+
+impl <K: EntityKey, V> std::ops::Index<K> for EntityIntern<K, V> {
+    type Output = V;
+
+    fn index(&self, index: K) -> &Self::Output {
+        &self.v[index.index()]
+    }
+}

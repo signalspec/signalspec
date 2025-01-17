@@ -1,9 +1,8 @@
-use std::collections::HashMap;
 use std::fmt::Debug;
 use std::sync::Arc;
 
 use crate::diagnostic::ErrorReported;
-use crate::entitymap::{entity_key, EntityMap};
+use crate::entitymap::{entity_key, EntityIntern, EntityMap};
 use crate::runtime::PrimitiveProcess;
 use crate::Dir;
 use super::{ExprDn, Shape, Predicate, ValueSrcId};
@@ -71,7 +70,7 @@ pub struct SubProc {
     pub channels: Vec<ChannelId>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Hash, PartialEq, Eq)]
 
 pub enum Step {
     Fail,
@@ -89,32 +88,19 @@ pub enum Step {
 }
 
 pub(crate) struct StepBuilder {
-    pub steps: EntityMap<StepId, Step>,
-    seq: HashMap<(StepId, StepId), StepId>,
-    alt: HashMap<Box<[StepId]>, StepId>,
-    stack: HashMap<(StepId, ConnectionId, StepId), StepId>,
-    repeat: HashMap<(StepId, bool), StepId>,
+    pub steps: EntityIntern<StepId, Step>,
     pub connections: EntityMap<ConnectionId, Shape>,
     pub processes: EntityMap<ProcId, SubProc>,
 }
 
-fn add_step(steps: &mut EntityMap<StepId, Step>, s: Step) -> StepId {
-    log::debug!("Add step {:6}: {:?}", steps.len(), s);
-    steps.push(s)
-}
-
 impl StepBuilder {
     pub(crate) fn new() -> Self {
-        let mut steps = EntityMap::new();
-        assert_eq!(steps.push(Step::Fail), StepId::FAIL);
-        assert_eq!(steps.push(Step::Accept), StepId::ACCEPT);
+        let mut steps = EntityIntern::new();
+        assert_eq!(steps.insert(Step::Fail), StepId::FAIL);
+        assert_eq!(steps.insert(Step::Accept), StepId::ACCEPT);
 
         let connections = EntityMap::new();
         Self { steps,
-            seq: HashMap::new(),
-            alt: HashMap::new(),
-            stack: HashMap::new(),
-            repeat: HashMap::new(),
             connections,
             processes: EntityMap::new(),
         }
@@ -141,9 +127,7 @@ impl StepBuilder {
             return self.seq(a, s1)
         }
 
-        *self.seq.entry((first, second)).or_insert_with(|| {
-            add_step(&mut self.steps, Step::Seq(first, second))
-        })
+        self.steps.insert(Step::Seq(first, second))
     }
 
     pub(crate) fn seq_from<I>(&mut self, i: I) -> StepId where I: IntoIterator<Item = StepId>, I::IntoIter: DoubleEndedIterator {
@@ -153,26 +137,26 @@ impl StepBuilder {
     }
     
     pub(crate) fn receive(&mut self, chan: ChannelId, variant: usize, val: ValueSrcId, msg: Vec<Predicate>) -> StepId {
-        add_step(&mut self.steps, Step::Receive { chan, variant, var: val, msg })
+        self.steps.insert(Step::Receive { chan, variant, var: val, msg })
     }
     
     pub(crate) fn send(&mut self, chan: ChannelId, variant: usize, msg: Vec<ExprDn>) -> StepId {
-        add_step(&mut self.steps, Step::Send { chan, variant, msg })
+        self.steps.insert(Step::Send { chan, variant, msg })
     }
 
     pub(crate) fn add_process(&mut self, func: Arc<dyn PrimitiveProcess + 'static>, channels: Vec<ChannelId>) -> StepId {
         let id = self.processes.push(SubProc { func, channels });
-        add_step(&mut self.steps, Step::Process(id))
+        self.steps.insert(Step::Process(id))
     }
 
     pub(crate) fn assign(&mut self, dest: ValueSrcId, src: ExprDn) -> StepId {
-        add_step(&mut self.steps, Step::Assign(dest, src))
+        self.steps.insert(Step::Assign(dest, src))
     }
 
     pub(crate) fn guard(&mut self, src: ExprDn, pred: Predicate) -> StepId {
         match pred {
             Predicate::Any => self.accepting(),
-            pred => add_step(&mut self.steps, Step::Guard(src, pred))
+            pred => self.steps.insert(Step::Guard(src, pred))
         }
     }
 
@@ -193,20 +177,16 @@ impl StepBuilder {
         } else if new_arms.len() == 1 {
             new_arms[0]
         } else {
-            *self.alt.entry(new_arms.into_boxed_slice()).or_insert_with_key(|k| {
-                add_step(&mut self.steps, Step::Alt(k.clone()))
-            })
+            self.steps.insert(Step::Alt(new_arms.into_boxed_slice()))
         }
     }
 
     pub(crate) fn repeat(&mut self, inner: StepId, nullable: bool) -> StepId {
-        *self.repeat.entry((inner, nullable)).or_insert_with(|| {
-            add_step(&mut self.steps, Step::Repeat(inner, nullable))
-        })
+        self.steps.insert(Step::Repeat(inner, nullable))
     }
     
     pub(crate) fn pass(&mut self) -> StepId {
-        add_step(&mut self.steps, Step::Pass)
+        self.steps.insert(Step::Pass)
     }
     
     pub(crate) fn stack(&mut self, lo: StepId, conn: ConnectionId, hi: StepId) -> StepId {
@@ -219,9 +199,7 @@ impl StepBuilder {
                 self.seq(hi, *b)
             }
             _ => {
-                *self.stack.entry((lo, conn, hi)).or_insert_with(|| {
-                    add_step(&mut self.steps, Step::Stack { lo, conn, hi })
-                })
+                self.steps.insert(Step::Stack { lo, conn, hi })
             }
         }
     }
@@ -231,7 +209,7 @@ impl StepBuilder {
     }
 }
 
-pub fn write_tree(f: &mut dyn std::fmt::Write, indent: u32, steps: &EntityMap<StepId, Step>, step: StepId) -> Result<(), std::fmt::Error> {
+pub fn write_tree(f: &mut dyn std::fmt::Write, indent: u32, steps: &EntityIntern<StepId, Step>, step: StepId) -> Result<(), std::fmt::Error> {
     let i: String = " ".repeat(indent as usize);
     match steps[step] {
         Step::Fail => writeln!(f, "{:6} {}Fail", step.0, i)?,
