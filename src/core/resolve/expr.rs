@@ -4,7 +4,7 @@ use itertools::{Itertools, EitherOrBoth};
 
 use crate::{
     core::{
-        data::{NumberType, NumberTypeError}, op::{eval_binary, eval_choose, UnaryOp}, resolve::action::ValueSinkId, ConcatElem, ExprDn, Func, FunctionDef, Item, LeafItem, Predicate, Scope, ValueSrc
+        data::{NumberType, NumberTypeError}, expr_dn::ExprDnId, op::{eval_binary, eval_choose, UnaryOp}, resolve::action::ValueSinkId, ConcatElem, ExprCtx, Func, FunctionDef, Item, LeafItem, Predicate, Scope, ValueSrc
     },
     diagnostic::{Diagnostic, DiagnosticContext, ErrorReported, Span},
     syntax::{
@@ -26,7 +26,7 @@ pub enum Expr {
 pub enum ExprKind {
     Ignored,
     Const(Value),
-    VarDn(ExprDn),
+    VarDn(ExprDnId),
     VarUp(ValueSinkId),
     Range(Number, Number),
     Union(Vec<ExprKind>),
@@ -45,17 +45,17 @@ impl Expr {
         }
     }
 
-    pub fn down(&self) -> Option<ExprDn> {
+    pub fn down(&self, ecx: &mut ExprCtx) -> Option<ExprDnId> {
         match self {
-            Expr::Const(c) => Some(ExprDn::Const(c.clone())),
-            Expr::Expr(_, e) => e.down()
+            Expr::Const(c) => Some(ecx.constant(c.clone())),
+            Expr::Expr(_, e) => e.down(ecx)
         }
     }
 
-    pub fn up(&self, v: ExprDn, sink: &mut dyn FnMut(ValueSinkId, ExprDn)) {
+    pub fn up(&self, ecx: &mut ExprCtx, v: ExprDnId, sink: &mut dyn FnMut(ValueSinkId, ExprDnId)) {
         match self {
             Expr::Const(_) => {}
-            Expr::Expr(_, e) => e.up(v, sink)
+            Expr::Expr(_, e) => e.up(ecx, v, sink)
         }
     }
 
@@ -77,8 +77,8 @@ impl Expr {
         Expr::Expr(Type::Ignored, ExprKind::Ignored)
     }
 
-    pub fn var_dn(id: ValueSrc, ty: Type) -> Self {
-        Expr::Expr(ty, ExprKind::VarDn(ExprDn::Variable(id)))
+    pub fn var_dn(ecx: &mut ExprCtx, id: ValueSrc, ty: Type) -> Self {
+        Expr::Expr(ty, ExprKind::VarDn(ecx.variable(id)))
     }
 
     pub fn var_up(id: ValueSinkId, ty: Type) -> Self {
@@ -87,36 +87,51 @@ impl Expr {
 }
 
 impl ExprKind {
-    pub fn down(&self) -> Option<ExprDn> {
+    pub fn down(&self, ecx: &mut ExprCtx) -> Option<ExprDnId> {
         match *self {
             ExprKind::Ignored | ExprKind::Range(..) | ExprKind::Union(..) | ExprKind::VarUp(..) => None,
             ExprKind::VarDn(ref dn) => Some(dn.clone()),
-            ExprKind::Const(ref v) => Some(ExprDn::Const(v.clone())),
-            ExprKind::Flip(ref d, _) => d.down(),
-            ExprKind::Concat(ref c) => Some(ExprDn::Concat(
-                c.iter().map(|l| l.map_elem(|e| e.down())).collect::<Option<Vec<_>>>()?
-            )),
-            ExprKind::Unary(ref e, ref op) => Some(ExprDn::Unary(Box::new(e.down()?), op.clone())),
+            ExprKind::Const(ref v) => Some(ecx.constant(v.clone())),
+            ExprKind::Flip(ref d, _) => d.down(ecx),
+            ExprKind::Concat(ref c) => {
+                let parts = c.iter()
+                    .map(|l| l.map_elem(|e| e.down(ecx)))
+                    .collect::<Option<Vec<_>>>()?;
+                Some(ecx.concat(parts))
+            },
+            ExprKind::Unary(ref e, ref op) => {
+                let e = e.down(ecx)?;
+                Some(ecx.unary(e, op.clone()))
+            }
         }
     }
 
-    pub fn up(&self, v: ExprDn, sink: &mut dyn FnMut(ValueSinkId, ExprDn)) {
+    pub fn up(&self, ecx: &mut ExprCtx, v: ExprDnId, sink: &mut dyn FnMut(ValueSinkId, ExprDnId)) {
         match *self {
             ExprKind::Ignored | ExprKind::Const(_) | ExprKind::VarDn(..)
              | ExprKind::Range(_, _) | ExprKind::Union(..) => (),
             ExprKind::VarUp(id) => sink(id, v),
-            ExprKind::Flip(_, ref up) => up.up(v, sink),
+            ExprKind::Flip(_, ref up) => up.up(ecx, v, sink),
             ExprKind::Concat(ref concat) => {
                 let mut offset = 0;
                 for c in concat {
                     match c {
-                        ConcatElem::Elem(e) => e.up(ExprDn::Index(Box::new(v.clone()), offset), sink),
-                        ConcatElem::Slice(e, width) => e.up(ExprDn::Slice(Box::new(v.clone()), offset, offset + width), sink),
+                        ConcatElem::Elem(e) => {
+                            let v2 = ecx.index(v, offset);
+                            e.up(ecx, v2, sink)
+                        },
+                        ConcatElem::Slice(e, width) => {
+                            let v2 = ecx.slice(v, offset, offset + width);
+                            e.up(ecx, v2, sink)
+                        },
                     };
                     offset += c.elem_count();
                 }
             }
-            ExprKind::Unary(ref e, ref op) => e.up(ExprDn::Unary(Box::new(v), op.invert()), sink),
+            ExprKind::Unary(ref e, ref op) => {
+                let v2 = ecx.unary(v, op.invert());
+                e.up(ecx, v2, sink)
+            }
         }
     }
 
@@ -660,6 +675,7 @@ fn resolve_function_call(dcx: &mut DiagnosticContext, call_site_span: impl FnOnc
 // returned predicate at runtime before entering the scope.
 pub fn lvalue_dn(
     dcx: &mut DiagnosticContext,
+    ecx: &mut ExprCtx,
     scope: &mut Scope,
     pat: &ast::Expr,
     rhs: Expr
@@ -703,7 +719,7 @@ pub fn lvalue_dn(
             // Can't fail:
             // * In `on`, this is always a `VarDn`.
             // * In `alt`, we've already checked.
-            let dn = rhs.down().unwrap();
+            let dn = rhs.down(ecx).unwrap();
 
             let mut i = 0;
             let mut parts = Vec::new();
@@ -713,11 +729,11 @@ pub fn lvalue_dn(
                 if let Some(width) = *width {
                     let ri = Expr::Expr(
                         Type::Vector(width, Box::new(elem_ty.clone())),
-                        ExprKind::VarDn(ExprDn::Slice(Box::new(dn.clone()), i, i+width))
+                        ExprKind::VarDn(ecx.slice(dn, i, i+width))
                     );
 
                     // Flatten nested vector predicates
-                    match lvalue_dn(dcx, scope, e, ri) {
+                    match lvalue_dn(dcx, ecx, scope, e, ri) {
                         Ok(Predicate::Vector(inner)) => parts.extend(inner),
                         Ok(p) => parts.push(ConcatElem::Slice(p, width)),
                         Err(r) => { parts.push(ConcatElem::Slice(Predicate::Any, width)); err = Some(r) }
@@ -727,10 +743,10 @@ pub fn lvalue_dn(
                 } else {
                     let ri = Expr::Expr(
                         elem_ty.clone(),
-                        ExprKind::VarDn(ExprDn::Index(Box::new(dn.clone()), i))
+                        ExprKind::VarDn(ecx.index(dn, i))
                     );
 
-                    match lvalue_dn(dcx, scope, e, ri) {
+                    match lvalue_dn(dcx, ecx, scope, e, ri) {
                         Ok(p) => parts.push(ConcatElem::Elem(p)),
                         Err(r) => { parts.push(ConcatElem::Elem(Predicate::Any)); err = Some(r) }
                     }
@@ -749,7 +765,7 @@ pub fn lvalue_dn(
 }
 
 pub enum LValueSrc {
-   Val(ExprDn),
+   Val(ExprDnId),
    Var(ValueSinkId, FileSpan),
    Concat(Vec<ConcatElem<LValueSrc>>),
 }
@@ -761,6 +777,7 @@ pub enum LValueSrc {
 /// upvalue in the scope, or a constant from the pattern.
 pub fn lvalue_up(
     dcx: &mut DiagnosticContext,
+    ecx: &mut ExprCtx,
     scope: &mut Scope,
     pat: &ast::Expr,
     ty: Type,
@@ -784,7 +801,7 @@ pub fn lvalue_up(
                 });
             }
 
-            Ok(LValueSrc::Val(ExprDn::Const(val)))
+            Ok(LValueSrc::Val(ecx.constant(val)))
         }
 
         ast::Expr::Concat(node) => {
@@ -803,9 +820,9 @@ pub fn lvalue_up(
                 .map(|&(width, ref e)| {
                     if let Some(width) = width {
                         let ty_inner = Type::Vector(width, Box::new(elem_ty.clone()));
-                        Ok(ConcatElem::Slice(lvalue_up(dcx, scope, e, ty_inner, add_value_sink)?, width))
+                        Ok(ConcatElem::Slice(lvalue_up(dcx, ecx, scope, e, ty_inner, add_value_sink)?, width))
                     } else {
-                        Ok(ConcatElem::Elem(lvalue_up(dcx, scope, e, elem_ty.clone(), add_value_sink)?))
+                        Ok(ConcatElem::Elem(lvalue_up(dcx, ecx, scope, e, elem_ty.clone(), add_value_sink)?))
                     }
                 })
             );

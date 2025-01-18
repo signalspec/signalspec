@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use indexmap::indexset;
 
-use super::{step::{ProcId, StepBuilder}, ChannelId, Dir, ExprDn, Predicate, Step, StepId, ValueSrcId};
+use super::{expr_dn::ExprDnId, step::{ProcId, StepBuilder}, ChannelId, Dir, Predicate, Step, StepId, ValueSrcId};
 
 #[derive(Debug)]
 pub(crate) enum Derivatives {
@@ -11,7 +11,7 @@ pub(crate) enum Derivatives {
     Send {
         chan: ChannelId,
         variant: usize,
-        dn: Vec<ExprDn>,
+        dn: Vec<ExprDnId>,
         next: StepId,
     },
 
@@ -29,12 +29,12 @@ pub(crate) enum Derivatives {
 
     Assign {
         var: ValueSrcId,
-        val: ExprDn,
+        val: ExprDnId,
         next: StepId,
     },
 
     Switch {
-        src: Vec<ExprDn>,
+        src: Vec<ExprDnId>,
         arms: Vec<SwitchArm>,
         other: StepId,
     },

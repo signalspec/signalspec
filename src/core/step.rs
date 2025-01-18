@@ -5,7 +5,8 @@ use crate::diagnostic::ErrorReported;
 use crate::entitymap::{entity_key, EntityIntern, EntityMap};
 use crate::runtime::PrimitiveProcess;
 use crate::Dir;
-use super::{ExprDn, Shape, Predicate, ValueSrcId};
+use super::expr_dn::{ExprCtx, ExprDnId};
+use super::{Shape, Predicate, ValueSrcId};
 
 entity_key!(pub StepId);
 
@@ -77,17 +78,18 @@ pub enum Step {
     Accept,
     Pass,
     Stack { lo: StepId, conn: ConnectionId, hi: StepId },
-    Send { chan: ChannelId, variant: usize, msg: Vec<ExprDn> },
+    Send { chan: ChannelId, variant: usize, msg: Vec<ExprDnId> },
     Receive { chan: ChannelId, variant: usize, var: ValueSrcId, msg: Vec<Predicate> },
     Process(ProcId),
     Seq(StepId, StepId),
-    Assign(ValueSrcId, ExprDn),
-    Guard(ExprDn, Predicate),
+    Assign(ValueSrcId, ExprDnId),
+    Guard(ExprDnId, Predicate),
     Repeat(StepId, bool),
     Alt(Box<[StepId]>),
 }
 
 pub(crate) struct StepBuilder {
+    pub ecx: ExprCtx,
     pub steps: EntityIntern<StepId, Step>,
     pub connections: EntityMap<ConnectionId, Shape>,
     pub processes: EntityMap<ProcId, SubProc>,
@@ -95,12 +97,15 @@ pub(crate) struct StepBuilder {
 
 impl StepBuilder {
     pub(crate) fn new() -> Self {
+        let ecx = ExprCtx::new();
         let mut steps = EntityIntern::new();
         assert_eq!(steps.insert(Step::Fail), StepId::FAIL);
         assert_eq!(steps.insert(Step::Accept), StepId::ACCEPT);
 
         let connections = EntityMap::new();
-        Self { steps,
+        Self {
+            ecx,
+            steps,
             connections,
             processes: EntityMap::new(),
         }
@@ -140,7 +145,7 @@ impl StepBuilder {
         self.steps.insert(Step::Receive { chan, variant, var: val, msg })
     }
     
-    pub(crate) fn send(&mut self, chan: ChannelId, variant: usize, msg: Vec<ExprDn>) -> StepId {
+    pub(crate) fn send(&mut self, chan: ChannelId, variant: usize, msg: Vec<ExprDnId>) -> StepId {
         self.steps.insert(Step::Send { chan, variant, msg })
     }
 
@@ -149,11 +154,11 @@ impl StepBuilder {
         self.steps.insert(Step::Process(id))
     }
 
-    pub(crate) fn assign(&mut self, dest: ValueSrcId, src: ExprDn) -> StepId {
+    pub(crate) fn assign(&mut self, dest: ValueSrcId, src: ExprDnId) -> StepId {
         self.steps.insert(Step::Assign(dest, src))
     }
 
-    pub(crate) fn guard(&mut self, src: ExprDn, pred: Predicate) -> StepId {
+    pub(crate) fn guard(&mut self, src: ExprDnId, pred: Predicate) -> StepId {
         match pred {
             Predicate::Any => self.accepting(),
             pred => self.steps.insert(Step::Guard(src, pred))

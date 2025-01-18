@@ -4,7 +4,7 @@ use itertools::EitherOrBoth;
 use num_traits::Signed;
 
 use crate::{core::{
-    constant, derivs::Derivatives, index::FindDefError, lexpr, op::UnaryOp, resolve::expr::{lvalue_dn, lvalue_up, LValueSrc}, rexpr, rexpr_tup, step::{ConnectionId, StepBuilder, SubProc}, value, ConcatElem, Dir, Expr, ExprDn, ExprKind, Item, LeafItem, Predicate, ProcId, Scope, Shape, ShapeMsg, StepId, Type, ValueSrc, ValueSrcId
+    constant, derivs::Derivatives, index::FindDefError, lexpr, op::UnaryOp, resolve::expr::{lvalue_dn, lvalue_up, LValueSrc}, rexpr, rexpr_tup, step::{ConnectionId, StepBuilder, SubProc}, value, ConcatElem, Dir, Expr, ExprCtx, ExprDn, ExprDnId, ExprKind, Item, LeafItem, Predicate, ProcId, Scope, Shape, ShapeMsg, StepId, Type, ValueSrc, ValueSrcId
 }, diagnostic::{DiagnosticContext, Diagnostics}, Value};
 use crate::diagnostic::{ErrorReported, Span};
 use crate::entitymap::{entity_key, EntityMap};
@@ -99,15 +99,14 @@ struct ReceiveMsg {
 }
 
 impl ReceiveMsg {
-    fn add_field(&mut self, predicate: Predicate) -> ExprDn {
+    fn add_field(&mut self, ecx: &mut ExprCtx, predicate: Predicate) -> ExprDnId {
         let i = self.predicates.len() as u32;
         self.predicates.push(predicate);
-        ExprDn::Variable(ValueSrc(self.src, i))
+        ecx.variable(self.value_src(i))
     }
 
-    fn with_field(&mut self, f: impl FnOnce(ExprDn) -> Predicate) {
-        let i = self.predicates.len() as u32;
-        self.predicates.push(f(ExprDn::Variable(ValueSrc(self.src, i))));
+    fn value_src(&mut self, i: u32) -> ValueSrc {
+        ValueSrc(self.src, i)
     }
 }
 
@@ -117,7 +116,7 @@ pub struct Builder<'a> {
     steps: StepBuilder,
     value_src: EntityMap<ValueSrcId, ()>,
     value_sink: EntityMap<ValueSinkId, ()>,
-    upvalues: Vec<(ValueSinkId, ExprDn)>,
+    upvalues: Vec<(ValueSinkId, ExprDnId)>,
 }
 
 impl<'a> Builder<'a> {
@@ -155,24 +154,21 @@ impl<'a> Builder<'a> {
     fn up_value_src(&mut self, e: &Expr) -> (ValueSrcId, bool) {
         let src = self.add_value_src();
         let mut used = false;
-        e.up(ExprDn::Variable(ValueSrc(src, 0)), &mut |snk, x| {
+        let v = self.steps.ecx.variable(ValueSrc(src, 0));
+        e.up(&mut self.steps.ecx, v, &mut |snk, x| {
             used = true;
-            self.set_upvalue(snk, x)
+            self.upvalues.push((snk, x))
         });
         (src, used)
     }
 
-    pub fn set_upvalue(&mut self, snk: ValueSinkId, val: ExprDn) {
-        self.upvalues.push((snk, val))
-    }
-
-    fn provide_up(&mut self, v: &Expr, val: ExprDn) {
-        v.up(val, &mut |snk, x| {
-            self.set_upvalue(snk, x)
+    fn provide_up(&mut self, v: &Expr, val: ExprDnId) {
+        v.up(&mut self.steps.ecx, val, &mut |snk, x| {
+            self.upvalues.push((snk, x))
         });
     }
 
-    pub fn take_upvalue_optional(&mut self, snk: ValueSinkId, file: &Arc<SourceFile>, span: FileSpan) -> Option<ExprDn> {
+    pub fn take_upvalue_optional(&mut self, snk: ValueSinkId, file: &Arc<SourceFile>, span: FileSpan) -> Option<ExprDnId> {
         let mut i = 0;
         let mut ret = None;
         let mut multiple = false;
@@ -196,22 +192,22 @@ impl<'a> Builder<'a> {
         ret
     }
 
-    pub fn take_upvalue(&mut self, snk: ValueSinkId, file: &Arc<SourceFile>, span: FileSpan) -> ExprDn {
+    pub fn take_upvalue(&mut self, snk: ValueSinkId, file: &Arc<SourceFile>, span: FileSpan) -> ExprDnId {
         self.take_upvalue_optional(snk, file, span).unwrap_or_else(|| {
             self.dcx.report(Diagnostic::UpValueNotProvided {
                 span: Span::new(file, span),
             });
-            ExprDn::invalid()
+            self.steps.ecx.invalid()
         })
     }
 
-    fn require_down(&mut self, scope: &Scope, span: FileSpan, v: &Expr) -> ExprDn {
-        v.down().unwrap_or_else(|| {
+    fn require_down(&mut self, scope: &Scope, span: FileSpan, v: &Expr) -> ExprDnId {
+        v.down(&mut self.steps.ecx).unwrap_or_else(|| {
             self.dcx.report(Diagnostic::RequiredDownValue {
                 span: scope.span(span),
                 found: v.to_string(),
             });
-            ExprDn::invalid()
+            self.steps.ecx.invalid()
         })
     }
 
@@ -259,12 +255,12 @@ impl<'a> Builder<'a> {
                             match param.direction {
                                 Dir::Dn => {
                                     param.ty.for_each(&mut |_| {
-                                        dn.add_field(Predicate::Any);
+                                        dn.add_field(&mut self.steps.ecx, Predicate::Any);
                                     });
                                 }
                                 Dir::Up => {
                                     param.ty.for_each(&mut |_| {
-                                        up_inner.push(LValueSrc::Val(ExprDn::invalid()));
+                                        up_inner.push(LValueSrc::Val(self.steps.ecx.invalid()));
                                     });
                                 }
                             }
@@ -401,18 +397,15 @@ impl<'a> Builder<'a> {
                         let (count_src, count_used) = self.up_value_src(&count);
                         
                         let (init, increment, exit_guard) = if count_used || max.is_some() {
-                            let init = self.steps.assign(
-                                count_src,
-                                ExprDn::Const(Value::Number(0.into()))
+                            let zero = self.steps.ecx.constant(Value::Number(0.into()));
+                            let init = self.steps.assign(count_src, zero);
+                            let count_var = self.steps.ecx.variable(ValueSrc(count_src, 0));
+                            let count_inc = self.steps.ecx.unary(
+                                count_var,
+                                UnaryOp::BinaryConstNumber(ast::BinOp::Add, 1.into())
                             );
-                            let increment = self.steps.assign(
-                                count_src, 
-                                ExprDn::Unary(
-                                    Box::new(ExprDn::Variable(ValueSrc(count_src, 0))),
-                                    UnaryOp::BinaryConstNumber(ast::BinOp::Add, 1.into())
-                                )
-                            );
-                            let exit_guard = self.steps.guard(ExprDn::Variable(ValueSrc(count_src, 0)), count.predicate().unwrap());
+                            let increment = self.steps.assign(count_src, count_inc);
+                            let exit_guard = self.steps.guard(count_var, count.predicate().unwrap());
                             (init, increment, exit_guard)
                         } else {
                             (self.steps.accepting(), self.steps.accepting(), self.steps.accepting())
@@ -426,28 +419,27 @@ impl<'a> Builder<'a> {
                         let count_var = self.add_value_src();
                         let count = self.require_down(&sb.scope, count_span, &count);
 
-                        match count {
-                            ExprDn::Const(Value::Number(n)) if n == 0.into() => {
+                        match self.steps.ecx.get(count) {
+                            ExprDn::Const(Value::Number(n)) if n == &0.into() => {
                                 self.steps.accepting()
                             }
-                            ExprDn::Const(Value::Number(n)) if n == 1.into() => {
+                            ExprDn::Const(Value::Number(n)) if n == &1.into() => {
                                 inner
                             }
-                            count => {
+                            _ => {
                                 let init = self.steps.assign(count_var, count);
+                                let count_expr = self.steps.ecx.variable(ValueSrc(count_var, 0));
                                 let loop_guard = self.steps.guard(
-                                    ExprDn::Variable(ValueSrc(count_var, 0)),
+                                    count_expr,
                                     Predicate::Range(1.into(), i64::MAX.into()),
                                 );
-                                let decrement = self.steps.assign(
-                                    count_var,
-                                    ExprDn::Unary(
-                                        Box::new(ExprDn::Variable(ValueSrc(count_var, 0))),
+                                let count_dec = self.steps.ecx.unary(
+                                        count_expr,
                                         UnaryOp::BinaryConstNumber(ast::BinOp::Sub, 1.into()),
-                                    )
-                                );
+                                    );
+                                let decrement = self.steps.assign(count_var,count_dec);
                                 let exit_guard = self.steps.guard(
-                                    ExprDn::Variable(ValueSrc(count_var, 0)),
+                                    count_expr,
                                     Predicate::Range(0.into(), 1.into()),
                                 );
         
@@ -466,10 +458,10 @@ impl<'a> Builder<'a> {
                     Const(Vec<Value>),
                     Expr {
                         ty: Type,
-                        dn: Option<ExprDn>,
+                        dn: Option<ExprDnId>,
                         up_id: ValueSinkId,
                         up_expr: ExprKind,
-                        up_collected: Option<Vec<ExprDn>>,
+                        up_collected: Option<Vec<ExprDnId>>,
                         span: FileSpan
                     },
                     Invalid(ErrorReported)
@@ -512,7 +504,7 @@ impl<'a> Builder<'a> {
                         Expr::Const(_) => unreachable!(), // Checked that type is vector
                         Expr::Expr(_, e) => LoopVar::Expr{
                             ty,
-                            dn: e.down(),
+                            dn: e.down(&mut self.steps.ecx),
                             up_id: self.add_value_sink(),
                             up_expr: e,
                             up_collected: Some(Vec::new()),
@@ -537,7 +529,7 @@ impl<'a> Builder<'a> {
                             LoopVar::Expr { ty, dn, up_id, ..} => {
                                 let up = ExprKind::VarUp(*up_id);
                                 let e = if let Some(dn) = dn {
-                                    let elem = ExprDn::Index(Box::new(dn.clone()), iter);
+                                    let elem = self.steps.ecx.index(*dn, iter);
                                     ExprKind::Flip(Box::new(ExprKind::VarDn(elem)), Box::new(up))
                                 } else { up };
                                 LeafItem::Value(Expr::Expr(ty.clone(), e))
@@ -572,8 +564,10 @@ impl<'a> Builder<'a> {
                 for (_, var) in &mut vars {
                     if let LoopVar::Expr{ up_expr, up_collected, ..} = var {
                         if let Some(collected) = up_collected {
-                            let concat = ExprDn::Concat(collected.drain(..).map(ConcatElem::Elem).collect());
-                            up_expr.up(concat, &mut |snk, x| self.set_upvalue(snk, x));
+                            let concat = self.steps.ecx.concat(collected.drain(..).map(ConcatElem::Elem).collect());
+                            up_expr.up(&mut self.steps.ecx, concat, &mut |snk, x| {
+                                self.upvalues.push((snk, x))
+                            });
                         }
                     }
                 }
@@ -606,13 +600,13 @@ impl<'a> Builder<'a> {
                     }
                     Ok(AltMode::Var(Dir::Dn)) => {
                         let scrutinee = value(&mut self.dcx, sb.scope, &node.expr)
-                            .unwrap_or(Expr::Expr(Type::Ignored, ExprKind::VarDn(ExprDn::invalid())));
+                            .unwrap_or(Expr::Expr(Type::Ignored, ExprKind::VarDn(ExprDnId::INVALID)));
                         let scrutinee_dn = self.require_down(&sb.scope, node.expr.span(), &scrutinee);
 
                         let arms = node.arms.iter().map(|arm| {
                             let mut body_scope = sb.scope.child();
 
-                            let predicate = lvalue_dn(&mut self.dcx, &mut body_scope, &arm.discriminant, scrutinee.clone()).unwrap_or(Predicate::Any);
+                            let predicate = lvalue_dn(&mut self.dcx, &mut self.steps.ecx, &mut body_scope, &arm.discriminant, scrutinee.clone()).unwrap_or(Predicate::Any);
 
                             let upvalues_scope = self.upvalues.len();
                             let body = self.resolve_seq(sb.with_scope(&body_scope), &arm.block);
@@ -637,8 +631,8 @@ impl<'a> Builder<'a> {
                         let arms = node.arms.iter().map(|arm| {
                             let mut body_scope = sb.scope.child();
                             
-                            let binding = lvalue_up(&mut self.dcx, &mut body_scope, &arm.discriminant, ty.clone(), &mut || self.value_sink.push(()))
-                                .unwrap_or(LValueSrc::Val(ExprDn::invalid()));
+                            let binding = lvalue_up(&mut self.dcx, &mut self.steps.ecx, &mut body_scope, &arm.discriminant, ty.clone(), &mut || self.value_sink.push(()))
+                                .unwrap_or(LValueSrc::Val(ExprDnId::INVALID));
 
                             let upvalues_scope = self.upvalues.len();
                             let body = self.resolve_seq(sb.with_scope(&body_scope), &arm.block);
@@ -684,30 +678,35 @@ impl<'a> Builder<'a> {
                         }
                         EitherOrBoth::Right(t) => {
                             // pad `dn` for missing fields
-                            t.for_each(&mut |_| { dn.add_field(Predicate::Any); })
+                            t.for_each(&mut |_| { dn.add_field(&mut self.steps.ecx, Predicate::Any); })
                         }
                     }
                 }
             }
             (pat, Tree::Leaf(ty)) => {
-                dn.with_field(|v| {
-                    lvalue_dn(&mut self.dcx, scope, pat, Expr::Expr(ty.clone(), ExprKind::VarDn(v)))
-                        .unwrap_or(Predicate::Any)
-                })
+                {
+                    let this = &mut *dn;
+                    let i = this.predicates.len() as u32;
+                    let field = self.steps.ecx.variable(this.value_src(i));
+                    this.predicates.push(
+                        lvalue_dn(&mut self.dcx, &mut self.steps.ecx, scope, pat, Expr::Expr(ty.clone(), ExprKind::VarDn(field)))
+                            .unwrap_or(Predicate::Any)
+                    );
+                }
             }
             (ast::Expr::Ignore(_), t) => {
                 t.for_each(&mut |_| {
-                    dn.add_field(Predicate::Any);
+                    dn.add_field(&mut self.steps.ecx, Predicate::Any);
                 });
             }
             (ast::Expr::Var(ref name), t @ Tree::Tuple(..)) => {
                 scope.bind(&name.name, t.map_leaf(&mut |t| {
-                    LeafItem::Value(Expr::Expr(t.clone(), ExprKind::VarDn(dn.add_field(Predicate::Any))))
+                    LeafItem::Value(Expr::Expr(t.clone(), ExprKind::VarDn(dn.add_field(&mut self.steps.ecx, Predicate::Any))))
                 }));
             }
             (pat, t) => {
                 t.for_each(&mut |_| {
-                    dn.add_field(Predicate::Any);
+                    dn.add_field(&mut self.steps.ecx, Predicate::Any);
                 });
                 
                 self.dcx.report(Diagnostic::InvalidItemForPattern {
@@ -792,15 +791,15 @@ impl<'a> Builder<'a> {
                         }
                         EitherOrBoth::Right(_) => {
                             // pad `up` for missing fields
-                            up.push(LValueSrc::Val(ExprDn::invalid()))
+                            up.push(LValueSrc::Val(ExprDnId::INVALID))
                         }
                     }
                 }
             }
             (pat, Tree::Leaf(t)) => {
-                match lvalue_up(&mut self.dcx, scope, pat, t.clone(), &mut || self.value_sink.push(())) {
+                match lvalue_up(&mut self.dcx, &mut self.steps.ecx, scope, pat, t.clone(), &mut || self.value_sink.push(())) {
                     Ok(x) => { up.push(x); },
-                    Err(_) => { up.push(LValueSrc::Val(ExprDn::invalid())); }
+                    Err(_) => { up.push(LValueSrc::Val(ExprDnId::INVALID)); }
                 }
             }
             (ast::Expr::Var(ref name), tup @ Tree::Tuple(..)) => {
@@ -812,7 +811,7 @@ impl<'a> Builder<'a> {
                 scope.bind(&name.name, e);
             }
             (pat, ty) => {
-                up.push(LValueSrc::Val(ExprDn::invalid()));
+                up.push(LValueSrc::Val(ExprDnId::INVALID));
                 self.dcx.report(Diagnostic::InvalidItemForPattern {
                     span: scope.span(pat.span()),
                     found: ty.to_string(),
@@ -821,20 +820,21 @@ impl<'a> Builder<'a> {
         }
     }
 
-    fn bind_tree_fields_up_finish(&mut self, up_inner: Vec<LValueSrc>, file: &Arc<SourceFile>) -> Vec<ExprDn> {
+    fn bind_tree_fields_up_finish(&mut self, up_inner: Vec<LValueSrc>, file: &Arc<SourceFile>) -> Vec<ExprDnId> {
         up_inner.into_iter().map(|v| {
             self.finish_lvalue_src(v, file)
         }).collect()
     }
 
-    fn finish_lvalue_src(&mut self, v: LValueSrc, file: &Arc<SourceFile>) -> ExprDn {
+    fn finish_lvalue_src(&mut self, v: LValueSrc, file: &Arc<SourceFile>) -> ExprDnId {
         match v {
             LValueSrc::Var(snk, span) => self.take_upvalue(snk, file, span),
             LValueSrc::Val(e) => e,
             LValueSrc::Concat(c) => {
-                ExprDn::Concat(c.into_iter().map(|e| {
+                let parts = c.into_iter().map(|e| {
                     e.map_elem_owned(|v| self.finish_lvalue_src(v, file))
-                }).collect())
+                }).collect();
+                self.steps.ecx.concat(parts)
             }
         }
     }
@@ -967,7 +967,7 @@ impl<'a> Builder<'a> {
         }
     }
 
-    fn resolve_token(&mut self, msg_def: &ShapeMsg, scope: &Scope, node: &ast::ProcessCall) -> (Vec<ExprDn>, ReceiveMsg) {
+    fn resolve_token(&mut self, msg_def: &ShapeMsg, scope: &Scope, node: &ast::ProcessCall) -> (Vec<ExprDnId>, ReceiveMsg) {
         let mut dn = Vec::new();
         let mut up = self.add_receive();
 
@@ -1001,17 +1001,18 @@ impl<'a> Builder<'a> {
                         }
                         Dir::Up => {
                             let predicate = v.predicate().expect("Value cannot be up-evaluated as a predicate");
-                            self.provide_up(v, up.add_field(predicate));
+                            let f = up.add_field(&mut self.steps.ecx, predicate);
+                            self.provide_up(v, f);
                         }
                     }
                 },
 
                 crate::tree::Zip::Both(_, &Item::Leaf(LeafItem::Invalid(_))) => {
                     match param.direction {
-                        Dir::Dn => dn.push(ExprDn::invalid()),
+                        Dir::Dn => dn.push(ExprDnId::INVALID),
                         Dir::Up => {
                             let this = &mut up;
-                            this.add_field(Predicate::Any);
+                            this.add_field(&mut self.steps.ecx, Predicate::Any);
                         },
                     }
                 }
@@ -1061,6 +1062,7 @@ pub struct ProcessChain {
     pub fsm: BTreeMap<StepId, Derivatives>,
     pub accepting: BTreeSet<StepId>,
     pub vars: EntityMap<ValueSrcId, ()>,
+    pub exprs: ExprCtx,
     pub conn_dn: ConnectionId,
     pub up: Option<(Shape, ConnectionId)>,
     pub connections: EntityMap<ConnectionId, Shape>,
@@ -1096,6 +1098,7 @@ pub fn compile_process(index: &Index, scope: &Scope, shape_dn: Shape, ast: &ast:
         accepting,
         conn_dn,
         up,
+        exprs: builder.steps.ecx,
         connections: builder.steps.connections,
         processes: builder.steps.processes,
     })
