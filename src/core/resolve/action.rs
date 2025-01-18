@@ -4,7 +4,7 @@ use itertools::EitherOrBoth;
 use num_traits::Signed;
 
 use crate::{core::{
-    constant, derivs::Derivatives, ExprKind, index::FindDefError, lexpr, resolve::expr::{lvalue_dn, lvalue_up, LValueSrc}, rexpr, rexpr_tup, step::{ConnectionId, StepBuilder, SubProc}, value, ConcatElem, Dir, Expr, ExprDn, Item, LeafItem, Predicate, ProcId, Scope, Shape, ShapeMsg, StepId, Type, ValueSrc, ValueSrcId
+    constant, derivs::Derivatives, index::FindDefError, lexpr, op::UnaryOp, resolve::expr::{lvalue_dn, lvalue_up, LValueSrc}, rexpr, rexpr_tup, step::{ConnectionId, StepBuilder, SubProc}, value, ConcatElem, Dir, Expr, ExprDn, ExprKind, Item, LeafItem, Predicate, ProcId, Scope, Shape, ShapeMsg, StepId, Type, ValueSrc, ValueSrcId
 }, diagnostic::{DiagnosticContext, Diagnostics}, Value};
 use crate::diagnostic::{ErrorReported, Span};
 use crate::entitymap::{entity_key, EntityMap};
@@ -407,10 +407,9 @@ impl<'a> Builder<'a> {
                             );
                             let increment = self.steps.assign(
                                 count_src, 
-                                ExprDn::BinaryConstNumber(
+                                ExprDn::Unary(
                                     Box::new(ExprDn::Variable(ValueSrc(count_src, 0))),
-                                    ast::BinOp::Add,
-                                    1.into()
+                                    UnaryOp::BinaryConstNumber(ast::BinOp::Add, 1.into())
                                 )
                             );
                             let exit_guard = self.steps.guard(ExprDn::Variable(ValueSrc(count_src, 0)), count.predicate().unwrap());
@@ -442,10 +441,9 @@ impl<'a> Builder<'a> {
                                 );
                                 let decrement = self.steps.assign(
                                     count_var,
-                                    ExprDn::BinaryConstNumber(
+                                    ExprDn::Unary(
                                         Box::new(ExprDn::Variable(ValueSrc(count_var, 0))),
-                                        ast::BinOp::Sub,
-                                        1.into()
+                                        UnaryOp::BinaryConstNumber(ast::BinOp::Sub, 1.into()),
                                     )
                                 );
                                 let exit_guard = self.steps.guard(

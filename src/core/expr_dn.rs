@@ -1,18 +1,15 @@
-use crate::syntax::{BinOp, Number};
 use super::ValueSrc;
 use crate::Value;
-use super::op::{ UnaryOp, eval_choose };
+use super::op::UnaryOp;
 
 /// An expression representing a runtime computation
 #[derive(PartialEq, Eq, Hash, Debug, Clone)]
 pub enum ExprDn {
     Const(Value),
     Variable(ValueSrc),
-    Choose(Box<ExprDn>, Vec<(Value, Value)>),
     Concat(Vec<ConcatElem<ExprDn>>),
     Index(Box<ExprDn>, u32),
     Slice(Box<ExprDn>, u32, u32),
-    BinaryConstNumber(Box<ExprDn>, BinOp, Number),
     Unary(Box<ExprDn>, UnaryOp),
 }
 
@@ -26,9 +23,6 @@ impl ExprDn {
         match *self {
             ExprDn::Variable(id) => state(id),
             ExprDn::Const(ref v) => v.clone(),
-
-            ExprDn::Choose(ref e, ref c) => eval_choose(&e.eval(state), c).unwrap(),
-
             ExprDn::Concat(ref components) => {
                 let mut result = vec![];
                 for component in components {
@@ -56,13 +50,6 @@ impl ExprDn {
                 match e.eval(state) {
                     Value::Vector(v) if v.len() >= b as usize => Value::Vector(v[a as usize..b as usize].to_vec()),
                     other => panic!("Slice expected vector of at least length {b}, found {}", other)
-                }
-            }
-
-            ExprDn::BinaryConstNumber(ref e, op, ref c) => {
-                match (e.eval(state), c) {
-                    (Value::Number(l), r) => Value::Number(op.eval(l, r)),
-                    (l, r) => panic!("Invalid types {} {} in BinaryConst", l, r)
                 }
             }
 

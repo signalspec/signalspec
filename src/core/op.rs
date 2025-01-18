@@ -7,6 +7,8 @@ use crate::Value;
 
 #[derive(PartialEq, Eq, Hash, Debug, Clone)]
 pub enum UnaryOp {
+    BinaryConstNumber(BinOp, Number),
+    Mapping(Vec<(Value, Value)>),
     IntToBits { width: u32, signed: SignMode },
     BitsToInt { width: u32, signed: SignMode },
     Chunks { width: u32 },
@@ -22,6 +24,15 @@ pub enum SignMode {
 impl UnaryOp {
     pub fn eval(&self, v: Value) -> Value {
         match *self {
+            UnaryOp::BinaryConstNumber(op, r) => {
+                match v {
+                    Value::Number(l) => Value::Number(op.eval(l, r)),
+                    l => panic!("Invalid types {} {} in BinaryConst", l, r)
+                }
+            }
+            UnaryOp::Mapping(ref m) => {
+                eval_choose(&v, m).unwrap()
+            }
             UnaryOp::IntToBits { width, .. } => {
                 match v {
                     Value::Number(i) => eval_int_to_bits(width, i),
@@ -75,6 +86,12 @@ impl UnaryOp {
 
     pub fn invert(&self) -> UnaryOp {
         match *self {
+            UnaryOp::BinaryConstNumber(op, r) => {
+                UnaryOp::BinaryConstNumber(op.invert(), r)
+            }
+            UnaryOp::Mapping(ref m) => {
+                UnaryOp::Mapping(m.iter().map(|(v1,v2)| (v2.clone(), v1.clone())).collect())
+            }
             UnaryOp::IntToBits { width, signed } => UnaryOp::BitsToInt { width, signed },
             UnaryOp::BitsToInt { width, signed } => UnaryOp::IntToBits { width, signed },
             UnaryOp::Chunks { width } => UnaryOp::Merge { width },

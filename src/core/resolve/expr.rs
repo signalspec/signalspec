@@ -31,9 +31,7 @@ pub enum ExprKind {
     Range(Number, Number),
     Union(Vec<ExprKind>),
     Flip(Box<ExprKind>, Box<ExprKind>),
-    Choose(Box<ExprKind>, Vec<(Value, Value)>),
     Concat(Vec<ConcatElem<ExprKind>>),
-    BinaryConst(Box<ExprKind>, BinOp, Value),
     Unary(Box<ExprKind>, UnaryOp),
 }
 
@@ -95,12 +93,9 @@ impl ExprKind {
             ExprKind::VarDn(ref dn) => Some(dn.clone()),
             ExprKind::Const(ref v) => Some(ExprDn::Const(v.clone())),
             ExprKind::Flip(ref d, _) => d.down(),
-            ExprKind::Choose(ref e, ref c) => Some(ExprDn::Choose(Box::new(e.down()?), c.clone())),
             ExprKind::Concat(ref c) => Some(ExprDn::Concat(
                 c.iter().map(|l| l.map_elem(|e| e.down())).collect::<Option<Vec<_>>>()?
             )),
-            ExprKind::BinaryConst(ref e, op, Value::Number(c)) => Some(ExprDn::BinaryConstNumber(Box::new(e.down()?), op, c.clone())),
-            ExprKind::BinaryConst(_, _, _) => None,
             ExprKind::Unary(ref e, ref op) => Some(ExprDn::Unary(Box::new(e.down()?), op.clone())),
         }
     }
@@ -111,10 +106,6 @@ impl ExprKind {
              | ExprKind::Range(_, _) | ExprKind::Union(..) => (),
             ExprKind::VarUp(id) => sink(id, v),
             ExprKind::Flip(_, ref up) => up.up(v, sink),
-            ExprKind::Choose(ref e, ref c) => {
-                let mapping = c.iter().map(|(v1,v2)| (v2.clone(), v1.clone())).collect();
-                e.up(ExprDn::Choose(Box::new(v), mapping), sink)
-            }
             ExprKind::Concat(ref concat) => {
                 let mut offset = 0;
                 for c in concat {
@@ -125,10 +116,6 @@ impl ExprKind {
                     offset += c.elem_count();
                 }
             }
-            ExprKind::BinaryConst(ref e, op, Value::Number(c)) => {
-                e.up(ExprDn::BinaryConstNumber(Box::new(v), op.invert(), c.clone()), sink)
-            }
-            ExprKind::BinaryConst(..) => (),
             ExprKind::Unary(ref e, ref op) => e.up(ExprDn::Unary(Box::new(v), op.invert()), sink),
         }
     }
@@ -160,7 +147,7 @@ impl ExprKind {
                 }
                 Some(Predicate::Vector(predicates))
             }
-            ExprKind::Choose(ref e, _) | ExprKind::BinaryConst(ref e, _, _) | ExprKind::Unary(ref e, _) => {
+            ExprKind::Unary(ref e, _) => {
                 match e.predicate() {
                     Some(Predicate::Any) => Some(Predicate::Any),
                     _ => None
@@ -447,7 +434,7 @@ fn resolve_expr_choose(dcx: &mut DiagnosticContext, scope: &Scope, node: &ast::E
                 return dcx.report(crate::Diagnostic::ChooseNotCovered { span: span(), found: ty }).into();
             }
 
-            Expr::Expr(rt, ExprKind::Choose(Box::new(e), pairs))
+            Expr::Expr(rt, ExprKind::Unary(Box::new(e), UnaryOp::Mapping(pairs)))
         }
     }.into()
 }
@@ -629,8 +616,13 @@ fn resolve_expr_binary(dcx: &mut DiagnosticContext, scope: &Scope, node: &ast::E
              }
         ).into()
     };
-    
-    Expr::Expr(ty, ExprKind::BinaryConst(Box::new(expr), op, val)).into()
+
+    match val {
+        Value::Number(val) => {
+            Expr::Expr(ty, ExprKind::Unary(Box::new(expr), UnaryOp::BinaryConstNumber(op, val))).into()
+        },
+        _ => todo!()
+    }
 }
 
 fn resolve_function_call(dcx: &mut DiagnosticContext, call_site_span: impl FnOnce() -> Span, func: Item, arg: Item) -> Item {
