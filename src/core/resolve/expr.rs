@@ -97,7 +97,7 @@ impl ExprKind {
                 let parts = c.iter()
                     .map(|l| l.map_elem(|e| e.down(ecx)))
                     .collect::<Option<Vec<_>>>()?;
-                Some(ecx.concat(parts))
+                Some(ecx.concat(parts.into_boxed_slice()))
             },
             ExprKind::Unary(ref e, ref op) => {
                 let e = e.down(ecx)?;
@@ -416,7 +416,7 @@ fn resolve_expr_union(dcx: &mut DiagnosticContext, scope: &Scope, node: &ast::Ex
 
 fn resolve_expr_choose(dcx: &mut DiagnosticContext, scope: &Scope, node: &ast::ExprChoose) -> Item {
     let e = value(dcx, scope, &node.e);
-    let pairs = collect_or_err(
+    let pairs: Result<Vec<_>, _> = collect_or_err(
         node.choices.iter().map(|&(ref le, ref re)| {
             let l = constant::<Value>(dcx, scope, le);
             let r = constant::<Value>(dcx, scope, re);
@@ -425,7 +425,7 @@ fn resolve_expr_choose(dcx: &mut DiagnosticContext, scope: &Scope, node: &ast::E
     ));
 
     let e = try_item!(e);
-    let pairs: Vec<_> = try_item!(pairs);
+    let pairs = try_item!(pairs).into_boxed_slice();
 
     let span = || scope.span(node.span);
 

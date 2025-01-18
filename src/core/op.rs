@@ -8,7 +8,7 @@ use crate::Value;
 #[derive(PartialEq, Eq, Hash, Debug, Clone)]
 pub enum UnaryOp {
     BinaryConstNumber(BinOp, Number),
-    Mapping(Vec<(Value, Value)>),
+    Mapping(Box<[(Value, Value)]>),
     IntToBits { width: u32, signed: SignMode },
     BitsToInt { width: u32, signed: SignMode },
     Chunks { width: u32 },

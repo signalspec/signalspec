@@ -32,7 +32,7 @@ impl ExprCtx {
         self.exprs.insert(ExprDn::Const(v))
     }
 
-    pub(crate) fn concat(&mut self, parts: Vec<ConcatElem<ExprDnId>>) -> ExprDnId {
+    pub(crate) fn concat(&mut self, parts: Box<[ConcatElem<ExprDnId>]>) -> ExprDnId {
         self.exprs.insert(ExprDn::Concat(parts))
     }
 
@@ -99,7 +99,7 @@ impl ExprCtx {
 pub enum ExprDn {
     Const(Value),
     Variable(ValueSrc),
-    Concat(Vec<ConcatElem<ExprDnId>>),
+    Concat(Box<[ConcatElem<ExprDnId>]>),
     Index(ExprDnId, u32),
     Slice(ExprDnId, u32, u32),
     Unary(ExprDnId, UnaryOp),
