@@ -4,7 +4,7 @@ use itertools::EitherOrBoth;
 use num_traits::Signed;
 
 use crate::{core::{
-    constant, derivs::Derivatives, expr::ExprKind, index::FindDefError, lexpr, protocol, resolve::expr::{lvalue_dn, lvalue_up, LValueSrc}, rexpr, rexpr_tup, step::{ConnectionId, StepBuilder, SubProc}, value, ConcatElem, Dir, Expr, ExprDn, Item, LeafItem, Predicate, ProcId, Scope, Shape, ShapeMsg, StepId, Type, ValueSrc, ValueSrcId
+    constant, derivs::Derivatives, ExprKind, index::FindDefError, lexpr, resolve::expr::{lvalue_dn, lvalue_up, LValueSrc}, rexpr, rexpr_tup, step::{ConnectionId, StepBuilder, SubProc}, value, ConcatElem, Dir, Expr, ExprDn, Item, LeafItem, Predicate, ProcId, Scope, Shape, ShapeMsg, StepId, Type, ValueSrc, ValueSrcId
 }, diagnostic::{DiagnosticContext, Diagnostics}, Value};
 use crate::diagnostic::{ErrorReported, Span};
 use crate::entitymap::{entity_key, EntityMap};
@@ -14,6 +14,7 @@ use crate::tree::Tree;
 use crate::{Diagnostic, FileSpan, Index, SourceFile, TypeTree};
 
 use super::expr::{TryFromConstant, lvalue_const, zip_tuple_ast, lexpr_tup, zip_tuple_ast_fields};
+use super::protocol;
 
 enum AltMode {
     Const,

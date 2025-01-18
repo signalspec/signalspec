@@ -5,7 +5,7 @@ use crate::syntax::{ ast, parse_module, SourceFile };
 use crate::core::Scope;
 use std::fmt::Debug;
 
-use super::ScopeNames;
+use crate::core::ScopeNames;
 
 pub struct FileScope {
     pub(crate) file: Arc<SourceFile>,
@@ -25,7 +25,7 @@ impl FileScope {
         for entry in &ast.entries {
             match entry {
                 ast::ModuleEntry::Let(letdef) => {
-                    super::resolve::action::resolve_letdef(&mut dcx, &mut scope, &letdef);
+                    crate::core::resolve::action::resolve_letdef(&mut dcx, &mut scope, &letdef);
                 }
                 _ => {}
             }

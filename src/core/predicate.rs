@@ -80,7 +80,7 @@ impl Predicate {
 
 #[test]
 fn test_predicate() {
-    use super::expr::test_expr_parse;
+    use super::resolve::expr::test_expr_parse;
 
     let range = test_expr_parse("1 ! 1..10").predicate().unwrap();
     assert_eq!(range, Predicate::Range(1.into(), 10.into()));

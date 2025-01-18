@@ -3,10 +3,9 @@ use indexmap::IndexMap;
 use crate::diagnostic::ErrorReported;
 use crate::syntax::ast::{self, AstNode};
 use crate::{Index, Dir, DiagnosticContext, Diagnostic};
-use super::resolve::expr::{ constant, type_tree };
-use super::shape::ShapeMode;
-use super::{ Scope, Shape, ShapeMsg, ShapeMsgParam };
-use super::{ lexpr, rexpr, Item };
+use crate::core::resolve::expr::{ constant, type_tree };
+use crate::core::shape::ShapeMode;
+use crate::core::{ Scope, Shape, ShapeMsg, ShapeMsgParam, Item, lexpr, rexpr, };
 
 pub fn resolve(
     dcx: &mut DiagnosticContext,

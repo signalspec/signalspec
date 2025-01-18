@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::{SourceFile, FileSpan, diagnostic::Span};
-use super::{ Item, ScopeNames };
+use crate::core::{ Item, ScopeNames };
 
 /// A collection of named Items.
 #[derive(Clone)]

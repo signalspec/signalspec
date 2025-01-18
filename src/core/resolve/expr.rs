@@ -1,14 +1,12 @@
-use std::{sync::Arc, fmt::Display, iter};
+use std::{collections::BTreeSet, fmt::{self, Display}, iter, sync::Arc};
 
 use itertools::{Itertools, EitherOrBoth};
 
 use crate::{
     core::{
-        expr::{eval_binary, eval_choose, ExprKind},
-        resolve::action::ValueSinkId,
-        ConcatElem, Expr, ExprDn, Func, FunctionDef, Item, LeafItem, Predicate, Scope, data::{NumberType, NumberTypeError},
+        data::{NumberType, NumberTypeError}, op::{eval_binary, eval_choose, UnaryOp}, resolve::action::ValueSinkId, ConcatElem, ExprDn, Func, FunctionDef, Item, LeafItem, Predicate, Scope, ValueSrc
     },
-    diagnostic::{Diagnostic, ErrorReported, Span, DiagnosticContext},
+    diagnostic::{Diagnostic, DiagnosticContext, ErrorReported, Span},
     syntax::{
         ast::{self, AstNode, BinOp},
         Number,
@@ -16,6 +14,174 @@ use crate::{
     tree::{Tree, TupleFields},
     FileSpan, SourceFile, Type, Value,
 };
+
+#[derive(PartialEq, Debug, Clone)]
+pub enum Expr {
+    Const(Value),
+    Expr(Type, ExprKind),
+}
+
+/// An expression representing a runtime computation
+#[derive(PartialEq, Debug, Clone)]
+pub enum ExprKind {
+    Ignored,
+    Const(Value),
+    VarDn(ExprDn),
+    VarUp(ValueSinkId),
+    Range(Number, Number),
+    Union(Vec<ExprKind>),
+    Flip(Box<ExprKind>, Box<ExprKind>),
+    Choose(Box<ExprKind>, Vec<(Value, Value)>),
+    Concat(Vec<ConcatElem<ExprKind>>),
+    BinaryConst(Box<ExprKind>, BinOp, Value),
+    Unary(Box<ExprKind>, UnaryOp),
+}
+
+impl Expr {
+    /// Return the `Type` for the set of possible values this expression may down-evaluate to or
+    /// match on up-evaluation.
+    pub fn get_type(&self) -> Type {
+        match self {
+            Expr::Const(c) => c.get_type(),
+            Expr::Expr(t, _) => t.clone(),
+        }
+    }
+
+    pub fn down(&self) -> Option<ExprDn> {
+        match self {
+            Expr::Const(c) => Some(ExprDn::Const(c.clone())),
+            Expr::Expr(_, e) => e.down()
+        }
+    }
+
+    pub fn up(&self, v: ExprDn, sink: &mut dyn FnMut(ValueSinkId, ExprDn)) {
+        match self {
+            Expr::Const(_) => {}
+            Expr::Expr(_, e) => e.up(v, sink)
+        }
+    }
+
+    pub(super) fn inner(self) -> ExprKind {
+        match self {
+            Expr::Const(v) => ExprKind::Const(v),
+            Expr::Expr(_, k) => k,
+        }
+    }
+
+    pub fn predicate(&self) -> Option<Predicate> {
+        match self {
+            Expr::Const(c) => Predicate::from_value(c),
+            Expr::Expr(_, e) => e.predicate(),
+        }
+    }
+
+    pub fn ignored() -> Self {
+        Expr::Expr(Type::Ignored, ExprKind::Ignored)
+    }
+
+    pub fn var_dn(id: ValueSrc, ty: Type) -> Self {
+        Expr::Expr(ty, ExprKind::VarDn(ExprDn::Variable(id)))
+    }
+
+    pub fn var_up(id: ValueSinkId, ty: Type) -> Self {
+        Expr::Expr(ty, ExprKind::VarUp(id))
+    }
+}
+
+impl ExprKind {
+    pub fn down(&self) -> Option<ExprDn> {
+        match *self {
+            ExprKind::Ignored | ExprKind::Range(..) | ExprKind::Union(..) | ExprKind::VarUp(..) => None,
+            ExprKind::VarDn(ref dn) => Some(dn.clone()),
+            ExprKind::Const(ref v) => Some(ExprDn::Const(v.clone())),
+            ExprKind::Flip(ref d, _) => d.down(),
+            ExprKind::Choose(ref e, ref c) => Some(ExprDn::Choose(Box::new(e.down()?), c.clone())),
+            ExprKind::Concat(ref c) => Some(ExprDn::Concat(
+                c.iter().map(|l| l.map_elem(|e| e.down())).collect::<Option<Vec<_>>>()?
+            )),
+            ExprKind::BinaryConst(ref e, op, Value::Number(c)) => Some(ExprDn::BinaryConstNumber(Box::new(e.down()?), op, c.clone())),
+            ExprKind::BinaryConst(_, _, _) => None,
+            ExprKind::Unary(ref e, ref op) => Some(ExprDn::Unary(Box::new(e.down()?), op.clone())),
+        }
+    }
+
+    pub fn up(&self, v: ExprDn, sink: &mut dyn FnMut(ValueSinkId, ExprDn)) {
+        match *self {
+            ExprKind::Ignored | ExprKind::Const(_) | ExprKind::VarDn(..)
+             | ExprKind::Range(_, _) | ExprKind::Union(..) => (),
+            ExprKind::VarUp(id) => sink(id, v),
+            ExprKind::Flip(_, ref up) => up.up(v, sink),
+            ExprKind::Choose(ref e, ref c) => {
+                let mapping = c.iter().map(|(v1,v2)| (v2.clone(), v1.clone())).collect();
+                e.up(ExprDn::Choose(Box::new(v), mapping), sink)
+            }
+            ExprKind::Concat(ref concat) => {
+                let mut offset = 0;
+                for c in concat {
+                    match c {
+                        ConcatElem::Elem(e) => e.up(ExprDn::Index(Box::new(v.clone()), offset), sink),
+                        ConcatElem::Slice(e, width) => e.up(ExprDn::Slice(Box::new(v.clone()), offset, offset + width), sink),
+                    };
+                    offset += c.elem_count();
+                }
+            }
+            ExprKind::BinaryConst(ref e, op, Value::Number(c)) => {
+                e.up(ExprDn::BinaryConstNumber(Box::new(v), op.invert(), c.clone()), sink)
+            }
+            ExprKind::BinaryConst(..) => (),
+            ExprKind::Unary(ref e, ref op) => e.up(ExprDn::Unary(Box::new(v), op.invert()), sink),
+        }
+    }
+
+    pub fn predicate(&self) -> Option<Predicate> {
+        match *self {
+            ExprKind::Ignored | ExprKind::VarUp(..) => Some(Predicate::Any),
+            ExprKind::VarDn(_) => None,
+            ExprKind::Flip(_, ref up) => up.predicate(),
+            ExprKind::Const(ref v) => Predicate::from_value(v),
+            ExprKind::Range(lo, hi) => Some(Predicate::Range(lo, hi)),
+            ExprKind::Union(ref u) => {
+                let mut set = BTreeSet::new();
+                for e in u {
+                    match e.predicate()? {
+                        Predicate::SymbolSet(s) => set.extend(s),
+                        _ => return None,
+                    }
+                }
+                Some(Predicate::SymbolSet(set))
+            },
+            ExprKind::Concat(ref parts) => {
+                let mut predicates = Vec::with_capacity(parts.len());
+                for part in parts {
+                    match part.map_elem(|e| e.predicate())? {
+                        ConcatElem::Slice(Predicate::Vector(inner), _) => predicates.extend(inner),
+                        e => predicates.push(e),
+                    }
+                }
+                Some(Predicate::Vector(predicates))
+            }
+            ExprKind::Choose(ref e, _) | ExprKind::BinaryConst(ref e, _, _) | ExprKind::Unary(ref e, _) => {
+                match e.predicate() {
+                    Some(Predicate::Any) => Some(Predicate::Any),
+                    _ => None
+                }
+            },
+        }
+    }
+}
+
+
+impl fmt::Display for Expr {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Expr::Const(c) => c.fmt(f),
+            Expr::Expr(_, ExprKind::Ignored) => write!(f, "_"),
+            Expr::Expr(_, ExprKind::Const(ref p)) => write!(f, "{}", p),
+            Expr::Expr(_, ExprKind::Range(a, b)) => write!(f, "{}..{}", a, b),
+            Expr::Expr(ty, _) => write!(f, "<{ty}>"),
+        }
+    }
+}
 
 pub fn value(dcx: &mut DiagnosticContext, scope: &Scope, e: &ast::Expr) -> Result<Expr, ErrorReported> {
     match rexpr(dcx, scope, e) {
@@ -93,6 +259,15 @@ pub fn collect_or_err<T, C: FromIterator<T>>(iter: impl Iterator<Item=Result<T, 
     if let Some(e) = error { Err(e) } else { Ok(result) }
 }
 
+macro_rules! try_item {
+    ($e:expr) => {
+        match $e {
+            Ok(e) => e,
+            Err(r) => return LeafItem::Invalid(r).into()
+        }
+    }
+}
+
 pub fn rexpr_tup(dcx: &mut DiagnosticContext, scope: &Scope, node: &ast::ExprTup) -> Item {
     if node.fields.len() == 1 && node.fields[0].name.is_none() {
         // Unwrap singleton tuple
@@ -104,15 +279,6 @@ pub fn rexpr_tup(dcx: &mut DiagnosticContext, scope: &Scope, node: &ast::ExprTup
                 rexpr(dcx, scope, &f.expr)
             )).collect()
         )
-    }
-}
-
-macro_rules! try_item {
-    ($e:expr) => {
-        match $e {
-            Ok(e) => e,
-            Err(r) => return LeafItem::Invalid(r).into()
-        }
     }
 }
 
@@ -881,3 +1047,133 @@ pub fn lexpr(dcx: &mut DiagnosticContext, scope: &mut Scope, pat: &ast::Expr, r:
         }
     }
 }
+
+#[cfg(test)]
+pub fn test_expr_parse(e: &str) -> Expr {
+    use crate::diagnostic::{DiagnosticContext, print_diagnostics};
+    use crate::syntax::{parse_expr, SourceFile};
+    use crate::core::{Scope, value};
+
+    let mut dcx = DiagnosticContext::new();
+
+    let scope = Scope { 
+        file: Arc::new(SourceFile::new("<tests>".into(), "".into())),
+        names: crate::core::primitive_fn::expr_prelude()
+    };
+
+    let ast = parse_expr(e).unwrap();
+    let v = value(&mut dcx, &scope, &ast).unwrap();
+
+    print_diagnostics(dcx.diagnostics());
+
+    v
+}
+
+#[test]
+fn test_number_const() {
+    let two = test_expr_parse("2");
+    assert_eq!(two.get_type(), Type::NumberSet([Number::new(2, 1)].into()));
+
+    let decimal = test_expr_parse("1.023");
+    assert_eq!(decimal.get_type(), Type::NumberSet([Number::new(1023, 1000)].into()));
+
+    let four = test_expr_parse("2 + 2");
+    assert_eq!(four.get_type(), Type::NumberSet([Number::new(4, 1)].into()));
+}
+
+#[test]
+fn test_number_range() {
+    let range = test_expr_parse("0.0..5.0");
+    assert_eq!(range.get_type(), Type::Number(NumberType::new(Number::new(1, 1), 0, 5)));
+
+    let sum = test_expr_parse("(0..10) + 5");
+    assert_eq!(sum.get_type(), Type::Number(NumberType::new(Number::new(1, 1), 5, 15)));
+
+    let sub = test_expr_parse("(0..10) - 5");
+    assert_eq!(sub.get_type(), Type::Number(NumberType::new(Number::new(1, 1), -5, 5)));
+
+    let sub_swap = test_expr_parse("5 - (0..7)");
+    assert_eq!(sub_swap.get_type(), Type::Number(NumberType::new(Number::new(-1, 1), -5, 2)));
+
+    let mul = test_expr_parse("(0..10) * 5");
+    assert_eq!(mul.get_type(), Type::Number(NumberType::new(Number::new(5, 1), 0, 10)));
+
+    let div = test_expr_parse("(0..10) / 8");
+    assert_eq!(div.get_type(), Type::Number(NumberType::new(Number::new(1, 8), 0, 10)));
+
+    let scale_by = test_expr_parse("0.0..2.0 by 0.1");
+    assert_eq!(scale_by.get_type(), Type::Number(NumberType::new(Number::new(1, 10), 0, 20)));
+
+    let scale_by_mul = test_expr_parse("(0.0..2.0 by 0.1) * 5");
+    assert_eq!(scale_by_mul.get_type(), Type::Number(NumberType::new(Number::new(5, 10), 0, 20)));
+}
+
+#[test]
+fn test_number_set() {
+    let range = test_expr_parse("0 | 1.5");
+    assert_eq!(range.get_type(), Type::NumberSet([Number::new(0, 1), Number::new(3, 2)].into()));
+
+    let sum = test_expr_parse("(0|1) + 2");
+    assert_eq!(sum.get_type(), Type::NumberSet([Number::new(2, 1), Number::new(3, 1)].into()));
+
+    let sub = test_expr_parse("(100 | 200) - 2");
+    assert_eq!(sub.get_type(), Type::NumberSet([Number::new(98, 1), Number::new(198, 1)].into()));
+
+    let sub_swap = test_expr_parse("5 - (1 | 7)");
+    assert_eq!(sub_swap.get_type(), Type::NumberSet([Number::new(4, 1), Number::new(-2, 1)].into()));
+
+    let mul = test_expr_parse("(-1 | 2) * 5");
+    assert_eq!(mul.get_type(), Type::NumberSet([Number::new(-5, 1), Number::new(10, 1)].into()));
+
+    let div = test_expr_parse("(64 | 32) / 8");
+    assert_eq!(div.get_type(), Type::NumberSet([Number::new(8, 1), Number::new(4, 1)].into()));
+
+    let div_swap = test_expr_parse("128 / (64 | 32)");
+    assert_eq!(div_swap.get_type(), Type::NumberSet([Number::new(2, 1), Number::new(4, 1)].into()));
+}
+
+#[test]
+fn exprs() {
+    let one_one_i = test_expr_parse("complex(1.0, 0.0) + complex(0, 1)");
+    assert_eq!(one_one_i.get_type(), Type::Complex);
+
+    let two_two_i = test_expr_parse("complex(1, 1) * 2");
+    assert_eq!(two_two_i.get_type(), Type::Complex);
+
+    let choose = test_expr_parse("(#a | #b)[#a = #x, #b = #y]");
+    assert_eq!(choose.get_type(), Type::Symbol(["x".into(), "y".into()].into_iter().collect()));
+
+    let concat = test_expr_parse("[(#a|#b), #c, _, 2:[(#a | #c), _], #a]");
+    assert_eq!(concat.get_type(), Type::Vector(6, Box::new(
+        Type::Symbol(["a".into(), "b".into(), "c".into()].into_iter().collect())
+    )));
+
+    let ignore = test_expr_parse("_");
+    assert_eq!(ignore.get_type(), Type::Ignored);
+
+    let down = test_expr_parse("<: #h");
+    assert_eq!(down.get_type(), Type::Symbol(Some("h".to_string()).into_iter().collect()));
+
+    let bound1 = test_expr_parse("_ : (0..10)");
+    assert_eq!(bound1.get_type(), Type::Number(NumberType::new(Number::new(1, 1), 0, 10)));
+
+    let bound2 = test_expr_parse("(0..2) : (0..10)");
+    assert_eq!(bound2.get_type(), Type::Number(NumberType::new(Number::new(1, 1), 0, 2)));
+
+    let fncall = test_expr_parse("((a) => a+3.0)(2.0)");
+    assert_eq!(fncall.get_type(), Type::NumberSet([Number::new(5, 1)].into()));
+}
+
+#[test]
+fn vec_const_fold() {
+    assert_eq!(
+        test_expr_parse("[1, 2, 2:[3, 1:[4]], 5]"),
+        Expr::Const(Value::Vector(vec![1i64.into(), 2i64.into(), 3i64.into(), 4i64.into(), 5i64.into()])),
+    );
+
+    assert_eq!(
+        test_expr_parse("[1, 2:[2, _], 3]"),
+        test_expr_parse("[1, 2, _, 3]")
+    );
+}
+

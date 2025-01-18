@@ -3,7 +3,10 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use crate::diagnostic::Diagnostics;
 use crate::syntax::{ ast, SourceFile };
-use super::{ ProtocolRef, Item, FileScope, Shape };
+use super::{ Item, Shape };
+
+mod file;
+pub use file::{ FileScope, ProtocolRef };
 
 fn default_library_dir() -> Option<PathBuf> {
     Some(std::env::current_exe().ok()?.parent()?.parent()?.join("lib/signalspec"))
@@ -29,7 +32,7 @@ pub(crate) struct Def {
 impl Index {
     pub fn new() -> Index {
         Index {
-            prelude: super::expr::expr_prelude(),
+            prelude: super::primitive_fn::expr_prelude(),
             protocols_by_name: BTreeMap::new(),
             defs: Vec::new(),
             modules: Vec::new(),

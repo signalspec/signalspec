@@ -3,7 +3,6 @@ mod ast_node;
 mod binop;
 mod grammar;
 mod span;
-mod test;
 
 pub use ast_node::{ AstNode, enclosing, dump_tree };
 pub use self::binop::BinOp;
