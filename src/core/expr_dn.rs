@@ -20,8 +20,15 @@ impl ExprCtx {
         ExprCtx { exprs }
     }
 
-    pub(crate) fn get(&self, count: ExprDnId) -> &ExprDn {
-        &self.exprs[count]
+    pub fn get(&self, id: ExprDnId) -> &ExprDn {
+        &self.exprs[id]
+    }
+
+    pub fn get_const(&self, id: ExprDnId) -> Option<&Value> {
+        match &self.exprs[id] {
+            ExprDn::Const(value) => Some(value),
+            _ => None,
+        }
     }
 
     pub fn invalid(&self) -> ExprDnId {
@@ -37,15 +44,27 @@ impl ExprCtx {
     }
 
     pub(crate) fn unary(&mut self, e: ExprDnId, op: UnaryOp) -> ExprDnId {
-        self.exprs.insert(ExprDn::Unary(e, op))
+        if let Some(v) = self.get_const(e) {
+            self.constant(op.eval(v.clone()))
+        } else {
+            self.exprs.insert(ExprDn::Unary(e, op))
+        }
     }
 
-    pub(crate) fn index(&mut self, v: ExprDnId, offset: u32) -> ExprDnId {
-        self.exprs.insert(ExprDn::Index(v, offset))
+    pub(crate) fn index(&mut self, v: ExprDnId, i: u32) -> ExprDnId {
+        if let Some(v) = self.get_const(v) {
+            self.constant(v.index(i))
+        } else {
+            self.exprs.insert(ExprDn::Index(v, i))
+        }
     }
 
     pub(crate) fn slice(&mut self, v: ExprDnId, offset: u32, width: u32) -> ExprDnId {
-        self.exprs.insert(ExprDn::Slice(v, offset, width))
+        if let Some(v) = self.get_const(v) {
+            self.constant(v.slice(offset, offset + width))
+        } else {
+            self.exprs.insert(ExprDn::Slice(v, offset, width))
+        }
     }
 
     pub(crate) fn variable(&mut self, id: ValueSrc) -> ExprDnId {
@@ -74,17 +93,11 @@ impl ExprCtx {
             },
 
             ExprDn::Index(e, i) => {
-                match self.eval(e, state) {
-                    Value::Vector(v) if v.len() >= i as usize => v[i as usize].clone(),
-                    other => panic!("Slice expected vector of at least length {i}, found {}", other)
-                }
+                self.eval(e, state).index(i)
             }
 
             ExprDn::Slice(e, a, b) => {
-                match self.eval(e, state) {
-                    Value::Vector(v) if v.len() >= b as usize => Value::Vector(v[a as usize..b as usize].to_vec()),
-                    other => panic!("Slice expected vector of at least length {b}, found {}", other)
-                }
+                self.eval(e, state).slice(a, b)
             }
 
             ExprDn::Unary(e, ref op) => {
@@ -116,7 +129,14 @@ pub enum ConcatElem<E> {
 }
 
 impl<E> ConcatElem<E> {
-    pub fn map_elem<T>(&self, f: impl FnOnce(&E) -> Option<T>) -> Option<ConcatElem<T>> {
+    pub fn map_elem<T>(&self, f: impl FnOnce(&E) -> T) -> ConcatElem<T> {
+        match *self {
+            ConcatElem::Elem(ref e) => ConcatElem::Elem(f(e)),
+            ConcatElem::Slice(ref e, w) => ConcatElem::Slice(f(e), w),
+        }
+    }
+
+    pub fn map_elem_opt<T>(&self, f: impl FnOnce(&E) -> Option<T>) -> Option<ConcatElem<T>> {
         match *self {
             ConcatElem::Elem(ref e) => Some(ConcatElem::Elem(f(e)?)),
             ConcatElem::Slice(ref e, w) => Some(ConcatElem::Slice(f(e)?, w)),

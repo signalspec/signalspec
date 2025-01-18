@@ -95,7 +95,7 @@ impl ExprKind {
             ExprKind::Flip(ref d, _) => d.down(ecx),
             ExprKind::Concat(ref c) => {
                 let parts = c.iter()
-                    .map(|l| l.map_elem(|e| e.down(ecx)))
+                    .map(|l| l.map_elem_opt(|e| e.down(ecx)))
                     .collect::<Option<Vec<_>>>()?;
                 Some(ecx.concat(parts.into_boxed_slice()))
             },
@@ -155,7 +155,7 @@ impl ExprKind {
             ExprKind::Concat(ref parts) => {
                 let mut predicates = Vec::with_capacity(parts.len());
                 for part in parts {
-                    match part.map_elem(|e| e.predicate())? {
+                    match part.map_elem_opt(|e| e.predicate())? {
                         ConcatElem::Slice(Predicate::Vector(inner), _) => predicates.extend(inner),
                         e => predicates.push(e),
                     }

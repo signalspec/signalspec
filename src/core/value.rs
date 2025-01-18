@@ -85,6 +85,20 @@ impl Value {
             }
         }
     }
+
+    pub(crate) fn index(&self, i: u32) -> Value {
+        match self {
+            Value::Vector(v) if v.len() >= i as usize => v[i as usize].clone(),
+            other => panic!("Slice expected vector of at least length {i}, found {}", other)
+        }
+    }
+
+    pub(crate) fn slice(&self, i1: u32, i2: u32) -> Value {
+        match self {
+            Value::Vector(v) if v.len() >= i2 as usize => Value::Vector(v[i1 as usize..i2 as usize].to_vec()),
+            other => panic!("Slice expected vector of at least length {i2}, found {}", other)
+        }
+    }
 }
 
 #[test]
