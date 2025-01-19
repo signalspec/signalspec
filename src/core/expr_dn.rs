@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use crate::entitymap::{entity_key, EntityIntern};
 use super::ValueSrc;
 use crate::Value;
@@ -103,6 +105,44 @@ impl ExprCtx {
             ExprDn::Unary(e, ref op) => {
                 op.eval(self.eval(e, state))
             }
+        }
+    }
+
+    pub fn format(&self, id: ExprDnId) -> ExprDnFormat {
+        ExprDnFormat { ecx: self, id }
+    }
+}
+
+pub struct ExprDnFormat<'a> {
+    id: ExprDnId,
+    ecx: &'a ExprCtx,
+}
+
+impl Display for ExprDnFormat<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match *self.ecx.get(self.id) {
+            ExprDn::Const(ref value) => write!(f, "{}", value),
+            ExprDn::Variable(id) => write!(f, "${}${}", id.0.0, id.1),
+            ExprDn::Concat(ref parts) => {
+                write!(f, "[")?;
+                for p in parts {
+                    match *p {
+                        ConcatElem::Elem(e) => write!(f, "{}", self.ecx.format(e))?,
+                        ConcatElem::Slice(e, w) => write!(f, "{w}:{}", self.ecx.format(e))?,
+                    }
+                    write!(f, ", ")?;
+                }
+                write!(f, "]")
+            },
+            ExprDn::Index(e, i) => {
+                write!(f, "{}[{i}]", self.ecx.format(e))
+            },
+            ExprDn::Slice(e, i1, i2) => {
+                write!(f, "{}[{i1}..{i2}]", self.ecx.format(e))
+            }
+            ExprDn::Unary(e, ref op) => {
+                write!(f, "{} {op:?}", self.ecx.format(e))
+            },
         }
     }
 }

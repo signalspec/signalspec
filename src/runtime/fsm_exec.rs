@@ -148,7 +148,7 @@ impl FsmBorrow<'_> {
             }
             Derivatives::Switch { ref src, ref arms, other } => {
                 let vals = src.iter().copied().map(|e| self.down_eval(e)).collect();
-                debug!("{stateno:6} Switch on {vals:?}");
+                debug!("{stateno:6} Switch on {vals:?} {arms:?} {other:?}");
     
                 let arm = arms.iter().find(|arm| {
                     arm.predicates.iter().zip_eq(&vals).all(|(p, v)| {

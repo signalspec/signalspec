@@ -1077,7 +1077,7 @@ pub fn compile_process(index: &Index, scope: &Scope, shape_dn: Shape, ast: &ast:
 
     if log_enabled!(log::Level::Debug) {
         let mut buf = String::new();
-        crate::core::step::write_tree(&mut buf, 0, &builder.steps.steps, step).unwrap();
+        builder.steps.write_tree(&mut buf, 0, step).unwrap();
         debug!("Steps:\n{}", buf);
     }
 

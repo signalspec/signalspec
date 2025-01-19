@@ -379,7 +379,11 @@ impl StepBuilder {
             assert!(!known.contains_key(&s));
             let d = self.derivative(s);
 
-            log::info!("Derivatives of {s:?}: {d:?}");
+            if log_enabled!(log::Level::Info) {
+                let mut buf = String::new();
+                self.write_tree(&mut buf, 4, s).unwrap();
+                log::info!("Derivatives of {s:?}: {d:?}\n{buf}");
+            }
 
             d.follow(&mut |f| {
                 if f != s && !known.contains_key(&f) {

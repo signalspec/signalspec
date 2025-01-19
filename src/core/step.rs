@@ -212,56 +212,62 @@ impl StepBuilder {
     pub(crate) fn add_connection(&mut self, shape: Shape) -> ConnectionId {
         self.connections.push(shape)
     }
-}
 
-pub fn write_tree(f: &mut dyn std::fmt::Write, indent: u32, steps: &EntityIntern<StepId, Step>, step: StepId) -> Result<(), std::fmt::Error> {
-    let i: String = " ".repeat(indent as usize);
-    match steps[step] {
-        Step::Fail => writeln!(f, "{:6} {}Fail", step.0, i)?,
-        Step::Accept => writeln!(f, "{:6} {}Accept", step.0, i)?,
-        Step::Pass => writeln!(f, "{:6} {}Pass", step.0, i)?,
-        Step::Stack{ lo, hi, ..} => {
-            writeln!(f, "{:6} {}Stack:", step.0, i)?;
-            write_tree(f, indent+2, steps, lo)?;
-            write_tree(f, indent+2, steps, hi)?;
-        }
-        Step::Process(id) => {
-            writeln!(f, "{:6} {}Primitive {id:?}", step.0, i)?
-        }
-        Step::Send { chan, variant, ref msg } => {
-            writeln!(f, "{:6} {}Send: {:?} {:?} {:?}", step.0, i, chan, variant, msg)?;
-        }
-        Step::Receive { chan, variant, var: ref val, ref msg } => {
-            writeln!(f, "{:6} {}Receive: {:?} {:?} {:?} {:?}", step.0, i, chan, variant, val, msg)?;
-        }
-        Step::Assign(dst, ref src) => {
-            writeln!(f, "{:6} {}Assign {dst:?} = {src:?}", step.0, i)?;
-        },
-        Step::Guard(ref src, ref pred) => {
-            writeln!(f, "{:6} {}Guard {src:?} is {pred:?}", step.0, i)?;
-        }
-        Step::Seq(s1, mut s2) => {
-            writeln!(f, "{:6} {}Seq", step.0, i)?;
-            write_tree(f, indent+1, steps, s1)?;
-
-            // Flatten nested seq for readability
-            while let Step::Seq(i1, i2) = steps[s2] {
-                write_tree(f, indent+1, steps, i1)?;
-                s2 = i2;
+    pub fn write_tree(&self, f: &mut dyn std::fmt::Write, indent: u32, step: StepId) -> Result<(), std::fmt::Error> {
+        let i: String = " ".repeat(indent as usize);
+        match self.steps[step] {
+            Step::Fail => writeln!(f, "{:6} {}Fail", step.0, i)?,
+            Step::Accept => writeln!(f, "{:6} {}Accept", step.0, i)?,
+            Step::Pass => writeln!(f, "{:6} {}Pass", step.0, i)?,
+            Step::Stack{ lo, hi, ..} => {
+                writeln!(f, "{:6} {}Stack:", step.0, i)?;
+                self.write_tree(f, indent+2, lo)?;
+                self.write_tree(f, indent+2, hi)?;
             }
+            Step::Process(id) => {
+                writeln!(f, "{:6} {}Primitive {id:?}", step.0, i)?
+            }
+            Step::Send { chan, variant, ref msg } => {
+                write!(f, "{:6} {}Send: {:?} {:?} [", step.0, i, chan, variant)?;
+                for (i, e) in msg.iter().copied().enumerate() {
+                    if i != 0 { write!(f, ", ")?; }
+                    write!(f, "{}", self.ecx.format(e))?;
+                }
+                writeln!(f, "]")?
+            }
+            Step::Receive { chan, variant, var: ref val, ref msg } => {
+                writeln!(f, "{:6} {}Receive: {:?} {:?} {:?} {:?}", step.0, i, chan, variant, val, msg)?;
+            }
+            Step::Assign(dst, src) => {
+                writeln!(f, "{:6} {}Assign {dst:?} = {src}", step.0, i, src = self.ecx.format(src))?;
+            },
+            Step::Guard(src, ref pred) => {
+                writeln!(f, "{:6} {}Guard {src} is {pred:?}", step.0, i, src = self.ecx.format(src))?;
+            }
+            Step::Seq(s1, mut s2) => {
+                writeln!(f, "{:6} {}Seq", step.0, i)?;
+                self.write_tree(f, indent+1, s1)?;
 
-            write_tree(f, indent+1, steps, s2)?;
-        }
-        Step::Repeat(inner, nullable) => {
-            writeln!(f, "{:6} {}Repeat accepting={nullable}", step.0, i)?;
-            write_tree(f, indent + 1, steps, inner)?;
-        }
-        Step::Alt(ref arms) => {
-            writeln!(f, "{:6} {}Alt", step.0, i)?;
-            for &arm in arms.iter() {
-                write_tree(f, indent + 1, steps, arm)?;
+                // Flatten nested seq for readability
+                while let Step::Seq(i1, i2) = self.steps[s2] {
+                    self.write_tree(f, indent+1, i1)?;
+                    s2 = i2;
+                }
+
+                self.write_tree(f, indent+1, s2)?;
+            }
+            Step::Repeat(inner, nullable) => {
+                writeln!(f, "{:6} {}Repeat accepting={nullable}", step.0, i)?;
+                self.write_tree(f, indent + 1, inner)?;
+            }
+            Step::Alt(ref arms) => {
+                writeln!(f, "{:6} {}Alt", step.0, i)?;
+                for &arm in arms.iter() {
+                    self.write_tree(f, indent + 1, arm)?;
+                }
             }
         }
+        Ok(())
     }
-    Ok(())
 }
+
