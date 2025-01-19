@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use indexmap::indexset;
 
-use super::{expr_dn::ExprDnId, step::{ProcId, StepBuilder}, ChannelId, Dir, Predicate, Step, StepId, ValueSrcId};
+use super::{expr_dn::ExprDnId, step::{ProcId, StepBuilder}, ChannelId, Dir, Predicate, Step, StepId, ValueSrc, ValueSrcId};
 
 #[derive(Debug)]
 pub(crate) enum Derivatives {
@@ -55,7 +55,6 @@ pub(crate) struct ReceiveArm {
 
 #[derive(Debug)]
 pub(crate) struct SwitchArm {
-    pub var: Option<ValueSrcId>,
     pub predicates: Vec<Predicate>,
     pub next: StepId,
 }
@@ -117,6 +116,23 @@ impl Derivatives {
         self.follow_mut(&mut |m| *m = f(*m));
         self
     }
+
+    fn rename_assigned_vars(&mut self, f: &mut impl FnMut(&mut ValueSrcId, &mut StepId)) {
+        match self {
+            Derivatives::End | Derivatives::Process { .. } | Derivatives::Send { .. } | Derivatives::Switch { .. } => {}
+            Derivatives::Assign { var, next, .. } => {} // f(var, next),
+            Derivatives::Receive { arms, .. } => {
+                for arm in arms {
+                    f(&mut arm.var, &mut arm.next);
+                }
+            }
+            Derivatives::Select { branches, .. } => {
+                for b in branches {
+                    b.rename_assigned_vars(f);
+                }
+            }
+        }
+    }
 }
 
 impl StepBuilder {
@@ -155,10 +171,10 @@ impl StepBuilder {
                         let arms: Vec<SwitchArm> = arms.into_iter()
                             .filter(|arm| arm.variant == variant)
                             .map(|arm| {
+                                let hi_next = self.substitute(arm.next, arm.var, |_, i| dn[i as usize]);
                                 SwitchArm {
-                                    var: Some(arm.var),
                                     predicates: arm.predicates,
-                                    next: self.stack(next, conn, arm.next),
+                                    next: self.stack(next, conn, hi_next),
                                 }
                             })
                             .collect();
@@ -179,10 +195,10 @@ impl StepBuilder {
                         let arms: Vec<SwitchArm> = arms.into_iter()
                             .filter(|arm| arm.variant == variant)
                             .map(|arm| {
+                                let lo_next = self.substitute(arm.next, arm.var, |_, i| dn[i as usize]);
                                 SwitchArm {
-                                    var: Some(arm.var),
                                     predicates: arm.predicates,
-                                    next: self.stack(arm.next, conn, next),
+                                    next: self.stack(lo_next, conn, next),
                                 }
                             })
                             .collect();
@@ -261,7 +277,7 @@ impl StepBuilder {
                 Derivatives::Assign { var, val: val.clone(), next: StepId::ACCEPT }
             }
             Step::Guard(ref val, ref predicate) => {
-                let arms = vec![SwitchArm { predicates: vec![predicate.clone()], var: None, next: StepId::ACCEPT }];
+                let arms = vec![SwitchArm { predicates: vec![predicate.clone()], next: StepId::ACCEPT }];
                 Derivatives::Switch { src: vec![val.clone()], arms, other: StepId::FAIL }
             }
             Step::Repeat(inner, _) => {
@@ -385,13 +401,22 @@ impl StepBuilder {
 
         while let Some(s) = queue.pop() {
             assert!(!known.contains_key(&s));
-            let d = self.derivative(s);
 
             if log_enabled!(log::Level::Info) {
                 let mut buf = String::new();
                 self.write_tree(&mut buf, 4, s).unwrap();
-                log::info!("Derivatives of {s:?}: {d:?}\n{buf}");
+                log::info!("Derivatives of \n{buf}");
             }
+
+            let mut d = self.derivative(s);
+
+            d.rename_assigned_vars(&mut |var, next| {
+                let new_var = self.ecx.fresh_var();
+                *next = self.substitute(*next, *var, |ecx, i| ecx.variable(ValueSrc(new_var, i)));
+                *var = new_var;
+            });
+
+            log::info!("{s:?} -> {d:?}");
 
             d.follow(&mut |f| {
                 if f != s && !known.contains_key(&f) {

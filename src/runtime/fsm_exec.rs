@@ -35,7 +35,7 @@ impl FsmExec {
         FsmExec {
             state: FsmState {
                 state: program.root,
-                registers: program.vars.iter().map(|_| Vec::new()).collect(),
+                registers: program.exprs.vars().iter().map(|_| Vec::new()).collect(),
                 processes: program.processes.iter().map(|_| None).collect(),
                 channels,
             },
@@ -103,14 +103,14 @@ impl FsmBorrow<'_> {
             Derivatives::Receive { chan, ref arms, other } => {
                 let rx = ready!(self.state.channels[chan].poll_receive(cx));
                 let msg = rx.peek();
-    
+
                 let arm = arms.iter().find(|arm| {
                     msg.variant == arm.variant &&
                     arm.predicates.iter().zip_eq(&msg.values).all(|(p, v)| {
                         self.up_eval_test(p, v)
                     })
                 });
-    
+
                 if let Some(arm) = arm {
                     debug!("{stateno:6} Receive {chan:?} {msg:?} - accept");
                     self.state.registers[arm.var] = rx.pop().values;
@@ -147,21 +147,15 @@ impl FsmBorrow<'_> {
                 next
             }
             Derivatives::Switch { ref src, ref arms, other } => {
-                let vals = src.iter().copied().map(|e| self.down_eval(e)).collect();
+                let vals: Vec<_> = src.iter().copied().map(|e| self.down_eval(e)).collect();
                 debug!("{stateno:6} Switch on {vals:?} {arms:?} {other:?}");
-    
+
                 let arm = arms.iter().find(|arm| {
                     arm.predicates.iter().zip_eq(&vals).all(|(p, v)| {
                         self.up_eval_test(p, v)
                     })
                 });
-    
-                if let Some(arm) = arm {
-                    if let Some(var) = arm.var {
-                        self.state.registers[var] = vals;
-                    }
-                }
-    
+
                 arm.map_or(other, |arm| arm.next)
             }
             Derivatives::Select { ref branches, ref end } => {
@@ -185,4 +179,3 @@ impl FsmBorrow<'_> {
         })
     }
 }
-

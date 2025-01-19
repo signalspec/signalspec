@@ -1,7 +1,7 @@
 use std::fmt::Display;
 
-use crate::entitymap::{entity_key, EntityIntern};
-use super::ValueSrc;
+use crate::entitymap::{entity_key, EntityIntern, EntityMap};
+use super::{ValueSrc, ValueSrcId};
 use crate::Value;
 use super::op::UnaryOp;
 
@@ -12,14 +12,24 @@ impl ExprDnId {
 }
 
 pub struct ExprCtx {
+    vars: EntityMap<ValueSrcId, ()>,
     exprs: EntityIntern<ExprDnId, ExprDn>,
 }
 
 impl ExprCtx {
     pub fn new() -> ExprCtx {
+        let vars = EntityMap::new();
         let mut exprs = EntityIntern::new();
         assert_eq!(exprs.insert(ExprDn::Variable(ValueSrc(u32::MAX.into(), u32::MAX))), ExprDnId::INVALID);
-        ExprCtx { exprs }
+        ExprCtx { vars, exprs }
+    }
+
+    pub fn fresh_var(&mut self) -> ValueSrcId {
+        self.vars.push(())
+    }
+
+    pub fn vars(&self) -> &EntityMap<ValueSrcId, ()> {
+        &self.vars
     }
 
     pub fn get(&self, id: ExprDnId) -> &ExprDn {
@@ -61,11 +71,11 @@ impl ExprCtx {
         }
     }
 
-    pub(crate) fn slice(&mut self, v: ExprDnId, offset: u32, width: u32) -> ExprDnId {
+    pub(crate) fn slice(&mut self, v: ExprDnId, i1: u32, i2: u32) -> ExprDnId {
         if let Some(v) = self.get_const(v) {
-            self.constant(v.slice(offset, offset + width))
+            self.constant(v.slice(i1, i2))
         } else {
-            self.exprs.insert(ExprDn::Slice(v, offset, width))
+            self.exprs.insert(ExprDn::Slice(v, i1, i2))
         }
     }
 
@@ -104,6 +114,62 @@ impl ExprCtx {
 
             ExprDn::Unary(e, ref op) => {
                 op.eval(self.eval(e, state))
+            }
+        }
+    }
+
+    pub fn substitute(&mut self, e: ExprDnId, var: ValueSrcId, v: &mut impl FnMut(&mut ExprCtx, u32) -> ExprDnId) -> ExprDnId {
+        match self.exprs[e] {
+            ExprDn::Const(_) => e,
+            ExprDn::Variable(ValueSrc(var2, i)) if var == var2 => v(self, i),
+            ExprDn::Variable(_) => e,
+            ExprDn::Concat(ref parts) => {
+                let mut parts = parts.clone();
+                for part in &mut parts {
+                    *part = part.map_elem(|e2| self.substitute(*e2, var, v));
+                }
+                self.concat(parts)
+            },
+            ExprDn::Index(e2, i) => {
+                let e2s = self.substitute(e2, var, v);
+                if e2 != e2s { self.index(e2s, i) } else { e }
+            }
+            ExprDn::Slice(e2, i1, i2) => {
+                let e2s = self.substitute(e2, var, v);
+                if e2 != e2s { self.slice(e2s, i1, i2) } else { e }
+            }
+            ExprDn::Unary(e2, ref op) => {
+                let op = op.clone();
+                let e2s = self.substitute(e2, var, v);
+                if e2 != e2s { self.unary(e2s, op) } else { e }
+            }
+        }
+    }
+
+    pub fn substitute_var(&mut self, e: ExprDnId, var: ValueSrcId, new_var: ValueSrcId) -> ExprDnId {
+        match self.exprs[e] {
+            ExprDn::Const(_) => e,
+            ExprDn::Variable(ValueSrc(var2, i)) if var == var2 => self.variable(ValueSrc(new_var, i)),
+            ExprDn::Variable(_) => e,
+            ExprDn::Concat(ref parts) => {
+                let mut parts = parts.clone();
+                for part in &mut parts {
+                    *part = part.map_elem(|e2| self.substitute_var(*e2, var, new_var));
+                }
+                self.concat(parts)
+            },
+            ExprDn::Index(e2, i) => {
+                let e2s = self.substitute_var(e2, var, new_var);
+                if e2 != e2s { self.index(e2s, i) } else { e }
+            }
+            ExprDn::Slice(e2, i1, i2) => {
+                let e2s = self.substitute_var(e2, var, new_var);
+                if e2 != e2s { self.slice(e2s, i1, i2) } else { e }
+            }
+            ExprDn::Unary(e2, ref op) => {
+                let op = op.clone();
+                let e2s = self.substitute_var(e2, var, new_var);
+                if e2 != e2s { self.unary(e2s, op) } else { e }
             }
         }
     }

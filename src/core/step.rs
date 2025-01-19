@@ -6,7 +6,7 @@ use crate::entitymap::{entity_key, EntityIntern, EntityMap};
 use crate::runtime::PrimitiveProcess;
 use crate::Dir;
 use super::expr_dn::{ExprCtx, ExprDnId};
-use super::{Shape, Predicate, ValueSrcId};
+use super::{Predicate, Shape, ValueSrcId};
 
 entity_key!(pub StepId);
 
@@ -110,15 +110,15 @@ impl StepBuilder {
             processes: EntityMap::new(),
         }
     }
-    
+
     pub(crate) fn invalid(&self, _r: ErrorReported) -> StepId {
         StepId::FAIL
     }
-    
+
     pub(crate) fn accepting(&self) -> StepId {
         StepId::ACCEPT
     }
-    
+
     pub(crate) fn seq(&mut self, first: StepId, second: StepId) -> StepId {
         match (first, second) {
             (StepId::ACCEPT, _) => return second,
@@ -140,11 +140,11 @@ impl StepBuilder {
             .reduce(|s2, s1| self.seq(s1, s2))
             .unwrap_or(self.accepting())
     }
-    
+
     pub(crate) fn receive(&mut self, chan: ChannelId, variant: usize, val: ValueSrcId, msg: Vec<Predicate>) -> StepId {
         self.steps.insert(Step::Receive { chan, variant, var: val, msg })
     }
-    
+
     pub(crate) fn send(&mut self, chan: ChannelId, variant: usize, msg: Vec<ExprDnId>) -> StepId {
         self.steps.insert(Step::Send { chan, variant, msg })
     }
@@ -189,11 +189,11 @@ impl StepBuilder {
     pub(crate) fn repeat(&mut self, inner: StepId, nullable: bool) -> StepId {
         self.steps.insert(Step::Repeat(inner, nullable))
     }
-    
+
     pub(crate) fn pass(&mut self) -> StepId {
         self.steps.insert(Step::Pass)
     }
-    
+
     pub(crate) fn stack(&mut self, lo: StepId, conn: ConnectionId, hi: StepId) -> StepId {
         match (&self.steps[lo], &self.steps[hi]) {
             (Step::Fail, _) | (_, Step::Fail) => StepId::FAIL,
@@ -208,9 +208,63 @@ impl StepBuilder {
             }
         }
     }
-    
+
     pub(crate) fn add_connection(&mut self, shape: Shape) -> ConnectionId {
         self.connections.push(shape)
+    }
+
+    pub(crate) fn substitute(&mut self, s: StepId, replace: ValueSrcId, mut v: impl FnMut(&mut ExprCtx, u32) -> ExprDnId) -> StepId {
+        fn inner(this: &mut StepBuilder, s: StepId, replace: ValueSrcId, v: &mut impl FnMut(&mut ExprCtx, u32) -> ExprDnId) -> (StepId, bool) {
+            match this.steps[s] {
+                Step::Fail | Step::Accept | Step::Pass | Step::Process(_) => (s, true),
+                Step::Stack { lo, conn, hi } => {
+                    let (lo, c1) = inner(this, lo, replace, v);
+                    let (hi, c2) = inner(this, hi, replace, v);
+                    (this.stack(lo, conn, hi), c1 && c2)
+                }
+                Step::Send { chan, variant, ref msg } => {
+                    let msg = msg.iter().map(|m| {
+                        this.ecx.substitute(*m, replace, v)
+                    }).collect();
+                    (this.send(chan, variant, msg), true)
+                }
+                Step::Receive { var, .. } => (s, var != replace),
+                Step::Seq(s1, s2) => {
+                    let (s1, c1) = inner(this, s1, replace, v);
+                    if c1 {
+                        let (s2, c2) = inner(this, s2, replace, v);
+                        (this.seq(s1, s2), c2)
+                    } else {
+                        (this.seq(s1, s2), c1)
+                    }
+                }
+                Step::Assign(var, e) => {
+                    let e = this.ecx.substitute(e, replace, v);
+                    (this.assign(var, e), var != replace)
+                },
+                Step::Guard(e, ref p) => {
+                    let e = this.ecx.substitute(e, replace, v);
+                    let p = p.clone();
+                    (this.guard(e, p), true)
+                }
+                Step::Repeat(s, n) => {
+                    let (s, _) = inner(this, s, replace, v);
+                    (this.repeat(s, n), true)
+                }
+                Step::Alt(ref arms) => {
+                    let mut arms = arms.clone();
+                    let mut cont = true;
+                    for arm in &mut arms {
+                        let (s, c) = inner(this, *arm, replace, v);
+                        *arm = s;
+                        cont &= c;
+                    }
+                    (this.alt(arms.to_vec()), cont)
+                }
+            }
+        }
+
+        inner(self, s, replace, &mut v).0
     }
 
     pub fn write_tree(&self, f: &mut dyn std::fmt::Write, indent: u32, step: StepId) -> Result<(), std::fmt::Error> {
@@ -270,4 +324,3 @@ impl StepBuilder {
         Ok(())
     }
 }
-

@@ -114,7 +114,6 @@ pub struct Builder<'a> {
     dcx: DiagnosticContext,
     index: &'a Index,
     steps: StepBuilder,
-    value_src: EntityMap<ValueSrcId, ()>,
     value_sink: EntityMap<ValueSinkId, ()>,
     upvalues: Vec<(ValueSinkId, ExprDnId)>,
 }
@@ -125,7 +124,6 @@ impl<'a> Builder<'a> {
             dcx: DiagnosticContext::new(),
             index,
             steps: StepBuilder::new(),
-            value_src: EntityMap::new(),
             value_sink: EntityMap::new(),
             upvalues: Vec::new(),
         }
@@ -137,7 +135,7 @@ impl<'a> Builder<'a> {
     }
 
     fn add_value_src(&mut self) -> ValueSrcId {
-        self.value_src.push(())
+        self.steps.ecx.fresh_var()
     }
 
     fn add_receive(&mut self) -> ReceiveMsg {
@@ -237,7 +235,7 @@ impl<'a> Builder<'a> {
                 let mut body_scope = sb.scope.child();
 
                 let mut up_inner = Vec::new();
-                
+
                 let mut dn = self.add_receive();
 
                 for m in zip_tuple_ast_fields(&mut self.dcx, &sb.scope.file, &args, &msg_def.params) {
@@ -293,14 +291,14 @@ impl<'a> Builder<'a> {
                 };
 
 
-                
+
                 let receive = if shape_up.mode.has_dn_channel() {
                     self.steps.receive(conn_up.dn(), msg_def.tag, dn.src, dn.predicates)
                 } else {
                     assert!(dn.predicates.is_empty());
                     self.steps.accepting()
                 };
-                
+
                 let send = if shape_up.mode.has_up_channel() {
                     let up = self.bind_tree_fields_up_finish(up_inner, &sb.scope.file);
                     self.steps.send(conn_up.up(), msg_def.tag, up)
@@ -393,9 +391,9 @@ impl<'a> Builder<'a> {
                                 });
                             }
                         };
-                        
+
                         let (count_src, count_used) = self.up_value_src(&count);
-                        
+
                         let (init, increment, exit_guard) = if count_used || max.is_some() {
                             let zero = self.steps.ecx.constant(Value::Number(0.into()));
                             let init = self.steps.assign(count_src, zero);
@@ -410,7 +408,7 @@ impl<'a> Builder<'a> {
                         } else {
                             (self.steps.accepting(), self.steps.accepting(), self.steps.accepting())
                         };
-                        
+
                         let body = self.steps.seq(inner, increment);
                         let repeat = self.steps.repeat(body, nullable);
                         self.steps.seq_from([init, repeat, exit_guard])
@@ -442,7 +440,7 @@ impl<'a> Builder<'a> {
                                     count_expr,
                                     Predicate::Range(0.into(), 1.into()),
                                 );
-        
+
                                 let body = self.steps.seq_from([loop_guard, inner, decrement]);
                                 let repeat = self.steps.repeat(body, true);
                                 self.steps.seq_from([init, repeat, exit_guard])
@@ -466,10 +464,10 @@ impl<'a> Builder<'a> {
                     },
                     Invalid(ErrorReported)
                 }
-                
+
                 let mut count = None;
                 let mut vars = Vec::new();
-                
+
                 for &(ref name, ref expr) in &node.vars {
                     let Ok(e) = value(&mut self.dcx, sb.scope, expr) else { continue; };
                     let (c, ty) = match e.get_type() {
@@ -630,7 +628,7 @@ impl<'a> Builder<'a> {
 
                         let arms = node.arms.iter().map(|arm| {
                             let mut body_scope = sb.scope.child();
-                            
+
                             let binding = lvalue_up(&mut self.dcx, &mut self.steps.ecx, &mut body_scope, &arm.discriminant, ty.clone(), &mut || self.value_sink.push(()))
                                 .unwrap_or(LValueSrc::Val(ExprDnId::INVALID));
 
@@ -721,7 +719,7 @@ impl<'a> Builder<'a> {
                 t.for_each(&mut |_| {
                     dn.add_field(&mut self.steps.ecx, Predicate::Any);
                 });
-                
+
                 self.dcx.report(Diagnostic::InvalidItemForPattern {
                     span: scope.span(pat.span()),
                     found: t.to_string(),
@@ -1074,7 +1072,6 @@ pub struct ProcessChain {
     pub root: StepId,
     pub fsm: BTreeMap<StepId, Derivatives>,
     pub accepting: BTreeSet<StepId>,
-    pub vars: EntityMap<ValueSrcId, ()>,
     pub exprs: ExprCtx,
     pub conn_dn: ConnectionId,
     pub up: Option<(Shape, ConnectionId)>,
@@ -1105,7 +1102,6 @@ pub fn compile_process(index: &Index, scope: &Scope, shape_dn: Shape, ast: &ast:
     }
 
     Ok(ProcessChain {
-        vars: builder.value_src,
         root: step,
         fsm,
         accepting,

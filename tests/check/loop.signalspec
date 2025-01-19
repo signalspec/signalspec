@@ -19,8 +19,8 @@ with Seq(_:t, _) def test1() = main(0)
 with Seq(_:t, _) def test2() = main(1)
 
 @test(#both, (#a, #b, #c, #d, #c, #d, #a))
-with Seq(_:t, _) def test2() = main(2)
+with Seq(_:t, _) def test3() = main(2)
 
 @test(#up_fail, (#a, #b, #c, #a))
 @test(#up_fail, (#a, #b, #c, #d))
-with Seq(_:t, _) def test2() = main(_)
+with Seq(_:t, _) def test4() = main(_)
