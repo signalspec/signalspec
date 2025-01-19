@@ -1,0 +1,15 @@
+
+with Seq(_:#a|#b|#c, dir) def passthru() = new Seq(_:#a|#b|#c, dir) {
+    repeat {
+        on val(x) { val(x) }
+    }
+}
+
+with Seq(_:#a|#b|#c, dir) def triple() = new Seq((#a|#b|#c, #a|#b|#c, #a|#b|#c), dir) {
+    repeat {
+        on val((x, y, z)) { val(x); val(y); val(z) }
+    }
+}
+
+@test(#both, (#a, #b, #c, #c, #b, #a))
+with Seq(_:#a|#b|#c, dir) def test_triple() = passthru() | triple() | { val((#a, #b, #c)); val((#c, #b, #a)) }

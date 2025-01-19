@@ -221,6 +221,11 @@ impl StepBuilder {
                         self.select(a, b)
                     }
 
+                    // take immediate transitions from hi
+                    (_, dhi @ (Derivatives::Assign { .. } | Derivatives::Switch { .. })) => {
+                        dhi.map_follow(|hi| self.stack(lo, conn, hi))
+                    }
+
                     // lo is blocked, advance hi
                     (Derivatives::Send { chan, .. }, dhi) if chan == conn.up() => dhi.map_follow(|hi| self.stack(lo, conn, hi)),
                     (Derivatives::Receive { chan, .. }, dhi) if chan == conn.dn() => dhi.map_follow(|hi| self.stack(lo, conn, hi)),
