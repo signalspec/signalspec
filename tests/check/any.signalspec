@@ -1,0 +1,34 @@
+@test(#up, (#a, #b, #c))
+with Seq(_:#a|#b|#c, dir) def test_alt_no_data() = {
+    any {
+        val(#a)
+        val(#b)
+        val(#c)
+    }
+}
+
+protocol Abc(dir: #dn|#up) dir {
+    a(),
+    b(),
+    c(),
+}
+
+with Seq(_:#a|#b|#c, dir) def abc() = new Abc(dir) {
+    repeat {
+        any {
+            on a() {
+                val(#a)
+            }
+            on b() {
+                val(#b)
+            }
+            on c() {
+                val(#c)
+            }
+        }
+    }
+}
+
+@test(#both, (#a, #b, #c, #b, #a))
+with Seq(_:#a|#b|#c, dir) def test_alt_map() = abc() | { a(); b(); c(); b(); a() }
+

@@ -22,7 +22,7 @@ peg::parser!(pub grammar signalspec() for str {
     { ast::Error { span: FileSpan{ start, end }, expected } }
 
   rule skip_recover(expected: &'static str, skip_until: rule<()>) -> ast::Error
-    = start:pos() [_] (!("//" / skip_until()) [_])* end:pos()
+    = start:pos() [^'}' | ')' | ']' | ';'] (!("//" / skip_until()) [_])* end:pos()
     { ast::Error { span: FileSpan{ start, end }, expected } }
 
   rule module_recovery_set() -> ()
@@ -35,6 +35,7 @@ peg::parser!(pub grammar signalspec() for str {
     / RAW_KW("on")
     / RAW_KW("for")
     / RAW_KW("alt")
+    / RAW_KW("any")
     / "}"
     / ";"
     / module_recovery_set()
@@ -91,7 +92,7 @@ peg::parser!(pub grammar signalspec() for str {
   rule block() -> ast::Block
       = start:pos() open:tok_node("{") _
         lets:letstmt()**_ _
-        actions:(!['}'] a:action() {a})**(_ (";" _)?) _
+        actions:action()**(_ (";" _)?) _ 
         close:tok_node_or_err("}") end:pos()
       { ast::Block{ span: FileSpan{start, end}, open, lets, actions, close } }
 
@@ -102,6 +103,8 @@ peg::parser!(pub grammar signalspec() for str {
           { ast::Action::On(ast::ActionOn{ span: FileSpan{start, end}, name, args, block }) }
         / start:pos() KW("for") _ vars:COMMASEP_ONE(<(l:IDENTIFIER() _ "=" _ r:expr() { (l,r) })>) _ block:block() end:pos()
           { ast::Action::For(ast::ActionFor{ span: FileSpan{start, end}, vars, block }) }
+        / start:pos() KW("any") _ open:tok_node("{") _ arms:action()**__ _ close:tok_node_or_err("}") end:pos()
+          { ast::Action::Any(ast::ActionAny { span: FileSpan{start, end}, arms }) }
         / start:pos() KW("alt") _ dir:expr() _ expr:expr() _ open:tok_node("{") _ arms:alt_arm()**__ _ close:tok_node_or_err("}") end:pos()
           { ast::Action::Alt(ast::ActionAlt{ span: FileSpan{start, end}, dir, expr, arms }) }
         / start:pos() process:process() end:pos()

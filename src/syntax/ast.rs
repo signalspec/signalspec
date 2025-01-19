@@ -283,6 +283,7 @@ ast_node!{
         On(ActionOn),
         For(ActionFor),
         Alt(ActionAlt),
+        Any(ActionAny),
         Error(Error),
     }
 }
@@ -326,6 +327,13 @@ ast_node!{
         pub span: FileSpan,
         pub discriminant: Expr,
         pub block: Block,
+    }
+}
+
+ast_node!{
+    pub struct ActionAny {
+        pub span: FileSpan,
+        pub arms: Vec<Action>,
     }
 }
 

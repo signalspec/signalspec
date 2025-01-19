@@ -657,6 +657,19 @@ impl<'a> Builder<'a> {
                     }
                 }
             }
+            ast::Action::Any(ref node) => {
+                let arms = node.arms.iter().map(|arm| {
+                    let upvalues_scope = self.upvalues.len();
+                    let body = self.resolve_action(sb, arm);
+                    if self.upvalues.len() > upvalues_scope {
+                        // TODO: could support if all arms set the same upvalues, and we insert phi nodes to join them
+                        panic!("Upvalues set in alt arm");
+                    }
+                    body
+                }).collect();
+
+                self.steps.alt(arms)
+            }
             ast::Action::Error(r) => self.steps.invalid(ErrorReported::from_ast(r)),
         }
     }
