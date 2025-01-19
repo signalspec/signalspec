@@ -214,6 +214,9 @@ impl StepBuilder {
                         }
                     }
 
+                    (Derivatives::End, _) if self.nullable(hi) => Derivatives::End,
+                    (_, Derivatives::End) if self.nullable(lo) => Derivatives::End,
+
                     (dlo @ (Derivatives::Process { .. } | Derivatives::Select { .. }), dhi) |
                     (dlo, dhi @ (Derivatives::Process { .. } | Derivatives::Select { .. })) => {
                         let a = dlo.map_follow(|nlo| self.stack(nlo, conn, hi));
