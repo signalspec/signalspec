@@ -33,9 +33,9 @@ def spi() = new SPI(dir[#up = #monitor, #dn = #generate]) {
 }
 
 @test(#roundtrip)
-with Seq((_:#l|#h, _:#l|#h, _:#l|#h, _:#l|#h), _) def test1() = {
-  spi() | {
-    transaction() | { data('01011101, '00000000); data('11110000, '11111111) }
-    transaction() | { data('00001000, '10101010) }
+with Seq((_:#l|#h, _:#l|#h, _:#l|#h, _:#l|#h), _) def test1() = seq {
+  spi() | seq {
+    transaction() | seq { data('01011101, '00000000); data('11110000, '11111111) }
+    transaction() | seq { data('00001000, '10101010) }
   }
 }

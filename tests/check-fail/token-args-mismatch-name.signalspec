@@ -3,8 +3,8 @@ protocol Test() #up {
 }
 
 @test(#up, ())
-with Seq(0..10, _) def main() = {
-    new Test() {} | {
+with Seq(0..10, _) def main() = seq {
+    new Test() {} | seq {
 //# missing named field `y`
         foo(#a, x = 1)
 //                   ^ expected additional named field

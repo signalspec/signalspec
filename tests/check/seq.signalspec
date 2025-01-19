@@ -2,7 +2,7 @@
 @test(#up_fail, (#a, #b, #a))
 @test(#up_fail, (#c, #c, #c))
 with Seq(_:#a|#b|#c, _)
-def main() = {
+def main() = seq {
     val(#a)
     val(#b)
     val(#c)
@@ -10,7 +10,7 @@ def main() = {
 
 @test(#up, (#a, #b, #c))
 with Seq(_:#a|#b|#c, _)
-def t2() = {
+def t2() = seq {
     val(_)
     val(#a | #b)
     val(#c)
@@ -29,4 +29,4 @@ def flatten() = new Seq(((_:0..16, _:0..16), v=(x=_:0..16, y=_:0..16, z=_:0..16)
 
 @test(#both, (1, 2, 3, 4, 5))
 with Seq(0..16, _)
-def test_flatten() = flatten() | { val(((1, 2), v=(x=3, y=4, z=5))) }
+def test_flatten() = flatten() | seq { val(((1, 2), v=(x=3, y=4, z=5))) }

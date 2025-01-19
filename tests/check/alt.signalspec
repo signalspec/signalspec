@@ -1,5 +1,5 @@
 with Seq(_:#a|#b, _)
-def bare() = {
+def bare() = seq {
     alt #up _ {
         #a => {
             val(#a)
@@ -11,12 +11,12 @@ def bare() = {
 }
 
 @test(#up, (#a))
-with Seq(_:#a|#b, _) def test1() = {
+with Seq(_:#a|#b, _) def test1() = seq {
     bare()
 }
 
 with Seq(_:#a|#b, _)
-def constant() = {
+def constant() = seq {
     alt #const #b {
         #a => {
             val(#a)
@@ -31,12 +31,12 @@ def constant() = {
 }
 
 @test(#both, (#b))
-with Seq(_:#a|#b, _) def test_constant() = {
+with Seq(_:#a|#b, _) def test_constant() = seq {
     constant()
 }
 
 with Seq(_:#a|#b, _)
-def constant_destructure() = {
+def constant_destructure() = seq {
     alt #const (#a, [#b, #c, #d, #e]) {
         (#a, [x, 2:[#c, #d], #e]) => {
             val(x)
@@ -45,7 +45,7 @@ def constant_destructure() = {
 }
 
 @test(#both, (#b))
-with Seq(_:#a|#b, _) def test_constant_destructure() = {
+with Seq(_:#a|#b, _) def test_constant_destructure() = seq {
     constant_destructure()
 }
 
@@ -66,13 +66,13 @@ def simple() = new Seq(#a | #b, dir) {
 }
 
 @test(#both, (#b, #a))
-with Seq(_:#a|#b, _) def test2() = {
-    simple() | { val(#b) }
+with Seq(_:#a|#b, _) def test2() = seq {
+    simple() | seq { val(#b) }
 }
 
 @test(#both, (#a, #b))
-with Seq(_:#a|#b, _) def test2() = {
-    simple() | { val(#a) }
+with Seq(_:#a|#b, _) def test2() = seq {
+    simple() | seq { val(#a) }
 }
 
 with Seq(_:#a|#b, dir)
@@ -111,4 +111,4 @@ def vector_map() = new Seq(bits(4), dir) {
 }
 
 @test(#both, ((#ones, '00), (#bit, '01), (#two, '10)))
-with Seq((_:#ones|#bit|#two, _:bits(2)), dir) def vector() = vector_map() | { val('1111); val('1101); val('0010) }
+with Seq((_:#ones|#bit|#two, _:bits(2)), dir) def vector() = vector_map() | seq { val('1111); val('1101); val('0010) }

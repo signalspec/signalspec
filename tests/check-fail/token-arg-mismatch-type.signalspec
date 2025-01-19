@@ -1,13 +1,13 @@
 //# incorrect argument on `val`
 @test(#up, (9))
-with Seq(1..10, _) def main() = {
+with Seq(1..10, _) def main() = seq {
     val((9, 9))
 //      ^^^^^^ expected `1..10`, found `(9, 9)`
 }
 
 //# incorrect argument on `val`
 @test(#up, (9))
-with Seq(1..10, _) def main() = {
+with Seq(1..10, _) def main() = seq {
     val(20)
 //      ^^ expected `1..10`, found `20`
 }
@@ -16,14 +16,14 @@ with Seq(1..10, _) def main() = {
 // Not reported on invalid value that has its own error
 
 @test(#up, (9))
-with Seq(1..10, _) def main() = {
+with Seq(1..10, _) def main() = seq {
 //# undefined variable `notfound`
     val(notfound)
 //      ^^^^^^^^ not found
 }
 
 @test(#dn, (9))
-with Seq(1..10, _) def main() = {
+with Seq(1..10, _) def main() = seq {
 //# undefined variable `notfound`
     val(notfound)
 //      ^^^^^^^^ not found

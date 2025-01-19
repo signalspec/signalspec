@@ -1,7 +1,7 @@
 let t = #a|#b|#c|#d
 
 with Seq(_:t, dir)
-def main(x) = {
+def main(x) = seq {
     val(#a)
     val(#b)
     repeat dir x {
@@ -12,15 +12,15 @@ def main(x) = {
 }
 
 @test(#both, (#a, #b, #a))
-with Seq(_:t, _) def test1() = { main(0) }
+with Seq(_:t, _) def test1() = main(0)
 
 @test(#up_fail, (#a, #b, #a))
 @test(#both, (#a, #b, #c, #d, #a))
-with Seq(_:t, _) def test2() = { main(1) }
+with Seq(_:t, _) def test2() = main(1)
 
 @test(#both, (#a, #b, #c, #d, #c, #d, #a))
-with Seq(_:t, _) def test2() = { main(2) }
+with Seq(_:t, _) def test2() = main(2)
 
 @test(#up_fail, (#a, #b, #c, #a))
 @test(#up_fail, (#a, #b, #c, #d))
-with Seq(_:t, _) def test2() = { main(_) }
+with Seq(_:t, _) def test2() = main(_)

@@ -12,4 +12,4 @@ with Seq(_:#a|#b|#c, dir) def triple() = new Seq((#a|#b|#c, #a|#b|#c, #a|#b|#c),
 }
 
 @test(#both, (#a, #b, #c, #c, #b, #a))
-with Seq(_:#a|#b|#c, dir) def test_triple() = passthru() | triple() | { val((#a, #b, #c)); val((#c, #b, #a)) }
+with Seq(_:#a|#b|#c, dir) def test_triple() = passthru() | triple() | seq { val((#a, #b, #c)); val((#c, #b, #a)) }

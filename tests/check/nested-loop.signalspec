@@ -3,7 +3,7 @@
 @test(#up, (#a, #b, #b, #c, #c, #c, #d, #b, #d, #e))
 @test(#up_fail, (#a, #b, #c))
 with Seq(_:#a|#b|#c|#d|#e, #up)
-def main() = {
+def main() = seq {
     val(#a)
     repeat {
         repeat {

@@ -1,5 +1,5 @@
 @test(#up, ())
-with Seq(#x, _) def main() = {
+with Seq(#x, _) def main() = seq {
 //# expected a single value
     for x = () {
 //          ^^ found `()`
@@ -10,7 +10,7 @@ with Seq(#x, _) def main() = {
 
 
 @test(#up, ())
-with Seq(#x, _) def main() = {
+with Seq(#x, _) def main() = seq {
 //# expected vector
     for x = #a {
 //          ^^ found `#a`
@@ -19,7 +19,7 @@ with Seq(#x, _) def main() = {
 }
 
 @test(#up, ())
-with Seq(#x, _) def main() = {
+with Seq(#x, _) def main() = seq {
 //# `for` loop vectors must be the same width
     for x = [#a, #b], y = [#x], z = [#t, #u] {
 //          ^^^^^^^^ vector of width 2

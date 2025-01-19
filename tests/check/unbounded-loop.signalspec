@@ -11,4 +11,4 @@ def main() = new Seq(0..3, d) {
 }
 
 @test(#up, (#h, #l, #h, #h, #l, #h, #h, #h, #l))
-with Seq(_:#h|#l, _) def test1() = { main() | { val(0); val(1); val(2) } }
+with Seq(_:#h|#l, _) def test1() = main() | seq { val(0); val(1); val(2) }

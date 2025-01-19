@@ -1,5 +1,5 @@
 @test(#dn, (9))
-with Seq(1..10, _) def main() = {
+with Seq(1..10, _) def main() = seq {
 //# expression cannot be evaluated as a value
     val(_)
 //      ^ found `_`

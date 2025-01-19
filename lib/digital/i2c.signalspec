@@ -15,7 +15,7 @@ with I2C(role)
 def device(addr: bits(7)) = new I2CDevice(role) {
     repeat {
         on transaction() {
-            transaction() | {
+            transaction() | seq {
                 repeat #up 1..1000 {
                     alt #up () {
                         () => {
@@ -60,8 +60,8 @@ protocol I2CDeviceTransaction(role: #controller | #async_controller | #monitor) 
 }
 
 with I2CDevice(_)
-def write(wr) = {
-    transaction() | {
+def write(wr) = seq {
+    transaction() | seq {
         start(#w)
         for b=wr {
             write(b)
@@ -70,8 +70,8 @@ def write(wr) = {
 }
 
 with I2CDevice(_)
-def write_read(wr, rd) = {
-    transaction() | {
+def write_read(wr, rd) = seq {
+    transaction() | seq {
         start(#w)
         for b=wr {
             write(b)

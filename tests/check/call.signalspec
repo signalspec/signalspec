@@ -1,18 +1,18 @@
 with Seq(_:#a|#b, dir)
-def main(a, b) = {
+def main(a, b) = seq {
     val(a)
     other(a, b)
     val(b)
 }
 
 with Seq(_:#a|#b, dir)
-def other(x, y) = {
+def other(x, y) = seq {
     val(x)
     val(y)
 }
 
 @test(#both, (#a, #a, #b, #b))
 @test(#up_fail, (#a, #a))
-with Seq(_:#a|#b, _) def test_main() = {
+with Seq(_:#a|#b, _) def test_main() = seq {
     main(#a, #b)
 }

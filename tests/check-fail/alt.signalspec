@@ -1,5 +1,5 @@
 @test(#dn, ())
-with Seq(0..10, _) def main() = {
+with Seq(0..10, _) def main() = seq {
 //# undefined variable `missing`
     alt #dn missing {
 //          ^^^^^^^ not found
@@ -24,7 +24,7 @@ with Seq(0..10, _) def main() = {
 }
 
 @test(#up, ())
-with Seq(0..10, _) def main() = {
+with Seq(0..10, _) def main() = seq {
 //# undefined variable `missing`
     alt #up missing {
 //          ^^^^^^^ not found
@@ -56,7 +56,7 @@ with Seq(0..10, _) def main() = {
 
 
 @test(#up, ())
-with Seq(0..10, _) def main() = {
+with Seq(0..10, _) def main() = seq {
 //# `alt` action must have at least one arm
     alt #up #foo {}
 //  ^^^^^^^^^^^^^^^ no arms specified
@@ -67,7 +67,7 @@ with Seq(0..10, _) def main() = {
 }
 
 @test(#dn, ())
-with Seq(0..10, _) def main() = {
+with Seq(0..10, _) def main() = seq {
 //# expected a single value
     alt #dn "foo" {
 //          ^^^^^ found `"foo"`
@@ -82,7 +82,7 @@ with Seq(0..10, _) def main() = {
 }
 
 @test(#up, ())
-with Seq(0..10, _) def main() = {
+with Seq(0..10, _) def main() = seq {
 //# expected a single value
     alt #up "foo" {
 //          ^^^^^ found `"foo"`
@@ -91,7 +91,7 @@ with Seq(0..10, _) def main() = {
 }
 
 @test(#up, ())
-with Seq(0..10, _) def main() = {
+with Seq(0..10, _) def main() = seq {
 //# no arms matched constant alt
 //# expected constant value
     alt #const 0..10 {

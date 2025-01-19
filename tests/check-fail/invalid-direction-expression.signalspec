@@ -1,5 +1,5 @@
 @test(#up, ())
-with Seq(#x, _) def main() = {
+with Seq(#x, _) def main() = seq {
 //# expected constant #up | #dn
     repeat #foo 6 {
 //         ^^^^ found `#foo`

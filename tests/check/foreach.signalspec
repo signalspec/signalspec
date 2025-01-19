@@ -1,7 +1,7 @@
 @test(#both, (#a, #b, #a, #a))
 @test(#up_fail, (#a, #a, #a, #a))
 with Seq(_:#a|#b, dir)
-def main() = {
+def main() = seq {
     for i = [#a, #b, #a, #a] {
         val(i)
     }
@@ -25,7 +25,7 @@ def test_non_constant() = groups() | val([#a, #b, #a, #a])
 // Two loop variables
 @test(#both, ((#a, #b), (#b, #a), (#a, #a)))
 with Seq((_:#a|#b, _:#a|#b), dir)
-def main() = {
+def main() = seq {
     for i = [#a, #b, #a], j = [#b, #a, #a] {
         val((i, j))
     }

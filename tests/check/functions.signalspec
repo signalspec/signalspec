@@ -9,7 +9,7 @@ def test_signed() = new Seq(-4..3, dir) {
 
 @test(#both, ([1, 0, 1], [0, 0, 1], [0, 0, 0]))
 with Seq(_:[bit, bit, bit], dir)
-def test1() = {
-    test_signed() | { val(-3); val(1); val(0) }
+def test1() = seq {
+    test_signed() | seq { val(-3); val(1); val(0) }
 }
 

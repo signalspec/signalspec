@@ -1,7 +1,7 @@
 @test(#up, (#x, #x, #x, #x))
 @test(#up_fail, (#y, #x, #x, #x))
 with Seq(#x|#y, _)
-def main2() = {
+def main2() = seq {
     val(#x)
     repeat { val(#x) }
 }
@@ -9,7 +9,7 @@ def main2() = {
 @test(#up, (#x, #x, #x, #x, #y))
 @test(#up_fail, (#x, #x, #x, #y))
 with Seq(#x|#y, _)
-def main3() = {
+def main3() = seq {
     val(#x)
     repeat #dn 3 { val(#x) }
     val(#y)

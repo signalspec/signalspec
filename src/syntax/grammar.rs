@@ -180,6 +180,7 @@ peg::parser!(pub grammar signalspec() for str {
       = start:pos() lower:process() _ "|" _ upper:process() end:pos() {
           ast::Process::Stack(ast::ProcessStack{ span: FileSpan { start, end }, lower: Box::new(lower), upper: Box::new(upper) })
       }
+      / RAW_KW("seq") _ block:block() { ast::Process::Seq(block) }
       / start:pos() "new" _ top:protocol_ref() _ block:block() end:pos() {
           ast::Process::New(ast::ProcessNew { span: FileSpan { start, end }, top, block })
       }
@@ -192,7 +193,6 @@ peg::parser!(pub grammar signalspec() for str {
       / start:pos() name:IDENTIFIER() end:pos() {
           ast::Process::Child(ast::ProcessChild { span: FileSpan { start, end }, name })
       }
-      / block:block() { ast::Process::Seq(block) }
 
   // Lexer
 

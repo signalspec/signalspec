@@ -1,6 +1,6 @@
 @test(#both, (#a, #b, #b))
-with Seq(_:#a|#b, _) def main() = {
-    inner() | {
+with Seq(_:#a|#b, _) def main() = seq {
+    inner() | seq {
         val(#x)
         val(#y)
         val(#y)

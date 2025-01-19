@@ -1,5 +1,5 @@
 @test(#up, (#a, #b, #c))
-with Seq(_:#a|#b|#c, dir) def test_alt_no_data() = {
+with Seq(_:#a|#b|#c, dir) def test_alt_no_data() = seq {
     any {
         val(#a)
         val(#b)
@@ -30,5 +30,5 @@ with Seq(_:#a|#b|#c, dir) def abc() = new Abc(dir) {
 }
 
 @test(#both, (#a, #b, #c, #b, #a))
-with Seq(_:#a|#b|#c, dir) def test_alt_map() = abc() | { a(); b(); c(); b(); a() }
+with Seq(_:#a|#b|#c, dir) def test_alt_map() = abc() | seq { a(); b(); c(); b(); a() }
 

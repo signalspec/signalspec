@@ -9,8 +9,8 @@ protocol Foo() #up {
 // ^* expected }
 
 //# unclosed delimiter
-with Foo() def bar() = {
-//                     ^ unclosed
+with Foo() def bar() = seq {
+//                         ^ unclosed
 // ^* expected }
 
 //# unclosed delimiter

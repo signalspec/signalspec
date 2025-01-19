@@ -21,7 +21,7 @@ def interleave() = new Test(dir) {
 
 @test(#both, (#x, #y, #x, #x))
 with Seq(_:#x|#y, _)
-def t1() = interleave() | {
+def t1() = interleave() | seq {
     a|val(#x)
     b|val(#y)
     a|val(#x)

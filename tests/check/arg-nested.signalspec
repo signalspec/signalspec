@@ -1,5 +1,5 @@
 with Seq(_:#a|#b|#c, dir)
-def nested_args((a, b), c) = {
+def nested_args((a, b), c) = seq {
     val(a)
     val(b)
     val(c)
@@ -7,7 +7,7 @@ def nested_args((a, b), c) = {
 
 @test(#both, (#a, #b, #c))
 @test(#up_fail, (#a, #a, #a))
-with Seq(_:#a|#b|#c, dir) def test_nested_args() = {
+with Seq(_:#a|#b|#c, dir) def test_nested_args() = seq {
     nested_args((#a, #b), #c)
 }
 

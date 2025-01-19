@@ -32,7 +32,7 @@ def buspirate_i2c() = new I2C(#controller) {
         on transaction() {
             repeat {
                 any {
-                    {
+                    seq {
                         on start(addr, #w) {
                             // start bit
                             tx|val('00000010)
@@ -53,7 +53,7 @@ def buspirate_i2c() = new I2C(#controller) {
                             }
                         }
                     }
-                    {
+                    seq {
                         on start(addr, #r) {
                             // start bit
                             tx|val('00000010)

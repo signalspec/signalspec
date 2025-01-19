@@ -1,8 +1,8 @@
 
-with Seq(_, _) def do_nothing() = {}
+with Seq(_, _) def do_nothing() = seq {}
 
 @test(#up, ())
-with Seq(#x, _) def main() = {
+with Seq(#x, _) def main() = seq {
 //# stacked process without base signal
     do_nothing() | do_nothing()
 //  ^^^^^^^^^^^^ does not provide an upper signal

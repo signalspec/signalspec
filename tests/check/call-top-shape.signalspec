@@ -18,13 +18,11 @@ def pkt() = new Packets(_:#a, dir) {
 
 @xtest(#both, (#a, #a, #end, #end, #a, #end))
 with Seq(_:#a|#end, _)
-def t1() = pkt() | {
-    packet() | {
+def t1() = pkt() | seq {
+    packet() | seq {
         val(#a)
         val(#a)
     }
-    packet() | {}
-    packet() | {
-        val(#a)
-    }
+    packet() | seq {}
+    packet() | val(#a)
 }
