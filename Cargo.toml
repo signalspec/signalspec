@@ -10,13 +10,13 @@ members = ["cli", "lsp"]
 [dependencies]
 log = "0.4.14"
 num-complex = "0.4"
-peg = "0.8"
-futures-lite = "1.12.0"
-async-fs = "1.5.0"
+peg = "0.8.5"
+futures-lite = "2.6.0"
+async-fs = "2.1.2"
 num-rational = { version = "0.4.1", default-features = false }
 num-traits = "0.2.15"
 indexmap = "2.0.0"
-itertools = "0.12.0"
+itertools = "0.14.0"
 serial2 = "0.2.19"
 
 [target.'cfg(target_os = "linux")'.dependencies]
@@ -24,7 +24,7 @@ spidev = "0.6.0"
 i2cdev = "0.6.0"
 
 [dev-dependencies]
-env_logger = "0.10.0"
+env_logger = "0.11.6"
 
 [[test]]
 name = "check"
@@ -33,4 +33,3 @@ harness = false
 [[test]]
 name = "check-fail"
 harness = false
-

@@ -208,11 +208,11 @@ peg::parser!(pub grammar signalspec() for str {
   rule COMMASEP<T>(x: rule<T>) -> Vec<T> = v:(x() ** (_ "," _)) (_ ",")? {v}
   rule COMMASEP_ONE<T>(x: rule<T>) -> Vec<T> = v:(x() ++ (_ "," _)) (_ ",")? {v}
 
-  rule TOK(s: &str) -> FileSpan = start:position!() ##parse_string_literal(s) end:position!() {
+  rule TOK(s: &str) -> FileSpan = start:position!() #{|input, pos| input.parse_string_literal(pos, s)} end:position!() {
     FileSpan::new(start, end)
   }
 
-  rule RAW_KW(id: &str) -> () = ##parse_string_literal(id) !['0'..='9' | 'a'..='z' | 'A'..='Z' | '_']
+  rule RAW_KW(id: &str) -> () = #{|input, pos| input.parse_string_literal(pos, id)} !['0'..='9' | 'a'..='z' | 'A'..='Z' | '_']
 
   rule KW(id: &str) -> FileSpan = start:position!() RAW_KW(id) end:position!() {
     FileSpan::new(start, end)

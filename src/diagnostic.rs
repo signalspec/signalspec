@@ -108,7 +108,7 @@ macro_rules! diagnostic_kinds {
             pub fn labels(&self) -> Vec<Label> {
                 #[allow(unused_variables)]
                 match self {
-                    $(Self::$variant { $(ref $n),* } => {
+                    $(Self::$variant { $($n),* } => {
                         vec![
                             $(
                                 Label {

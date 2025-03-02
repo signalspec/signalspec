@@ -213,13 +213,13 @@ impl<'a> Builder<'a> {
 
     fn resolve_action(&mut self, sb: ResolveCx<'_>, action: &ast::Action) -> StepId {
         match action {
-            ast::Action::Process(ref node) => {
+            ast::Action::Process(node) => {
                 let (step, shape_up) = self.resolve_process(sb, &node);
                 assert!(shape_up.is_none());
                 step
             }
 
-            ast::Action::On(ref node @ ast::ActionOn { args: Some(args), ..}) => {
+            ast::Action::On(node @ ast::ActionOn { args: Some(args), ..}) => {
                 let Some(Conn { shape: shape_up, conn: conn_up }) = sb.up else {
                     return self.err_step(Diagnostic::OnBlockWithoutUpSignal{
                         span: sb.scope.span(node.span)
@@ -316,7 +316,7 @@ impl<'a> Builder<'a> {
                 }
             }
 
-            ast::Action::On(ref node @ ast::ActionOn { args: None, ..}) => {
+            ast::Action::On(node @ ast::ActionOn { args: None, ..}) => {
                 let Some(Conn { shape: shape_up, conn: conn_up }) = sb.up else {
                     return self.err_step(Diagnostic::OnBlockWithoutUpSignal{
                         span: sb.scope.span(node.span)
@@ -338,7 +338,7 @@ impl<'a> Builder<'a> {
                 }
             }
 
-            ast::Action::Repeat(ref node) => {
+            ast::Action::Repeat(node) => {
                 let (dir, count) = match &node.dir_count {
                     Some((dir_ast, count_ast)) => {
                         let count = value(&mut self.dcx, sb.scope, count_ast);
@@ -453,7 +453,7 @@ impl<'a> Builder<'a> {
                 }
             }
 
-            ast::Action::For(ref node) => {
+            ast::Action::For(node) => {
                 enum LoopVar {
                     Const(Vec<Value>),
                     Expr {
@@ -575,7 +575,7 @@ impl<'a> Builder<'a> {
                 self.steps.seq_from(seq)
             }
 
-            ast::Action::Alt(ref node) => {
+            ast::Action::Alt(node) => {
                 let dir = constant::<AltMode>(&mut self.dcx, sb.scope, &node.dir);
 
                 if node.arms.is_empty() {
@@ -657,7 +657,7 @@ impl<'a> Builder<'a> {
                     }
                 }
             }
-            ast::Action::Any(ref node) => {
+            ast::Action::Any(node) => {
                 let arms = node.arms.iter().map(|arm| {
                     let upvalues_scope = self.upvalues.len();
                     let body = self.resolve_action(sb, arm);
@@ -712,7 +712,7 @@ impl<'a> Builder<'a> {
                     dn.add_field(&mut self.steps.ecx, Predicate::Any);
                 });
             }
-            (ast::Expr::Var(ref name), t @ Tree::Tuple(..)) => {
+            (ast::Expr::Var(name), t @ Tree::Tuple(..)) => {
                 scope.bind(&name.name, t.map_leaf(&mut |t| {
                     LeafItem::Value(Expr::Expr(t.clone(), ExprKind::VarDn(dn.add_field(&mut self.steps.ecx, Predicate::Any))))
                 }));
@@ -758,7 +758,7 @@ impl<'a> Builder<'a> {
                 matched
             }
             (ast::Expr::Ignore(_), _) => true,
-            (ast::Expr::Var(ref name), t) => {
+            (ast::Expr::Var(name), t) => {
                 scope.bind(&name.name, t.clone());
                 true
             }
@@ -815,7 +815,7 @@ impl<'a> Builder<'a> {
                     Err(_) => { up.push(LValueSrc::Val(ExprDnId::INVALID)); }
                 }
             }
-            (ast::Expr::Var(ref name), tup @ Tree::Tuple(..)) => {
+            (ast::Expr::Var(name), tup @ Tree::Tuple(..)) => {
                 let e = tup.map_leaf(&mut |ty| {
                     let id = self.value_sink.push(());
                     up.push(LValueSrc::Var(id, name.span));
@@ -955,7 +955,7 @@ impl<'a> Builder<'a> {
                 (block, Some((top_shape, conn)))
             }
 
-            ast::Process::Seq(ref block) => {
+            ast::Process::Seq(block) => {
                 let block = self.resolve_seq(sb, block);
                 (block, None)
             }

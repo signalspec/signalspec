@@ -178,7 +178,7 @@ impl fmt::Display for Expr {
         match self {
             Expr::Const(c) => c.fmt(f),
             Expr::Expr(_, ExprKind::Ignored) => write!(f, "_"),
-            Expr::Expr(_, ExprKind::Const(ref p)) => write!(f, "{}", p),
+            Expr::Expr(_, ExprKind::Const(p)) => write!(f, "{}", p),
             Expr::Expr(_, ExprKind::Range(a, b)) => write!(f, "{}..{}", a, b),
             Expr::Expr(ty, _) => write!(f, "<{ty}>"),
         }
@@ -287,7 +287,7 @@ pub fn rexpr_tup(dcx: &mut DiagnosticContext, scope: &Scope, node: &ast::ExprTup
 /// Resolve an expression as used in an argument or right hand side of an assignment
 pub fn rexpr(dcx: &mut DiagnosticContext, scope: &Scope, e: &ast::Expr) -> Item {
     match e {
-        ast::Expr::Var(ref name) => {
+        ast::Expr::Var(name) => {
             if let Some(s) = scope.get(&name.name) { s } else {
                 dcx.report(Diagnostic::UndefinedVariable {
                     span: scope.span(name.span),
@@ -296,11 +296,11 @@ pub fn rexpr(dcx: &mut DiagnosticContext, scope: &Scope, e: &ast::Expr) -> Item 
             }
         }
 
-        ast::Expr::Tup(ref node) => rexpr_tup(dcx, scope, node),
+        ast::Expr::Tup(node) => rexpr_tup(dcx, scope, node),
 
-        ast::Expr::String(ref node) => Item::Leaf(LeafItem::String(node.value.clone())),
+        ast::Expr::String(node) => Item::Leaf(LeafItem::String(node.value.clone())),
 
-        ast::Expr::Func(ref node) => {
+        ast::Expr::Func(node) => {
             Item::Leaf(LeafItem::Func(Arc::new(FunctionDef::Code(Func{
                 args: (*node.args).clone(),
                 body: (*node.body).clone(),
@@ -309,22 +309,22 @@ pub fn rexpr(dcx: &mut DiagnosticContext, scope: &Scope, e: &ast::Expr) -> Item 
             }))))
         }
 
-        ast::Expr::Call(ref node) => {
+        ast::Expr::Call(node) => {
             let func = rexpr(dcx, scope, &node.func);
             let arg = rexpr_tup(dcx, scope, &node.arg);
             resolve_function_call(dcx, || scope.span(node.span), func, arg)
         }
 
-        ast::Expr::Value(ref node) => Expr::Const(Value::from_literal(&node.value)).into(),
+        ast::Expr::Value(node) => Expr::Const(Value::from_literal(&node.value)).into(),
         ast::Expr::Ignore(_) => Expr::ignored().into(),
 
-        ast::Expr::Typed(ref node) => resolve_expr_typed(dcx, scope, node),
-        ast::Expr::Flip(ref node) => resolve_expr_flip(dcx, scope, node),
-        ast::Expr::Range(ref node) => resolve_expr_range(dcx, scope, node),
-        ast::Expr::Union(ref node) => resolve_expr_union(dcx, scope, node),
-        ast::Expr::Choose(ref node) => resolve_expr_choose(dcx, scope, node),
-        ast::Expr::Concat(ref node) => resolve_expr_concat(dcx, scope, node),
-        ast::Expr::Bin(ref node) => resolve_expr_binary(dcx, scope, node),
+        ast::Expr::Typed(node) => resolve_expr_typed(dcx, scope, node),
+        ast::Expr::Flip(node) => resolve_expr_flip(dcx, scope, node),
+        ast::Expr::Range(node) => resolve_expr_range(dcx, scope, node),
+        ast::Expr::Union(node) => resolve_expr_union(dcx, scope, node),
+        ast::Expr::Choose(node) => resolve_expr_choose(dcx, scope, node),
+        ast::Expr::Concat(node) => resolve_expr_concat(dcx, scope, node),
+        ast::Expr::Bin(node) => resolve_expr_binary(dcx, scope, node),
 
         ast::Expr::Error(e) => Item::Leaf(LeafItem::Invalid(ErrorReported::from_ast(e))),
     }
@@ -681,7 +681,7 @@ pub fn lvalue_dn(
     rhs: Expr
 ) -> Result<Predicate, ErrorReported> {
     match pat {
-        ast::Expr::Var(ref name) => {
+        ast::Expr::Var(name) => {
             scope.bind(&name.name, Item::Leaf(LeafItem::Value(rhs)));
             Ok(Predicate::Any)
         }
@@ -784,7 +784,7 @@ pub fn lvalue_up(
     add_value_sink: &mut impl FnMut() -> ValueSinkId,
 ) -> Result<LValueSrc, ErrorReported> {
     match pat {
-        ast::Expr::Var(ref name) => {
+        ast::Expr::Var(name) => {
             let id = add_value_sink();
             scope.bind(&name.name, Item::Leaf(LeafItem::Value(Expr::var_up(id, ty))));
             Ok(LValueSrc::Var(id, name.span))
@@ -846,7 +846,7 @@ pub fn lvalue_const(
     val: &Value,
 ) -> Result<bool, ErrorReported> {
     match pat {
-        ast::Expr::Var(ref name) => {
+        ast::Expr::Var(name) => {
             scope.bind(&name.name, Item::Leaf(LeafItem::Value(Expr::Const(val.clone()))));
             Ok(true)
         }
@@ -995,12 +995,12 @@ pub fn lexpr(dcx: &mut DiagnosticContext, scope: &mut Scope, pat: &ast::Expr, r:
         ast::Expr::Tup(tup_pat) => lexpr_tup(dcx, scope, tup_pat, r),
         ast::Expr::Ignore(_) => {}
 
-        ast::Expr::Var(ref name) => {
+        ast::Expr::Var(name) => {
             debug!("defined {} = {:?}", name.name, r);
             scope.bind(&name.name, r.clone());
         }
 
-        ast::Expr::Typed(ref node) => {
+        ast::Expr::Typed(node) => {
             let ty = match value(dcx, scope, &node.ty) {
                 Ok(v) => v.get_type(),
                 Err(reported) => {
@@ -1009,7 +1009,7 @@ pub fn lexpr(dcx: &mut DiagnosticContext, scope: &mut Scope, pat: &ast::Expr, r:
             };
 
             match r {
-                Item::Leaf(LeafItem::Value(ref rv)) => {
+                Item::Leaf(LeafItem::Value(rv)) => {
                     let found = rv.get_type();
                     if found.is_subtype(&ty) {
                         lexpr(dcx, scope, &node.expr, r)
@@ -1037,7 +1037,7 @@ pub fn lexpr(dcx: &mut DiagnosticContext, scope: &mut Scope, pat: &ast::Expr, r:
         ast::Expr::Value(lv) => {
             let lval = Value::from_literal(&lv.value);
             match r {
-                Item::Leaf(LeafItem::Value(Expr::Const(ref rv))) if lval == *rv => {},
+                Item::Leaf(LeafItem::Value(Expr::Const(rv))) if lval == *rv => {},
                 Item::Leaf(LeafItem::Invalid(_)) => {},
                 non_match => {
                     dcx.report(Diagnostic::ExpectedConst {
