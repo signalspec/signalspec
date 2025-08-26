@@ -1,4 +1,3 @@
-use std::any::Any;
 use super::Number;
 pub use super::{ BinOp, FileSpan, Spanned, AstNode };
 
@@ -81,8 +80,6 @@ macro_rules! ast_node {
             }
 
             fn node_name(&self) -> &'static str { stringify!($name) }
-
-            fn as_any(&self) -> &dyn Any { self }
         }
 
         impl $name {
@@ -135,8 +132,6 @@ macro_rules! ast_node {
             }
 
             fn node_name(&self) -> &'static str { stringify!($name) }
-
-            fn as_any(&self) -> &dyn Any { self }
         }
 
         $(impl From<$ftype> for $name {

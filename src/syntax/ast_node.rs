@@ -18,13 +18,11 @@ pub trait AstNode: Any {
 
     /// A short description of the node
     fn node_name(&self) -> &'static str;
-
-    fn as_any(&self) -> &dyn Any;
 }
 
 impl dyn AstNode {
     pub fn downcast<T: 'static>(&self) -> Option<&T> {
-        self.as_any().downcast_ref::<T>()
+        (self as &dyn Any).downcast_ref::<T>()
     }
 
     pub fn walk_preorder(&self) -> impl Iterator<Item = &dyn AstNode> {
