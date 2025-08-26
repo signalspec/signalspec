@@ -77,11 +77,11 @@ impl <K:EntityKey, V> EntityMap<K, V> {
         (0..self.len()).map(K::new)
     }
 
-    pub fn iter(&self) -> Iter<K, V> {
+    pub fn iter(&self) -> Iter<'_, K, V> {
         self.v.iter().enumerate().map(|(k, v)| (K::new(k), v))
     }
 
-    pub fn iter_mut(&mut self) -> IterMut<K, V> {
+    pub fn iter_mut(&mut self) -> IterMut<'_, K, V> {
         self.v.iter_mut().enumerate().map(|(k, v)| (K::new(k), v))
     }
 }

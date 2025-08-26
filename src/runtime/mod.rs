@@ -30,7 +30,7 @@ pub struct Handle<'a> {
 }
 
 impl<'a> Handle<'a> {
-    pub fn base(index: &Index) -> Handle {
+    pub fn base(index: &Index) -> Handle<'_> {
         Handle {
             shape: Some(base_shape(index)),
             channels: SeqChannels::null(),
@@ -39,13 +39,13 @@ impl<'a> Handle<'a> {
         }
     }
 
-    pub fn seq_dn(index: &Index, ty: Item) -> Result<(Channel, Handle), ()> {
+    pub fn seq_dn(index: &Index, ty: Item) -> Result<(Channel, Handle<'_>), ()> {
         let shape = seq_shape(index, ty, Dir::Dn)?;
         let channels = SeqChannels::for_shape(&shape);
         Ok((channels.dn.as_ref().unwrap().clone(), Handle { shape: Some(shape), channels, future: None , parent: None}))
     }
 
-    pub fn seq_up(index: &Index, ty: Item) -> Result<(Channel, Handle), ()> {
+    pub fn seq_up(index: &Index, ty: Item) -> Result<(Channel, Handle<'_>), ()> {
         let shape = seq_shape(index, ty, Dir::Up)?;
         let channels = SeqChannels::for_shape(&shape);
         Ok((channels.up.as_ref().unwrap().clone(), Handle { shape: Some(shape), channels, future: None , parent: None}))

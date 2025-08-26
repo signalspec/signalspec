@@ -43,7 +43,7 @@ impl FsmExec {
         }
     }
 
-    fn borrow(&mut self) -> FsmBorrow {
+    fn borrow(&mut self) -> FsmBorrow<'_> {
         FsmBorrow {
             program: &self.program,
             state: &mut self.state,

@@ -34,7 +34,7 @@ impl Channel {
         Channel { inner }
     }
 
-    pub fn poll_receive(&self, cx: &mut Context) -> Poll<ChannelReadRef> {
+    pub fn poll_receive(&self, cx: &mut Context) -> Poll<ChannelReadRef<'_>> {
         let mut inner = self.inner.borrow_mut();
         if inner.value.is_empty() && !inner.end {
             inner.read_waker = Some(cx.waker().clone());
@@ -62,8 +62,8 @@ impl Channel {
         i.end = end;
     }
 
-    pub fn read_bytes(&mut self) -> ReadBytes { ReadBytes(self) }
-    pub fn write_bytes(&mut self) -> WriteBytes { WriteBytes(self) }
+    pub fn read_bytes(&mut self) -> ReadBytes<'_> { ReadBytes(self) }
+    pub fn write_bytes(&mut self) -> WriteBytes<'_> { WriteBytes(self) }
 
     pub(crate) fn take_all(&self) -> Vec<ChannelMessage> {
         self.inner.borrow_mut().value.drain(..).collect()

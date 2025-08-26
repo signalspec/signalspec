@@ -108,7 +108,7 @@ impl ExprCtx {
         }
     }
 
-    pub fn format(&self, id: ExprDnId) -> ExprDnFormat {
+    pub fn format(&self, id: ExprDnId) -> ExprDnFormat<'_> {
         ExprDnFormat { ecx: self, id }
     }
 }
