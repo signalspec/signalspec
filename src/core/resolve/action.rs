@@ -1,11 +1,11 @@
-use std::{collections::{BTreeMap, BTreeSet}, sync::Arc};
+use std::sync::Arc;
 
 use itertools::EitherOrBoth;
 use num_traits::Signed;
 
 use crate::{core::{
-    constant, derivs::Derivatives, index::FindDefError, lexpr, op::UnaryOp, resolve::expr::{lvalue_dn, lvalue_up, LValueSrc}, rexpr, rexpr_tup, step::{ConnectionId, StepBuilder, SubProc}, value, ConcatElem, Dir, Expr, ExprCtx, ExprDn, ExprDnId, ExprKind, Item, LeafItem, Predicate, ProcId, Scope, Shape, ShapeMsg, StepId, Type, ValueSrc, ValueSrcId
-}, diagnostic::{DiagnosticContext, Diagnostics}, Value};
+    constant, index::FindDefError, lexpr, op::UnaryOp, resolve::expr::{lvalue_dn, lvalue_up, LValueSrc}, rexpr, rexpr_tup, step::{ConnectionId, StepBuilder}, value, ConcatElem, Dir, Expr, ExprCtx, ExprDn, ExprDnId, ExprKind, Item, LeafItem, Predicate, Scope, Shape, ShapeMsg, StepId, Type, ValueSrc, ValueSrcId
+}, diagnostic::{DiagnosticContext}, Value};
 use crate::diagnostic::{ErrorReported, Span};
 use crate::entitymap::{entity_key, EntityMap};
 use crate::runtime::instantiate_primitive;
@@ -15,6 +15,21 @@ use crate::{Diagnostic, FileSpan, Index, SourceFile, TypeTree};
 
 use super::expr::{TryFromConstant, lvalue_const, zip_tuple_ast, lexpr_tup, zip_tuple_ast_fields};
 use super::protocol;
+
+pub fn resolve_process(dcx: &mut DiagnosticContext, index: &Index, scope: &Scope, shape_dn: Shape, ast: &ast::Process) -> ResolveResult {
+    let mut builder = Builder::new(dcx, index);
+    let conn_dn = builder.steps.add_connection(shape_dn.clone());
+    let sb = ResolveCx { scope, up: None, down: Conn { shape: &shape_dn, conn: conn_dn }};
+    let (step, up) = builder.resolve_process(sb, ast);
+    ResolveResult { steps: builder.steps, conn_dn, step, up }
+}
+
+pub struct ResolveResult {
+    pub steps: StepBuilder,
+    pub step: StepId,
+    pub conn_dn: ConnectionId,
+    pub up: Option<(Shape, ConnectionId)>,
+}
 
 enum AltMode {
     Const,
@@ -110,8 +125,8 @@ impl ReceiveMsg {
     }
 }
 
-pub struct Builder<'a> {
-    dcx: DiagnosticContext,
+struct Builder<'a> {
+    dcx: &'a mut DiagnosticContext,
     index: &'a Index,
     steps: StepBuilder,
     value_sink: EntityMap<ValueSinkId, ()>,
@@ -119,9 +134,9 @@ pub struct Builder<'a> {
 }
 
 impl<'a> Builder<'a> {
-    pub fn new(index: &'a Index) -> Self {
+    fn new(dcx: &'a mut DiagnosticContext, index: &'a Index) -> Self {
         Self {
-            dcx: DiagnosticContext::new(),
+            dcx,
             index,
             steps: StepBuilder::new(),
             value_sink: EntityMap::new(),
@@ -1066,49 +1081,4 @@ pub fn resolve_letdef(dcx: &mut DiagnosticContext, scope: &mut Scope, ld: &ast::
     let &ast::LetDef { ref name, ref expr, .. } = ld;
     let item = rexpr(dcx, scope, expr);
     scope.bind(&name.name, item);
-}
-
-pub struct ProcessChain {
-    pub root: StepId,
-    pub fsm: BTreeMap<StepId, Derivatives>,
-    pub accepting: BTreeSet<StepId>,
-    pub exprs: ExprCtx,
-    pub conn_dn: ConnectionId,
-    pub up: Option<(Shape, ConnectionId)>,
-    pub connections: EntityMap<ConnectionId, Shape>,
-    pub processes: EntityMap<ProcId, SubProc>,
-}
-
-pub fn compile_process(index: &Index, scope: &Scope, shape_dn: Shape, ast: &ast::Process) -> Result<ProcessChain, Diagnostics> {
-    let mut builder = Builder::new(index);
-    let conn_dn = builder.steps.add_connection(shape_dn.clone());
-    let sb = ResolveCx { scope, up: None, down: Conn { shape: &shape_dn, conn: conn_dn }};
-    let (step, up) = builder.resolve_process(sb, ast);
-
-    if log_enabled!(log::Level::Debug) {
-        let mut buf = String::new();
-        builder.steps.write_tree(&mut buf, 0, step).unwrap();
-        debug!("Steps:\n{}", buf);
-    }
-
-    if builder.dcx.has_errors() {
-        return Err(builder.dcx.diagnostics());
-    }
-
-    let (fsm, accepting) = builder.steps.fsm(step);
-
-    if builder.dcx.has_errors() {
-        return Err(builder.dcx.diagnostics());
-    }
-
-    Ok(ProcessChain {
-        root: step,
-        fsm,
-        accepting,
-        conn_dn,
-        up,
-        exprs: builder.steps.ecx,
-        connections: builder.steps.connections,
-        processes: builder.steps.processes,
-    })
 }
