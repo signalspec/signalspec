@@ -1,34 +1,73 @@
 use std::sync::Arc;
 
 use itertools::EitherOrBoth;
-use num_traits::Signed;
 
-use crate::{core::{
-    constant, index::FindDefError, lexpr, op::UnaryOp, resolve::expr::{lvalue_dn, lvalue_up, LValueSrc}, rexpr, rexpr_tup, step::{ConnectionId, StepBuilder}, value, ConcatElem, Dir, Expr, ExprCtx, ExprDn, ExprDnId, ExprKind, Item, LeafItem, Predicate, Scope, Shape, ShapeMsg, StepId, Type, ValueSrc, ValueSrcId
-}, diagnostic::{DiagnosticContext}, Value};
-use crate::diagnostic::{ErrorReported, Span};
-use crate::entitymap::{entity_key, EntityMap};
+use crate::{
+    core::{
+        index::FindDefError, resolve::expr::Pattern, step::ConnectionId, ChannelId, Dir, Item, LeafItem, Scope, Shape, ShapeMsg, Type
+}, diagnostic::DiagnosticContext, entitymap::EntityMap, runtime::PrimitiveProcess, Value};
+use crate::diagnostic::{ErrorReported};
 use crate::runtime::instantiate_primitive;
 use crate::syntax::ast::{self, AstNode};
 use crate::tree::Tree;
-use crate::{Diagnostic, FileSpan, Index, SourceFile, TypeTree};
+use crate::{Diagnostic, Index};
 
-use super::expr::{TryFromConstant, lvalue_const, zip_tuple_ast, lexpr_tup, zip_tuple_ast_fields};
+use super::expr::{TryFromConstant, value, lexpr_tup, zip_tuple_ast_fields, lexpr, Expr, ExprKind, rexpr, rexpr_tup, constant, bind_field, bind_fields, bind_fields_const, VarId};
 use super::protocol;
 
 pub fn resolve_process(dcx: &mut DiagnosticContext, index: &Index, scope: &Scope, shape_dn: Shape, ast: &ast::Process) -> ResolveResult {
     let mut builder = Builder::new(dcx, index);
-    let conn_dn = builder.steps.add_connection(shape_dn.clone());
+    let conn_dn = builder.add_connection(shape_dn.clone());
     let sb = ResolveCx { scope, up: None, down: Conn { shape: &shape_dn, conn: conn_dn }};
-    let (step, up) = builder.resolve_process(sb, ast);
-    ResolveResult { steps: builder.steps, conn_dn, step, up }
+    let (action, up) = builder.resolve_process(sb, ast);
+    let connections = builder.connections;
+    let vars = builder.vars;
+    ResolveResult { action, connections, vars, conn_dn, up,  }
 }
 
 pub struct ResolveResult {
-    pub steps: StepBuilder,
-    pub step: StepId,
+    pub action: Action,
+    pub vars: EntityMap<VarId, ()>,
+    pub connections: EntityMap<ConnectionId, Shape>,
     pub conn_dn: ConnectionId,
     pub up: Option<(Shape, ConnectionId)>,
+}
+
+pub enum Action {
+    Process { proc: Arc<dyn PrimitiveProcess>, channels: Vec<ChannelId> },
+    Stack { lo: Box<Action>, conn: ConnectionId, hi: Box<Action> },
+    On {
+        conn: ConnectionId,
+        tag: usize,
+        fields_dn: Vec<Result<Pattern, ErrorReported>>,
+        fields_up: Vec<Result<Pattern, ErrorReported>>,
+        body: Box<Action>,
+        token_has_body: bool,
+    },
+    Token {
+        conn: ConnectionId,
+        tag: usize,
+        fields_dn: Vec<Result<ExprKind, ErrorReported>>,
+        fields_up: Vec<Result<ExprKind, ErrorReported>>,
+        has_body: bool,
+    },
+    Seq(Vec<Action>),
+    Repeat { dir: RepeatMode, count: Result<ExprKind, ErrorReported>, body: Box<Action> },
+    For { count: u32, vars: Vec<ForVar> , body: Box<Action> },
+    Alt { dir: Dir, scrutinee: Result<ExprKind, ErrorReported>, arms: Vec<AltArm> },
+    Any { arms: Vec<Action> },
+    Error(ErrorReported),
+    Pass,
+}
+
+pub struct ForVar {
+    pub outer: Result<ExprKind, ErrorReported>,
+    pub var: VarId,
+}
+
+pub struct AltArm {
+    pub discriminant: Result<Pattern, ErrorReported>,
+    pub body: Action,
 }
 
 enum AltMode {
@@ -53,7 +92,8 @@ impl TryFromConstant for AltMode {
     const EXPECTED_MSG: &'static str = "#up | #dn | #const";
 }
 
-enum RepeatMode {
+#[derive(Clone, Copy)]
+pub enum RepeatMode {
     Up(bool),
     Dn,
 }
@@ -106,31 +146,20 @@ impl<'a> ResolveCx<'a> {
     }
 }
 
-entity_key!(pub ValueSinkId);
-
-struct ReceiveMsg {
-    src: ValueSrcId,
-    predicates: Vec<Predicate>,
-}
-
-impl ReceiveMsg {
-    fn add_field(&mut self, ecx: &mut ExprCtx, predicate: Predicate) -> ExprDnId {
-        let i = self.predicates.len() as u32;
-        self.predicates.push(predicate);
-        ecx.variable(self.value_src(i))
-    }
-
-    fn value_src(&mut self, i: u32) -> ValueSrc {
-        ValueSrc(self.src, i)
+macro_rules! try_action {
+    ($e:expr) => {
+        match $e {
+            Ok(e) => e,
+            Err(r) => return Action::Error(r)
+        }
     }
 }
 
 struct Builder<'a> {
     dcx: &'a mut DiagnosticContext,
     index: &'a Index,
-    steps: StepBuilder,
-    value_sink: EntityMap<ValueSinkId, ()>,
-    upvalues: Vec<(ValueSinkId, ExprDnId)>,
+    connections: EntityMap<ConnectionId, Shape>,
+    vars: EntityMap<VarId, ()>,
 }
 
 impl<'a> Builder<'a> {
@@ -138,93 +167,21 @@ impl<'a> Builder<'a> {
         Self {
             dcx,
             index,
-            steps: StepBuilder::new(),
-            value_sink: EntityMap::new(),
-            upvalues: Vec::new(),
+            connections: EntityMap::new(),
+            vars: EntityMap::new(),
         }
     }
 
-    fn err_step(&mut self, diag: Diagnostic) -> StepId {
+    pub(crate) fn add_connection(&mut self, shape: Shape) -> ConnectionId {
+        self.connections.push(shape)
+    }
+
+    fn err_step(&mut self, diag: Diagnostic) -> Action {
         let r = self.dcx.report(diag);
-        self.steps.invalid(r)
+        Action::Error(r)
     }
 
-    fn add_value_src(&mut self) -> ValueSrcId {
-        self.steps.ecx.fresh_var()
-    }
-
-    fn add_receive(&mut self) -> ReceiveMsg {
-        ReceiveMsg {
-            src: self.add_value_src(),
-            predicates: Vec::new(),
-        }
-    }
-
-    fn add_value_sink(&mut self) -> ValueSinkId {
-        self.value_sink.push(())
-    }
-
-    fn up_value_src(&mut self, e: &Expr) -> (ValueSrcId, bool) {
-        let src = self.add_value_src();
-        let mut used = false;
-        let v = self.steps.ecx.variable(ValueSrc(src, 0));
-        e.up(&mut self.steps.ecx, v, &mut |snk, x| {
-            used = true;
-            self.upvalues.push((snk, x))
-        });
-        (src, used)
-    }
-
-    fn provide_up(&mut self, v: &Expr, val: ExprDnId) {
-        v.up(&mut self.steps.ecx, val, &mut |snk, x| {
-            self.upvalues.push((snk, x))
-        });
-    }
-
-    pub fn take_upvalue_optional(&mut self, snk: ValueSinkId, file: &Arc<SourceFile>, span: FileSpan) -> Option<ExprDnId> {
-        let mut i = 0;
-        let mut ret = None;
-        let mut multiple = false;
-        while i < self.upvalues.len() {
-            if self.upvalues[i].0 == snk {
-                if ret.is_some() {
-                    multiple = true;
-                }
-                ret = Some(self.upvalues.remove(i).1);
-            } else {
-                i += 1;
-            }
-        }
-
-        if multiple {
-            self.dcx.report(Diagnostic::UpValueMultiplyProvided {
-                span: Span::new(file, span),
-            });
-        }
-
-        ret
-    }
-
-    pub fn take_upvalue(&mut self, snk: ValueSinkId, file: &Arc<SourceFile>, span: FileSpan) -> ExprDnId {
-        self.take_upvalue_optional(snk, file, span).unwrap_or_else(|| {
-            self.dcx.report(Diagnostic::UpValueNotProvided {
-                span: Span::new(file, span),
-            });
-            self.steps.ecx.invalid()
-        })
-    }
-
-    fn require_down(&mut self, scope: &Scope, span: FileSpan, v: &Expr) -> ExprDnId {
-        v.down(&mut self.steps.ecx).unwrap_or_else(|| {
-            self.dcx.report(Diagnostic::RequiredDownValue {
-                span: scope.span(span),
-                found: v.to_string(),
-            });
-            self.steps.ecx.invalid()
-        })
-    }
-
-    fn resolve_action(&mut self, sb: ResolveCx<'_>, action: &ast::Action) -> StepId {
+    fn resolve_action(&mut self, sb: ResolveCx<'_>, action: &ast::Action) -> Action {
         match action {
             ast::Action::Process(node) => {
                 let (step, shape_up) = self.resolve_process(sb, &node);
@@ -249,83 +206,57 @@ impl<'a> Builder<'a> {
 
                 let mut body_scope = sb.scope.child();
 
-                let mut up_inner = Vec::new();
-
-                let mut dn = self.add_receive();
+                let mut fields_dn = Vec::new();
+                let mut fields_up = Vec::new();
+                let mut push_field = |dir: Dir, f| {
+                    match dir {
+                        Dir::Dn => fields_dn.push(f),
+                        Dir::Up => fields_up.push(f),
+                    }
+                };
 
                 for m in zip_tuple_ast_fields(&mut self.dcx, &sb.scope.file, &args, &msg_def.params) {
-                    let (expr, param) = match m {
-                        EitherOrBoth::Both(expr, param) => (expr, param),
+                    match m {
+                        EitherOrBoth::Both(expr, param) => {
+                            bind_fields(&mut self.dcx, &mut body_scope, expr, &param.ty, &mut self.vars, &mut |field| {
+                                push_field(param.direction, field)
+                            });
+                        },
                         EitherOrBoth::Left(expr) => {
                             // unexpected param: declare its variables with invalid
                             // reported in zip_tuple_ast_fields
                             let reported = ErrorReported::error_reported();
                             lexpr(&mut self.dcx, &mut body_scope, expr, &reported.into());
-                            continue;
                         },
                         EitherOrBoth::Right(param) => {
-                            // missing param: pad `up` or `down`
-                            match param.direction {
-                                Dir::Dn => {
-                                    param.ty.for_each(&mut |_| {
-                                        dn.add_field(&mut self.steps.ecx, Predicate::Any);
-                                    });
-                                }
-                                Dir::Up => {
-                                    param.ty.for_each(&mut |_| {
-                                        up_inner.push(LValueSrc::Val(self.steps.ecx.invalid()));
-                                    });
-                                }
-                            }
-                            continue;
+                            // missing param: Bind an invalid parameter
+                            // reported in zip_tuple_ast_fields
+                            let reported = ErrorReported::error_reported();
+                            push_field(param.direction, Err(reported));
                         }
-                    };
-
-                    match param.direction {
-                        Dir::Dn => {
-                            self.bind_tree_fields_dn(&mut body_scope, expr, &param.ty, &mut dn);
-                        }
-                        Dir::Up => {
-                            self.bind_tree_fields_up(&mut body_scope,  expr, &param.ty, &mut up_inner);
-                        }
-                    };
+                    }
                 }
 
                 let inner_sb = if let &Some(ref child_shape) = &msg_def.child {
-                    assert!(dn.predicates.is_empty());
-                    assert!(up_inner.is_empty());
+                    assert!(fields_up.is_empty() && fields_dn.is_empty());
                     sb.with_upper(&body_scope, child_shape, conn_up)
                 } else {
                     sb.without_upper(&body_scope)
                 };
 
-                let inner = if let &Some(ref body) = &node.block {
-                    self.resolve_seq(inner_sb, body)
+                let body = if let &Some(ref body_ast) = &node.block {
+                    self.resolve_seq(inner_sb, body_ast)
                 } else {
-                    self.steps.accepting()
+                    Action::Seq(Vec::new())
                 };
 
-
-
-                let receive = if shape_up.mode.has_dn_channel() {
-                    self.steps.receive(conn_up.dn(), msg_def.tag, dn.src, dn.predicates)
-                } else {
-                    assert!(dn.predicates.is_empty());
-                    self.steps.accepting()
-                };
-
-                let send = if shape_up.mode.has_up_channel() {
-                    let up = self.bind_tree_fields_up_finish(up_inner, &sb.scope.file);
-                    self.steps.send(conn_up.up(), msg_def.tag, up)
-                } else {
-                    assert!(up_inner.is_empty());
-                    self.steps.accepting()
-                };
-
-                if msg_def.child.is_some() {
-                    self.steps.seq_from([inner, receive, send])
-                } else {
-                    self.steps.seq_from([receive, inner, send])
+                Action::On {
+                    conn: conn_up,
+                    tag: msg_def.tag,
+                    fields_dn,
+                    fields_up,
+                    body: Box::new(body),
+                    token_has_body: msg_def.child.is_some()
                 }
             }
 
@@ -347,245 +278,75 @@ impl<'a> Builder<'a> {
                 if let &Some(ref body) = &node.block {
                     self.resolve_seq(sb.with_upper(&sb.scope, inner_shape_up, conn_up), body)
                 } else {
-                    self.steps.accepting()
+                    Action::Seq(Vec::new())
                 }
             }
 
             ast::Action::Repeat(node) => {
-                let (dir, count) = match &node.dir_count {
-                    Some((dir_ast, count_ast)) => {
-                        let count = value(&mut self.dcx, sb.scope, count_ast);
-                        let dir = constant::<RepeatMode>(&mut self.dcx, sb.scope, dir_ast);
-                        (dir, count)
-                    }
-                    None => (Ok(RepeatMode::Up(true)), Ok(Expr::ignored()))
-                };
-
-                let upvalues_scope = self.upvalues.len();
-
                 let inner = self.resolve_seq(sb, &node.block);
 
-                if self.upvalues.len() > upvalues_scope {
-                    panic!("Upvalues set in repeat loop");
-                }
+                let (dir, count) = match &node.dir_count {
+                    Some((dir_ast, count_ast)) => {
+                        let dir = try_action!(constant::<RepeatMode>(&mut self.dcx, sb.scope, dir_ast));
+                        let count = try_action!(value(&mut self.dcx, sb.scope, count_ast));
 
-                let count_span = node.dir_count.as_ref().map_or(node.span, |t| t.1.span());
+                        let count_ty = count.get_type();
+                        if !count_ty.is_natural_number() {
+                            self.dcx.report(Diagnostic::InvalidRepeatCountType {
+                                span: sb.scope.span(count_ast.span()),
+                                found: count_ty,
+                            });
+                        }
 
-                let count = match count {
-                    Ok(count) => count,
-                    Err(r) => return self.steps.invalid(r),
+                        (dir, Ok(count.inner()))
+                    }
+                    None => (RepeatMode::Up(true), Ok(ExprKind::Ignored))
                 };
 
-                match count.get_type() {
-                    Type::Number(nt)
-                        if nt.is_integer() && !nt.min().is_negative() => {}
-                    Type::NumberSet(s) if s.iter().all(|v| v.is_integer() && !v.is_negative()) => {}
-                    Type::Ignored => {}
-                    found => {
-                        return self.err_step(Diagnostic::InvalidRepeatCountType {
-                            span: sb.scope.span(count_span),
-                            found,
-                        });
-                    }
-                }
-
-                match dir {
-                    Ok(RepeatMode::Up(nullable)) => {
-                        let (_, max) = match count.predicate() {
-                            Some(Predicate::Any) => (0, None),
-                            Some(Predicate::Number(n))
-                                if n.is_integer()
-                                && !n.is_negative() => (*n.numer(), Some(*n.numer() + 1)),
-                            Some(Predicate::Range(min, max))
-                                if min.is_integer()
-                                && !min.is_negative()
-                                && max.is_integer() => (*min.numer(), Some(*max.numer())),
-                            _ => {
-                                return self.err_step(Diagnostic::InvalidRepeatCountPredicate {
-                                    span: sb.scope.span(count_span),
-                                });
-                            }
-                        };
-
-                        let (count_src, count_used) = self.up_value_src(&count);
-
-                        let (init, increment, exit_guard) = if count_used || max.is_some() {
-                            let zero = self.steps.ecx.constant(Value::Number(0.into()));
-                            let init = self.steps.assign(count_src, zero);
-                            let count_var = self.steps.ecx.variable(ValueSrc(count_src, 0));
-                            let count_inc = self.steps.ecx.unary(
-                                count_var,
-                                UnaryOp::BinaryConstNumber(ast::BinOp::Add, 1.into())
-                            );
-                            let increment = self.steps.assign(count_src, count_inc);
-                            let exit_guard = self.steps.guard(count_var, count.predicate().unwrap());
-                            (init, increment, exit_guard)
-                        } else {
-                            (self.steps.accepting(), self.steps.accepting(), self.steps.accepting())
-                        };
-
-                        let body = self.steps.seq(inner, increment);
-                        let repeat = self.steps.repeat(body, nullable);
-                        self.steps.seq_from([init, repeat, exit_guard])
-                    }
-                    Ok(RepeatMode::Dn) => {
-                        let count_var = self.add_value_src();
-                        let count = self.require_down(&sb.scope, count_span, &count);
-
-                        match self.steps.ecx.get(count) {
-                            ExprDn::Const(Value::Number(n)) if n == &0.into() => {
-                                self.steps.accepting()
-                            }
-                            ExprDn::Const(Value::Number(n)) if n == &1.into() => {
-                                inner
-                            }
-                            _ => {
-                                let init = self.steps.assign(count_var, count);
-                                let count_expr = self.steps.ecx.variable(ValueSrc(count_var, 0));
-                                let loop_guard = self.steps.guard(
-                                    count_expr,
-                                    Predicate::Range(1.into(), i64::MAX.into()),
-                                );
-                                let count_dec = self.steps.ecx.unary(
-                                        count_expr,
-                                        UnaryOp::BinaryConstNumber(ast::BinOp::Sub, 1.into()),
-                                    );
-                                let decrement = self.steps.assign(count_var,count_dec);
-                                let exit_guard = self.steps.guard(
-                                    count_expr,
-                                    Predicate::Range(0.into(), 1.into()),
-                                );
-
-                                let body = self.steps.seq_from([loop_guard, inner, decrement]);
-                                let repeat = self.steps.repeat(body, true);
-                                self.steps.seq_from([init, repeat, exit_guard])
-                            }
-                        }
-                    }
-                    Err(r) => return self.steps.invalid(r)
-                }
+                Action::Repeat { dir, count, body: Box::new(inner) }
             }
 
             ast::Action::For(node) => {
-                enum LoopVar {
-                    Const(Vec<Value>),
-                    Expr {
-                        ty: Type,
-                        dn: Option<ExprDnId>,
-                        up_id: ValueSinkId,
-                        up_expr: ExprKind,
-                        up_collected: Option<Vec<ExprDnId>>,
-                        span: FileSpan
-                    },
-                    Invalid(ErrorReported)
-                }
-
-                let mut count = None;
+                let mut count: Option<u32> = None;
                 let mut vars = Vec::new();
+                let mut body_scope = sb.scope.child();
 
                 for &(ref name, ref expr) in &node.vars {
-                    let Ok(e) = value(&mut self.dcx, sb.scope, expr) else { continue; };
-                    let (c, ty) = match e.get_type() {
-                        Type::Vector(c, ty) => (c, *ty),
+                    let e = value(&mut self.dcx, sb.scope, expr);
+                    let var = self.vars.push(());
+
+                    let (c, ty) = match e.as_ref().map_or(Type::Ignored, |e| e.get_type()) {
+                        Type::Vector(c, ty) => (Some(c), *ty),
+                        Type::Ignored => (None, Type::Ignored),
                         other => {
-                            let r = self.dcx.report(Diagnostic::ExpectedVector {
+                            self.dcx.report(Diagnostic::ExpectedVector {
                                 span: sb.scope.span(expr.span()),
                                 found: other,
                             });
-                            vars.push((name, LoopVar::Invalid(r)));
-                            continue;
+                            (None, Type::Ignored)
                         }
                     };
 
-                    match count {
-                        None => count = Some(c),
-                        Some(count) if count == c => {},
-                        Some(count) => {
-                            let r = self.dcx.report(Diagnostic::ForLoopVectorWidthMismatch {
+                    body_scope.bind(&name.name, Item::Leaf(LeafItem::Value(Expr::Expr(ty, ExprKind::Var(var)))));
+                    vars.push(ForVar { outer: e.map(|e| e.inner()), var });
+
+                    if let Some(c) = c  {
+                        let width1 = *count.get_or_insert(c);
+                        if c != width1 {
+                            self.dcx.report(Diagnostic::ForLoopVectorWidthMismatch {
                                 span1: sb.scope.span(node.vars[0].1.span()),
-                                width1: count,
+                                width1,
                                 span2: sb.scope.span(expr.span()),
                                 width2: c
                             });
-                            vars.push((name, LoopVar::Invalid(r)));
-                            continue;
-                        }
-                    }
-
-                    let var = match e {
-                        Expr::Const(Value::Vector(v)) => LoopVar::Const(v),
-                        Expr::Const(_) => unreachable!(), // Checked that type is vector
-                        Expr::Expr(_, e) => LoopVar::Expr{
-                            ty,
-                            dn: e.down(&mut self.steps.ecx),
-                            up_id: self.add_value_sink(),
-                            up_expr: e,
-                            up_collected: Some(Vec::new()),
-                            span: name.span
-                        },
-                    };
-
-                    vars.push((name, var));
-                }
-
-                let mut seq = Vec::new();
-
-                for iter in 0..count.unwrap_or(0) {
-                    let mut body_scope = sb.scope.child();
-                    let upvalues_scope = self.upvalues.len();
-
-                    for (name, var) in &vars {
-                        let value = match var {
-                            LoopVar::Const(v) => {
-                                LeafItem::Value(Expr::Const(v[iter as usize].clone()))
-                            }
-                            LoopVar::Expr { ty, dn, up_id, ..} => {
-                                let up = ExprKind::VarUp(*up_id);
-                                let e = if let Some(dn) = dn {
-                                    let elem = self.steps.ecx.index(*dn, iter);
-                                    ExprKind::Flip(Box::new(ExprKind::VarDn(elem)), Box::new(up))
-                                } else { up };
-                                LeafItem::Value(Expr::Expr(ty.clone(), e))
-                            }
-                            LoopVar::Invalid(r) => LeafItem::Invalid(r.clone())
-                        };
-
-                        body_scope.bind(&name.name, Item::Leaf(value));
-                    }
-
-                    let inner = self.resolve_seq(sb.with_scope(&body_scope), &node.block);
-
-                    for (_, var) in &mut vars {
-                        if let LoopVar::Expr { up_id, up_collected, span, ..} = var {
-                            if let Some(up) = self.take_upvalue_optional(*up_id, &sb.scope.file, *span) {
-                                if let Some(collected) = up_collected {
-                                    collected.push(up);
-                                }
-                            } else {
-                                *up_collected = None;
-                            }
-                        };
-                    }
-
-                    if self.upvalues.len() > upvalues_scope {
-                        panic!("Upvalues set in for loop: {:?}", self.upvalues);
-                    }
-
-                    seq.push(inner);
-                }
-
-                for (_, var) in &mut vars {
-                    if let LoopVar::Expr{ up_expr, up_collected, ..} = var {
-                        if let Some(collected) = up_collected {
-                            let concat = self.steps.ecx.concat(collected.drain(..).map(ConcatElem::Elem).collect());
-                            up_expr.up(&mut self.steps.ecx, concat, &mut |snk, x| {
-                                self.upvalues.push((snk, x))
-                            });
                         }
                     }
                 }
 
-                self.steps.seq_from(seq)
+                let count = count.unwrap_or(0);
+                let body = self.resolve_seq(sb.with_scope(&body_scope), &node.block);
+
+                Action::For { count, vars, body: Box::new(body) }
             }
 
             ast::Action::Alt(node) => {
@@ -597,13 +358,12 @@ impl<'a> Builder<'a> {
                     });
                 }
 
-                match dir {
-                    Ok(AltMode::Const) => {
+                match try_action!(dir) {
+                    AltMode::Const => {
                         let scrutinee = rexpr(&mut self.dcx, sb.scope, &node.expr);
-
                         for arm in &node.arms {
                             let mut body_scope = sb.scope.child();
-                            if self.bind_tree_fields_const(&mut body_scope, &arm.discriminant, &scrutinee) {
+                            if bind_fields_const(&mut self.dcx, &mut body_scope, &arm.discriminant, &scrutinee) {
                                 return self.resolve_seq(sb.with_scope(&body_scope), &arm.block);
                             }
                         }
@@ -611,292 +371,47 @@ impl<'a> Builder<'a> {
                             span: sb.scope.span(node.span)
                         })
                     }
-                    Ok(AltMode::Var(Dir::Dn)) => {
-                        let scrutinee = value(&mut self.dcx, sb.scope, &node.expr)
-                            .unwrap_or(Expr::Expr(Type::Ignored, ExprKind::VarDn(ExprDnId::INVALID)));
-                        let scrutinee_dn = self.require_down(&sb.scope, node.expr.span(), &scrutinee);
+                    AltMode::Var(dir) => {
+                        let scrutinee = value(&mut self.dcx, sb.scope, &node.expr);
+                        let ty = scrutinee.as_ref().map_or(Type::Ignored, |t| t.get_type());
 
                         let arms = node.arms.iter().map(|arm| {
                             let mut body_scope = sb.scope.child();
-
-                            let predicate = lvalue_dn(&mut self.dcx, &mut self.steps.ecx, &mut body_scope, &arm.discriminant, scrutinee.clone()).unwrap_or(Predicate::Any);
-
-                            let upvalues_scope = self.upvalues.len();
+                            let discriminant = bind_field(&mut self.dcx, &mut body_scope, &arm.discriminant, &ty, &mut self.vars);
                             let body = self.resolve_seq(sb.with_scope(&body_scope), &arm.block);
-                            if self.upvalues.len() > upvalues_scope {
-                                // TODO: could support if all arms set the same upvalues, and we insert phi nodes to join them
-                                panic!("Upvalues set in alt arm");
-                            }
-                            let guard = self.steps.guard(scrutinee_dn.clone(), predicate);
-                            self.steps.seq(guard, body)
+                            AltArm { discriminant, body }
                         }).collect();
-                        self.steps.alt(arms)
-                    }
-                    Ok(AltMode::Var(Dir::Up)) => {
-                        let scrutinee = value(&mut self.dcx, sb.scope, &node.expr)
-                            .unwrap_or(Expr::ignored());
 
-                        let (src, used) = self.up_value_src(&scrutinee);
-                        let scrutinee_src = used.then_some(src);
-
-                        let ty = scrutinee.get_type();
-
-                        let arms = node.arms.iter().map(|arm| {
-                            let mut body_scope = sb.scope.child();
-
-                            let binding = lvalue_up(&mut self.dcx, &mut self.steps.ecx, &mut body_scope, &arm.discriminant, ty.clone(), &mut || self.value_sink.push(()))
-                                .unwrap_or(LValueSrc::Val(ExprDnId::INVALID));
-
-                            let upvalues_scope = self.upvalues.len();
-                            let body = self.resolve_seq(sb.with_scope(&body_scope), &arm.block);
-
-                            let val = self.finish_lvalue_src(binding, &sb.scope.file);
-
-                            if self.upvalues.len() > upvalues_scope {
-                                // TODO: could support if all arms set the same upvalues, and we insert phi nodes to join them
-                                panic!("Upvalues set in alt arm");
-                            }
-                            let exit = if let Some(scrutinee_src) = scrutinee_src {
-                                self.steps.assign(scrutinee_src, val)
-                            } else {
-                                self.steps.accepting()
-                            };
-                            self.steps.seq(body, exit)
-                        }).collect();
-                        self.steps.alt(arms)
-                    }
-                    Err(r) => {
-                        return self.steps.invalid(r);
+                        let scrutinee = scrutinee.map(|e| e.inner());
+                        Action::Alt { dir, scrutinee, arms }
                     }
                 }
             }
             ast::Action::Any(node) => {
                 let arms = node.arms.iter().map(|arm| {
-                    let upvalues_scope = self.upvalues.len();
-                    let body = self.resolve_action(sb, arm);
-                    if self.upvalues.len() > upvalues_scope {
-                        // TODO: could support if all arms set the same upvalues, and we insert phi nodes to join them
-                        panic!("Upvalues set in alt arm");
-                    }
-                    body
+                    self.resolve_action(sb, arm)
                 }).collect();
 
-                self.steps.alt(arms)
+                Action::Any { arms }
             }
-            ast::Action::Error(r) => self.steps.invalid(ErrorReported::from_ast(r)),
+            ast::Action::Error(r) => Action::Error(ErrorReported::from_ast(r)),
         }
     }
 
-    fn bind_tree_fields_dn(
-        &mut self,
-        scope: &mut Scope,
-        pat: &ast::Expr,
-        rhs: &TypeTree,
-        dn: &mut ReceiveMsg,
-    ) {
-        match (pat, rhs) {
-            (ast::Expr::Tup(pat_tup), r) => {
-                for m in zip_tuple_ast(&mut self.dcx, &scope.file, pat_tup, r) {
-                    match m {
-                        EitherOrBoth::Both(p, t) => self.bind_tree_fields_dn(scope, p, t, dn),
-                        EitherOrBoth::Left(_) => {
-                            //TODO: bind variables with invalid
-                        }
-                        EitherOrBoth::Right(t) => {
-                            // pad `dn` for missing fields
-                            t.for_each(&mut |_| { dn.add_field(&mut self.steps.ecx, Predicate::Any); })
-                        }
-                    }
-                }
-            }
-            (pat, Tree::Leaf(ty)) => {
-                {
-                    let this = &mut *dn;
-                    let i = this.predicates.len() as u32;
-                    let field = self.steps.ecx.variable(this.value_src(i));
-                    this.predicates.push(
-                        lvalue_dn(&mut self.dcx, &mut self.steps.ecx, scope, pat, Expr::Expr(ty.clone(), ExprKind::VarDn(field)))
-                            .unwrap_or(Predicate::Any)
-                    );
-                }
-            }
-            (ast::Expr::Ignore(_), t) => {
-                t.for_each(&mut |_| {
-                    dn.add_field(&mut self.steps.ecx, Predicate::Any);
-                });
-            }
-            (ast::Expr::Var(name), t @ Tree::Tuple(..)) => {
-                scope.bind(&name.name, t.map_leaf(&mut |t| {
-                    LeafItem::Value(Expr::Expr(t.clone(), ExprKind::VarDn(dn.add_field(&mut self.steps.ecx, Predicate::Any))))
-                }));
-            }
-            (pat, t) => {
-                t.for_each(&mut |_| {
-                    dn.add_field(&mut self.steps.ecx, Predicate::Any);
-                });
-
-                self.dcx.report(Diagnostic::InvalidItemForPattern {
-                    span: scope.span(pat.span()),
-                    found: t.to_string(),
-                });
-            }
-        }
-    }
-
-    fn bind_tree_fields_const(
-        &mut self,
-        scope: &mut Scope,
-        pat: &ast::Expr,
-        rhs: &Item,
-    ) -> bool {
-        match (pat, rhs) {
-            (ast::Expr::Tup(pat_tup), r) => {
-                let mut matched = true;
-                for m in zip_tuple_ast(&mut self.dcx, &scope.file, pat_tup, r) {
-                    match m {
-                        EitherOrBoth::Both(p, t) => {
-                            matched &= self.bind_tree_fields_const(scope, p, t);
-                        }
-                        EitherOrBoth::Left(_) => {
-                            matched = false;
-                            // reported in zip_tuple_ast
-                            let reported = ErrorReported::error_reported();
-                            self.bind_tree_fields_const(scope, pat, &reported.into());
-                        }
-                        EitherOrBoth::Right(_) => {
-                            matched = false;
-                        }
-                    }
-                }
-                matched
-            }
-            (ast::Expr::Ignore(_), _) => true,
-            (ast::Expr::Var(name), t) => {
-                scope.bind(&name.name, t.clone());
-                true
-            }
-            (pat, Tree::Leaf(LeafItem::Value(Expr::Const(c)))) => {
-                match lvalue_const(&mut self.dcx, scope, pat, c) {
-                    Ok(p) => p,
-                    Err(_) => false,
-                }
-            }
-            (_, Tree::Leaf(LeafItem::Value(e))) => {
-                self.dcx.report(Diagnostic::ExpectedConst {
-                    span: scope.span(pat.span()),
-                    found: e.to_string(),
-                    expected: "value".into(),
-                });
-                false
-            }
-            (_, Tree::Leaf(LeafItem::Invalid(_))) => false,
-            (pat, e) => {
-                self.dcx.report(Diagnostic::InvalidItemForPattern {
-                    span: scope.span(pat.span()),
-                    found: e.to_string(),
-                });
-                false
-            }
-        }
-    }
-
-    fn bind_tree_fields_up(
-        &mut self,
-        scope: &mut Scope,
-        pat: &ast::Expr,
-        rhs: &TypeTree,
-        up: &mut Vec<LValueSrc>,
-    ) {
-        match (pat, rhs) {
-            (ast::Expr::Tup(pat_tup), r) => {
-                for m in zip_tuple_ast(&mut self.dcx, &scope.file, pat_tup, r) {
-                    match m {
-                        EitherOrBoth::Both(p, t) => self.bind_tree_fields_up(scope, p, t, up),
-                        EitherOrBoth::Left(p) => {
-                            self.bind_tree_fields_up(scope, p, &Tree::Leaf(Type::Ignored), up);
-                        }
-                        EitherOrBoth::Right(_) => {
-                            // pad `up` for missing fields
-                            up.push(LValueSrc::Val(ExprDnId::INVALID))
-                        }
-                    }
-                }
-            }
-            (pat, Tree::Leaf(t)) => {
-                match lvalue_up(&mut self.dcx, &mut self.steps.ecx, scope, pat, t.clone(), &mut || self.value_sink.push(())) {
-                    Ok(x) => { up.push(x); },
-                    Err(_) => { up.push(LValueSrc::Val(ExprDnId::INVALID)); }
-                }
-            }
-            (ast::Expr::Var(name), tup @ Tree::Tuple(..)) => {
-                let e = tup.map_leaf(&mut |ty| {
-                    let id = self.value_sink.push(());
-                    up.push(LValueSrc::Var(id, name.span));
-                    LeafItem::Value(Expr::var_up(id, ty.clone()))
-                });
-                scope.bind(&name.name, e);
-            }
-            (pat, ty) => {
-                up.push(LValueSrc::Val(ExprDnId::INVALID));
-                self.dcx.report(Diagnostic::InvalidItemForPattern {
-                    span: scope.span(pat.span()),
-                    found: ty.to_string(),
-                });
-            }
-        }
-    }
-
-    fn bind_tree_fields_up_finish(&mut self, up_inner: Vec<LValueSrc>, file: &Arc<SourceFile>) -> Vec<ExprDnId> {
-        up_inner.into_iter().map(|v| {
-            self.finish_lvalue_src(v, file)
-        }).collect()
-    }
-
-    fn finish_lvalue_src(&mut self, v: LValueSrc, file: &Arc<SourceFile>) -> ExprDnId {
-        match v {
-            LValueSrc::Var(snk, span) => self.take_upvalue(snk, file, span),
-            LValueSrc::Val(e) => e,
-            LValueSrc::Concat(c) => {
-                let parts = c.into_iter().map(|e| {
-                    e.map_elem_owned(|v| self.finish_lvalue_src(v, file))
-                }).collect();
-                self.steps.ecx.concat(parts)
-            }
-        }
-    }
-
-    fn resolve_process(&mut self, sb: ResolveCx<'_>, process_ast: &ast::Process) -> (StepId, Option<(Shape, ConnectionId)>) {
+    fn resolve_process(&mut self, sb: ResolveCx<'_>, process_ast: &ast::Process) -> (Action, Option<(Shape, ConnectionId)>) {
         match process_ast {
             ast::Process::Call(node) => {
                 if let Some(msg_def) = sb.down.shape.variant_named(&node.name.name) {
-                    let (dn, up) = self.resolve_token(msg_def, sb.scope, &node);
+                    let (fields_dn, fields_up) = self.resolve_token(msg_def, sb.scope, &node);
 
-                    if msg_def.child.is_some() {
-                        assert!(dn.is_empty());
-                        assert!(up.predicates.is_empty());
-                    }
-
-                    let send = if sb.down.shape.mode.has_dn_channel() {
-                        self.steps.send(sb.down.conn.dn(), msg_def.tag, dn)
+                    let top = if let Some(child_shape) = &msg_def.child {
+                        assert!(fields_dn.is_empty() && fields_up.is_empty());
+                        Some((child_shape.clone(), sb.down.conn))
                     } else {
-                        self.steps.accepting()
+                        None
                     };
 
-                    let receive = if sb.down.shape.mode.has_up_channel() {
-                        self.steps.receive(sb.down.conn.up(), msg_def.tag, up.src, up.predicates)
-                    } else {
-                        self.steps.accepting()
-                    };
-
-                    let step = self.steps.seq(send, receive);
-
-                    if let Some(child_shape) = &msg_def.child {
-                        let pass = self.steps.pass();
-                        let step = self.steps.seq(pass, step);
-                        (step, Some((child_shape.clone(), sb.down.conn)))
-                    } else {
-                        (step, None)
-                    }
+                    (Action::Token { conn: sb.down.conn, tag: msg_def.tag, fields_dn, fields_up, has_body: msg_def.child.is_some() }, top)
                 } else {
                     let def = match self.index.find_def(sb.down.shape, &node.name.name) {
                         Ok(res) => res,
@@ -930,13 +445,13 @@ impl<'a> Builder<'a> {
                     return (step, None)
                 };
 
-                (self.steps.pass(), Some((child_shape.clone(), sb.down.conn)))
+                (Action::Pass, Some((child_shape.clone(), sb.down.conn)))
             }
 
             ast::Process::Primitive(node) => {
                 let arg = rexpr_tup(&mut self.dcx, sb.scope, &node.args);
                 debug!("instantiating primitive {} with {}", node.name.name, arg);
-                let prim = match instantiate_primitive(&node.name, arg, sb.down.shape, sb.up.as_ref().map(|u| u.shape)) {
+                let proc = match instantiate_primitive(&node.name, arg, sb.down.shape, sb.up.as_ref().map(|u| u.shape)) {
                     Ok(p) => p,
                     Err(msg) => {
                         let step = self.err_step(Diagnostic::ErrorInPrimitiveProcess {
@@ -955,15 +470,15 @@ impl<'a> Builder<'a> {
                     sb.up.and_then(|u| u.shape.mode.has_dn_channel().then_some(u.conn.dn())),
                 ].into_iter().flatten().collect();
 
-                (self.steps.add_process(prim, channels), None)
+                (Action::Process { proc, channels }, None)
             }
 
             ast::Process::New(node) => {
                 let top_shape = match protocol::resolve(&mut self.dcx, self.index, sb.scope, &node.top, 1) {
                     Ok(shape) => shape,
-                    Err(r) => return (self.steps.invalid(r), None),
+                    Err(r) => return (Action::Error(r), None),
                 };
-                let conn = self.steps.add_connection(top_shape.clone());
+                let conn = self.add_connection(top_shape.clone());
                 let block = self.resolve_seq(sb.with_upper(sb.scope, &top_shape, conn), &node.block);
                 (block, Some((top_shape, conn)))
             }
@@ -977,7 +492,7 @@ impl<'a> Builder<'a> {
                 let (lo, up) = self.resolve_process(sb, &node.lower);
 
                 let Some((shape, conn)) = up else {
-                    if lo == StepId::FAIL {
+                    if matches!(lo, Action::Error(_)) {
                         return (lo, None);
                     } else {
                         let step = self.err_step(Diagnostic::StackWithoutBaseSignal {
@@ -988,14 +503,20 @@ impl<'a> Builder<'a> {
                 };
 
                 let (hi, shape_up) = self.resolve_process(sb.with_lower(sb.scope, &shape, conn), &node.upper);
-                (self.steps.stack(lo, conn, hi), shape_up)
+                (Action::Stack { lo: Box::new(lo), conn, hi: Box::new(hi) }, shape_up)
             }
         }
     }
 
-    fn resolve_token(&mut self, msg_def: &ShapeMsg, scope: &Scope, node: &ast::ProcessCall) -> (Vec<ExprDnId>, ReceiveMsg) {
-        let mut dn = Vec::new();
-        let mut up = self.add_receive();
+    fn resolve_token(&mut self, msg_def: &ShapeMsg, scope: &Scope, node: &ast::ProcessCall) -> (Vec<Result<ExprKind, ErrorReported>>, Vec<Result<ExprKind, ErrorReported>>) {
+        let mut fields_dn = Vec::new();
+        let mut fields_up = Vec::new();
+        let mut push_field = |dir: Dir, f| {
+            match dir {
+                Dir::Dn => fields_dn.push(f),
+                Dir::Up => fields_up.push(f),
+            }
+        };
 
         for m in zip_tuple_ast_fields(&mut self.dcx, &scope.file, &node.args, &msg_def.params) {
             let (arg, param, span) = match m {
@@ -1021,26 +542,11 @@ impl<'a> Builder<'a> {
                     &Tree::Leaf(ref ty),
                     &Item::Leaf(LeafItem::Value(ref v))
                 ) if v.get_type().is_subtype(ty) => {
-                    match param.direction {
-                        Dir::Dn => {
-                            dn.push(self.require_down(scope, span, v));
-                        }
-                        Dir::Up => {
-                            let predicate = v.predicate().expect("Value cannot be up-evaluated as a predicate");
-                            let f = up.add_field(&mut self.steps.ecx, predicate);
-                            self.provide_up(v, f);
-                        }
-                    }
+                    push_field(param.direction, Ok(v.clone().inner()));
                 },
 
-                crate::tree::Zip::Both(_, &Item::Leaf(LeafItem::Invalid(_))) => {
-                    match param.direction {
-                        Dir::Dn => dn.push(ExprDnId::INVALID),
-                        Dir::Up => {
-                            let this = &mut up;
-                            this.add_field(&mut self.steps.ecx, Predicate::Any);
-                        },
-                    }
+                crate::tree::Zip::Both(_, Item::Leaf(LeafItem::Invalid(r))) => {
+                    push_field(param.direction, Err(r.clone()));
                 }
 
                 _ => {
@@ -1058,10 +564,10 @@ impl<'a> Builder<'a> {
             }
         }
 
-        (dn, up)
+        (fields_dn, fields_up)
     }
 
-    fn resolve_seq(&mut self, sb: ResolveCx<'_>, block: &ast::Block) -> StepId {
+    fn resolve_seq(&mut self, sb: ResolveCx<'_>, block: &ast::Block) -> Action {
         let mut scope = sb.scope.child();
 
         for ld in &block.lets {
@@ -1072,10 +578,9 @@ impl<'a> Builder<'a> {
             self.resolve_action(sb.with_scope(&scope), &action)
         }).collect();
 
-        self.steps.seq_from(steps)
+        Action::Seq(steps)
     }
 }
-
 
 pub fn resolve_letdef(dcx: &mut DiagnosticContext, scope: &mut Scope, ld: &ast::LetDef) {
     let &ast::LetDef { ref name, ref expr, .. } = ld;

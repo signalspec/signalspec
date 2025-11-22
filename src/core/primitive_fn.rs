@@ -2,7 +2,7 @@ use std::{collections::HashMap, sync::Arc};
 use num_complex::Complex;
 use num_traits::ToPrimitive;
 
-use crate::{core::{ExprKind, Expr, FunctionDef, PrimitiveFn}, Item, LeafItem, Type, Value};
+use crate::{core::{resolve::{ExprKind, Expr}, FunctionDef, PrimitiveFn}, Item, LeafItem, Type, Value};
 
 use super::op::{self, SignMode, UnaryOp};
 
@@ -102,5 +102,3 @@ fn fn_bits(arg: Item) -> Result<Item, &'static str> {
     let ty = Type::bits(width);
     Ok(Expr::Expr(ty, ExprKind::Ignored).into())
 }
-
-

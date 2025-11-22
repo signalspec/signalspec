@@ -1,18 +1,21 @@
-use std::{collections::BTreeSet, fmt::{self, Display}, iter, sync::Arc};
+use std::{fmt::{self, Display}, iter, sync::Arc};
 
 use itertools::{Itertools, EitherOrBoth};
 
 use crate::{
     core::{
-        data::{NumberType, NumberTypeError}, expr_dn::ExprDnId, op::{eval_binary, eval_choose, UnaryOp}, resolve::action::ValueSinkId, ConcatElem, ExprCtx, Func, FunctionDef, Item, LeafItem, Predicate, Scope, ValueSrc
+        data::{NumberType, NumberTypeError},
+        op::{eval_binary, eval_choose, UnaryOp, ConcatElem},
+        Func, FunctionDef, Item, LeafItem, Scope
     },
     diagnostic::{Diagnostic, DiagnosticContext, ErrorReported, Span},
+    entitymap::{entity_key, EntityMap},
     syntax::{
         ast::{self, AstNode, BinOp},
         Number,
     },
     tree::{Tree, TupleFields},
-    FileSpan, SourceFile, Type, Value,
+    SourceFile, Type, TypeTree, Value
 };
 
 #[derive(PartialEq, Debug, Clone)]
@@ -21,13 +24,14 @@ pub enum Expr {
     Expr(Type, ExprKind),
 }
 
+entity_key!(pub VarId);
+
 /// An expression representing a runtime computation
 #[derive(PartialEq, Debug, Clone)]
 pub enum ExprKind {
     Ignored,
     Const(Value),
-    VarDn(ExprDnId),
-    VarUp(ValueSinkId),
+    Var(VarId),
     Range(Number, Number),
     Union(Vec<ExprKind>),
     Flip(Box<ExprKind>, Box<ExprKind>),
@@ -45,130 +49,15 @@ impl Expr {
         }
     }
 
-    pub fn down(&self, ecx: &mut ExprCtx) -> Option<ExprDnId> {
-        match self {
-            Expr::Const(c) => Some(ecx.constant(c.clone())),
-            Expr::Expr(_, e) => e.down(ecx)
-        }
-    }
-
-    pub fn up(&self, ecx: &mut ExprCtx, v: ExprDnId, sink: &mut dyn FnMut(ValueSinkId, ExprDnId)) {
-        match self {
-            Expr::Const(_) => {}
-            Expr::Expr(_, e) => e.up(ecx, v, sink)
-        }
-    }
-
-    pub(super) fn inner(self) -> ExprKind {
+    pub(crate) fn inner(self) -> ExprKind {
         match self {
             Expr::Const(v) => ExprKind::Const(v),
             Expr::Expr(_, k) => k,
         }
     }
 
-    pub fn predicate(&self) -> Option<Predicate> {
-        match self {
-            Expr::Const(c) => Predicate::from_value(c),
-            Expr::Expr(_, e) => e.predicate(),
-        }
-    }
-
     pub fn ignored() -> Self {
         Expr::Expr(Type::Ignored, ExprKind::Ignored)
-    }
-
-    pub fn var_dn(ecx: &mut ExprCtx, id: ValueSrc, ty: Type) -> Self {
-        Expr::Expr(ty, ExprKind::VarDn(ecx.variable(id)))
-    }
-
-    pub fn var_up(id: ValueSinkId, ty: Type) -> Self {
-        Expr::Expr(ty, ExprKind::VarUp(id))
-    }
-}
-
-impl ExprKind {
-    pub fn down(&self, ecx: &mut ExprCtx) -> Option<ExprDnId> {
-        match *self {
-            ExprKind::Ignored | ExprKind::Range(..) | ExprKind::Union(..) | ExprKind::VarUp(..) => None,
-            ExprKind::VarDn(ref dn) => Some(dn.clone()),
-            ExprKind::Const(ref v) => Some(ecx.constant(v.clone())),
-            ExprKind::Flip(ref d, _) => d.down(ecx),
-            ExprKind::Concat(ref c) => {
-                let parts = c.iter()
-                    .map(|l| l.map_elem_opt(|e| e.down(ecx)))
-                    .collect::<Option<Vec<_>>>()?;
-                Some(ecx.concat(parts.into_boxed_slice()))
-            },
-            ExprKind::Unary(ref e, ref op) => {
-                let e = e.down(ecx)?;
-                Some(ecx.unary(e, op.clone()))
-            }
-        }
-    }
-
-    pub fn up(&self, ecx: &mut ExprCtx, v: ExprDnId, sink: &mut dyn FnMut(ValueSinkId, ExprDnId)) {
-        match *self {
-            ExprKind::Ignored | ExprKind::Const(_) | ExprKind::VarDn(..)
-             | ExprKind::Range(_, _) | ExprKind::Union(..) => (),
-            ExprKind::VarUp(id) => sink(id, v),
-            ExprKind::Flip(_, ref up) => up.up(ecx, v, sink),
-            ExprKind::Concat(ref concat) => {
-                let mut offset = 0;
-                for c in concat {
-                    match c {
-                        ConcatElem::Elem(e) => {
-                            let v2 = ecx.index(v, offset);
-                            e.up(ecx, v2, sink)
-                        },
-                        ConcatElem::Slice(e, width) => {
-                            let v2 = ecx.slice(v, offset, offset + width);
-                            e.up(ecx, v2, sink)
-                        },
-                    };
-                    offset += c.elem_count();
-                }
-            }
-            ExprKind::Unary(ref e, ref op) => {
-                let v2 = ecx.unary(v, op.invert());
-                e.up(ecx, v2, sink)
-            }
-        }
-    }
-
-    pub fn predicate(&self) -> Option<Predicate> {
-        match *self {
-            ExprKind::Ignored | ExprKind::VarUp(..) => Some(Predicate::Any),
-            ExprKind::VarDn(_) => None,
-            ExprKind::Flip(_, ref up) => up.predicate(),
-            ExprKind::Const(ref v) => Predicate::from_value(v),
-            ExprKind::Range(lo, hi) => Some(Predicate::Range(lo, hi)),
-            ExprKind::Union(ref u) => {
-                let mut set = BTreeSet::new();
-                for e in u {
-                    match e.predicate()? {
-                        Predicate::SymbolSet(s) => set.extend(s),
-                        _ => return None,
-                    }
-                }
-                Some(Predicate::SymbolSet(set))
-            },
-            ExprKind::Concat(ref parts) => {
-                let mut predicates = Vec::with_capacity(parts.len());
-                for part in parts {
-                    match part.map_elem_opt(|e| e.predicate())? {
-                        ConcatElem::Slice(Predicate::Vector(inner), _) => predicates.extend(inner),
-                        e => predicates.push(e),
-                    }
-                }
-                Some(Predicate::Vector(predicates))
-            }
-            ExprKind::Unary(ref e, _) => {
-                match e.predicate() {
-                    Some(Predicate::Any) => Some(Predicate::Any),
-                    _ => None
-                }
-            },
-        }
     }
 }
 
@@ -667,177 +556,8 @@ fn resolve_function_call(dcx: &mut DiagnosticContext, call_site_span: impl FnOnc
     }
 }
 
-/// Pattern matching for `alt` or `on` in the down direction.
-/// 
-/// Make a predicate for matching `pat`, and bind variables from `pat` in `scope`
-/// with values from `rhs`. `rhs` is only used for binding variables and is not
-/// tested against the predicates here. It's up to the caller to test it with the
-// returned predicate at runtime before entering the scope.
-pub fn lvalue_dn(
-    dcx: &mut DiagnosticContext,
-    ecx: &mut ExprCtx,
-    scope: &mut Scope,
-    pat: &ast::Expr,
-    rhs: Expr
-) -> Result<Predicate, ErrorReported> {
-    match pat {
-        ast::Expr::Var(name) => {
-            scope.bind(&name.name, Item::Leaf(LeafItem::Value(rhs)));
-            Ok(Predicate::Any)
-        }
-
-        ast::Expr::Ignore(_) => Ok(Predicate::Any),
-
-        ast::Expr::Value(lit) => {
-            let val = Value::from_literal(&lit.value);
-
-            let r_ty = rhs.get_type();
-            if !r_ty.test(&val) {
-                dcx.report(Diagnostic::TypeConstraint {
-                    span: scope.span(lit.span),
-                    found: val.get_type(),
-                    bound: r_ty
-                });
-            }
-
-            // from_literal Value is always a valid predicate.
-            Ok(Predicate::from_value(&val).unwrap())
-        }
-
-        ast::Expr::Concat(node) => {
-            let pat_w: u32 = node.elems.iter().map(|&(w, _)| w.unwrap_or(1)).sum();
-
-            let elem_ty = match rhs.get_type() {
-                Type::Vector(ty_w, elem_ty) if pat_w == ty_w => *elem_ty,
-                expected_ty => return Err(dcx.report(Diagnostic::PatternExpectedVector {
-                    span: scope.span(node.span),
-                    found_width: pat_w,
-                    expected: expected_ty,
-                }))
-            };
-
-            // Can't fail:
-            // * In `on`, this is always a `VarDn`.
-            // * In `alt`, we've already checked.
-            let dn = rhs.down(ecx).unwrap();
-
-            let mut i = 0;
-            let mut parts = Vec::new();
-            let mut err = None;
-
-            for (width, e) in &node.elems {
-                if let Some(width) = *width {
-                    let ri = Expr::Expr(
-                        Type::Vector(width, Box::new(elem_ty.clone())),
-                        ExprKind::VarDn(ecx.slice(dn, i, i+width))
-                    );
-
-                    // Flatten nested vector predicates
-                    match lvalue_dn(dcx, ecx, scope, e, ri) {
-                        Ok(Predicate::Vector(inner)) => parts.extend(inner),
-                        Ok(p) => parts.push(ConcatElem::Slice(p, width)),
-                        Err(r) => { parts.push(ConcatElem::Slice(Predicate::Any, width)); err = Some(r) }
-                    }
-
-                    i += width;
-                } else {
-                    let ri = Expr::Expr(
-                        elem_ty.clone(),
-                        ExprKind::VarDn(ecx.index(dn, i))
-                    );
-
-                    match lvalue_dn(dcx, ecx, scope, e, ri) {
-                        Ok(p) => parts.push(ConcatElem::Elem(p)),
-                        Err(r) => { parts.push(ConcatElem::Elem(Predicate::Any)); err = Some(r) }
-                    }
-
-                    i += 1;
-                }
-            }
-
-            if let Some(r) = err { Err(r) } else {Ok(Predicate::Vector(parts))  }
-        }
-
-        pat => Err(dcx.report(Diagnostic::NotAllowedInPattern {
-            span: scope.span(pat.span())
-        }))
-    }
-}
-
-pub enum LValueSrc {
-   Val(ExprDnId),
-   Var(ValueSinkId, FileSpan),
-   Concat(Vec<ConcatElem<LValueSrc>>),
-}
-
-/// Pattern matching for `alt` or `on` in the up direction.
-/// 
-/// Bind variables from `pat` in `scope`, and return an action to be taken when
-/// leaving the scope to produce the up-evaluated values, either by capturing an
-/// upvalue in the scope, or a constant from the pattern.
-pub fn lvalue_up(
-    dcx: &mut DiagnosticContext,
-    ecx: &mut ExprCtx,
-    scope: &mut Scope,
-    pat: &ast::Expr,
-    ty: Type,
-    add_value_sink: &mut impl FnMut() -> ValueSinkId,
-) -> Result<LValueSrc, ErrorReported> {
-    match pat {
-        ast::Expr::Var(name) => {
-            let id = add_value_sink();
-            scope.bind(&name.name, Item::Leaf(LeafItem::Value(Expr::var_up(id, ty))));
-            Ok(LValueSrc::Var(id, name.span))
-        }
-
-        ast::Expr::Value(lit) => {
-            let val = Value::from_literal(&lit.value);
-
-            if !ty.test(&val) {
-                dcx.report(Diagnostic::TypeConstraint {
-                    span: scope.span(lit.span),
-                    found: val.get_type(),
-                    bound: ty
-                });
-            }
-
-            Ok(LValueSrc::Val(ecx.constant(val)))
-        }
-
-        ast::Expr::Concat(node) => {
-            let pat_w: u32 = node.elems.iter().map(|&(w, _)| w.unwrap_or(1)).sum();
-
-            let elem_ty = match ty {
-                Type::Vector(ty_w, elem_ty) if pat_w == ty_w => *elem_ty,
-                expected_ty => return Err(dcx.report(Diagnostic::PatternExpectedVector {
-                    span: scope.span(node.span),
-                    found_width: pat_w,
-                    expected: expected_ty,
-                }))
-            };
-
-            let parts = collect_or_err(node.elems.iter()
-                .map(|&(width, ref e)| {
-                    if let Some(width) = width {
-                        let ty_inner = Type::Vector(width, Box::new(elem_ty.clone()));
-                        Ok(ConcatElem::Slice(lvalue_up(dcx, ecx, scope, e, ty_inner, add_value_sink)?, width))
-                    } else {
-                        Ok(ConcatElem::Elem(lvalue_up(dcx, ecx, scope, e, elem_ty.clone(), add_value_sink)?))
-                    }
-                })
-            );
-
-            Ok(LValueSrc::Concat(parts?))
-        }
-
-        pat => Err(dcx.report(Diagnostic::NotAllowedInPattern {
-            span: scope.span(pat.span())
-        }))
-    }
-}
-
 /// Pattern matching for constant `alt`
-/// 
+///
 /// Bind variables from `pat` in `scope`, and return whether the pattern matches a constant
 pub fn lvalue_const(
     dcx: &mut DiagnosticContext,
@@ -887,7 +607,7 @@ pub fn lvalue_const(
 }
 
 /// Match the fields of a tuple expression `tup_ast` with `tree`.
-/// 
+///
 /// The fields will be iterated in the order of `tree`.
 pub fn zip_tuple_ast<'a, 't, T: Display>(
     dcx: &mut DiagnosticContext,
@@ -1057,15 +777,189 @@ pub fn lexpr(dcx: &mut DiagnosticContext, scope: &mut Scope, pat: &ast::Expr, r:
     }
 }
 
+pub fn bind_fields_const(
+    dcx: &mut DiagnosticContext,
+    scope: &mut Scope,
+    pat: &ast::Expr,
+    rhs: &Item,
+) -> bool {
+    match (pat, rhs) {
+        (ast::Expr::Tup(pat_tup), r) => {
+            let mut matched = true;
+            for m in zip_tuple_ast(dcx, &scope.file, pat_tup, r) {
+                match m {
+                    EitherOrBoth::Both(p, t) => {
+                        matched &= bind_fields_const(dcx, scope, p, t);
+                    }
+                    EitherOrBoth::Left(_) => {
+                        matched = false;
+                        // reported in zip_tuple_ast
+                        let reported = ErrorReported::error_reported();
+                        bind_fields_const(dcx, scope, pat, &reported.into());
+                    }
+                    EitherOrBoth::Right(_) => {
+                        matched = false;
+                    }
+                }
+            }
+            matched
+        }
+        (ast::Expr::Ignore(_), _) => true,
+        (ast::Expr::Var(name), t) => {
+            scope.bind(&name.name, t.clone());
+            true
+        }
+        (pat, Tree::Leaf(LeafItem::Value(Expr::Const(c)))) => {
+            match lvalue_const(dcx, scope, pat, c) {
+                Ok(p) => p,
+                Err(_) => false,
+            }
+        }
+        (_, Tree::Leaf(LeafItem::Value(e))) => {
+            dcx.report(Diagnostic::ExpectedConst {
+                span: scope.span(pat.span()),
+                found: e.to_string(),
+                expected: "value".into(),
+            });
+            false
+        }
+        (_, Tree::Leaf(LeafItem::Invalid(_))) => false,
+        (pat, e) => {
+            dcx.report(Diagnostic::InvalidItemForPattern {
+                span: scope.span(pat.span()),
+                found: e.to_string(),
+            });
+            false
+        }
+    }
+}
+
+pub enum Pattern {
+    Ignored,
+    Const(Value),
+    Var(VarId),
+    Concat(Vec<ConcatElem<Pattern>>),
+}
+
+pub fn bind_fields(
+    dcx: &mut DiagnosticContext,
+    scope: &mut Scope,
+    pat: &ast::Expr,
+    rhs: &TypeTree,
+    vars: &mut EntityMap<VarId, ()>,
+    add_field: &mut impl FnMut(Result<Pattern, ErrorReported>),
+) {
+    match (pat, rhs) {
+        (ast::Expr::Tup(pat_tup), r) => {
+            for m in zip_tuple_ast(dcx, &scope.file, pat_tup, r) {
+                match m {
+                    EitherOrBoth::Both(p, t) => bind_fields(dcx, scope, p, t, vars, add_field),
+                    EitherOrBoth::Left(_) => {
+                        //TODO: bind variables with invalid
+                    }
+                    EitherOrBoth::Right(t) => {
+                        // pad for missing fields
+                        let r = ErrorReported::error_reported();
+                        t.for_each(&mut |_| { add_field(Err(r.clone())) })
+                    }
+                }
+            }
+        }
+        (ast::Expr::Ignore(_), ty) => {
+            // Ignore one or more fields
+            ty.for_each(&mut |_| {
+                add_field(Ok(Pattern::Ignored));
+            });
+        }
+        (ast::Expr::Var(name), ty) => {
+            scope.bind(&name.name, ty.map_leaf(&mut |ty| {
+                let var = vars.push(());
+                add_field(Ok(Pattern::Var(var)));
+                LeafItem::Value(Expr::Expr(ty.clone(), ExprKind::Var(var)))
+            }));
+        }
+        (pat, Tree::Leaf(ty)) => {
+            add_field(bind_field(dcx, scope, pat, ty, vars));
+        }
+        (pat, t) => {
+            let r = dcx.report(Diagnostic::InvalidItemForPattern {
+                span: scope.span(pat.span()),
+                found: t.to_string(),
+            });
+
+            t.for_each(&mut |_| {
+                add_field(Err(r.clone()));
+            });
+        }
+    }
+}
+
+pub fn bind_field(dcx: &mut DiagnosticContext, scope: &mut Scope, pat: &ast::Expr, ty: &Type, vars: &mut EntityMap<VarId, ()>) -> Result<Pattern, ErrorReported> {
+    match pat {
+        ast::Expr::Var(name) => {
+            let var = vars.push(());
+            scope.bind(&name.name, Item::Leaf(LeafItem::Value(Expr::Expr(ty.clone(), ExprKind::Var(var)))));
+            Ok(Pattern::Var(var))
+        }
+
+        ast::Expr::Ignore(_) => Ok(Pattern::Ignored),
+
+        ast::Expr::Value(lit) => {
+            let val = Value::from_literal(&lit.value);
+
+            if !ty.test(&val) {
+                dcx.report(Diagnostic::TypeConstraint {
+                    span: scope.span(lit.span),
+                    found: val.get_type(),
+                    bound: ty.clone()
+                });
+            }
+
+            Ok(Pattern::Const(val))
+        }
+
+        ast::Expr::Concat(node) => {
+            let pat_w: u32 = node.elems.iter().map(|&(w, _)| w.unwrap_or(1)).sum();
+
+            let elem_ty = match ty {
+                Type::Vector(ty_w, elem_ty) if pat_w == *ty_w => elem_ty,
+                expected_ty => return Err(dcx.report(Diagnostic::PatternExpectedVector {
+                    span: scope.span(node.span),
+                    found_width: pat_w,
+                    expected: expected_ty.clone(),
+                }))
+            };
+
+            let parts = collect_or_err(node.elems.iter()
+                .map(|&(width, ref e)| {
+                    if let Some(width) = width {
+                        let ty_inner = Type::Vector(width, elem_ty.clone());
+                        Ok(ConcatElem::Slice(bind_field(dcx, scope, e, &ty_inner, vars)?, width))
+                    } else {
+                        Ok(ConcatElem::Elem(bind_field(dcx, scope, e, elem_ty, vars)?))
+                    }
+                })
+            )?;
+
+            Ok(Pattern::Concat(parts))
+        }
+
+        pat => Err(dcx.report(Diagnostic::NotAllowedInPattern {
+            span: scope.span(pat.span())
+        }))
+    }
+}
+
+
 #[cfg(test)]
 pub fn test_expr_parse(e: &str) -> Expr {
     use crate::diagnostic::{DiagnosticContext, print_diagnostics};
     use crate::syntax::{parse_expr, SourceFile};
-    use crate::core::{Scope, value};
+    use crate::core::Scope;
 
     let mut dcx = DiagnosticContext::new();
 
-    let scope = Scope { 
+    let scope = Scope {
         file: Arc::new(SourceFile::new("<tests>".into(), "".into())),
         names: crate::core::primitive_fn::expr_prelude()
     };
@@ -1185,4 +1079,3 @@ fn vec_const_fold() {
         test_expr_parse("[1, 2, _, 3]")
     );
 }
-

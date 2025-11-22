@@ -38,7 +38,7 @@ impl DiagnosticContext {
 
 
 /// Sentinel value returned by `report` to serve as a type-system check that an error was already reported
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct ErrorReported(());
 
 impl ErrorReported {

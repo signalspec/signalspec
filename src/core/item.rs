@@ -4,7 +4,7 @@ use std::default::Default;
 use std::sync::Arc;
 
 use crate::{Value, tree::{Tree, TupleFields}, TypeTree, diagnostic::ErrorReported, Type};
-use super::{ Expr, FunctionDef };
+use super::{ resolve::Expr, FunctionDef };
 
 /// Non-tuple Item
 #[derive(Clone)]
@@ -124,7 +124,7 @@ impl<'a> TryFrom<Item> for Value {
 
 impl<'a> TryFrom<Item> for String {
     type Error = &'static str;
-    
+
     fn try_from(i: Item) -> Result<Self, Self::Error> {
         if let Item::Leaf(LeafItem::String(s)) = i { Ok(s) } else { Err("expected string") }
     }
@@ -132,7 +132,7 @@ impl<'a> TryFrom<Item> for String {
 
 impl<'a> TryFrom<Item> for (Item, Item) {
     type Error = &'static str;
-    
+
     fn try_from(i: Item) -> Result<Self, Self::Error> {
         match i {
             Item::Tuple(TupleFields { positional, named }) if named.is_empty()  => {

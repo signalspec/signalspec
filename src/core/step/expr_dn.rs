@@ -1,9 +1,8 @@
 use std::fmt::Display;
 
-use crate::entitymap::{entity_key, EntityIntern, EntityMap};
+use crate::{core::op::{ConcatElem, UnaryOp}, entitymap::{entity_key, EntityIntern, EntityMap}};
 use super::{ValueSrc, ValueSrcId};
 use crate::Value;
-use super::op::UnaryOp;
 
 entity_key!(pub ExprDnId);
 
@@ -222,44 +221,4 @@ pub enum ExprDn {
     Index(ExprDnId, u32),
     Slice(ExprDnId, u32, u32),
     Unary(ExprDnId, UnaryOp),
-}
-
-/// Element of Expr::Concat
-#[derive(PartialEq, Eq, Hash, Debug, Clone)]
-pub enum ConcatElem<E> {
-    /// An `Expr` included directly in a concatenation (`[a]`)
-    Elem(E),
-
-    /// An `Expr` for a `Vector` value whose elements are included in a concatenation (`[8:a]`)
-    Slice(E, u32),
-}
-
-impl<E> ConcatElem<E> {
-    pub fn map_elem<T>(&self, f: impl FnOnce(&E) -> T) -> ConcatElem<T> {
-        match *self {
-            ConcatElem::Elem(ref e) => ConcatElem::Elem(f(e)),
-            ConcatElem::Slice(ref e, w) => ConcatElem::Slice(f(e), w),
-        }
-    }
-
-    pub fn map_elem_opt<T>(&self, f: impl FnOnce(&E) -> Option<T>) -> Option<ConcatElem<T>> {
-        match *self {
-            ConcatElem::Elem(ref e) => Some(ConcatElem::Elem(f(e)?)),
-            ConcatElem::Slice(ref e, w) => Some(ConcatElem::Slice(f(e)?, w)),
-        }
-    }
-
-    pub fn map_elem_owned<T>(self, f: impl FnOnce(E) -> T) -> ConcatElem<T> {
-        match self {
-            ConcatElem::Elem(e) => ConcatElem::Elem(f(e)),
-            ConcatElem::Slice(e, w) => ConcatElem::Slice(f(e), w),
-        }
-    }
-
-    pub fn elem_count(&self) -> u32 {
-        match *self {
-            ConcatElem::Elem(..) => 1,
-            ConcatElem::Slice(_, s) => s,
-        }
-    }
 }

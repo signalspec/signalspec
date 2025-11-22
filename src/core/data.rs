@@ -4,7 +4,7 @@ use std::fmt::Display;
 use std::ops::Range;
 
 use indexmap::IndexSet;
-use num_traits::One;
+use num_traits::{One, Signed};
 
 use crate::{Diagnostic, Value, DiagnosticContext};
 use crate::diagnostic::{Span, ErrorReported};
@@ -201,6 +201,15 @@ impl Type {
                 Ok(Type::Vector(w, Box::new(t.bound(*tb)?))),
             (a, b) if a.is_subtype(&b) => Ok(a),
             (a, b) => Err((a, b)),
+        }
+    }
+
+    pub fn is_natural_number(&self) -> bool {
+        match self {
+            Type::Number(nt) => nt.is_integer() && !nt.min().is_negative(),
+            Type::NumberSet(s) => s.iter().all(|v| v.is_integer() && !v.is_negative()),
+            Type::Ignored => true,
+            _ => false
         }
     }
 }

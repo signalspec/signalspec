@@ -1,7 +1,7 @@
 use std::{cell::{RefCell, RefMut}, rc::Rc, task::{Poll, Context, Waker}, collections::VecDeque, future::Future, io, pin::Pin};
 use futures_lite::{ AsyncRead, AsyncWrite };
 
-use crate::{Value, Shape, Item, LeafItem, core::Expr, tree::Zip};
+use crate::{Value, Shape, Item, LeafItem, core::resolve::Expr, tree::Zip};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ChannelMessage {
@@ -158,7 +158,7 @@ impl SeqChannels {
     }
 
     pub fn for_shape(shape: &Shape) -> SeqChannels {
-        SeqChannels { 
+        SeqChannels {
             dn: shape.mode.has_dn_channel().then(Channel::new),
             up: shape.mode.has_up_channel().then(Channel::new),
         }

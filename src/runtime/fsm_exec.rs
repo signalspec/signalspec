@@ -3,7 +3,7 @@ use std::{future::Future, pin::Pin, sync::Arc, task::{ready, Context, Poll}};
 use futures_lite::FutureExt;
 use itertools::Itertools;
 
-use crate::{core::{ChannelId, Derivatives, ExprDnId, Predicate, ProcId, ProcessChain, StepId, ValueSrcId}, entitymap::EntityMap, Value};
+use crate::{core::{ChannelId, Derivatives, step::{ExprDnId, Predicate, ProcId, StepId, ValueSrcId}, ProcessChain}, entitymap::EntityMap, Value};
 
 use super::{channel::SeqChannels, Channel, ChannelMessage};
 

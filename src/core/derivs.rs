@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use indexmap::indexset;
 
-use super::{expr_dn::ExprDnId, step::{ProcId, StepBuilder}, ChannelId, Dir, Predicate, Step, StepId, ValueSrc, ValueSrcId};
+use super::{step::{ProcId, StepBuilder, ChannelId, Predicate, Step, StepId, ExprDnId, ValueSrc, ValueSrcId}, Dir};
 
 #[derive(Debug)]
 pub(crate) enum Derivatives {

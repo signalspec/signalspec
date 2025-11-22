@@ -5,7 +5,8 @@ use crate::syntax::ast::{self, AstNode};
 use crate::{Index, Dir, DiagnosticContext, Diagnostic};
 use crate::core::resolve::expr::{ constant, type_tree };
 use crate::core::shape::ShapeMode;
-use crate::core::{ Scope, Shape, ShapeMsg, ShapeMsgParam, Item, lexpr, rexpr, };
+use crate::core::{ Scope, Shape, ShapeMsg, ShapeMsgParam, Item };
+use super::{lexpr, rexpr};
 
 pub fn resolve(
     dcx: &mut DiagnosticContext,
@@ -136,4 +137,3 @@ pub fn instantiate(
         param: args
     })
 }
-

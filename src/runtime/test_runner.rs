@@ -7,7 +7,7 @@ use crate::diagnostic::Diagnostics;
 use crate::{ Handle, ChannelMessage, DiagnosticContext };
 use crate::runtime::channel::item_to_msgs;
 use crate::syntax::{ ast, SourceFile };
-use crate::core::{ Index, FileScope, rexpr, rexpr_tup };
+use crate::core::{ Index, FileScope, resolve::{rexpr, rexpr_tup} };
 
 pub fn run(show_diagnostics: &dyn Fn(Diagnostics), index: &Index, fname: &Path) -> bool {
     let fname = Path::new(fname);
@@ -65,7 +65,7 @@ pub fn run_file(show_diagnostics: &dyn Fn(Diagnostics), index: &Index, file: Arc
                     continue;
                 },
             };
-    
+
             if let Some(r) = res.down{
                 if !compile_only {
                     print!(" down:{r}");
@@ -156,7 +156,7 @@ fn run_test(show_diagnostics: &dyn Fn(Diagnostics), index: &Index, file: &FileSc
             Ok(h) => h,
             Err(d) => {
                 show_diagnostics(d);
-                return (None, TestState::CompileError); 
+                return (None, TestState::CompileError);
             }
         };
 
@@ -193,7 +193,7 @@ fn run_test(show_diagnostics: &dyn Fn(Diagnostics), index: &Index, file: &FileSc
         if compile_only {
             return TestState::CompileSuccess;
         }
-        
+
         match h.finish() {
             Ok(_) => TestState::Pass,
             Err(_) => TestState::Fail,

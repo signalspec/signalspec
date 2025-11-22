@@ -4,9 +4,9 @@ use std::sync::Arc;
 use crate::diagnostic::ErrorReported;
 use crate::entitymap::{entity_key, EntityIntern, EntityMap};
 use crate::runtime::PrimitiveProcess;
-use crate::Dir;
+use crate::{ Dir, Shape};
 use super::expr_dn::{ExprCtx, ExprDnId};
-use super::{Predicate, Shape, ValueSrcId};
+use super::{Predicate, ValueSrcId};
 
 entity_key!(pub StepId);
 
@@ -96,13 +96,12 @@ pub(crate) struct StepBuilder {
 }
 
 impl StepBuilder {
-    pub(crate) fn new() -> Self {
+    pub(crate) fn new(connections: EntityMap<ConnectionId, Shape>) -> Self {
         let ecx = ExprCtx::new();
         let mut steps = EntityIntern::new();
         assert_eq!(steps.insert(Step::Fail), StepId::FAIL);
         assert_eq!(steps.insert(Step::Accept), StepId::ACCEPT);
 
-        let connections = EntityMap::new();
         Self {
             ecx,
             steps,
@@ -207,10 +206,6 @@ impl StepBuilder {
                 self.steps.insert(Step::Stack { lo, conn, hi })
             }
         }
-    }
-
-    pub(crate) fn add_connection(&mut self, shape: Shape) -> ConnectionId {
-        self.connections.push(shape)
     }
 
     pub(crate) fn substitute(&mut self, s: StepId, replace: ValueSrcId, mut v: impl FnMut(&mut ExprCtx, u32) -> ExprDnId) -> StepId {

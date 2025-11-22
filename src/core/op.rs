@@ -1,3 +1,5 @@
+use std::borrow::Borrow;
+
 use num_complex::Complex;
 use num_traits::ToPrimitive;
 
@@ -122,4 +124,54 @@ pub fn eval_binary(l: Value, op: BinOp, r: Value) -> Option<Value> {
         (Value::Number(a),  Value::Complex(b)) => Value::Complex(op.eval(Complex::from(a), b)),
         _ => return None
     })
+}
+
+
+/// Element of Expr::Concat
+#[derive(PartialEq, Eq, Hash, Debug, Clone)]
+pub enum ConcatElem<E> {
+    /// An `Expr` included directly in a concatenation (`[a]`)
+    Elem(E),
+
+    /// An `Expr` for a `Vector` value whose elements are included in a concatenation (`[8:a]`)
+    Slice(E, u32),
+}
+
+impl<E> ConcatElem<E> {
+    pub fn map_elem<T>(&self, f: impl FnOnce(&E) -> T) -> ConcatElem<T> {
+        match *self {
+            ConcatElem::Elem(ref e) => ConcatElem::Elem(f(e)),
+            ConcatElem::Slice(ref e, w) => ConcatElem::Slice(f(e), w),
+        }
+    }
+
+    pub fn map_elem_opt<T>(&self, f: impl FnOnce(&E) -> Option<T>) -> Option<ConcatElem<T>> {
+        match *self {
+            ConcatElem::Elem(ref e) => Some(ConcatElem::Elem(f(e)?)),
+            ConcatElem::Slice(ref e, w) => Some(ConcatElem::Slice(f(e)?, w)),
+        }
+    }
+
+    pub fn map_elem_owned<T>(self, f: impl FnOnce(E) -> T) -> ConcatElem<T> {
+        match self {
+            ConcatElem::Elem(e) => ConcatElem::Elem(f(e)),
+            ConcatElem::Slice(e, w) => ConcatElem::Slice(f(e), w),
+        }
+    }
+
+    pub fn elem_count(&self) -> u32 {
+        match *self {
+            ConcatElem::Elem(..) => 1,
+            ConcatElem::Slice(_, s) => s,
+        }
+    }
+
+    pub fn enumerate<R: Borrow<ConcatElem<E>>>(elems: impl Iterator<Item = R>) -> impl Iterator<Item = (u32, R)> {
+        let mut offset = 0;
+        elems.map(move |e| {
+            let i = offset;
+            offset += e.borrow().elem_count();
+            (i, e)
+        })
+    }
 }

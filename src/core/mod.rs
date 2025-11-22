@@ -1,22 +1,20 @@
 mod item;
-mod expr_dn;
 mod op;
-mod step;
+pub(crate) mod step;
 mod index;
 mod function;
 mod primitive_fn;
 mod data;
 mod value;
 mod shape;
-mod resolve;
-mod predicate;
+pub(crate) mod resolve;
 mod derivs;
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
-use crate::core::step::{ConnectionId, SubProc};
+use crate::core::step::{ExprCtx, StepId};
 use crate::diagnostic::Diagnostics;
-use crate::entitymap::{entity_key, EntityMap};
+use crate::entitymap::EntityMap;
 use crate::syntax::ast;
 use crate::DiagnosticContext;
 
@@ -25,15 +23,13 @@ use self::resolve::expr::TryFromConstant;
 pub use self::index::{ Index, FileScope, ProtocolRef };
 pub use self::resolve::scope::Scope;
 pub use self::item::{Item, LeafItem};
-pub use self::expr_dn::{ ExprDn, ExprCtx, ExprDnId, ConcatElem };
-pub use self::resolve::expr::{ Expr, ExprKind, rexpr, rexpr_tup, lexpr, value, constant };
 pub use self::function::{ PrimitiveFn, FunctionDef, Func };
-pub use self::step::{ Step, StepId, ChannelId, ProcId };
 pub use self::value::Value;
 pub use self::data::{ Type, TypeTree };
 pub use self::shape::{ ShapeMode, Shape, ShapeMsg, ShapeMsgParam };
-pub use self::predicate::Predicate;
 pub(crate) use self::derivs::Derivatives;
+
+pub(crate) use step::{ChannelId, ConnectionId, ProcId, SubProc};
 
 pub type ScopeNames = HashMap<String, Item>;
 
@@ -77,11 +73,6 @@ impl Dir {
     }
 }
 
-entity_key!(pub ValueSrcId);
-
-#[derive(Eq, PartialEq, Hash, Debug, Clone, Copy)]
-pub struct ValueSrc(pub ValueSrcId, pub u32);
-
 pub struct ProcessChain {
     pub root: StepId,
     pub fsm: BTreeMap<StepId, Derivatives>,
@@ -95,11 +86,17 @@ pub struct ProcessChain {
 
 pub fn compile_process(index: &Index, scope: &Scope, shape_dn: Shape, ast: &ast::Process) -> Result<ProcessChain, Diagnostics> {
     let mut dcx = DiagnosticContext::new();
-    let mut resolved = resolve::resolve_process(&mut dcx, index, scope, shape_dn, ast);
+    let resolved = resolve::resolve_process(&mut dcx, index, scope, shape_dn, ast);
+
+    if dcx.has_errors() {
+        return Err(dcx.diagnostics());
+    }
+
+    let (mut steps, root) = step::build_step_tree(&mut dcx, &resolved.vars, resolved.connections, &resolved.action);
 
     if log_enabled!(log::Level::Debug) {
         let mut buf = String::new();
-        resolved.steps.write_tree(&mut buf, 0, resolved.step).unwrap();
+        steps.write_tree(&mut buf, 0, root).unwrap();
         debug!("Steps:\n{}", buf);
     }
 
@@ -107,20 +104,20 @@ pub fn compile_process(index: &Index, scope: &Scope, shape_dn: Shape, ast: &ast:
         return Err(dcx.diagnostics());
     }
 
-    let (fsm, accepting) = resolved.steps.fsm(resolved.step);
+    let (fsm, accepting) = steps.fsm(root);
 
     if dcx.has_errors() {
         return Err(dcx.diagnostics());
     }
 
     Ok(ProcessChain {
-        root: resolved.step,
+        root,
         fsm,
         accepting,
         conn_dn: resolved.conn_dn,
         up: resolved.up,
-        exprs: resolved.steps.ecx,
-        connections: resolved.steps.connections,
-        processes: resolved.steps.processes,
+        exprs: steps.ecx,
+        connections: steps.connections,
+        processes: steps.processes,
     })
 }
