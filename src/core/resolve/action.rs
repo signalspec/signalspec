@@ -174,7 +174,7 @@ impl<'a> Builder<'a> {
         self.connections.push(shape)
     }
 
-    fn err_step(&mut self, diag: Diagnostic) -> Action {
+    fn err(&mut self, diag: Diagnostic) -> Action {
         let r = self.dcx.report(diag);
         Action::Error(r)
     }
@@ -189,13 +189,13 @@ impl<'a> Builder<'a> {
 
             ast::Action::On(node @ ast::ActionOn { args: Some(args), ..}) => {
                 let Some(Conn { shape: shape_up, conn: conn_up }) = sb.up else {
-                    return self.err_step(Diagnostic::OnBlockWithoutUpSignal{
+                    return self.err(Diagnostic::OnBlockWithoutUpSignal{
                         span: sb.scope.span(node.span)
                     });
                 };
 
                 let Some(msg_def) = shape_up.variant_named(&node.name.name) else {
-                    return self.err_step(Diagnostic::NoVariantNamed {
+                    return self.err(Diagnostic::NoVariantNamed {
                         span: sb.scope.span(node.name.span),
                         protocol_name: shape_up.def.ast().name.name.to_owned(),
                         name: node.name.name.to_owned(),
@@ -256,13 +256,13 @@ impl<'a> Builder<'a> {
 
             ast::Action::On(node @ ast::ActionOn { args: None, ..}) => {
                 let Some(Conn { shape: shape_up, conn: conn_up }) = sb.up else {
-                    return self.err_step(Diagnostic::OnBlockWithoutUpSignal{
+                    return self.err(Diagnostic::OnBlockWithoutUpSignal{
                         span: sb.scope.span(node.span)
                     });
                 };
 
                 let Some(inner_shape_up) = shape_up.child_named(&node.name.name) else {
-                    return self.err_step(Diagnostic::NoChildNamed {
+                    return self.err(Diagnostic::NoChildNamed {
                         span: sb.scope.span(node.name.span),
                         protocol_name: shape_up.def.ast().name.name.to_owned(),
                         name: node.name.name.to_owned(),
@@ -347,7 +347,7 @@ impl<'a> Builder<'a> {
                 let dir = constant::<AltMode>(&mut self.dcx, sb.scope, &node.dir);
 
                 if node.arms.is_empty() {
-                    return self.err_step(Diagnostic::AltZeroArms {
+                    return self.err(Diagnostic::AltZeroArms {
                         span: sb.scope.span(node.span)
                     });
                 }
@@ -361,7 +361,7 @@ impl<'a> Builder<'a> {
                                 return self.resolve_seq(sb.with_scope(&body_scope), &arm.block);
                             }
                         }
-                        self.err_step(Diagnostic::AltNoArmsMatched {
+                        self.err(Diagnostic::AltNoArmsMatched {
                             span: sb.scope.span(node.span)
                         })
                     }
@@ -410,7 +410,7 @@ impl<'a> Builder<'a> {
                     let def = match self.index.find_def(sb.down.shape, &node.name.name) {
                         Ok(res) => res,
                         Err(FindDefError::NoDefinitionWithName) => {
-                            let step = self.err_step(Diagnostic::NoDefNamed {
+                            let step = self.err(Diagnostic::NoDefNamed {
                                 span: sb.scope.span(node.name.span),
                                 protocol_name: sb.down.shape.def.ast().name.name.to_owned(),
                                 def_name: node.name.name.to_owned(),
@@ -431,7 +431,7 @@ impl<'a> Builder<'a> {
 
             ast::Process::Child(node) => {
                 let Some(child_shape) = sb.down.shape.child_named(&node.name.name) else {
-                    let step = self.err_step(Diagnostic::NoDefNamed {
+                    let step = self.err(Diagnostic::NoDefNamed {
                         span: sb.scope.span(node.name.span),
                         protocol_name: sb.down.shape.def.ast().name.name.to_owned(),
                         def_name: node.name.name.to_owned(),
@@ -448,7 +448,7 @@ impl<'a> Builder<'a> {
                 let proc = match instantiate_primitive(&node.name, arg, sb.down.shape, sb.up.as_ref().map(|u| u.shape)) {
                     Ok(p) => p,
                     Err(msg) => {
-                        let step = self.err_step(Diagnostic::ErrorInPrimitiveProcess {
+                        let step = self.err(Diagnostic::ErrorInPrimitiveProcess {
                             span: sb.scope.span(node.span),
                             msg
                         });
@@ -489,7 +489,7 @@ impl<'a> Builder<'a> {
                     if matches!(lo, Action::Error(_)) {
                         return (lo, None);
                     } else {
-                        let step = self.err_step(Diagnostic::StackWithoutBaseSignal {
+                        let step = self.err(Diagnostic::StackWithoutBaseSignal {
                             span: sb.scope.span(node.lower.span()),
                         });
                         return (step, None)
