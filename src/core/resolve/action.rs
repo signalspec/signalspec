@@ -1,11 +1,9 @@
 use std::sync::Arc;
 
-use itertools::EitherOrBoth;
-
 use crate::{
-    core::{
-        index::FindDefError, resolve::expr::Pattern, step::ConnectionId, ChannelId, Dir, Item, LeafItem, Scope, Shape, ShapeMsg, Type
-}, diagnostic::DiagnosticContext, entitymap::EntityMap, runtime::PrimitiveProcess, Value};
+    Value, core::{
+        ChannelId, Dir, Item, LeafItem, Scope, Shape, ShapeMsg, Type, index::FindDefError, resolve::expr::{Pattern, ZipTupleResult}, step::ConnectionId
+}, diagnostic::DiagnosticContext, entitymap::EntityMap, runtime::PrimitiveProcess};
 use crate::diagnostic::{ErrorReported};
 use crate::runtime::instantiate_primitive;
 use crate::syntax::ast::{self, AstNode};
@@ -217,21 +215,17 @@ impl<'a> Builder<'a> {
 
                 for m in zip_tuple_ast_fields(&mut self.dcx, &sb.scope.file, &args, &msg_def.params) {
                     match m {
-                        EitherOrBoth::Both(expr, param) => {
+                        ZipTupleResult::Both(expr, param) => {
                             bind_fields(&mut self.dcx, &mut body_scope, expr, &param.ty, &mut self.vars, &mut |field| {
                                 push_field(param.direction, field)
                             });
                         },
-                        EitherOrBoth::Left(expr) => {
+                        ZipTupleResult::Left(expr, reported) => {
                             // unexpected param: declare its variables with invalid
-                            // reported in zip_tuple_ast_fields
-                            let reported = ErrorReported::error_reported();
                             lexpr(&mut self.dcx, &mut body_scope, expr, &reported.into());
                         },
-                        EitherOrBoth::Right(param) => {
+                        ZipTupleResult::Right(reported, param) => {
                             // missing param: Bind an invalid parameter
-                            // reported in zip_tuple_ast_fields
-                            let reported = ErrorReported::error_reported();
                             push_field(param.direction, Err(reported));
                         }
                     }
@@ -520,18 +514,16 @@ impl<'a> Builder<'a> {
 
         for m in zip_tuple_ast_fields(&mut self.dcx, &scope.file, &node.args, &msg_def.params) {
             let (arg, param, span) = match m {
-                EitherOrBoth::Both(arg_ast, param) => {
+                ZipTupleResult::Both(arg_ast, param) => {
                     let arg = rexpr(&mut self.dcx, scope, arg_ast);
                     (arg, param, arg_ast.span())
                 }
-                EitherOrBoth::Left(_) => {
+                ZipTupleResult::Left(_, _) => {
                     // unexpected parameter passed and already reported: ignore it
                     continue
                 }
-                EitherOrBoth::Right(param) => {
+                ZipTupleResult::Right(reported, param) => {
                     // missing expected parameter
-                    // reported in zip_tuple_ast_fields
-                    let reported = ErrorReported::error_reported();
                     (reported.into(), param, node.args.span)
                 },
             };

@@ -3,19 +3,11 @@ use std::{fmt::{self, Display}, iter, sync::Arc};
 use itertools::{Itertools, EitherOrBoth};
 
 use crate::{
-    core::{
-        data::{NumberType, NumberTypeError},
-        op::{eval_binary, eval_choose, UnaryOp, ConcatElem},
-        Func, FunctionDef, Item, LeafItem, Scope
-    },
-    diagnostic::{Diagnostic, DiagnosticContext, ErrorReported, Span},
-    entitymap::{entity_key, EntityMap},
-    syntax::{
-        ast::{self, AstNode, BinOp},
-        Number,
-    },
-    tree::{Tree, TupleFields},
-    SourceFile, Type, TypeTree, Value
+    SourceFile, Type, TypeTree, Value, core::{
+        Func, FunctionDef, Item, LeafItem, Scope, data::{NumberType, NumberTypeError}, op::{ConcatElem, UnaryOp, eval_binary, eval_choose}
+    }, diagnostic::{Diagnostic, DiagnosticContext, ErrorReported, Span}, entitymap::{EntityMap, entity_key}, syntax::{
+        Number, ast::{self, AstNode, BinOp}
+    }, tree::{Tree, TupleFields}
 };
 
 #[derive(PartialEq, Debug, Clone)]
@@ -614,7 +606,7 @@ pub fn zip_tuple_ast<'a, 't, T: Display>(
     file: &Arc<SourceFile>,
     tup_ast: &'a ast::ExprTup,
     tree: &'t Tree<T>,
-) -> impl Iterator<Item = EitherOrBoth<&'a ast::Expr, &'t Tree<T>>> {
+) -> impl Iterator<Item = ZipTupleResult<&'a ast::Expr, &'t Tree<T>>> {
     enum IterRes<A, B> {
         A(A),
         B(B),
@@ -638,7 +630,7 @@ pub fn zip_tuple_ast<'a, 't, T: Display>(
             IterRes::A(zip_tuple_ast_fields(dcx, file, tup_ast, f))
         }
         t if tup_ast.fields.len() == 1 && tup_ast.fields[0].name.is_none() => {
-            IterRes::B(iter::once(EitherOrBoth::Both(&tup_ast.fields[0].expr, t)))
+            IterRes::B(iter::once(ZipTupleResult::Both(&tup_ast.fields[0].expr, t)))
         }
         t => {
             dcx.report(Diagnostic::ExpectedTuple {
@@ -650,12 +642,22 @@ pub fn zip_tuple_ast<'a, 't, T: Display>(
     }
 }
 
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub enum ZipTupleResult<A, B> {
+    /// Both values are present.
+    Both(A, B),
+    /// Only the left value of type `A` is present.
+    Left(A, ErrorReported),
+    /// Only the right value of type `B` is present.
+    Right(ErrorReported, B),
+}
+
 pub fn zip_tuple_ast_fields<'a, 't, T>(
     dcx: &mut DiagnosticContext,
     file: &Arc<SourceFile>,
     tup_ast: &'a ast::ExprTup,
     f: &'t TupleFields<T>,
-) -> impl Iterator<Item = EitherOrBoth<&'a ast::Expr, &'t T>> {
+) -> impl Iterator<Item = ZipTupleResult<&'a ast::Expr, &'t T>> {
     let ast_positional_count = tup_ast.positional().count();
 
     if ast_positional_count < f.positional.len() {
@@ -685,26 +687,29 @@ pub fn zip_tuple_ast_fields<'a, 't, T>(
 
     tup_ast.positional()
         .zip_longest(f.positional.iter())
+        .map(|z| match z {
+            EitherOrBoth::Both(a, b) => ZipTupleResult::Both(a, b),
+            EitherOrBoth::Left(a) => ZipTupleResult::Left(a, ErrorReported::error_reported()),
+            EitherOrBoth::Right(b) => ZipTupleResult::Right(ErrorReported::error_reported(), b),
+        })
         .chain(f.named.iter().map(|(name, v)| {
             tup_ast.fields.iter()
                 .find(|field_ast| field_ast.name.as_ref().is_some_and(|i| &i.name == name))
-                .map_or(EitherOrBoth::Right(v), |f| EitherOrBoth::Both(&f.expr, v))
+                .map_or(ZipTupleResult::Right(ErrorReported::error_reported(), v), |f| ZipTupleResult::Both(&f.expr, v))
         }))
         .chain(tup_ast.fields.iter().filter(|a| {
             a.name.as_ref().is_some_and(|n| !f.named.contains_key(&n.name))
-        }).map(|a| EitherOrBoth::Left(&a.expr)))
+        }).map(|a| ZipTupleResult::Left(&a.expr, ErrorReported::error_reported())))
 }
 
 pub fn lexpr_tup(dcx: &mut DiagnosticContext, scope: &mut Scope, tup_pat: &ast::ExprTup, r: &Item) {
     for m in zip_tuple_ast(dcx, &scope.file, tup_pat, r) {
         match m {
-            EitherOrBoth::Both(pat, r) => lexpr(dcx, scope, pat, r),
-            EitherOrBoth::Left(pat) => {
-                // reported in zip_tuple_ast
-                let reported = ErrorReported::error_reported();
+            ZipTupleResult::Both(pat, r) => lexpr(dcx, scope, pat, r),
+            ZipTupleResult::Left(pat, reported) => {
                 lexpr(dcx, scope, pat, &Tree::Leaf(LeafItem::Invalid(reported)))
             }
-            EitherOrBoth::Right(_) => {}
+            ZipTupleResult::Right(_, _) => {}
         }
     }
 }
@@ -788,16 +793,14 @@ pub fn bind_fields_const(
             let mut matched = true;
             for m in zip_tuple_ast(dcx, &scope.file, pat_tup, r) {
                 match m {
-                    EitherOrBoth::Both(p, t) => {
+                    ZipTupleResult::Both(p, t) => {
                         matched &= bind_fields_const(dcx, scope, p, t);
                     }
-                    EitherOrBoth::Left(_) => {
+                    ZipTupleResult::Left(_, reported) => {
                         matched = false;
-                        // reported in zip_tuple_ast
-                        let reported = ErrorReported::error_reported();
                         bind_fields_const(dcx, scope, pat, &reported.into());
                     }
-                    EitherOrBoth::Right(_) => {
+                    ZipTupleResult::Right(_, _) => {
                         matched = false;
                     }
                 }
@@ -853,14 +856,13 @@ pub fn bind_fields(
         (ast::Expr::Tup(pat_tup), r) => {
             for m in zip_tuple_ast(dcx, &scope.file, pat_tup, r) {
                 match m {
-                    EitherOrBoth::Both(p, t) => bind_fields(dcx, scope, p, t, vars, add_field),
-                    EitherOrBoth::Left(_) => {
+                    ZipTupleResult::Both(p, t) => bind_fields(dcx, scope, p, t, vars, add_field),
+                    ZipTupleResult::Left(_, _) => {
                         //TODO: bind variables with invalid
                     }
-                    EitherOrBoth::Right(t) => {
+                    ZipTupleResult::Right(reported, t) => {
                         // pad for missing fields
-                        let r = ErrorReported::error_reported();
-                        t.for_each(&mut |_| { add_field(Err(r.clone())) })
+                        t.for_each(&mut |_| { add_field(Err(reported.clone())) })
                     }
                 }
             }
