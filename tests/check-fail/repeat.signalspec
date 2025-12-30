@@ -35,7 +35,7 @@ with Seq(type #x, _) def main() = seq {
 
 //# expression cannot be evaluated as a value
     repeat #dn 1..10 {
-//             ^^^^^ found `1..10`
+//             ^^^^^ not compatible with down-evaluation
 
     }
 }

@@ -138,6 +138,13 @@ pub enum ConcatElem<E> {
 }
 
 impl<E> ConcatElem<E> {
+    pub fn inner(&self) -> &E {
+        match *self {
+            ConcatElem::Elem(ref e) => e,
+            ConcatElem::Slice(ref e, _) => e,
+        }
+    }
+
     pub fn map_elem<T>(&self, f: impl FnOnce(&E) -> T) -> ConcatElem<T> {
         match *self {
             ConcatElem::Elem(ref e) => ConcatElem::Elem(f(e)),

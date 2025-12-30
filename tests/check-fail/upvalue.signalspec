@@ -1,10 +1,12 @@
 @test(#up, (9))
-with Seq(type 1..10, _) def main() = new Seq(1..10, #up) {
+with Seq(type 1..10, _) def main() = new Seq(type 1..10, #up) {
 //# value for up-direction variable provided multiple times
     on val(v) {
 //         ^ must be up-evaluated exactly once in this block
         val(v)
+//          ^ up-evaluated here
         val(v)
+//          ^ up-evaluated here
     }
 
 //# no value for up-direction variable provided
@@ -15,12 +17,16 @@ with Seq(type 1..10, _) def main() = new Seq(1..10, #up) {
 }
 
 @test(#up, (9))
-with Seq(type 1..10, _) def main() = seq {
+with Seq(type 1..10, _) def main() = new Seq(type [1..10; 2], #up) {
+    on val(xy) {
 //# value for up-direction variable provided multiple times
-    for xyz = [_] {
-//      ^^^ must be up-evaluated exactly once in this block
-        val(xyz)
-        val(xyz)
+        for ab = xy {
+//          ^^ must be up-evaluated exactly once in this block
+            val(ab)
+//              ^^ up-evaluated here
+            val(ab)
+//              ^^ up-evaluated here
+        }
     }
 }
 

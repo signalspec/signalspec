@@ -5,7 +5,7 @@ use itertools::Itertools;
 use crate::{
     Value, core::{
         ChannelId, Dir, Item, LeafItem, Scope, Shape, ShapeMsg, Type, index::FindDefError, resolve::expr::{Pattern, ZipTupleResult}, step::ConnectionId
-}, diagnostic::{DiagnosticContext, collect_or_err, try_push}, entitymap::EntityMap, runtime::PrimitiveProcess};
+}, diagnostic::{DiagnosticContext, Span, collect_or_err, try_push}, entitymap::EntityMap, runtime::PrimitiveProcess};
 use crate::diagnostic::{ErrorReported};
 use crate::runtime::instantiate_primitive;
 use crate::syntax::ast::{self, AstNode};
@@ -21,8 +21,98 @@ pub fn resolve_process(dcx: &mut DiagnosticContext, index: &Index, scope: &Scope
     let sb = ResolveCx { scope, up: None, down: Conn { shape: &shape_dn, conn: conn_dn }};
     let (action, up) = builder.resolve_process(sb, ast);
     let connections = builder.connections;
-    let vars = builder.vars;
+    let vars = builder.vars.vars.iter().map(|_| ()).collect();
     ResolveResult { action, connections, vars, conn_dn, up,  }
+}
+
+pub struct VarDirs {
+    /// The variable can be down-evaluated
+    pub dn: bool,
+
+    /// The variable must provide exactly one value by up-evaluation; the value will be
+    /// consumed by the construct declaring it.
+    pub up: bool,
+}
+
+impl From<Dir> for VarDirs {
+    fn from(dir: Dir) -> Self {
+        match dir {
+            Dir::Dn => VarDirs { dn: true, up: false },
+            Dir::Up => VarDirs { dn: false, up: true },
+        }
+    }
+}
+
+struct VarState {
+    dirs: VarDirs,
+    def_span: Span,
+    up_spans: Vec<Span>,
+}
+
+pub struct Vars {
+    vars: EntityMap<VarId, VarState>
+}
+
+impl Vars {
+    fn new() -> Self {
+        Self { vars: EntityMap::new() }
+    }
+
+    pub fn add(&mut self, span: Span, dirs: VarDirs) -> VarId {
+        self.vars.push(VarState {
+            dirs,
+            def_span: span,
+            up_spans: Vec::new(),
+        })
+    }
+
+    fn finish_pattern(&mut self, dcx: &mut DiagnosticContext, pat: &Pattern) {
+        pat.each_var(&mut |var_id| { self.finish(dcx, var_id, true); });
+    }
+
+    fn finish(&mut self, dcx: &mut DiagnosticContext, var_id: VarId, required: bool) {
+        let var = &mut self.vars[var_id];
+        if var.dirs.up {
+            if var.up_spans.is_empty() && required {
+                dcx.report(Diagnostic::UpValueNotProvided { span: var.def_span.clone() });
+            } else if var.up_spans.len() > 1 {
+                let usage_sites = var.up_spans.clone();
+                dcx.report(Diagnostic::UpValueMultiplyProvided { span: var.def_span.clone(), usage_sites });
+            }
+        }
+    }
+
+    fn has_defining_use_up(&self, var_id: VarId) -> bool {
+        let var = &self.vars[var_id];
+        var.dirs.up && !var.up_spans.is_empty()
+    }
+
+    fn try_use(&self, expr: &Result<ExprKind, ErrorReported>) -> VarDirs {
+        let Ok(expr) = expr else {
+            // The most conservative assumption to avoid reporting further errors
+            return VarDirs { dn: true, up: false };
+        };
+        let dn = expr.check_use_dn(&mut |var_id| self.vars[var_id].dirs.dn);
+        let up = expr.check_use_up(&mut |var_id| self.vars[var_id].dirs.up);
+        VarDirs { dn, up }
+    }
+
+    fn check_use(&mut self, dcx: &mut DiagnosticContext, span: Span, expr: &ExprKind, dir: Dir) {
+        match dir {
+            Dir::Dn => {
+                if !expr.check_use_dn(&mut |var_id| self.vars[var_id].dirs.dn) {
+                    dcx.report(Diagnostic::RequiredDownValue{ span });
+                }
+            }
+            Dir::Up => {
+                expr.check_use_up(&mut |var_id| {
+                    // TODO: keep span of variable use site in Expr::Var?
+                    self.vars[var_id].up_spans.push(span.clone());
+                    self.vars[var_id].dirs.up
+                });
+            }
+        };
+    }
 }
 
 pub struct ResolveResult {
@@ -60,6 +150,7 @@ pub enum Action {
 
 pub struct ForVar {
     pub outer: ExprKind,
+    pub outer_span: Span,
     pub var: VarId,
 }
 
@@ -157,7 +248,7 @@ struct Builder<'a> {
     dcx: &'a mut DiagnosticContext,
     index: &'a Index,
     connections: EntityMap<ConnectionId, Shape>,
-    vars: EntityMap<VarId, ()>,
+    vars: Vars,
 }
 
 impl<'a> Builder<'a> {
@@ -166,7 +257,7 @@ impl<'a> Builder<'a> {
             dcx,
             index,
             connections: EntityMap::new(),
-            vars: EntityMap::new(),
+            vars: Vars::new(),
         }
     }
 
@@ -209,7 +300,7 @@ impl<'a> Builder<'a> {
                 for m in zip_tuple_ast_fields(&mut self.dcx, &sb.scope.file, &args, &msg_def.params) {
                     match m {
                         ZipTupleResult::Both(expr, param) => {
-                            bind_fields(&mut self.dcx, &mut body_scope, expr, &param.ty, &mut self.vars, &mut |field| {
+                            bind_fields(&mut self.dcx, &mut self.vars, &mut body_scope, expr, &param.ty, param.direction, &mut |field| {
                                 try_push(&mut fields, field.map(|f| (param.direction, f)));
                             });
                         },
@@ -236,6 +327,10 @@ impl<'a> Builder<'a> {
                 } else {
                     Action::Seq(Vec::new())
                 };
+
+                for (_, pat) in fields.as_deref().unwrap_or_default() {
+                    self.vars.finish_pattern(&mut self.dcx, &pat);
+                }
 
                 Action::On {
                     conn: conn_up,
@@ -284,7 +379,13 @@ impl<'a> Builder<'a> {
                             });
                         }
 
-                        (dir, Ok(count.inner()))
+                        let count = count.inner();
+                        self.vars.check_use(self.dcx, sb.scope.span(count_ast.span()), &count, match dir {
+                            RepeatMode::Dn => Dir::Dn,
+                            RepeatMode::Up(_) => Dir::Up,
+                        });
+
+                        (dir, Ok(count))
                     }
                     None => (RepeatMode::Up(true), Ok(ExprKind::Ignored))
                 };
@@ -314,14 +415,23 @@ impl<'a> Builder<'a> {
                         }
                     };
 
-                    let var = self.vars.push(());
+                    let outer_expr = outer_expr.map(|e| e.inner());
+                    let dirs = self.vars.try_use(&outer_expr);
+                    let var = self.vars.add(body_scope.span(name.span), dirs);
                     body_scope.bind(&name.name, Item::Leaf(LeafItem::Value(Expr::Expr(ty, ExprKind::Var(var)))));
-                    Ok(ForVar { outer: outer_expr?.inner(), var })
+                    Ok(ForVar { outer: outer_expr?, outer_span: sb.scope.span(expr.span()), var })
                 }));
 
                 let body = self.resolve_seq(sb.with_scope(&body_scope), &node.block);
 
-                let vars = try_action!(vars);
+                let vars: Vec<ForVar> = try_action!(vars);
+
+                for for_var in vars.iter() {
+                    self.vars.finish(&mut self.dcx, for_var.var, false);
+                    if self.vars.has_defining_use_up(for_var.var) {
+                        self.vars.check_use(self.dcx, for_var.outer_span.clone(), &for_var.outer, Dir::Up);
+                    }
+                }
 
                 let count = match count_spans.iter().map(|(c, _)| *c).all_equal_value() {
                     Ok(c) => c,
@@ -360,15 +470,24 @@ impl<'a> Builder<'a> {
                     AltMode::Var(dir) => {
                         let scrutinee = value(&mut self.dcx, sb.scope, &node.expr);
                         let ty = scrutinee.as_ref().map_or(Type::Ignored, |t| t.get_type());
+                        let scrutinee = scrutinee.map(|e| e.inner());
+
+                        if let Ok(scrutinee) = &scrutinee {
+                            self.vars.check_use(self.dcx, sb.scope.span(node.expr.span()), scrutinee, dir);
+                        }
 
                         let arms = try_action!(collect_or_err(node.arms.iter().map(|arm| {
                             let mut body_scope = sb.scope.child();
-                            let discriminant = bind_field(&mut self.dcx, &mut body_scope, &arm.discriminant, &ty, &mut self.vars);
+                            let discriminant = bind_field(&mut self.dcx, &mut self.vars, &mut body_scope, &arm.discriminant, &ty, dir);
                             let body = self.resolve_seq(sb.with_scope(&body_scope), &arm.block);
+
+                            if let Ok(discriminant) = &discriminant {
+                                self.vars.finish_pattern(&mut self.dcx, &discriminant);
+                            }
                             Ok(AltArm { discriminant: discriminant?, body })
                         })));
 
-                        let scrutinee = try_action!(scrutinee).inner();
+                        let scrutinee = try_action!(scrutinee);
                         Action::Alt { dir, scrutinee, arms }
                     }
                 }
@@ -511,7 +630,9 @@ impl<'a> Builder<'a> {
                             &Tree::Leaf(ref ty),
                             &Item::Leaf(LeafItem::Value(ref v))
                         ) if v.get_type().is_subtype(ty) => {
-                            try_push(&mut fields, Ok((param.direction, v.clone().inner())));
+                            let v = v.clone().inner();
+                            self.vars.check_use(&mut self.dcx, scope.span(arg_ast.span()), &v, param.direction);
+                            try_push(&mut fields, Ok((param.direction, v)));
                         },
 
                         crate::tree::Zip::Both(_, Item::Leaf(LeafItem::Invalid(r))) => {

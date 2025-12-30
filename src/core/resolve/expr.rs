@@ -3,9 +3,9 @@ use std::{fmt::{self, Display}, iter, sync::Arc};
 use itertools::{Itertools, EitherOrBoth};
 
 use crate::{
-    SourceFile, Type, TypeTree, Value, core::{
-        Func, FunctionDef, Item, LeafItem, Scope, data::{NumberType, NumberTypeError}, op::{ConcatElem, UnaryOp, eval_binary, eval_choose}, resolve::type_expr::type_tree
-    }, diagnostic::{Diagnostic, DiagnosticContext, ErrorReported, Span, collect_or_err}, entitymap::{EntityMap, entity_key}, syntax::{
+    Dir, SourceFile, Type, TypeTree, Value, core::{
+        Func, FunctionDef, Item, LeafItem, Scope, data::{NumberType, NumberTypeError}, op::{ConcatElem, UnaryOp, eval_binary, eval_choose}, resolve::{action::Vars, type_expr::type_tree}
+    }, diagnostic::{Diagnostic, DiagnosticContext, ErrorReported, Span, collect_or_err}, entitymap::entity_key, syntax::{
         Number, ast::{self, AstNode, BinOp}
     }, tree::{Tree, TupleFields}
 };
@@ -62,6 +62,44 @@ impl fmt::Display for Expr {
             Expr::Expr(_, ExprKind::Const(p)) => write!(f, "{}", p),
             Expr::Expr(_, ExprKind::Range(a, b)) => write!(f, "{}..{}", a, b),
             Expr::Expr(ty, _) => write!(f, "<{ty}>"),
+        }
+    }
+}
+
+impl ExprKind {
+    pub fn check_use_dn(&self, with_var: &mut impl FnMut(VarId) -> bool) -> bool {
+        match *self {
+            ExprKind::Ignored => false,
+            ExprKind::Const(_) => true,
+            ExprKind::Var(var_id) => with_var(var_id),
+            ExprKind::Range(..) | ExprKind::Union(_) => false,
+            ExprKind::Flip(ref d, _) => d.check_use_dn(with_var),
+            ExprKind::Concat(ref concat_elems) => {
+                let mut result = true;
+                for elem in concat_elems {
+                    result &= elem.inner().check_use_dn(with_var);
+                }
+                result
+            }
+            ExprKind::Unary(ref e, _) => e.check_use_dn(with_var),
+        }
+    }
+
+    pub fn check_use_up(&self, with_var: &mut impl FnMut(VarId) -> bool) -> bool {
+        match *self {
+            ExprKind::Ignored => false,
+            ExprKind::Const(_) => false,
+            ExprKind::Var(var_id) => with_var(var_id),
+            ExprKind::Range(..) | ExprKind::Union(..) => false,
+            ExprKind::Flip(_, ref u) => u.check_use_up(with_var),
+            ExprKind::Concat(ref concat_elems) => {
+                let mut result = false;
+                for elem in concat_elems {
+                    result |= elem.inner().check_use_up(with_var);
+                }
+                result
+            }
+            ExprKind::Unary(ref e, _) => e.check_use_up(with_var),
         }
     }
 }
@@ -833,19 +871,32 @@ pub enum Pattern {
     Concat(Vec<ConcatElem<Pattern>>),
 }
 
+impl Pattern {
+    pub fn each_var(&self, f: &mut impl FnMut(VarId)) {
+        match *self {
+            Pattern::Var(v) => f(v),
+            Pattern::Concat(ref parts) => {
+                parts.iter().for_each(|p| p.inner().each_var(f));
+            }
+            Pattern::Ignored | Pattern::Const(_) => {}
+        }
+    }
+}
+
 pub fn bind_fields(
     dcx: &mut DiagnosticContext,
+    vars: &mut Vars,
     scope: &mut Scope,
     pat: &ast::Expr,
     rhs: &TypeTree,
-    vars: &mut EntityMap<VarId, ()>,
+    dir: Dir,
     add_field: &mut impl FnMut(Result<Pattern, ErrorReported>),
 ) {
     match (pat, rhs) {
         (ast::Expr::Tup(pat_tup), r) => {
             for m in zip_tuple_ast(dcx, &scope.file, pat_tup, r) {
                 match m {
-                    ZipTupleResult::Both(p, t) => bind_fields(dcx, scope, p, t, vars, add_field),
+                    ZipTupleResult::Both(p, t) => bind_fields(dcx, vars, scope, p, t, dir, add_field),
                     ZipTupleResult::Left(_, _) => {
                         //TODO: bind variables with invalid
                     }
@@ -864,13 +915,13 @@ pub fn bind_fields(
         }
         (ast::Expr::Var(name), ty) => {
             scope.bind(&name.name, ty.map_leaf(&mut |ty| {
-                let var = vars.push(());
+                let var = vars.add(scope.span(name.span), dir.into());
                 add_field(Ok(Pattern::Var(var)));
                 LeafItem::Value(Expr::Expr(ty.clone(), ExprKind::Var(var)))
             }));
         }
         (pat, Tree::Leaf(ty)) => {
-            add_field(bind_field(dcx, scope, pat, ty, vars));
+            add_field(bind_field(dcx, vars, scope, pat, ty, dir));
         }
         (pat, t) => {
             let r = dcx.report(Diagnostic::InvalidItemForPattern {
@@ -885,15 +936,17 @@ pub fn bind_fields(
     }
 }
 
-pub fn bind_field(dcx: &mut DiagnosticContext, scope: &mut Scope, pat: &ast::Expr, ty: &Type, vars: &mut EntityMap<VarId, ()>) -> Result<Pattern, ErrorReported> {
+pub fn bind_field(dcx: &mut DiagnosticContext, vars: &mut Vars, scope: &mut Scope, pat: &ast::Expr, ty: &Type, dir: Dir) -> Result<Pattern, ErrorReported> {
     match pat {
         ast::Expr::Var(name) => {
-            let var = vars.push(());
+            let var = vars.add(scope.span(name.span), dir.into());
             scope.bind(&name.name, Item::Leaf(LeafItem::Value(Expr::Expr(ty.clone(), ExprKind::Var(var)))));
             Ok(Pattern::Var(var))
         }
 
-        ast::Expr::Ignore(_) => Ok(Pattern::Ignored),
+        // When up-evaluated, the expression must produce a value
+        // so ignore patterns must be rejected.
+        ast::Expr::Ignore(_) if dir != Dir::Up => Ok(Pattern::Ignored),
 
         ast::Expr::Value(lit) => {
             let val = Value::from_literal(&lit.value);
@@ -925,9 +978,9 @@ pub fn bind_field(dcx: &mut DiagnosticContext, scope: &mut Scope, pat: &ast::Exp
                 .map(|&(width, ref e)| {
                     if let Some(width) = width {
                         let ty_inner = Type::Vector(width, elem_ty.clone());
-                        Ok(ConcatElem::Slice(bind_field(dcx, scope, e, &ty_inner, vars)?, width))
+                        Ok(ConcatElem::Slice(bind_field(dcx, vars, scope, e, &ty_inner, dir)?, width))
                     } else {
-                        Ok(ConcatElem::Elem(bind_field(dcx, scope, e, elem_ty, vars)?))
+                        Ok(ConcatElem::Elem(bind_field(dcx, vars, scope, e, elem_ty, dir)?))
                     }
                 })
             )?;

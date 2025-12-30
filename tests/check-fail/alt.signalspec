@@ -76,7 +76,7 @@ with Seq(type 0..10, _) def main() = seq {
 
 //# expression cannot be evaluated as a value
     alt #dn _ {
-//          ^ found `_`
+//          ^ not compatible with down-evaluation
         _ => {}
     }
 }

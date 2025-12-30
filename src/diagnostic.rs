@@ -97,7 +97,7 @@ pub struct Label<'a> {
 
 macro_rules! diagnostic_kinds {
     (
-        $($variant:ident { $($n:ident : $t:ty),* } => $msg:literal at $labels:expr)*
+        $($variant:ident { $($n:ident : $t:ty),* $(,)? } => $msg:literal at $labels:expr)*
     ) => {
         #[derive(Clone, Debug)]
         pub enum Diagnostic {
@@ -239,10 +239,13 @@ diagnostic_kinds! {
     ]
 
     UpValueMultiplyProvided {
-        span: Span
+        span: Span,
+        usage_sites: Vec<Span>,
     } => "value for up-direction variable provided multiple times" at [
         Label { label: "must be up-evaluated exactly once in this block".to_string(), span },
-    ]   // TODO: spans for each of the up-evaluation sites
+    ].into_iter().chain(
+        usage_sites.iter().map(|span| Label { label: "up-evaluated here".to_string(), span })
+    )
 
     UndefinedVariable {
         span: Span,
@@ -501,7 +504,6 @@ diagnostic_kinds! {
     })
 
     RequiredDownValue {
-
         span: Span
     } => "expression cannot be evaluated as a value" at [
         Label { label: "not compatible with down-evaluation".to_string(), span },
