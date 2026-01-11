@@ -326,12 +326,8 @@ impl<'a> Builder<'a> {
                 let count = match count_spans.iter().map(|(c, _)| *c).all_equal_value() {
                     Ok(c) => c,
                     Err(None) => 0,
-                    Err(Some((width1, width2))) => {
-                        self.dcx.report(Diagnostic::ForLoopVectorWidthMismatch {
-                            span: sb.scope.span(node.span()),
-                            width1,
-                            width2,
-                        });
+                    Err(Some(_)) => {
+                        self.dcx.report(Diagnostic::ForLoopVectorWidthMismatch { count_spans });
                         0
                     }
                 };

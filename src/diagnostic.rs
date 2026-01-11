@@ -495,12 +495,10 @@ diagnostic_kinds! {
     ]
 
     ForLoopVectorWidthMismatch {
-        span: Span,
-        width1: u32,
-        width2: u32
-    } => "`for` loop vectors must be the same width" at [
-        Label { label: format!("vectors of {width1} and {width2}"), span },
-    ]
+        count_spans: Vec<(u32, Span)>
+    } => "`for` loop vectors must be the same width" at count_spans.iter().map(|(width, span)| {
+        Label { label: format!("vector of width {width}"), span }
+    })
 
     RequiredDownValue {
 
