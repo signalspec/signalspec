@@ -1,5 +1,12 @@
-use std::{sync::Arc, fmt::{Display, Debug}, ptr};
-use crate::{SourceFile, FileSpan, syntax::{AstNode, ast, Number}, Type};
+use crate::{
+    syntax::{ast, AstNode, Number},
+    FileSpan, SourceFile, Type,
+};
+use std::{
+    fmt::{Debug, Display},
+    ptr,
+    sync::Arc,
+};
 
 pub type Diagnostics = Vec<Diagnostic>;
 
@@ -19,7 +26,9 @@ pub struct DiagnosticContext {
 
 impl DiagnosticContext {
     pub fn new() -> DiagnosticContext {
-        DiagnosticContext { diagnostics: Vec::new() }
+        DiagnosticContext {
+            diagnostics: Vec::new(),
+        }
     }
 
     pub fn report(&mut self, error: Diagnostic) -> ErrorReported {
@@ -36,14 +45,15 @@ impl DiagnosticContext {
     }
 }
 
-
 /// Sentinel value returned by `report` to serve as a type-system check that an error was already reported
 #[derive(Clone, PartialEq, Eq)]
 pub struct ErrorReported(());
 
 impl ErrorReported {
     /// Provide evidence that an error has been reported
-    pub fn error_reported() -> Self { ErrorReported(()) }
+    pub fn error_reported() -> Self {
+        ErrorReported(())
+    }
 
     /// It can be assumed that AST error nodes have been reported
     pub fn from_ast(_: &ast::Error) -> Self {
@@ -64,13 +74,18 @@ pub struct Span {
 }
 
 impl Span {
-    pub fn new(file: &Arc<SourceFile>, span: FileSpan) -> Self { Self { file: file.clone(), span } }
+    pub fn new(file: &Arc<SourceFile>, span: FileSpan) -> Self {
+        Self {
+            file: file.clone(),
+            span,
+        }
+    }
 }
 
 impl Debug for Span {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let start_line = self.file.byte_to_line(self.span.start);
-        write!(f, "{}:{}", self.file.name(), start_line + 1, )
+        write!(f, "{}:{}", self.file.name(), start_line + 1,)
     }
 }
 
@@ -82,9 +97,7 @@ pub struct Label<'a> {
 
 macro_rules! diagnostic_kinds {
     (
-        $($variant:ident { $($n:ident : $t:ty),* } => $msg:literal {
-            $(error $label:literal at $span:expr)*
-        })*
+        $($variant:ident { $($n:ident : $t:ty),* } => $msg:literal at $labels:expr)*
     ) => {
         #[derive(Clone, Debug)]
         pub enum Diagnostic {
@@ -109,14 +122,7 @@ macro_rules! diagnostic_kinds {
                 #[allow(unused_variables)]
                 match self {
                     $(Self::$variant { $($n),* } => {
-                        vec![
-                            $(
-                                Label {
-                                    label: format!($label),
-                                    span: $span,
-                                },
-                            )*
-                        ]
+                        $labels.into_iter().collect()
                     })*
                 }
             }
@@ -133,300 +139,299 @@ macro_rules! diagnostic_kinds {
     };
 }
 
-diagnostic_kinds!{
+diagnostic_kinds! {
     ParseError {
         span: Span,
         expected: &'static str
-    } => "parse error" {
-        error "expected {expected}" at span
-    }
+    } => "parse error" at [
+        Label { label: format!("expected {expected}"), span },
+    ]
 
     UnclosedDelimiter {
         span: Span,
         open: Span,
         expected: &'static str
-    } => "unclosed delimiter" {
-        error "unclosed" at open
-        error "expected {expected}" at span
-    }
+    } => "unclosed delimiter" at [
+        Label { label: "unclosed".to_string(), span: &open },
+        Label { label: format!("expected {expected}"), span },
+    ]
 
     NoDefNamed {
         span: Span,
         protocol_name: String,
         def_name: String
-    } => "no definition `{def_name}` found for protocol `{protocol_name}`" {
-        error "not found" at span
-    }
+    } => "no definition `{def_name}` found for protocol `{protocol_name}`" at [
+        Label { label: "not found".to_string(), span },
+    ]
 
     NoVariantNamed {
         span: Span,
         protocol_name: String,
         name: String
-    } => "no variant `{name}` exists on protocol `{protocol_name}`" {
-        error "not found" at span
-    }
+    } => "no variant `{name}` exists on protocol `{protocol_name}`" at [
+        Label { label: "not found".to_string(), span },
+    ]
 
     NoChildNamed {
         span: Span,
         protocol_name: String,
         name: String
-    } => "no child signal `{name}` exists on protocol `{protocol_name}`" {
-        error "not found" at span
-    }
+    } => "no child signal `{name}` exists on protocol `{protocol_name}`" at [
+        Label { label: "not found".to_string(), span },
+    ]
 
     NoProtocolNamed {
         span: Span,
         protocol_name: String
-    } => "no protocol named `{protocol_name}`" {
-        error "not found" at span
-    }
+    } => "no protocol named `{protocol_name}`" at [
+        Label { label: "not found".to_string(), span },
+    ]
 
     ProtocolArgumentMismatch {
         span: Span,
         protocol_name: String,
         found: String,
         def: Span
-    } => "invalid arguments to protocol `{protocol_name}`" {
-        error "found `{found}`" at span
-        error "definition site" at def
-    }
+    } => "invalid arguments to protocol `{protocol_name}`" at [
+        Label { label: format!("found `{found}`"), span },
+        Label { label: "definition site".to_string(), span: &def },
+    ]
 
     ProtocolMessageWithArgsAndChild {
         span: Span
-    } => "protocol message with child protocol cannot have arguments" {
-        error "has arguments and child protocol" at span
-    }
+    } => "protocol message with child protocol cannot have arguments" at [
+        Label { label: "has arguments and child protocol".to_string(), span },
+    ]
 
     ProtocolDataModeMismatch {
         span: Span,
         mode: crate::core::ShapeMode,
         direction: crate::core::Dir
-    } => "data direction not allowed by protocol mode" {
-        error "mode of this protocol is `{mode}` which can't have data with direction `{direction}`" at span
-    }
+    } => "data direction not allowed by protocol mode" at [
+        Label { label: format!("mode of this protocol is `{mode}` which can't have data with direction `{direction}`"), span },
+    ]
 
     ProtocolChildModeMismatch {
         span: Span,
         child_name: String,
         mode: crate::core::ShapeMode,
         child_mode: crate::core::ShapeMode
-    } => "mode mismatch on child protocol `{child_name}`" {
-        error "mode of this protocol is `{child_mode}` but the parent has `{mode}`" at span
-    }
+    } => "mode mismatch on child protocol `{child_name}`" at [
+        Label { label: format!("mode of this protocol is `{child_mode}` but the parent has `{mode}`"), span },
+    ]
 
     OnBlockWithoutUpSignal {
         span: Span
-    } => "`on` block used in a context without an upwards signal" {
-        error "requires a signal to act on" at span
-    }
+    } => "`on` block used in a context without an upwards signal" at [
+        Label { label: "requires a signal to act on".to_string(), span },
+    ]
 
     StackWithoutBaseSignal {
         span: Span
-    } => "stacked process without base signal" {
-        error "does not provide an upper signal" at span
-    }
+    } => "stacked process without base signal" at [
+        Label { label: "does not provide an upper signal".to_string(), span },
+    ]
 
     UpValueNotProvided {
         span: Span
-    } => "no value for up-direction variable provided" {
-        error "must be up-evaluated exactly once in this block" at span
-    }
+    } => "no value for up-direction variable provided" at [
+        Label { label: "must be up-evaluated exactly once in this block".to_string(), span },
+    ]
 
     UpValueMultiplyProvided {
         span: Span
-    } => "value for up-direction variable provided multiple times" {
-        error "must be up-evaluated exactly once in this block" at span
-        // TODO: spans for each of the up-evaluation sites
-    }
+    } => "value for up-direction variable provided multiple times" at [
+        Label { label: "must be up-evaluated exactly once in this block".to_string(), span },
+    ]   // TODO: spans for each of the up-evaluation sites
 
     UndefinedVariable {
         span: Span,
         name: String
-    } => "undefined variable `{name}`" {
-        error "not found" at span
-    }
+        } => "undefined variable `{name}`" at [
+        Label { label: "not found".to_string(), span },
+    ]
 
     NotAFunction {
         span: Span,
         found: String
-    } => "called an item that is not a function" {
-        error "expected a function, but found `{found}`" at span
-    }
+    } => "called an item that is not a function" at [
+        Label { label: format!("expected a function, but found `{found}`"), span },
+    ]
 
     ErrorInPrimitiveFunction {
         span: Span,
         msg: String
-    } => "function error: {msg}" {
-        error "call site" at span
-    }
+    } => "function error: {msg}" at [
+        Label { label: "call site".to_string(), span },
+    ]
 
     ErrorInPrimitiveProcess{
         span: Span,
         msg: String
-    } => "primitive could not be instantiated: {msg}" {
-        error "call site" at span
-    }
+    } => "primitive could not be instantiated: {msg}" at [
+        Label { label: "call site".to_string(), span },
+    ]
 
     FunctionArgumentMismatch {
         span: Span,
         def: Span
-    } => "function argument mismatch" {
-        error "call site" at span
-        error "definition" at def
-    }
+    } => "function argument mismatch" at [
+        Label { label: "call site".to_string(), span },
+        Label { label: "definition".to_string(), span: &def },
+    ]
 
     ArgMismatchType {
         span: Span,
         def_name: String,
         expected: String,
         found: String
-    } => "incorrect argument on `{def_name}`" {
-        error "expected `{expected}`, found `{found}`" at span
-    }
+    } => "incorrect argument on `{def_name}`" at [
+        Label { label: format!("expected `{expected}`, found `{found}`"), span },
+    ]
 
     TupleTooManyPositional {
         span: Span,
         n: usize
-    } => "too many positional fields" {
-        error "{n} unexpected positional fields" at span
-    }
+    } => "too many positional fields" at [
+        Label { label: format!("{n} unexpected positional fields"), span },
+    ]
 
     TupleTooFewPositional {
         span: Span,
         n: usize
-    } => "too few positional fields" {
-        error "expected {n} more positional fields" at span
-    }
+    } => "too few positional fields" at [
+        Label { label: format!("expected {n} more positional fields"), span },
+    ]
 
     TupleExtraNamed {
         span: Span,
         name: String
-    } => "unexpected named field `{name}` passed" {
-        error "unexpected field" at span
-    }
+    } => "unexpected named field `{name}` passed" at [
+        Label { label: "unexpected field".to_string(), span },
+    ]
 
     TupleMissingNamed {
         span: Span,
         name: String
-    } => "missing named field `{name}`" {
-        error "expected additional named field" at span
-    }
+    } => "missing named field `{name}`" at [
+        Label { label: "expected additional named field".to_string(), span },
+    ]
 
     ExpectedTuple {
         span: Span,
         found: String
-    } => "expected a tuple" {
-        error "passed a single value `{found}`" at span
-    }
+    } => "expected a tuple" at [
+        Label { label: format!("passed a single value `{found}`"), span },
+    ]
 
     InvalidItemForPattern {
         span: Span,
         found: String
-    } => "invalid item not matched" {
-        error "found `{found}`, incompatible with pattern" at span
-    }
+    } => "invalid item not matched" at [
+        Label { label: format!("found `{found}`, incompatible with pattern"), span },
+    ]
 
     ExpectedConst {
         span: Span,
         found: String,
         expected: String
-    } => "expected constant {expected}" {
-        error "found `{found}`" at span
-    }
+    } => "expected constant {expected}" at [
+        Label { label: format!("found `{found}`"), span },
+    ]
 
     ExpectedValue {
         span: Span,
         found: String
-    } => "expected a single value" {
-        error "found `{found}`" at span
-    }
+    } => "expected a single value" at [
+        Label { label: format!("found `{found}`"), span },
+    ]
 
     ExpectedType {
         span: Span,
         found: String
-    } => "expected a value that can be resolved as a type" {
-        error "found `{found}`" at span
-    }
+    } => "expected a value that can be resolved as a type" at [
+        Label { label: format!("found `{found}`"), span },
+    ]
 
     ExpectedSingleType {
         span: Span
-    } => "expected a single type" {
-        error "found tuple" at span
-    }
+    } => "expected a single type" at [
+        Label { label: format!("found tuple"), span },
+    ]
 
     NotAllowedInTypePosition {
         span: Span
-    } => "invalid type expression" {
-        error "not allowed in type position" at span
-    }
+    } => "invalid type expression" at [
+        Label { label: format!("not allowed in type position"), span },
+    ]
 
     InvalidRepeatCountType {
         span: Span,
         found: Type
-    } => "repeat count must be a positive integer" {
-        error "found `{found}`" at span
-    }
+    } => "repeat count must be a positive integer" at [
+        Label { label: format!("found `{found}`"), span },
+    ]
 
     InvalidRepeatCountPredicate {
         span: Span
-    } => "repeat count predicate must be representable as an integer range" {
-        error "unsupported" at span
-    }
+    } => "repeat count predicate must be representable as an integer range" at [
+        Label { label: "unsupported".to_string(), span },
+    ]
 
     IncompatibleTypes {
         span: Span,
         t1: Type,
         t2: Type
-    } => "incompatible types" {
-        error "`{t1}` and `{t2}` cannot be combined" at span
-    }
+    } => "incompatible types" at [
+        Label { label: format!("`{t1}` and `{t2}` cannot be combined"), span },
+    ]
 
     TypeConstraint {
         span: Span,
         found: Type,
         bound: Type
-    } => "type error" {
-        error "`{found}` does not match type `{bound}`" at span
-    }
+    } => "type error" at [
+        Label { label: format!("`{found}` does not match type `{bound}`"), span },
+    ]
 
     ChooseNotCovered {
         span: Span,
         found: Type
-    } => "choices do not cover all values of type `{found}`" {
-        error "additional cases required" at span
-    }
+    } => "choices do not cover all values of type `{found}`" at [
+        Label { label: "additional cases required".to_string(), span },
+    ]
 
     BinaryOneSideMustBeConst {
         span: Span
-    } => "one side of a binary operator must be constant for bidirectional expressions" {
-        error "both sides are runtime values" at span
-    }
+    } => "one side of a binary operator must be constant for bidirectional expressions" at [
+        Label { label: "both sides are runtime values".to_string(), span },
+    ]
 
     DivisionMustBeConst {
         span: Span
-    } => "denominator must be constant in division" {
-        error "denominator is a runtime value" at span
-    }
+    } => "denominator must be constant in division" at [
+        Label { label: "denominator is a runtime value".to_string(), span },
+    ]
 
     OperandNotMultipleOfScale {
         const_span: Span,
         const_val: Number,
         var_span: Span,
         var_scale: Number
-    } => "constant operand is not a multiple of variable operand's step" {
-        error "found value {const_val}" at const_span
-        error "found variable with step size of {var_scale}" at var_span
-    }
+    } => "constant operand is not a multiple of variable operand's step" at [
+        Label { label: format!("found value {const_val}"), span: &const_span },
+        Label { label: format!("found variable with step size of {var_scale}"), span: &var_span },
+    ]
 
     BinaryInvalidType {
         span1: Span,
         ty1: Type,
         span2: Span,
         ty2: Type
-    } => "invalid types for binary operator" {
-        error "found `{ty1}`" at span1
-        error "found `{ty2}`" at span2
-    }
+    } => "invalid types for binary operator" at [
+        Label { label: format!("found `{ty1}`"), span: &span1 },
+        Label { label: format!("found `{ty2}`"), span: &span2 },
+    ]
 
     RangeNotMultipleOfStep {
         min: Number,
@@ -434,112 +439,115 @@ diagnostic_kinds!{
         max: Number,
         max_span: Span,
         step: Number
-    } => "range bounds must be a multiple of step ({step})" {
-        error "found minimum {min}" at min_span
-        error "found maximum {max}" at max_span
-    }
+    } => "range bounds must be a multiple of step ({step})" at [
+        Label { label: format!("found minimum {min}"), span: &min_span },
+        Label { label: format!("found maximum {max}"), span: &max_span },
+    ]
 
     RangeOrder {
         min: Number,
         min_span: Span,
         max: Number,
         max_span: Span
-    } => "range upper bound must be greater than lower bound" {
-        error "found minimum {min}" at min_span
-        error "found maximum {max}" at max_span
-    }
+    } => "range upper bound must be greater than lower bound" at [
+        Label { label: format!("found minimum {min}"), span: &min_span },
+        Label { label: format!("found maximum {max}"), span: &max_span },
+    ]
 
     RangeStepZero {
         step: Number,
         step_span: Span
-    } => "range step must be nonzero" {
-        error "found step {step}" at step_span
-    }
+    } => "range step must be nonzero" at [
+        Label { label: format!("found step {step}"), span: &step_span },
+    ]
 
     ExpectedVector {
         span: Span,
         found: Type
-    } => "expected vector" {
-        error "found `{found}`" at span
-    }
+    } => "expected vector" at [
+        Label { label: format!("found `{found}`"), span },
+    ]
 
     PatternExpectedVector {
         span: Span,
         expected: Type,
         found_width: u32
-    } => "expected type `{expected}`" {
-        error "can't destructure into vector of width {found_width}" at span
-    }
+    } => "expected type `{expected}`" at [
+        Label { label: format!("can't destructure into vector of width {found_width}"), span },
+    ]
 
     NotAllowedInPattern {
         span: Span
-    } => "expression type not supported as a pattern" {
-        error "not allowed here" at span
-    }
+    } => "expression type not supported as a pattern" at [
+        Label { label: "not allowed here".to_string(), span },
+    ]
 
     AltZeroArms {
         span: Span
-    } => "`alt` action must have at least one arm" {
-        error "no arms specified" at span
-    }
+    } => "`alt` action must have at least one arm" at [
+        Label { label: "no arms specified".to_string(), span },
+    ]
 
     AltNoArmsMatched {
         span: Span
-    } => "no arms matched constant alt" {
-        error "all patterns failed to match" at span
-    }
+    } => "no arms matched constant alt" at [
+        Label { label: "all patterns failed to match".to_string(), span },
+    ]
 
     ForLoopVectorWidthMismatch {
         span: Span,
         width1: u32,
         width2: u32
-    } => "`for` loop vectors must be the same width" {
-        error "vectors of {width1} and {width2}" at span
-    }
+    } => "`for` loop vectors must be the same width" at [
+        Label { label: format!("vectors of {width1} and {width2}"), span },
+    ]
 
     RequiredDownValue {
-        span: Span,
-        found: String
-    } => "expression cannot be evaluated as a value" {
-        error "found `{found}`" at span
-    }
+
+        span: Span
+    } => "expression cannot be evaluated as a value" at [
+        Label { label: "not compatible with down-evaluation".to_string(), span },
+    ]
 }
 
 /// If the error is an unclosed delimiter, get the span of the opening delimiter
 fn find_unclosed_delimiter(parent: &dyn AstNode, err: &ast::Error) -> Option<FileSpan> {
     if let Some(parent) = parent.downcast::<ast::ExprTup>() {
         if parent.close.as_ref().is_err_and(|e| ptr::eq(err, e)) {
-            return Some(parent.open.span)
+            return Some(parent.open.span);
         }
     } else if let Some(parent) = parent.downcast::<ast::Block>() {
         if parent.close.as_ref().is_err_and(|e| ptr::eq(err, e)) {
-            return Some(parent.open.span)
+            return Some(parent.open.span);
         }
     } else if let Some(parent) = parent.downcast::<ast::Protocol>() {
         if parent.close.as_ref().is_err_and(|e| ptr::eq(err, e)) {
-            return Some(parent.open.span)
+            return Some(parent.open.span);
         }
     }
     None
 }
 
-pub fn report_parse_errors(dcx: &mut DiagnosticContext, file: &Arc<SourceFile>, ast: &dyn AstNode) -> bool{
+pub fn report_parse_errors(
+    dcx: &mut DiagnosticContext,
+    file: &Arc<SourceFile>,
+    ast: &dyn AstNode,
+) -> bool {
     let mut has_errors = false;
-    let errors = ast.walk_preorder_with_parent()
-        .filter_map(|(p, n)| {
-            n.downcast::<ast::Error>().map(|n| (p, n))
-        });
+    let errors = ast
+        .walk_preorder_with_parent()
+        .filter_map(|(p, n)| n.downcast::<ast::Error>().map(|n| (p, n)));
     for (parent, err) in errors {
         if let Some(open) = find_unclosed_delimiter(parent, err) {
             dcx.report(Diagnostic::UnclosedDelimiter {
                 span: Span::new(file, err.span),
                 open: Span::new(file, open),
-                expected: err.expected
+                expected: err.expected,
             });
         } else {
             dcx.report(Diagnostic::ParseError {
                 span: Span::new(file, err.span),
-                expected: err.expected
+                expected: err.expected,
             });
         }
         has_errors = true;
