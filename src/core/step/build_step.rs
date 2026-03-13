@@ -3,7 +3,7 @@ use num_traits::Signed;
 use crate::{
     Diagnostic, DiagnosticContext, Shape, Value, core::{
         Dir, op::{ConcatElem, UnaryOp}, resolve::{action::{Action, RepeatMode}, expr::{ExprKind, Pattern, VarId}}, step::{ConnectionId, ExprDn, ExprDnId, Predicate, StepBuilder, StepId, ValueSrc, ValueSrcId, expr_lower::ExprLower}
-    }, diagnostic::ErrorReported, entitymap::EntityMap, syntax::BinOp
+    }, entitymap::EntityMap, syntax::BinOp
 };
 
 pub fn build_step_tree(
@@ -23,6 +23,10 @@ pub fn build_step_tree(
     (builder.steps, root)
 }
 
+fn fields_of_dir<'a, T: 'a>(fields: impl IntoIterator<Item = &'a (Dir, T)>, dir: Dir) -> impl Iterator<Item = &'a T> {
+    fields.into_iter().filter_map(move |(d, f)| (*d == dir).then_some(f))
+}
+
 struct Builder<'a> {
     dcx: &'a mut DiagnosticContext,
     expr_lower: ExprLower,
@@ -39,35 +43,35 @@ impl<'a> Builder<'a> {
         self.steps.ecx.fresh_var()
     }
 
-    fn up_value_src(&mut self, e: &Result<ExprKind, ErrorReported>) -> (ValueSrcId, bool) {
+    fn up_value_src(&mut self, e: &ExprKind) -> (ValueSrcId, bool) {
         let src = self.add_value_src();
         let v = self.steps.ecx.variable(ValueSrc(src, 0));
         let used = self.use_up(e, v);
         (src, used)
     }
 
-    pub fn define_dn(&mut self, pat: &Result<Pattern, ErrorReported>, v: ExprDnId) -> Predicate {
-        self.expr_lower.define_dn(&mut self.steps.ecx, pat.as_ref().unwrap(), v)
+    pub fn define_dn(&mut self, pat: &Pattern, v: ExprDnId) -> Predicate {
+        self.expr_lower.define_dn(&mut self.steps.ecx, pat, v)
     }
 
-    pub fn define_up(&mut self, pat: &Result<Pattern, ErrorReported>, predicate: Predicate) {
-        self.expr_lower.define_up(&mut self.steps.ecx, pat.as_ref().unwrap(), predicate)
+    pub fn define_up(&mut self, pat: &Pattern, predicate: Predicate) {
+        self.expr_lower.define_up(&mut self.steps.ecx, pat, predicate)
     }
 
-    pub fn consume_up(&mut self, pat: &Result<Pattern, ErrorReported>) -> ExprDnId {
-        self.expr_lower.consume_up(&mut self.steps.ecx, pat.as_ref().unwrap()).unwrap()
+    pub fn consume_up(&mut self, pat: &Pattern) -> ExprDnId {
+        self.expr_lower.consume_up(&mut self.steps.ecx, pat).unwrap()
     }
 
-    pub fn use_dn(&mut self, expr: &Result<ExprKind, ErrorReported>) -> ExprDnId {
-        self.expr_lower.use_dn(&mut self.steps.ecx, expr.as_ref().unwrap()).unwrap()
+    pub fn use_dn(&mut self, expr: &ExprKind) -> ExprDnId {
+        self.expr_lower.use_dn(&mut self.steps.ecx, expr).unwrap()
     }
 
-    pub fn use_up(&mut self, expr: &Result<ExprKind, ErrorReported>, v: ExprDnId) -> bool {
-        self.expr_lower.use_up(&mut self.steps.ecx, expr.as_ref().unwrap(), v)
+    pub fn use_up(&mut self, expr: &ExprKind, v: ExprDnId) -> bool {
+        self.expr_lower.use_up(&mut self.steps.ecx, expr, v)
     }
 
-    pub fn predicate(&self, expr: &Result<ExprKind, ErrorReported>) -> Predicate {
-        self.expr_lower.predicate(expr.as_ref().unwrap()).unwrap()
+    pub fn predicate(&self, expr: &ExprKind) -> Predicate {
+        self.expr_lower.predicate(expr).unwrap()
     }
 
     fn build(&mut self, action: &Action) -> StepId {
@@ -92,17 +96,15 @@ impl<'a> Builder<'a> {
             Action::Token {
                 conn,
                 tag,
-                ref fields_dn,
-                ref fields_up,
+                ref fields,
                 has_body,
             } => {
                 let mode = self.steps.connections[conn].mode;
 
-                let dn = fields_dn.iter().map(|f| self.use_dn(f)).collect();
+                let dn = fields_of_dir(fields, Dir::Dn).map(|f| self.use_dn(f)).collect();
 
                 let up_src = self.add_value_src();
-                let up_predicates = fields_up
-                    .iter()
+                let up_predicates = fields_of_dir(fields, Dir::Up)
                     .zip(up_src.fields())
                     .map(|(f, s)| {
                         let v = self.steps.ecx.variable(s);
@@ -136,16 +138,14 @@ impl<'a> Builder<'a> {
             Action::On {
                 conn,
                 tag,
-                ref fields_dn,
-                ref fields_up,
+                ref fields,
                 ref body,
                 token_has_body,
             } => {
                 let mode = self.steps.connections[conn].mode;
 
-                let mut dn_src = self.add_value_src();
-                let dn_predicates = fields_dn
-                    .iter()
+                let dn_src = self.add_value_src();
+                let dn_predicates = fields_of_dir(fields, Dir::Dn)
                     .zip(dn_src.fields())
                     .map(|(f, i)| {
                         let v = self.steps.ecx.variable(i);
@@ -153,13 +153,13 @@ impl<'a> Builder<'a> {
                     })
                     .collect();
 
-                for f in fields_up {
+                for f in fields_of_dir(fields, Dir::Up) {
                     self.define_up(f, Predicate::Any)
                 }
 
                 let inner = self.build(body);
 
-                let up = fields_up.iter().map(|f| self.consume_up(f)).collect();
+                let up = fields_of_dir(fields, Dir::Up).map(|f| self.consume_up(f)).collect();
 
                 let receive = if mode.has_dn_channel() {
                     self.steps.receive(conn.dn(), tag, dn_src, dn_predicates)
@@ -277,9 +277,8 @@ impl<'a> Builder<'a> {
                     .iter()
                     .map(|v| {
                         (
-                            self.expr_lower
-                                .use_dn(&mut self.steps.ecx, &v.outer.as_ref().unwrap()),
-                            self.expr_lower.predicate(&v.outer.as_ref().unwrap()),
+                            self.expr_lower.use_dn(&mut self.steps.ecx, &v.outer),
+                            self.expr_lower.predicate(&v.outer),
                         )
                     })
                     .collect();

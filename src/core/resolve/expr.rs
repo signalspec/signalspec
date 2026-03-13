@@ -5,7 +5,7 @@ use itertools::{Itertools, EitherOrBoth};
 use crate::{
     SourceFile, Type, TypeTree, Value, core::{
         Func, FunctionDef, Item, LeafItem, Scope, data::{NumberType, NumberTypeError}, op::{ConcatElem, UnaryOp, eval_binary, eval_choose}
-    }, diagnostic::{Diagnostic, DiagnosticContext, ErrorReported, Span}, entitymap::{EntityMap, entity_key}, syntax::{
+    }, diagnostic::{Diagnostic, DiagnosticContext, ErrorReported, Span, collect_or_err}, entitymap::{EntityMap, entity_key}, syntax::{
         Number, ast::{self, AstNode, BinOp}
     }, tree::{Tree, TupleFields}
 };
@@ -127,19 +127,6 @@ pub fn type_tree(dcx: &mut DiagnosticContext, scope: &Scope, e: &ast::Expr) -> R
             })
         })
     }
-}
-
-/// Like iter.collect::<Result<..>>() but doesn't short-circuit so errors from
-/// all subtrees are reported
-pub fn collect_or_err<T, C: FromIterator<T>>(iter: impl Iterator<Item=Result<T, ErrorReported>>) -> Result<C, ErrorReported> {
-    let mut error = None;
-    let result = C::from_iter(iter.flat_map(|i| {
-        match i {
-            Ok(elem) => Some(elem),
-            Err(err) => { error = Some(err); None }
-        }
-    }));
-    if let Some(e) = error { Err(e) } else { Ok(result) }
 }
 
 macro_rules! try_item {

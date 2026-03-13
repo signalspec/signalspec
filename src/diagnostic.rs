@@ -478,13 +478,11 @@ diagnostic_kinds!{
     }
 
     ForLoopVectorWidthMismatch {
-        span1: Span,
+        span: Span,
         width1: u32,
-        span2: Span,
         width2: u32
     } => "`for` loop vectors must be the same width" {
-        error "vector of width {width1}" at span1
-        error "vector of width {width2}" at span2
+        error "vectors of {width1} and {width2}" at span
     }
 
     RequiredDownValue {
@@ -535,4 +533,26 @@ pub fn report_parse_errors(dcx: &mut DiagnosticContext, file: &Arc<SourceFile>, 
         has_errors = true;
     }
     has_errors
+}
+
+/// Like iter.collect::<Result<..>>() but doesn't short-circuit so errors from
+/// all subtrees are reported
+pub fn collect_or_err<T, C: FromIterator<T>>(iter: impl Iterator<Item=Result<T, ErrorReported>>) -> Result<C, ErrorReported> {
+    let mut error = None;
+    let result = C::from_iter(iter.flat_map(|i| {
+        match i {
+            Ok(elem) => Some(elem),
+            Err(err) => { error = Some(err); None }
+        }
+    }));
+    if let Some(e) = error { Err(e) } else { Ok(result) }
+}
+
+/// Push an item into a fallible vector
+pub fn try_push<T>(vec: &mut Result<Vec<T>, ErrorReported>, item: Result<T, ErrorReported>) {
+    match (vec, item) {
+        (Ok(vec), Ok(item)) => vec.push(item),
+        (Err(_), _) => {}
+        (vec, Err(e)) => *vec = Err(e),
+    }
 }

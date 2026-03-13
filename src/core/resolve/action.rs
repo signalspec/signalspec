@@ -1,9 +1,11 @@
 use std::sync::Arc;
 
+use itertools::Itertools;
+
 use crate::{
     Value, core::{
         ChannelId, Dir, Item, LeafItem, Scope, Shape, ShapeMsg, Type, index::FindDefError, resolve::expr::{Pattern, ZipTupleResult}, step::ConnectionId
-}, diagnostic::DiagnosticContext, entitymap::EntityMap, runtime::PrimitiveProcess};
+}, diagnostic::{DiagnosticContext, collect_or_err, try_push}, entitymap::EntityMap, runtime::PrimitiveProcess};
 use crate::diagnostic::{ErrorReported};
 use crate::runtime::instantiate_primitive;
 use crate::syntax::ast::{self, AstNode};
@@ -37,34 +39,32 @@ pub enum Action {
     On {
         conn: ConnectionId,
         tag: usize,
-        fields_dn: Vec<Result<Pattern, ErrorReported>>,
-        fields_up: Vec<Result<Pattern, ErrorReported>>,
+        fields: Vec<(Dir, Pattern)>,
         body: Box<Action>,
         token_has_body: bool,
     },
     Token {
         conn: ConnectionId,
         tag: usize,
-        fields_dn: Vec<Result<ExprKind, ErrorReported>>,
-        fields_up: Vec<Result<ExprKind, ErrorReported>>,
+        fields: Vec<(Dir, ExprKind)>,
         has_body: bool,
     },
     Seq(Vec<Action>),
-    Repeat { dir: RepeatMode, count: Result<ExprKind, ErrorReported>, body: Box<Action> },
+    Repeat { dir: RepeatMode, count: ExprKind, body: Box<Action> },
     For { count: u32, vars: Vec<ForVar> , body: Box<Action> },
-    Alt { dir: Dir, scrutinee: Result<ExprKind, ErrorReported>, arms: Vec<AltArm> },
+    Alt { dir: Dir, scrutinee: ExprKind, arms: Vec<AltArm> },
     Any { arms: Vec<Action> },
     Error(ErrorReported),
     Pass,
 }
 
 pub struct ForVar {
-    pub outer: Result<ExprKind, ErrorReported>,
+    pub outer: ExprKind,
     pub var: VarId,
 }
 
 pub struct AltArm {
-    pub discriminant: Result<Pattern, ErrorReported>,
+    pub discriminant: Pattern,
     pub body: Action,
 }
 
@@ -204,35 +204,28 @@ impl<'a> Builder<'a> {
 
                 let mut body_scope = sb.scope.child();
 
-                let mut fields_dn = Vec::new();
-                let mut fields_up = Vec::new();
-                let mut push_field = |dir: Dir, f| {
-                    match dir {
-                        Dir::Dn => fields_dn.push(f),
-                        Dir::Up => fields_up.push(f),
-                    }
-                };
+                let mut fields = Ok(Vec::new());
 
                 for m in zip_tuple_ast_fields(&mut self.dcx, &sb.scope.file, &args, &msg_def.params) {
                     match m {
                         ZipTupleResult::Both(expr, param) => {
                             bind_fields(&mut self.dcx, &mut body_scope, expr, &param.ty, &mut self.vars, &mut |field| {
-                                push_field(param.direction, field)
+                                try_push(&mut fields, field.map(|f| (param.direction, f)));
                             });
                         },
                         ZipTupleResult::Left(expr, reported) => {
                             // unexpected param: declare its variables with invalid
                             lexpr(&mut self.dcx, &mut body_scope, expr, &reported.into());
                         },
-                        ZipTupleResult::Right(reported, param) => {
+                        ZipTupleResult::Right(reported, _) => {
                             // missing param: Bind an invalid parameter
-                            push_field(param.direction, Err(reported));
+                            fields = Err(reported);
                         }
                     }
                 }
 
                 let inner_sb = if let &Some(ref child_shape) = &msg_def.child {
-                    assert!(fields_up.is_empty() && fields_dn.is_empty());
+                    assert!(fields.as_ref().map_or(true, |f| f.is_empty()));
                     sb.with_upper(&body_scope, child_shape, conn_up)
                 } else {
                     sb.without_upper(&body_scope)
@@ -247,8 +240,7 @@ impl<'a> Builder<'a> {
                 Action::On {
                     conn: conn_up,
                     tag: msg_def.tag,
-                    fields_dn,
-                    fields_up,
+                    fields: try_action!(fields),
                     body: Box::new(body),
                     token_has_body: msg_def.child.is_some()
                 }
@@ -297,48 +289,52 @@ impl<'a> Builder<'a> {
                     None => (RepeatMode::Up(true), Ok(ExprKind::Ignored))
                 };
 
-                Action::Repeat { dir, count, body: Box::new(inner) }
+                Action::Repeat { dir, count: try_action!(count), body: Box::new(inner) }
             }
 
             ast::Action::For(node) => {
-                let mut count: Option<u32> = None;
-                let mut vars = Vec::new();
+                let mut count_spans = Vec::new();
                 let mut body_scope = sb.scope.child();
 
-                for &(ref name, ref expr) in &node.vars {
-                    let e = value(&mut self.dcx, sb.scope, expr);
-                    let var = self.vars.push(());
+                let vars = collect_or_err(node.vars.iter().map(|&(ref name, ref expr)| {
+                    let outer_expr = value(&mut self.dcx, sb.scope, expr);
 
-                    let (c, ty) = match e.as_ref().map_or(Type::Ignored, |e| e.get_type()) {
-                        Type::Vector(c, ty) => (Some(c), *ty),
-                        Type::Ignored => (None, Type::Ignored),
+                    let ty = match outer_expr.as_ref().map_or(Type::Ignored, |e| e.get_type()) {
+                        Type::Vector(c, ty) => {
+                            count_spans.push((c, sb.scope.span(expr.span())));
+                            *ty
+                        }
+                        Type::Ignored => Type::Ignored,
                         other => {
                             self.dcx.report(Diagnostic::ExpectedVector {
                                 span: sb.scope.span(expr.span()),
                                 found: other,
                             });
-                            (None, Type::Ignored)
+                            Type::Ignored
                         }
                     };
 
+                    let var = self.vars.push(());
                     body_scope.bind(&name.name, Item::Leaf(LeafItem::Value(Expr::Expr(ty, ExprKind::Var(var)))));
-                    vars.push(ForVar { outer: e.map(|e| e.inner()), var });
+                    Ok(ForVar { outer: outer_expr?.inner(), var })
+                }));
 
-                    if let Some(c) = c  {
-                        let width1 = *count.get_or_insert(c);
-                        if c != width1 {
-                            self.dcx.report(Diagnostic::ForLoopVectorWidthMismatch {
-                                span1: sb.scope.span(node.vars[0].1.span()),
-                                width1,
-                                span2: sb.scope.span(expr.span()),
-                                width2: c
-                            });
-                        }
-                    }
-                }
-
-                let count = count.unwrap_or(0);
                 let body = self.resolve_seq(sb.with_scope(&body_scope), &node.block);
+
+                let vars = try_action!(vars);
+
+                let count = match count_spans.iter().map(|(c, _)| *c).all_equal_value() {
+                    Ok(c) => c,
+                    Err(None) => 0,
+                    Err(Some((width1, width2))) => {
+                        self.dcx.report(Diagnostic::ForLoopVectorWidthMismatch {
+                            span: sb.scope.span(node.span()),
+                            width1,
+                            width2,
+                        });
+                        0
+                    }
+                };
 
                 Action::For { count, vars, body: Box::new(body) }
             }
@@ -369,14 +365,14 @@ impl<'a> Builder<'a> {
                         let scrutinee = value(&mut self.dcx, sb.scope, &node.expr);
                         let ty = scrutinee.as_ref().map_or(Type::Ignored, |t| t.get_type());
 
-                        let arms = node.arms.iter().map(|arm| {
+                        let arms = try_action!(collect_or_err(node.arms.iter().map(|arm| {
                             let mut body_scope = sb.scope.child();
                             let discriminant = bind_field(&mut self.dcx, &mut body_scope, &arm.discriminant, &ty, &mut self.vars);
                             let body = self.resolve_seq(sb.with_scope(&body_scope), &arm.block);
-                            AltArm { discriminant, body }
-                        }).collect();
+                            Ok(AltArm { discriminant: discriminant?, body })
+                        })));
 
-                        let scrutinee = scrutinee.map(|e| e.inner());
+                        let scrutinee = try_action!(scrutinee).inner();
                         Action::Alt { dir, scrutinee, arms }
                     }
                 }
@@ -396,16 +392,19 @@ impl<'a> Builder<'a> {
         match process_ast {
             ast::Process::Call(node) => {
                 if let Some(msg_def) = sb.down.shape.variant_named(&node.name.name) {
-                    let (fields_dn, fields_up) = self.resolve_token(msg_def, sb.scope, &node);
-
-                    let top = if let Some(child_shape) = &msg_def.child {
-                        assert!(fields_dn.is_empty() && fields_up.is_empty());
-                        Some((child_shape.clone(), sb.down.conn))
-                    } else {
-                        None
+                    let action = match self.resolve_token(msg_def, sb.scope, &node) {
+                        Ok(fields) => Action::Token {
+                            conn: sb.down.conn,
+                            tag: msg_def.tag,
+                            fields,
+                            has_body: msg_def.child.is_some(),
+                        },
+                        Err(r) => Action::Error(r),
                     };
 
-                    (Action::Token { conn: sb.down.conn, tag: msg_def.tag, fields_dn, fields_up, has_body: msg_def.child.is_some() }, top)
+                    let top = msg_def.child.as_ref().map(|child_shape| (child_shape.clone(), sb.down.conn));
+
+                    (action, top)
                 } else {
                     let def = match self.index.find_def(sb.down.shape, &node.name.name) {
                         Ok(res) => res,
@@ -502,61 +501,54 @@ impl<'a> Builder<'a> {
         }
     }
 
-    fn resolve_token(&mut self, msg_def: &ShapeMsg, scope: &Scope, node: &ast::ProcessCall) -> (Vec<Result<ExprKind, ErrorReported>>, Vec<Result<ExprKind, ErrorReported>>) {
-        let mut fields_dn = Vec::new();
-        let mut fields_up = Vec::new();
-        let mut push_field = |dir: Dir, f| {
-            match dir {
-                Dir::Dn => fields_dn.push(f),
-                Dir::Up => fields_up.push(f),
-            }
-        };
+    fn resolve_token(&mut self, msg_def: &ShapeMsg, scope: &Scope, node: &ast::ProcessCall) -> Result<Vec<(Dir, ExprKind)>, ErrorReported> {
+        let mut fields = Ok(Vec::new());
 
         for m in zip_tuple_ast_fields(&mut self.dcx, &scope.file, &node.args, &msg_def.params) {
-            let (arg, param, span) = match m {
+            match m {
                 ZipTupleResult::Both(arg_ast, param) => {
                     let arg = rexpr(&mut self.dcx, scope, arg_ast);
-                    (arg, param, arg_ast.span())
+
+                    let mut valid = true;
+                    param.ty.zip(&arg, &mut |m| { match m {
+                        crate::tree::Zip::Both(
+                            &Tree::Leaf(ref ty),
+                            &Item::Leaf(LeafItem::Value(ref v))
+                        ) if v.get_type().is_subtype(ty) => {
+                            try_push(&mut fields, Ok((param.direction, v.clone().inner())));
+                        },
+
+                        crate::tree::Zip::Both(_, Item::Leaf(LeafItem::Invalid(r))) => {
+                            fields = Err(r.clone());
+                        }
+
+                        _ => {
+                            valid = false;
+                        }
+                    }});
+
+                    if !valid {
+                        fields = Err(self.dcx.report(Diagnostic::ArgMismatchType {
+                            span: scope.span(arg_ast.span()),
+                            def_name: node.name.name.clone(),
+                            expected: format!("{}", param.ty),
+                            found: format!("{arg}")
+                        }));
+                    }
                 }
                 ZipTupleResult::Left(_, _) => {
                     // unexpected parameter passed and already reported: ignore it
-                    continue
                 }
-                ZipTupleResult::Right(reported, param) => {
+                ZipTupleResult::Right(reported, _) => {
                     // missing expected parameter
-                    (reported.into(), param, node.args.span)
+                    fields = Err(reported);
                 },
             };
-
-            let mut valid = true;
-            param.ty.zip(&arg, &mut |m| { match m {
-                crate::tree::Zip::Both(
-                    &Tree::Leaf(ref ty),
-                    &Item::Leaf(LeafItem::Value(ref v))
-                ) if v.get_type().is_subtype(ty) => {
-                    push_field(param.direction, Ok(v.clone().inner()));
-                },
-
-                crate::tree::Zip::Both(_, Item::Leaf(LeafItem::Invalid(r))) => {
-                    push_field(param.direction, Err(r.clone()));
-                }
-
-                _ => {
-                    valid = false;
-                }
-            }});
-
-            if !valid {
-                self.dcx.report(Diagnostic::ArgMismatchType {
-                    span: scope.span(span),
-                    def_name: node.name.name.clone(),
-                    expected: format!("{}", param.ty),
-                    found: format!("{arg}")
-                });
-            }
         }
 
-        (fields_dn, fields_up)
+        assert!(fields.as_ref().map_or(true, |f| f.is_empty()) || msg_def.child.is_none());
+
+        fields
     }
 
     fn resolve_seq(&mut self, sb: ResolveCx<'_>, block: &ast::Block) -> Action {
