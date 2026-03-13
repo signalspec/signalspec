@@ -19,7 +19,11 @@ impl SeqTxProcess {
     }
 
     fn new(args: Item, shape: &Shape) -> Result<Arc<dyn PrimitiveProcess>, String> {
-        let (ty, seq) = args.try_into()?;
+        let (ty_item, seq) = args.try_into()?;
+
+        let Some(ty) = ty_item.as_type_tree() else {
+            return Err("first argument must be a type".into());
+        };
 
         if shape.tag_offset != 1 {
             return Err("can only be used on root shapes".into());
@@ -61,7 +65,11 @@ impl SeqRxProcess {
 
 
     fn new(args: Item, shape: &Shape) -> Result<Arc<dyn PrimitiveProcess>, String> {
-        let (ty, seq) = args.try_into()?;
+        let (ty_item, seq) = args.try_into()?;
+
+        let Some(ty) = ty_item.as_type_tree() else {
+            return Err("first argument must be a type".into());
+        };
 
         if shape.tag_offset != 1 {
             return Err("can only be used on root shapes".into());

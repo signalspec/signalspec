@@ -18,6 +18,9 @@ pub enum LeafItem {
     /// Sequence of Unicode code points. Not a Value because it is not of constant size.
     String(String),
 
+    /// A type
+    Type(TypeTree),
+
     /// An error was previously reported
     Invalid(ErrorReported),
 }
@@ -55,12 +58,11 @@ impl Item {
         }
     }
 
-    pub fn as_type_tree(&self) -> Option<TypeTree> {
-        self.try_map_leaf(&mut |t| { match t {
-            LeafItem::Value(v) => Ok(v.get_type()),
-            LeafItem::Invalid(_) => Ok(Type::Ignored),
-            _ => Err(())
-        }}).ok()
+    pub fn as_type_tree(&self) -> Option<&TypeTree> {
+        match *self {
+            Item::Leaf(LeafItem::Type(ref t)) => Some(t),
+            _ => None
+        }
     }
 }
 
@@ -76,6 +78,7 @@ impl fmt::Display for LeafItem {
             LeafItem::Value(ref v) => write!(f, "{}", v),
             LeafItem::Func(..) => write!(f, "<function>"),
             LeafItem::String(ref s) => write!(f, "\"{}\"", s),
+            LeafItem::Type(ref t) => write!(f, "type {}", t),
             LeafItem::Invalid(_) => write!(f, "<error>"),
         }
     }

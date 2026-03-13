@@ -1,43 +1,43 @@
 
 @test(#dn, (#x, #y, #z))
-with Seq(_:#x|#y|#z, dir) def tx() = primitive const_seq_tx_dn(_:#x|#y|#z, (#x, #y, #z))
+with Seq(type #x|#y|#z, dir) def tx() = primitive const_seq_tx_dn(type #x|#y|#z, (#x, #y, #z))
 
 @test(#dn, (#x, #y, #z))
-with Seq(_:#x|#y|#z, dir) def tx2() = seq {
-    primitive const_seq_tx_dn(_:#x|#y|#z, (#x, #y))
-    primitive const_seq_tx_dn(_:#x|#y|#z, (#z))
+with Seq(type #x|#y|#z, dir) def tx2() = seq {
+    primitive const_seq_tx_dn(type #x|#y|#z, (#x, #y))
+    primitive const_seq_tx_dn(type #x|#y|#z, (#z))
 }
 
 @test(#up, (#x, #y, #z))
-with Seq(_:#x|#y|#z, dir) def rx() = seq { primitive const_seq_rx_dn(_:#x|#y|#z, (#x, #y, #z)) }
+with Seq(type #x|#y|#z, dir) def rx() = seq { primitive const_seq_rx_dn(type #x|#y|#z, (#x, #y, #z)) }
 
 
 @test(#dn, (#x, #y, #z))
-with Seq(_:#x|#y|#z, dir) def dn_chain()
-    = new Seq(_:#x|#y|#z, #dn) { primitive seq_pass() }
-    | primitive const_seq_tx_dn(_:#x|#y|#z, (#x, #y, #z))
+with Seq(type #x|#y|#z, dir) def dn_chain()
+    = new Seq(type #x|#y|#z, #dn) { primitive seq_pass() }
+    | primitive const_seq_tx_dn(type #x|#y|#z, (#x, #y, #z))
 
 @test(#up, (#x, #y, #z))
-with Seq(_:#x|#y|#z, dir) def up_chain()
-    = new Seq(_:#x|#y|#z, #up) { primitive seq_pass() }
-    | primitive const_seq_rx_dn(_:#x|#y|#z, (#x, #y, #z))
+with Seq(type #x|#y|#z, dir) def up_chain()
+    = new Seq(type #x|#y|#z, #up) { primitive seq_pass() }
+    | primitive const_seq_rx_dn(type #x|#y|#z, (#x, #y, #z))
 
 @test(#dn, (#x, #y, #z))
-with Seq(_:#x|#y|#z, #dn) def dn_chain2()
-    = new Seq(_:#x|#y|#z, #dn) { primitive seq_pass() }
-    | new Seq(_:#x|#y|#z, #dn) { primitive seq_pass() }
-    | primitive const_seq_tx_dn(_:#x|#y|#z, (#x, #y, #z))
+with Seq(type #x|#y|#z, #dn) def dn_chain2()
+    = new Seq(type #x|#y|#z, #dn) { primitive seq_pass() }
+    | new Seq(type #x|#y|#z, #dn) { primitive seq_pass() }
+    | primitive const_seq_tx_dn(type #x|#y|#z, (#x, #y, #z))
 
 @test(#up, (#x, #y, #z))
-with Seq(_:#x|#y|#z, #up) def up_chain2()
-    = new Seq(_:#x|#y|#z, #up) { primitive seq_pass() }
-    | new Seq(_:#x|#y|#z, #up) { primitive seq_pass() }
-    | primitive const_seq_rx_dn(_:#x|#y|#z, (#x, #y, #z))
+with Seq(type #x|#y|#z, #up) def up_chain2()
+    = new Seq(type #x|#y|#z, #up) { primitive seq_pass() }
+    | new Seq(type #x|#y|#z, #up) { primitive seq_pass() }
+    | primitive const_seq_rx_dn(type #x|#y|#z, (#x, #y, #z))
 
 @test(#dn, (#x, #y, #x, #y, #x, #y))
-with Seq(_:#x|#y|#z, dir) def dn_chain_rep() = seq {
+with Seq(type #x|#y|#z, dir) def dn_chain_rep() = seq {
     repeat #dn 3 {
-        new Seq(_:#x|#y|#z, #dn) { primitive seq_pass() }
-            | primitive const_seq_tx_dn(_:#x|#y|#z, (#x, #y))
+        new Seq(type #x|#y|#z, #dn) { primitive seq_pass() }
+            | primitive const_seq_tx_dn(type #x|#y|#z, (#x, #y))
     }
 }

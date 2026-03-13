@@ -15,7 +15,7 @@ pub fn expr_prelude() -> HashMap<String, Item> {
     }
 
     pub fn add_type(prelude: &mut HashMap<String, Item>, name: &str, ty: Type) {
-        prelude.insert(name.to_owned(), Expr::Expr(ty, ExprKind::Ignored).into());
+        prelude.insert(name.to_owned(), LeafItem::Type(ty.into()).into());
     }
 
     add_type(&mut prelude, "bit", Type::bit());
@@ -100,5 +100,5 @@ fn fn_bits(arg: Item) -> Result<Item, &'static str> {
     };
     let width = width.to_u32().ok_or("width must be a constant integer")?;
     let ty = Type::bits(width);
-    Ok(Expr::Expr(ty, ExprKind::Ignored).into())
+    Ok(LeafItem::Type(ty.into()).into())
 }

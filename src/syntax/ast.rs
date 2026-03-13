@@ -387,18 +387,20 @@ ast_node!{
         Value(ExprLiteral),
         String(ExprString), // Produces an Item, not a Value, because it isn't fixed size
         Func(ExprFunc), // Produces an Item
+        Type(ExprType),
         Tup(ExprTup),
         Ignore(ExprIgnore),
-    
+
         Typed(ExprTyped),
         Union(ExprUnion),
         Flip(ExprFlip),
         Range(ExprRange),
         Choose(ExprChoose),
         Concat(ExprConcat),
-    
+        ArrayRep(ExprArrayRep),
+
         Bin(ExprBin),
-    
+
         Call(ExprCall),
         Var(Identifier),
 
@@ -433,6 +435,13 @@ ast_node!{
         pub span: FileSpan,
         pub args: Box<Expr>,
         pub body: Box<Expr>,
+    }
+}
+
+ast_node!{
+    pub struct ExprType {
+        pub span: FileSpan,
+        pub expr: Box<Expr>,
     }
 }
 
@@ -510,6 +519,14 @@ ast_node!{
     pub struct ExprConcat {
         pub span: FileSpan,
         pub elems: Vec<(Option<u32>, Expr)>
+    }
+}
+
+ast_node!{
+    pub struct ExprArrayRep {
+        pub span: FileSpan,
+        pub elem: Box<Expr>,
+        pub count: Box<Expr>,
     }
 }
 

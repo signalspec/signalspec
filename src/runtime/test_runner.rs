@@ -136,7 +136,7 @@ fn run_test(show_diagnostics: &dyn Fn(Diagnostics), index: &Index, file: &FileSc
 
     let scope = file.scope();
 
-    let seq_ty = match &def.bottom.param {
+    let seq_ty_item = match &def.bottom.param {
         ast::Expr::Tup(t) if t.fields.len() == 2 => rexpr(&mut dcx, &scope, &t.fields[0].expr),
         _ => return Err("Seq takes two arguments"),
     };
@@ -146,8 +146,17 @@ fn run_test(show_diagnostics: &dyn Fn(Diagnostics), index: &Index, file: &FileSc
     let test_mode = test_args.first().and_then(|i| i.as_symbol());
     let test_data = test_args.get(1);
 
+    if dcx.has_errors() {
+        show_diagnostics(dcx.diagnostics());
+        return Err("Errors in test definition");
+    }
+
+    let Some(seq_ty) = seq_ty_item.as_type_tree() else {
+        return Err("First argument to Seq must be a type");
+    };
+
     let run_dn = || {
-        let Ok((channel, mut handle)) = Handle::seq_dn(index, seq_ty.clone()) else {
+        let Ok((channel, mut handle)) = Handle::seq_dn(index, seq_ty) else {
             eprintln!("Bad type for Seq(): {seq_ty}");
             return (None, TestState::CompileError);
         };
@@ -176,7 +185,7 @@ fn run_test(show_diagnostics: &dyn Fn(Diagnostics), index: &Index, file: &FileSc
     };
 
     let run_up = |messages: Vec<ChannelMessage>| -> TestState {
-        let Ok((channel, mut handle)) = Handle::seq_up(index, seq_ty.clone()) else {
+        let Ok((channel, mut handle)) = Handle::seq_up(index, seq_ty) else {
             eprintln!("Bad type for Seq(): {seq_ty}");
             return TestState::CompileError;
         };

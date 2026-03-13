@@ -348,6 +348,18 @@ diagnostic_kinds!{
         error "found `{found}`" at span
     }
 
+    ExpectedSingleType {
+        span: Span
+    } => "expected a single type" {
+        error "found tuple" at span
+    }
+
+    NotAllowedInTypePosition {
+        span: Span
+    } => "invalid type expression" {
+        error "not allowed in type position" at span
+    }
+
     InvalidRepeatCountType {
         span: Span,
         found: Type

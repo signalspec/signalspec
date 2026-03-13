@@ -1,5 +1,5 @@
 @test(#up, (#a, #b, #c))
-with Seq(_:#a|#b|#c, dir) def test_alt_no_data() = seq {
+with Seq(type #a|#b|#c, dir) def test_alt_no_data() = seq {
     any {
         val(#a)
         val(#b)
@@ -13,7 +13,7 @@ protocol Abc(dir: #dn|#up) dir {
     c(),
 }
 
-with Seq(_:#a|#b|#c, dir) def abc() = new Abc(dir) {
+with Seq(type #a|#b|#c, dir) def abc() = new Abc(dir) {
     repeat {
         any {
             on a() {
@@ -30,5 +30,4 @@ with Seq(_:#a|#b|#c, dir) def abc() = new Abc(dir) {
 }
 
 @test(#both, (#a, #b, #c, #b, #a))
-with Seq(_:#a|#b|#c, dir) def test_alt_map() = abc() | seq { a(); b(); c(); b(); a() }
-
+with Seq(type #a|#b|#c, dir) def test_alt_map() = abc() | seq { a(); b(); c(); b(); a() }

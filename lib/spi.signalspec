@@ -9,7 +9,7 @@ protocol SPITransaction(role: #controller | #async_controller | #monitor | #gene
   )
 }
 
-with Seq((_:#l|#h, _:#l|#h, _:#l|#h, _:#l|#h), dir)
+with Seq(type (#l|#h, #l|#h, #l|#h, #l|#h), dir)
 def spi() = new SPI(dir[#up = #monitor, #dn = #generate]) {
   repeat dir <: 10 { val((#h, <: #l, <: #l, <: #l)) }
   repeat {
@@ -33,7 +33,7 @@ def spi() = new SPI(dir[#up = #monitor, #dn = #generate]) {
 }
 
 @test(#roundtrip)
-with Seq((_:#l|#h, _:#l|#h, _:#l|#h, _:#l|#h), _) def test1() = seq {
+with Seq(type (#l|#h, #l|#h, #l|#h, #l|#h), _) def test1() = seq {
   spi() | seq {
     transaction() | seq { data('01011101, '00000000); data('11110000, '11111111) }
     transaction() | seq { data('00001000, '10101010) }

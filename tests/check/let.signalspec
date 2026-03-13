@@ -1,7 +1,7 @@
 let x = #x
 let nested = (1, 2, a=3, b=(x=#x, y=#y))
 
-with Seq(_:#x|#y|#z, dir)
+with Seq(type #x|#y|#z, dir)
 def main(a) = seq {
     let y = a
     let z = #z
@@ -11,8 +11,7 @@ def main(a) = seq {
 }
 
 @test(#both, (#x, #y, #z))
-with Seq(_:#x|#y|#z, dir) def test1() = main(#y)
+with Seq(type #x|#y|#z, dir) def test1() = main(#y)
 
 @test(#up_fail, (#x, #y, #z))
-with Seq(_:#x|#y|#z, dir) def test1() = main(#z)
-
+with Seq(type #x|#y|#z, dir) def test1() = main(#z)

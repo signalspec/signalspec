@@ -1,5 +1,5 @@
 @test(#up, ())
-with Seq(_, _) def main() = new Seq(#x, #up) {
+with Seq(type _, _) def main() = new Seq(type #x, #up) {
 //# too many positional fields
     on val(x, y) {
 //            ^ 1 unexpected positional fields

@@ -1,5 +1,5 @@
-with Seq(_:#h|#l, dir)
-def pulses() = new Seq(1..10, dir) {
+with Seq(type #h|#l, dir)
+def pulses() = new Seq(type 1..10, dir) {
     repeat {
         on val(len) {
             val(#l)
@@ -16,4 +16,4 @@ def pulses() = new Seq(1..10, dir) {
 
 @test(#both, (#l, #h, #h, #l, #h, #h, #h))
 @test(#up, (#l, #h, #h, #l, #l, #l, #h, #h, #h))
-with Seq(_:#h|#l, _) def test1() = pulses() | seq { val(2); val(3) }
+with Seq(type #h|#l, _) def test1() = pulses() | seq { val(2); val(3) }

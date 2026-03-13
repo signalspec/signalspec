@@ -1,5 +1,5 @@
-with Seq(_:#h|#l, d)
-def main() = new Seq(0..3, d) {
+with Seq(type #h|#l, d)
+def main() = new Seq(type 0..3, d) {
   repeat {
     on val(v) {
       val(#h)
@@ -11,4 +11,4 @@ def main() = new Seq(0..3, d) {
 }
 
 @test(#up, (#h, #l, #h, #h, #l, #h, #h, #h, #l))
-with Seq(_:#h|#l, _) def test1() = main() | seq { val(0); val(1); val(2) }
+with Seq(type #h|#l, _) def test1() = main() | seq { val(0); val(1); val(2) }

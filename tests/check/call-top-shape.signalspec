@@ -1,9 +1,9 @@
-protocol Packets(t, dir) dir {
-    packet() : Seq(t, dir)
+protocol Packets(T, dir) dir {
+    packet() : Seq(T, dir)
 }
 
-with Seq(_:#a|#end, dir)
-def pkt() = new Packets(_:#a, dir) {
+with Seq(type #a|#end, dir)
+def pkt() = new Packets(type #a, dir) {
     repeat {
         on packet() {
             repeat {
@@ -17,7 +17,7 @@ def pkt() = new Packets(_:#a, dir) {
 }
 
 @xtest(#both, (#a, #a, #end, #end, #a, #end))
-with Seq(_:#a|#end, _)
+with Seq(type #a|#end, _)
 def t1() = pkt() | seq {
     packet() | seq {
         val(#a)

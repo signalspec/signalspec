@@ -1,7 +1,7 @@
 use std::{cell::{RefCell, RefMut}, rc::Rc, task::{Poll, Context, Waker}, collections::VecDeque, future::Future, io, pin::Pin};
 use futures_lite::{ AsyncRead, AsyncWrite };
 
-use crate::{Value, Shape, Item, LeafItem, core::resolve::Expr, tree::Zip};
+use crate::{Item, LeafItem, Shape, TypeTree, Value, core::resolve::Expr, tree::Zip};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ChannelMessage {
@@ -165,7 +165,7 @@ impl SeqChannels {
     }
 }
 
-pub(crate) fn item_to_msgs(ty: &Item, seq: &Item) -> Result<Vec<ChannelMessage>, ()> {
+pub(crate) fn item_to_msgs(ty: &TypeTree, seq: &Item) -> Result<Vec<ChannelMessage>, ()> {
     seq.as_tuple().iter().map(|i| {
         let mut msg = Vec::new();
         let mut valid = true;

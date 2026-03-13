@@ -1,4 +1,4 @@
-with Seq(_:#a|#b, _)
+with Seq(type #a|#b, _)
 def bare() = seq {
     alt #up _ {
         #a => {
@@ -11,11 +11,11 @@ def bare() = seq {
 }
 
 @test(#up, (#a))
-with Seq(_:#a|#b, _) def test1() = seq {
+with Seq(type #a|#b, _) def test1() = seq {
     bare()
 }
 
-with Seq(_:#a|#b, _)
+with Seq(type #a|#b, _)
 def constant() = seq {
     alt #const #b {
         #a => {
@@ -31,11 +31,11 @@ def constant() = seq {
 }
 
 @test(#both, (#b))
-with Seq(_:#a|#b, _) def test_constant() = seq {
+with Seq(type #a|#b, _) def test_constant() = seq {
     constant()
 }
 
-with Seq(_:#a|#b, _)
+with Seq(type #a|#b, _)
 def constant_destructure() = seq {
     alt #const (#a, [#b, #c, #d, #e]) {
         (#a, [x, 2:[#c, #d], #e]) => {
@@ -45,12 +45,12 @@ def constant_destructure() = seq {
 }
 
 @test(#both, (#b))
-with Seq(_:#a|#b, _) def test_constant_destructure() = seq {
+with Seq(type #a|#b, _) def test_constant_destructure() = seq {
     constant_destructure()
 }
 
-with Seq(_:#a|#b, dir)
-def simple() = new Seq(#a | #b, dir) {
+with Seq(type #a|#b, dir)
+def simple() = new Seq(type #a|#b, dir) {
     on val(x) {
         alt dir x {
             #a => {
@@ -66,17 +66,17 @@ def simple() = new Seq(#a | #b, dir) {
 }
 
 @test(#both, (#b, #a))
-with Seq(_:#a|#b, _) def test2() = seq {
+with Seq(type #a|#b, _) def test2() = seq {
     simple() | seq { val(#b) }
 }
 
 @test(#both, (#a, #b))
-with Seq(_:#a|#b, _) def test2() = seq {
+with Seq(type #a|#b, _) def test2() = seq {
     simple() | seq { val(#a) }
 }
 
-with Seq(_:#a|#b, dir)
-def ambiguous() = new Seq(#a | #b, dir) {
+with Seq(type #a|#b, dir)
+def ambiguous() = new Seq(type #a|#b, dir) {
     on val(x) {
         alt dir x {
             #b => {
@@ -93,11 +93,7 @@ def ambiguous() = new Seq(#a | #b, dir) {
     }
 }
 
-// test seq_both(#a|#b, (#a, #b, #a)) | ambiguous() | { val(#b) };
-// test seq_both(#a|#b, (#a, #a, #b)) | ambiguous() | { val(#a) };
-// test fail seq_both(#a|#b, (#a, #b, #a)) | ambiguous() | { val(#a) };
-
-with Seq((_:#ones|#bit|#two, _:bits(2)), dir)
+with Seq(type (#ones|#bit|#two, bits(2)), dir)
 def vector_map() = new Seq(bits(4), dir) {
     repeat {
         on val(x) {
@@ -111,4 +107,7 @@ def vector_map() = new Seq(bits(4), dir) {
 }
 
 @test(#both, ((#ones, '00), (#bit, '01), (#two, '10)))
-with Seq((_:#ones|#bit|#two, _:bits(2)), dir) def vector() = vector_map() | seq { val('1111); val('1101); val('0010) }
+with Seq(type (#ones|#bit|#two, bits(2)), dir) def vector() = vector_map() | seq { val('1111); val('1101); val('0010) }
+
+
+//test

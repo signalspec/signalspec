@@ -75,7 +75,7 @@ peg::parser!(pub grammar signalspec() for str {
         open:tok_node("{") _ entries:protocol_entry() ** (_ "," _) _ ","? _ close:tok_node_or_err("}")
         end:pos()
         { ast::Protocol { span:FileSpan{start, end}, attributes, name, param: param.into(), dir, open, entries, close }}
-      
+
       rule protocol_entry() -> ast::ProtocolEntry
         = start:pos() name:IDENTIFIER() _ "(" _ params:COMMASEP(<message_param()>) _ ")" child:(_ ":" _ p:protocol_ref() {p})? end:pos()
           {ast::ProtocolEntry::Message( ast::ProtocolMessageDef { span: FileSpan{start, end}, name, params, child }) }
@@ -88,11 +88,11 @@ peg::parser!(pub grammar signalspec() for str {
 
   rule protocol_ref() -> ast::ProtocolRef
     = start:pos() name:IDENTIFIER() _ param:expr_tup() end:pos() { ast::ProtocolRef { span: FileSpan{ start, end }, name, param: param.into() } }
-    
+
   rule block() -> ast::Block
       = start:pos() open:tok_node("{") _
         lets:letstmt()**_ _
-        actions:action()**(_ (";" _)?) _ 
+        actions:action()**(_ (";" _)?) _
         close:tok_node_or_err("}") end:pos()
       { ast::Block{ span: FileSpan{start, end}, open, lets, actions, close } }
 
@@ -128,12 +128,13 @@ peg::parser!(pub grammar signalspec() for str {
     start:position!() e:@ end:position!() { let e:ast::Expr = e; e.with_span(FileSpan::from(start..end)) }
     --
     l:@ _ "=>" _ r:(@)  { ast::ExprFunc { span: FAKE_SPAN, args: Box::new(l), body: Box::new(r) }.into() }
+    RAW_KW("type") _ expr:@        { ast::ExprType { span: FAKE_SPAN, expr: Box::new(expr) }.into() }
     --
     l:@ _ "!" _ r:(@)   { ast::ExprFlip { span: FAKE_SPAN, dn: Some(Box::new(l)), up: Some(Box::new(r)) }.into() } // TODO: nonassociative
     "<:" _ x:@          { ast::ExprFlip { span: FAKE_SPAN, dn: Some(Box::new(x)), up: None }.into() }
     ":>" _ x:@          { ast::ExprFlip { span: FAKE_SPAN, dn: None, up: Some(Box::new(x))}.into() }
     --
-    l:(@) _ ":" _ r:@ { ast::ExprTyped { span: FAKE_SPAN, expr:Box::new(l), ty: Box::new(r) }.into() } 
+    l:(@) _ ":" _ r:@ { ast::ExprTyped { span: FAKE_SPAN, expr:Box::new(l), ty: Box::new(r) }.into() }
     --
     l:@ _ "|" _ r:(@)   { ast::ExprUnion { span: FAKE_SPAN, items: vec![l, r] }.into() }
     --
@@ -151,6 +152,7 @@ peg::parser!(pub grammar signalspec() for str {
     start:pos() value:literal() end:pos() { ast::ExprLiteral { span: FileSpan { start, end }, value }.into() }
     start:pos() value:STRING() end:pos() { ast::ExprString { span: FileSpan { start, end }, value }.into() }
     start:pos() "_" end:pos() { ast::ExprIgnore { span: FileSpan { start, end } }.into() }
+    start:pos() "[" _ elem:expr() _ ";" _ count:expr() _ "]" end:pos() { ast::ExprArrayRep { span: FileSpan { start, end }, elem: Box::new(elem), count: Box::new(count) }.into() }
     start:pos() "[" _ elems:COMMASEP(<concat_elem()>) _ "]" end:pos() { ast::ExprConcat { span: FileSpan { start, end }, elems }.into() }
     i:IDENTIFIER() { i.into() }
     e:expr_tup() { e.into() }
@@ -219,15 +221,15 @@ peg::parser!(pub grammar signalspec() for str {
   }
 
   rule IDENTIFIER() -> ast::Identifier
-    = quiet!{ start:position!() i:$(['a'..='z' | 'A'..='Z'| '_']['0'..='9' | 'a'..='z' | 'A'..='Z' | '_']*) end:position!() { 
-      ast::Identifier { span: (start..end).into(), name: i.to_string() } 
+    = quiet!{ start:position!() i:$(['a'..='z' | 'A'..='Z'| '_']['0'..='9' | 'a'..='z' | 'A'..='Z' | '_']*) end:position!() {
+      ast::Identifier { span: (start..end).into(), name: i.to_string() }
     }}
     / expected!("identifier")
-  
+
   rule INTEGER<T: std::str::FromStr>() -> T
     = quiet!{ i:$("-"?['0'..='9']+) {? i.parse().map_err(|e| "valid integer") } }
     / expected!("integer")
-  
+
   rule NUMBER() -> Number
     = quiet!{ int:$("-"?['0'..='9']+) frac:("." !"." f:$(['0'..='9']*) {f})? {?
       const EXPECTED: &'static str = "number that fits in a 64-bit fraction";

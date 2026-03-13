@@ -1,15 +1,14 @@
-let bit = 0 | 1
+let bit = type 0 | 1
 
-with Seq(_:[bit, bit, bit], dir)
-def test_signed() = new Seq(-4..3, dir) {
+with Seq(type [bit; 3], dir)
+def test_signed() = new Seq(type -4..3, dir) {
     on val(x) { val(signed(3, x)) }
     on val(x) { val(signed(3, x)) }
     on val(x) { val(signed(3, x)) }
 }
 
 @test(#both, ([1, 0, 1], [0, 0, 1], [0, 0, 0]))
-with Seq(_:[bit, bit, bit], dir)
+with Seq(type [bit; 3], dir)
 def test1() = seq {
     test_signed() | seq { val(-3); val(1); val(0) }
 }
-

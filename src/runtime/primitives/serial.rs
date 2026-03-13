@@ -17,7 +17,7 @@ impl SerialProcess {
         let (devname, rate) = args.try_into()?;
         let devname: String = devname.try_into()?;
         let rate: Value = rate.try_into()?;
-        let rate: u32 = (&rate).try_into().map_err(|()| "rate should be a number")?;
+        let rate: u32 = rate.try_into().map_err(|()| "rate should be a number")?;
         assert!(shape_up.unwrap().tag_offset == 1);
         Ok(Arc::new(SerialProcess { devname: PathBuf::from(devname), rate }))
     }

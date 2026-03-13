@@ -3,7 +3,7 @@ use indexmap::IndexMap;
 use crate::diagnostic::ErrorReported;
 use crate::syntax::ast::{self, AstNode};
 use crate::{Index, Dir, DiagnosticContext, Diagnostic};
-use crate::core::resolve::expr::{ constant, type_tree };
+use crate::core::resolve::{expr::constant, type_expr::type_tree};
 use crate::core::shape::ShapeMode;
 use crate::core::{ Scope, Shape, ShapeMsg, ShapeMsgParam, Item };
 use super::{lexpr, rexpr};

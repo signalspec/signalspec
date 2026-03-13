@@ -1,9 +1,9 @@
 protocol Test(dir) dir {
-    a: Seq(#x|#y, dir),
-    b: Seq(#x|#y, dir),
+    a: Seq(type #x|#y, dir),
+    b: Seq(type #x|#y, dir),
 }
 
-with Seq(_:#x|#y, dir)
+with Seq(type #x|#y, dir)
 def interleave() = new Test(dir) {
     repeat {
         on a {
@@ -20,7 +20,7 @@ def interleave() = new Test(dir) {
 }
 
 @test(#both, (#x, #y, #x, #x))
-with Seq(_:#x|#y, _)
+with Seq(type #x|#y, _)
 def t1() = interleave() | seq {
     a|val(#x)
     b|val(#y)

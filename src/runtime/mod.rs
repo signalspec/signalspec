@@ -11,6 +11,8 @@ use self::channel::SeqChannels;
 pub use self::test_runner::run as run_tests;
 pub use self::test_runner::run_file as run_tests_in_file;
 pub(crate) use self::primitives::{ PrimitiveProcess, instantiate_primitive };
+use crate::LeafItem;
+use crate::TypeTree;
 use crate::core::ShapeMode;
 use crate::diagnostic::DiagnosticContext;
 use crate::diagnostic::Diagnostics;
@@ -39,13 +41,13 @@ impl<'a> Handle<'a> {
         }
     }
 
-    pub fn seq_dn(index: &Index, ty: Item) -> Result<(Channel, Handle<'_>), ()> {
+    pub fn seq_dn<'i>(index: &'a Index, ty: &TypeTree) -> Result<(Channel, Handle<'i>), ()> {
         let shape = seq_shape(index, ty, Dir::Dn)?;
         let channels = SeqChannels::for_shape(&shape);
         Ok((channels.dn.as_ref().unwrap().clone(), Handle { shape: Some(shape), channels, future: None , parent: None}))
     }
 
-    pub fn seq_up(index: &Index, ty: Item) -> Result<(Channel, Handle<'_>), ()> {
+    pub fn seq_up<'i>(index: &'i Index, ty: &TypeTree) -> Result<(Channel, Handle<'i>), ()> {
         let shape = seq_shape(index, ty, Dir::Up)?;
         let channels = SeqChannels::for_shape(&shape);
         Ok((channels.up.as_ref().unwrap().clone(), Handle { shape: Some(shape), channels, future: None , parent: None}))
@@ -72,7 +74,7 @@ impl<'a> Handle<'a> {
         let mut dcx = DiagnosticContext::new();
         let ast = parse_process(file.source()).expect("parser failed");
         crate::diagnostic::report_parse_errors(&mut dcx, &file, &ast);
-        
+
         if dcx.has_errors() {
             return Err(dcx.diagnostics());
         }
@@ -136,11 +138,9 @@ fn base_shape(index: &Index) -> Shape {
     }
 }
 
-fn seq_shape(index: &Index, ty_item: Item, dir: Dir) -> Result<Shape, ()> {
+fn seq_shape(index: &Index, type_tree: &TypeTree, dir: Dir) -> Result<Shape, ()> {
     let base = index.find_protocol("Seq").cloned().expect("No `Seq` protocol found in prelude");
-
-    let ty = ty_item.as_type_tree().ok_or(())?;
-
+    let ty_item = LeafItem::Type(type_tree.clone()).into();
     Ok(Shape {
         def: base,
         param: Item::Tuple(vec![ty_item, Item::symbol(match dir { Dir::Dn => "dn", Dir::Up => "up"})].into()),
@@ -151,7 +151,7 @@ fn seq_shape(index: &Index, ty_item: Item, dir: Dir) -> Result<Shape, ()> {
             ShapeMsg {
                 name: "val".into(),
                 tag: 1,
-                params: vec![ShapeMsgParam { ty, direction: dir }].into(),
+                params: vec![ShapeMsgParam { ty: type_tree.clone(), direction: dir }].into(),
                 child: None,
             }
         ],

@@ -1,5 +1,5 @@
-with Seq(_:0..10, dir)
-def main() = new Seq(0..10, dir) {
+with Seq(type 0..10, dir)
+def main() = new Seq(type 0..10, dir) {
     on val(1) {}
     on val(2) {}
     on val(a) {
@@ -9,10 +9,10 @@ def main() = new Seq(0..10, dir) {
 }
 
 @test(#both, (5, 5))
-with Seq(_:0..10, _) def test1() = main() | seq { val(1) ; val(2) ; val(5) }
+with Seq(type 0..10, _) def test1() = main() | seq { val(1) ; val(2) ; val(5) }
 
-with Seq((_:0..10, _:0..10), dir)
-def tuple() = new Seq((0..10, 0..10), dir) {
+with Seq(type (0..10, 0..10), dir)
+def tuple() = new Seq(type (0..10, 0..10), dir) {
     on val((a, b)) {
         val((a, b))
         val((<: a, <: b))
@@ -24,9 +24,9 @@ def tuple() = new Seq((0..10, 0..10), dir) {
 }
 
 @test(#both, ((5, 6), (5, 6), (7, 8)))
-with Seq((_:0..10, _:0..10), _) def test2() = tuple() | seq { val((5, 6)); val((7, 8)) }
+with Seq(type (0..10, 0..10), _) def test2() = tuple() | seq { val((5, 6)); val((7, 8)) }
 
-with Seq((_:#a|#b|#c, _:bits(2)), dir)
+with Seq(type (#a|#b|#c, bits(2)), dir)
 def test_vec() = new Seq(bits(3), dir) {
     repeat {
         alt #up _ {
@@ -52,5 +52,4 @@ def test_vec() = new Seq(bits(3), dir) {
 }
 
 @test(#both, ((#b, '10), (#a, '00), (#b, '11), (#c, '01)))
-with Seq((_:#a|#b|#c, _:bits(2)), dir) def on_vec() = test_vec() | seq { val('100); val('111); val('101); val('001) }
-
+with Seq(type (#a|#b|#c, bits(2)), dir) def on_vec() = test_vec() | seq { val('100); val('111); val('101); val('001) }

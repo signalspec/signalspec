@@ -1,5 +1,5 @@
 @test(#dn, ())
-with Seq(_, _) def main() = new Seq(#x | #y, #dn) {
+with Seq(type _, _) def main() = new Seq(type #x | #y, #dn) {
 //# type error
     on val(#a) {}
 //         ^^ `#a` does not match type `#x | #y`
@@ -10,7 +10,7 @@ with Seq(_, _) def main() = new Seq(#x | #y, #dn) {
 }
 
 @test(#dn, ())
-with Seq(_, _) def main() = new Seq(bits(2), #dn) {
+with Seq(type _, _) def main() = new Seq(bits(2), #dn) {
 //# expected type `[0..2; 2]`
     on val([x]) {}
 //         ^^^ can't destructure into vector of width 1
@@ -23,7 +23,7 @@ with Seq(_, _) def main() = new Seq(bits(2), #dn) {
 }
 
 @test(#up, ())
-with Seq(_, _) def main() = new Seq(#x | #y, #up) {
+with Seq(type _, _) def main() = new Seq(type #x | #y, #up) {
 //# type error
     on val(#a) {}
 //         ^^ `#a` does not match type `#x | #y`
@@ -34,7 +34,7 @@ with Seq(_, _) def main() = new Seq(#x | #y, #up) {
 }
 
 @test(#up, ())
-with Seq(_, _) def main() = new Seq(bits(2), #up) {
+with Seq(type _, _) def main() = new Seq(bits(2), #up) {
 //# expected type `[0..2; 2]`
     on val([x]) {}
 //         ^^^ can't destructure into vector of width 1
@@ -45,4 +45,3 @@ with Seq(_, _) def main() = new Seq(bits(2), #up) {
 //          ^^ `#a` does not match type `0..2`
 //              ^^ `#b` does not match type `0..2`
 }
-

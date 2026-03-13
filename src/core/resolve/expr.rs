@@ -4,7 +4,7 @@ use itertools::{Itertools, EitherOrBoth};
 
 use crate::{
     SourceFile, Type, TypeTree, Value, core::{
-        Func, FunctionDef, Item, LeafItem, Scope, data::{NumberType, NumberTypeError}, op::{ConcatElem, UnaryOp, eval_binary, eval_choose}
+        Func, FunctionDef, Item, LeafItem, Scope, data::{NumberType, NumberTypeError}, op::{ConcatElem, UnaryOp, eval_binary, eval_choose}, resolve::type_expr::type_tree
     }, diagnostic::{Diagnostic, DiagnosticContext, ErrorReported, Span, collect_or_err}, entitymap::{EntityMap, entity_key}, syntax::{
         Number, ast::{self, AstNode, BinOp}
     }, tree::{Tree, TupleFields}
@@ -92,6 +92,10 @@ impl TryFromConstant for Number {
     const EXPECTED_MSG: &'static str = "number";
 }
 
+impl TryFromConstant for u32 {
+    const EXPECTED_MSG: &'static str = "integer";
+}
+
 pub fn constant<'a, T: TryFromConstant>(dcx: &mut DiagnosticContext, scope: &Scope, ast: &ast::Expr) -> Result<T, ErrorReported> {
     let item = rexpr(dcx, scope, ast);
     let found = item.to_string();
@@ -115,18 +119,6 @@ pub fn constant<'a, T: TryFromConstant>(dcx: &mut DiagnosticContext, scope: &Sco
             expected: T::EXPECTED_MSG.to_string(),
         }
     ))
-}
-
-pub fn type_tree(dcx: &mut DiagnosticContext, scope: &Scope, e: &ast::Expr) -> Result<Tree<Type>, ErrorReported> {
-    match rexpr(dcx, scope, e) {
-        Item::Leaf(LeafItem::Invalid(r)) => Err(r),
-        i => i.as_type_tree().ok_or_else(|| {
-            dcx.report(Diagnostic::ExpectedType {
-                span: scope.span(e.span()),
-                found: i.to_string()
-            })
-        })
-    }
 }
 
 macro_rules! try_item {
@@ -177,6 +169,10 @@ pub fn rexpr(dcx: &mut DiagnosticContext, scope: &Scope, e: &ast::Expr) -> Item 
             }))))
         }
 
+        ast::Expr::Type(node) => {
+            type_tree(dcx, scope, &node.expr).map(LeafItem::Type).into()
+        }
+
         ast::Expr::Call(node) => {
             let func = rexpr(dcx, scope, &node.func);
             let arg = rexpr_tup(dcx, scope, &node.arg);
@@ -192,6 +188,7 @@ pub fn rexpr(dcx: &mut DiagnosticContext, scope: &Scope, e: &ast::Expr) -> Item 
         ast::Expr::Union(node) => resolve_expr_union(dcx, scope, node),
         ast::Expr::Choose(node) => resolve_expr_choose(dcx, scope, node),
         ast::Expr::Concat(node) => resolve_expr_concat(dcx, scope, node),
+        ast::Expr::ArrayRep(_) => todo!(),
         ast::Expr::Bin(node) => resolve_expr_binary(dcx, scope, node),
 
         ast::Expr::Error(e) => Item::Leaf(LeafItem::Invalid(ErrorReported::from_ast(e))),
@@ -759,6 +756,11 @@ pub fn lexpr(dcx: &mut DiagnosticContext, scope: &mut Scope, pat: &ast::Expr, r:
                     });
                 }
             }
+        }
+
+        ast::Expr::Type(t) => {
+            let _t = type_tree(dcx, scope, &t.expr);
+            // TODO: compare them
         }
 
         pat => {

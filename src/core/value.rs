@@ -150,10 +150,10 @@ impl From<i64> for Value {
     }
 }
 
-impl TryFrom<&Value> for u32 {
+impl TryFrom<Value> for u32 {
     type Error = ();
 
-    fn try_from(value: &Value) -> Result<Self, Self::Error> {
+    fn try_from(value: Value) -> Result<Self, Self::Error> {
         match value {
             Value::Number(i) => i.to_u32().ok_or(()),
             _ => Err(())
@@ -194,4 +194,3 @@ impl TryFrom<Value> for Vec<Value> {
         }
     }
 }
-

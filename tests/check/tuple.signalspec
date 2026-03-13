@@ -1,8 +1,8 @@
-let t = #a|#b|#c|#d
+let T = type #a|#b|#c|#d
 
 @test(#both, ((#a, #b), (#c, #d)))
 @test(#up_fail, ((#a, #d), (#c, #b)))
-with Seq((_:t, _:t), _)
+with Seq(type (T, T), _)
 def main() = seq {
     val((#a, #b))
     val((#c, #d))

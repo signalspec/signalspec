@@ -1,5 +1,5 @@
 @test(#up, ())
-with Seq(_, _) def main() = new Seq(#x, #up) {
+with Seq(type _, _) def main() = new Seq(type #x, #up) {
 //# no variant `foo` exists on protocol `Seq`
     on foo() {}
 //     ^^^ not found
@@ -8,4 +8,3 @@ with Seq(_, _) def main() = new Seq(#x, #up) {
     on bar {}
 //     ^^^ not found
 }
-

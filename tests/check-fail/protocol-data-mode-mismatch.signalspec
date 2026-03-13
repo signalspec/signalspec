@@ -6,5 +6,4 @@ protocol Foo() #dn {
 }
 
 @test(#up, ())
-with Seq(_, _) def main() = new Foo() {}
-
+with Seq(type _, _) def main() = new Foo() {}
