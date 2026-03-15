@@ -10,6 +10,9 @@ pub enum Predicate {
     /// Number: in range (bottom inclusive, top-exclusive)
     Range(Number, Number),
 
+    /// Number greater than or equal to
+    AtLeast(Number),
+
     /// Value in set
     AnyOf(Vec<Value>),
 
@@ -48,6 +51,7 @@ impl Predicate {
         match (self, v) {
             (Predicate::Any, _) => true,
             (Predicate::Range(lo, hi), Value::Number(n)) => n>=lo && n<hi,
+            (Predicate::AtLeast(lo), Value::Number(n)) => n >= lo,
             (Predicate::AnyOf(set), v) => set.contains(v),
             (Predicate::Vector(components), Value::Vector(vec)) => {
                 vec.iter().zip_eq(components.iter()).all(|(elem, component)| {
@@ -62,6 +66,8 @@ impl Predicate {
         match (self, other) {
             (Predicate::Any, _) | (_, Predicate::Any) => false,
             (Predicate::Range(lo1, hi1), Predicate::Range(lo2, hi2)) => hi1 <= lo2 || hi2 <= lo1,
+            (Predicate::Range(_, hi), Predicate::AtLeast(lo2))
+            | (Predicate::AtLeast(lo2), Predicate::Range(_, hi))  => lo2 >= hi,
             (Predicate::AnyOf(set), other) | (other, Predicate::AnyOf(set)) => set.iter().all(|v| !other.test(v)),
             (Predicate::Vector(c1), Predicate::Vector(c2)) => {
                c1.iter().zip_eq(c2.iter()).any(|(p1, p2)| p1.excludes(p2))
@@ -113,6 +119,8 @@ fn test_predicate() {
     assert_eq!(range.excludes(&Predicate::from_value(&Value::Number(10.into()))), true);
     assert_eq!(range.excludes(&Predicate::from_value(&Value::Number(0.into()))), true);
     assert_eq!(range.excludes(&Predicate::from_value(&Value::Number(5.into()))), false);
+    assert_eq!(range.excludes(&Predicate::AtLeast(9.into())), false);
+    assert_eq!(range.excludes(&Predicate::AtLeast(10.into())), true);
 
     let any = c.predicate(&test_expr_parse("~5").inner()).unwrap();
     assert_eq!(any, Predicate::Any);

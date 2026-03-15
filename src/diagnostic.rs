@@ -382,6 +382,12 @@ diagnostic_kinds! {
         Label { label: format!("expression has lower bound of {found}"), span },
     ]
 
+    RangeTypeMissingMax {
+        span: Span
+    } => "range types require an upper bound" at [
+        Label { label: "missing upper bound".to_string(), span },
+    ]
+
     IncompatibleTypes {
         span: Span,
         t1: Type,

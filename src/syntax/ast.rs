@@ -501,7 +501,7 @@ ast_node!{
     pub struct ExprRange {
         pub span: FileSpan,
         pub lo: Box<Expr>,
-        pub hi: Box<Expr>,
+        pub hi: Option<Box<Expr>>,
         pub step: Option<Box<Expr>>,
     }
 }

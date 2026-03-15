@@ -148,7 +148,8 @@ impl ExprLower {
             ExprKind::Var(var_id) => self.vars[var_id].predicate.clone(),
             ExprKind::Flip(_, ref up) => self.predicate(up),
             ExprKind::Const(ref v) => Some(Predicate::from_value(v)),
-            ExprKind::Range(lo, hi) => Some(Predicate::Range(lo, hi)),
+            ExprKind::Range(lo, Some(hi)) => Some(Predicate::Range(lo, hi)),
+            ExprKind::Range(lo, None) => Some(Predicate::AtLeast(lo)),
             ExprKind::Enum(ref set) => {
                 Some(Predicate::AnyOf(set.iter().cloned().collect()))
             },

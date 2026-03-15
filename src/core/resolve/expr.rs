@@ -25,7 +25,7 @@ pub enum ExprKind {
     Ignored,
     Const(Value),
     Var(VarId),
-    Range(Number, Number),
+    Range(Number, Option<Number>),
     Enum(IndexSet<Value>),
     Flip(Box<ExprKind>, Box<ExprKind>),
     Concat(Vec<ConcatElem<ExprKind>>),
@@ -69,7 +69,8 @@ impl fmt::Display for Expr {
             Expr::Const(c) => c.fmt(f),
             Expr::Expr(_, ExprKind::Ignored) => write!(f, "_"),
             Expr::Expr(_, ExprKind::Const(p)) => write!(f, "{}", p),
-            Expr::Expr(_, ExprKind::Range(a, b)) => write!(f, "{}..{}", a, b),
+            Expr::Expr(_, ExprKind::Range(a, Some(b))) => write!(f, "{}..{}", a, b),
+            Expr::Expr(_, ExprKind::Range(a, None)) => write!(f, "{}..", a),
             Expr::Expr(ty, _) => write!(f, "<{ty}>"),
         }
     }
@@ -86,8 +87,8 @@ impl ExprKind {
 
             ExprKind::Const(Value::Number(n)) if n.is_integer() && *n.numer() >= 0 => Some((*n.numer() as u64, Some(*n.numer() as u64 + 1))),
 
-            ExprKind::Range(min, max) if min.is_integer() && *min.numer() >= 0 && max.is_integer() => {
-                Some((*min.numer() as u64, Some(*max.numer() as u64)))
+            ExprKind::Range(min, max) if min.is_integer() && *min.numer() >= 0 && max.is_some_and(|m| m.is_integer()) => {
+                Some((*min.numer() as u64, max.map(|m| *m.numer() as u64)))
             }
 
             // TODO: should also check that the predicate is unrestricted
@@ -277,31 +278,45 @@ fn resolve_expr_flip(dcx: &mut DiagnosticContext, scope: &Scope, node: &ast::Exp
 
 fn resolve_expr_range(dcx: &mut DiagnosticContext, scope: &Scope, node: &ast::ExprRange) -> Item {
     let min = constant::<Number>(dcx, scope, &node.lo);
-    let max = constant::<Number>(dcx, scope, &node.hi);
+    let max = node.hi.as_ref().map(|h| constant::<Number>(dcx, scope, h)).transpose();
     let step = node.step.as_ref().map(|s| constant::<Number>(dcx, scope, s)).transpose();
 
     let min = try_item!(min);
     let max = try_item!(max);
     let step = try_item!(step).unwrap_or(Number::new(1, 1));
 
-    let nt = match NumberType::from_scaled(min, max, step) {
-        Ok(t) => t,
-        Err(NumberTypeError::BoundsNotMultipleOfStep) => return dcx.report(
-            Diagnostic::RangeNotMultipleOfStep {
-                min, min_span: scope.span(node.lo.span()),
-                max, max_span: scope.span(node.hi.span()),
-                step
-            }
-        ).into(),
-        Err(NumberTypeError::Order) => return dcx.report(
-            Diagnostic::RangeOrder {
-                min, min_span: scope.span(node.lo.span()),
-                max, max_span: scope.span(node.hi.span()),
-            }).into(),
-        Err(NumberTypeError::StepIsZero) => return dcx.report(
-            Diagnostic::RangeStepZero {
-                step, step_span: scope.span(node.step.as_ref().unwrap().span()),
-            }).into(),
+    let nt = if let Some(max) = max {
+        match NumberType::from_scaled(min, max, step) {
+            Ok(t) => t,
+            Err(NumberTypeError::BoundsNotMultipleOfStep) => return dcx.report(
+                Diagnostic::RangeNotMultipleOfStep {
+                    min, min_span: scope.span(node.lo.span()),
+                    max, max_span: scope.span(node.hi.as_ref().unwrap().span()),
+                    step
+                }
+            ).into(),
+            Err(NumberTypeError::Order) => return dcx.report(
+                Diagnostic::RangeOrder {
+                    min, min_span: scope.span(node.lo.span()),
+                    max, max_span: scope.span(node.hi.as_ref().unwrap().span()),
+                }).into(),
+            Err(NumberTypeError::StepIsZero) => return dcx.report(
+                Diagnostic::RangeStepZero {
+                    step, step_span: scope.span(node.step.as_ref().unwrap().span()),
+                }).into(),
+        }
+    } else {
+        if step == 0.into() {
+            return dcx.report(
+                Diagnostic::RangeStepZero {
+                    step, step_span: scope.span(node.step.as_ref().unwrap().span()),
+                }
+            ).into();
+        }
+
+        let min = min / step;
+
+        NumberType::new(step, *min.numer(), i64::MAX)
     };
 
     Expr::Expr(Type::Number(nt), ExprKind::Range(min, max)).into()

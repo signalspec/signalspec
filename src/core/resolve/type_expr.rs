@@ -68,8 +68,15 @@ pub fn type_tree(dcx: &mut DiagnosticContext, scope: &Scope, e: &ast::Expr) -> R
 }
 
 fn resolve_type_range(dcx: &mut DiagnosticContext, scope: &Scope, node: &ast::ExprRange) -> Result<Type, ErrorReported> {
-    let min = constant::<Number>(dcx, scope, &node.lo);
-    let max = constant::<Number>(dcx, scope, &node.hi);
+    let lo = &node.lo;
+    let Some(hi) = node.hi.as_ref() else {
+        return Err(dcx.report(Diagnostic::RangeTypeMissingMax {
+            span: scope.span(node.span()),
+        }));
+    };
+
+    let min = constant::<Number>(dcx, scope, lo);
+    let max = constant::<Number>(dcx, scope, hi);
     let step = node.step.as_ref().map(|s| constant::<Number>(dcx, scope, s)).transpose();
 
     let min = min?;
@@ -80,15 +87,15 @@ fn resolve_type_range(dcx: &mut DiagnosticContext, scope: &Scope, node: &ast::Ex
         Ok(t) => Ok(Type::Number(t)),
         Err(NumberTypeError::BoundsNotMultipleOfStep) => Err(dcx.report(
             Diagnostic::RangeNotMultipleOfStep {
-                min, min_span: scope.span(node.lo.span()),
-                max, max_span: scope.span(node.hi.span()),
+                min, min_span: scope.span(lo.span()),
+                max, max_span: scope.span(hi.span()),
                 step
             }
         )),
         Err(NumberTypeError::Order) => Err(dcx.report(
             Diagnostic::RangeOrder {
-                min, min_span: scope.span(node.lo.span()),
-                max, max_span: scope.span(node.hi.span()),
+                min, min_span: scope.span(lo.span()),
+                max, max_span: scope.span(hi.span()),
             }
         )),
         Err(NumberTypeError::StepIsZero) => Err(dcx.report(
