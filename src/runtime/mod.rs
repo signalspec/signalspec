@@ -16,8 +16,6 @@ use crate::TypeTree;
 use crate::core::ShapeMode;
 use crate::diagnostic::DiagnosticContext;
 use crate::diagnostic::Diagnostics;
-use crate::tree::Tree;
-use crate::tree::TupleFields;
 use crate::{ Scope, ShapeMsg };
 use crate::syntax::{ SourceFile, parse_process, ast };
 pub use channel::{ Channel, ChannelMessage };
@@ -130,7 +128,7 @@ fn base_shape(index: &Index) -> Shape {
     let base = index.find_protocol("Base").cloned().expect("No `Base` protocol found in prelude");
     Shape {
         def: base,
-        param: Item::Tuple(TupleFields::default()),
+        args: vec![],
         mode: ShapeMode::Null,
         tag_offset: 0,
         tag_count: 0,
@@ -144,7 +142,7 @@ fn seq_shape(index: &Index, type_tree: &TypeTree, dir: Dir) -> Result<Shape, ()>
     let ty_item = LeafItem::Type(type_tree.clone()).into();
     Ok(Shape {
         def: base,
-        param: Item::Tuple(vec![ty_item, Item::symbol(match dir { Dir::Dn => "dn", Dir::Up => "up"})].into()),
+        args: vec![ty_item, Item::symbol(match dir { Dir::Dn => "dn", Dir::Up => "up"})],
         mode: dir.into(),
         tag_offset: 1,
         tag_count: 1,

@@ -150,7 +150,9 @@ pub struct MessageField {
 pub struct Shape {
     pub def: ProtocolRef,
     pub mode: ShapeMode,
-    pub param: Item,
+
+    /// Resolved arguments to the protocol. Aligned with `def.ast().params`.
+    pub args: Vec<Item>,
     pub tag_offset: usize,
     pub tag_count: usize,
     pub messages: Vec<ShapeMsg>,

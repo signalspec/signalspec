@@ -1,61 +1,39 @@
 use indexmap::IndexMap;
 
-use crate::diagnostic::ErrorReported;
+use crate::core::resolve::parameters::{match_args, resolve_arg};
+use crate::diagnostic::{ErrorReported, collect_or_err};
 use crate::syntax::ast::{self, AstNode};
 use crate::tree::TupleFields;
 use crate::{Diagnostic, DiagnosticContext, Dir, Index};
 use crate::core::resolve::{expr::constant, type_expr::type_tree};
 use crate::core::shape::{MessageField, ShapeMode, ShapeMsgParam};
-use crate::core::{ Scope, Shape, ShapeMsg, Item };
-use super::{lexpr, rexpr};
+use crate::core::{ Scope, Shape, ShapeMsg };
 
 pub fn resolve(
     dcx: &mut DiagnosticContext,
     index: &Index,
-    scope: &Scope,
+    caller_scope: &Scope,
     ast: &ast::ProtocolRef,
     tag_offset: usize,
 ) -> Result<Shape, ErrorReported> {
-    let args = rexpr(dcx, scope, &ast.param);
-    match instantiate(dcx, index, &ast.name.name, args, tag_offset) {
-        Ok(shape) => Ok(shape),
-        Err(InstantiateProtocolError::ProtocolNotFound) => {
-            Err(dcx.report(Diagnostic::NoProtocolNamed {
-                span: scope.span(ast.name.span),
-                protocol_name: ast.name.name.clone(),
-            }))
-        },
-        Err(InstantiateProtocolError::ErrorInProtocolBody(e)) => Err(e),
-    }
-}
+    let Some(protocol) = index.find_protocol(&ast.name.name) else {
+        return Err(dcx.report(Diagnostic::NoProtocolNamed {
+            span: caller_scope.span(ast.name.span),
+            protocol_name: ast.name.name.clone(),
+        }));
+    };
 
-#[derive(Debug)]
-pub enum InstantiateProtocolError {
-    ProtocolNotFound,
-    ErrorInProtocolBody(ErrorReported),
-}
-
-impl From<ErrorReported> for InstantiateProtocolError {
-    fn from(e: ErrorReported) -> Self {
-        InstantiateProtocolError::ErrorInProtocolBody(e)
-    }
-}
-
-/// Instantiates a protocol with passed arguments, creating a Shape.
-pub fn instantiate(
-    dcx: &mut DiagnosticContext,
-    index: &Index,
-    protocol_name: &str,
-    args: Item,
-    tag_offset: usize,
-) -> Result<Shape, InstantiateProtocolError> {
-    let protocol = index.find_protocol(protocol_name)
-        .ok_or(InstantiateProtocolError::ProtocolNotFound)?;
     let protocol_ast = protocol.ast();
-    let mut scope = protocol.file().scope();
-    lexpr(dcx, &mut scope, &protocol_ast.param, &args);
+    let mut args = Vec::with_capacity(protocol_ast.params.list.len());
+    let mut body_scope = protocol.file().scope();
 
-    let mode = constant::<ShapeMode>(dcx, &scope, &protocol_ast.dir)?;
+    for (param, arg_ast) in match_args(dcx, caller_scope, &protocol_ast.params, &ast.args) {
+        let arg = resolve_arg(dcx, caller_scope, &body_scope, param, arg_ast);
+        body_scope.bind(&param.name.name, arg.clone());
+        args.push(arg);
+    }
+
+    let mode = constant::<ShapeMode>(dcx, &body_scope, &protocol_ast.dir)?;
 
     let mut messages = vec![];
     let mut children = IndexMap::new();
@@ -66,25 +44,25 @@ pub fn instantiate(
             ast::ProtocolEntry::Message(ast::ProtocolMessageDef { ref name, ref params, ref child, .. }) => {
                 if child.is_some() && !params.is_empty() {
                     dcx.report(Diagnostic::ProtocolMessageWithArgsAndChild {
-                        span: scope.span(entry.span())
+                        span: body_scope.span(entry.span())
                     });
                 }
 
-                let params: TupleFields<ShapeMsgParam> = params.iter().map(|p| {
+                let params: TupleFields<ShapeMsgParam> = collect_or_err(params.iter().map(|p| {
                     let name = p.name.as_ref().map(|n| n.name.clone());
-                    let direction = constant::<Dir>(dcx, &scope, &p.direction)?;
+                    let direction = constant::<Dir>(dcx, &body_scope, &p.direction)?;
 
                     if !mode.allows_data(direction) {
                         Err(dcx.report(Diagnostic::ProtocolDataModeMismatch {
-                            span: scope.span(p.span()),
+                            span: body_scope.span(p.span()),
                             mode,
                             direction,
                         }))?;
                     }
 
-                    let ty = type_tree(dcx, &scope, &p.expr)?;
+                    let ty = type_tree(dcx, &body_scope, &p.expr)?;
                     Ok((name, ShapeMsgParam { ty, direction }))
-                }).collect::<Result<_, InstantiateProtocolError>>()?;
+                }))?;
 
                 let mut fields = vec![];
                 for (_, param) in params.iter() {
@@ -94,11 +72,11 @@ pub fn instantiate(
                 let tag = next_tag;
 
                 let child = if let Some(child) = child {
-                    let shape = resolve(dcx, index, &scope, &child, tag + 1)?;
+                    let shape = resolve(dcx, index, &body_scope, &child, tag + 1)?;
 
                     if !mode.allows_child(shape.mode) {
                         Err(dcx.report(Diagnostic::ProtocolChildModeMismatch {
-                            span: scope.span(child.span),
+                            span: body_scope.span(child.span),
                             child_name: child.name.name.clone(),
                             mode,
                             child_mode: shape.mode,
@@ -114,11 +92,11 @@ pub fn instantiate(
                 next_tag += 1;
             }
             ast::ProtocolEntry::Child(ref node) => {
-                let inner_shape = resolve(dcx, index, &scope, &node.child_protocol, next_tag)?;
+                let inner_shape = resolve(dcx, index, &body_scope, &node.child_protocol, next_tag)?;
 
                 if !mode.allows_child(inner_shape.mode) {
                     Err(dcx.report(Diagnostic::ProtocolChildModeMismatch {
-                        span: scope.span(node.span),
+                        span: body_scope.span(node.span),
                         child_name: node.name.name.clone(),
                         mode,
                         child_mode: inner_shape.mode,
@@ -140,6 +118,6 @@ pub fn instantiate(
         tag_count: next_tag - tag_offset,
         messages,
         children,
-        param: args
+        args,
     })
 }

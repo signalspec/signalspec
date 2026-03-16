@@ -1,11 +1,9 @@
-//# too few positional fields
-//^* expected 1 more positional fields
-
-//# type error
-//^* `9` does not match type `#up | #dn | #pull`
-
+//# too many positional arguments
+//# incorrect argument type
 @test(#up, ())
 with Seq(type _, _) def main() = new Seq(9, 9, 9) {}
+//                                          ^ expected `#up | #dn | #pull`, found `9`
+//                                             ^ 1 unexpected positional arguments
 
 //# undefined variable `undefinedvar`
 @test(#up, ())

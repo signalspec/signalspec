@@ -1,0 +1,34 @@
+with Seq(type #a|#b, dir)
+def main(a, b) = seq {
+    val(a)
+    val(b)
+}
+
+@test(#up, ())
+with Seq(type #a|#b, _) def test_wrong_args() = seq {
+//# too many positional arguments
+    main(#a, #b, #c, #d)
+//               ^^^^^^ 2 unexpected positional arguments
+
+//# unexpected named argument `z`
+    main(a = #a, b = #b, z = #a)
+//                       ^^^^^^ unexpected argument
+
+//# positional arguments must come before named arguments
+    main(a = #a, #b, b = #b)
+//               ^^ positional argument after named argument
+
+//# missing required argument `b`
+    main(#a)
+//         ^ expected an additional argument
+
+//# multiple values for argument `b`
+    main(#a, #b, b = #b)
+//                   ^^ duplicate argument
+//           ^^ duplicate argument
+
+//# multiple values for argument `a`
+    main(a = #a, b = #b, a = #a)
+//                           ^^ duplicate argument
+//           ^^ duplicate argument
+}

@@ -196,13 +196,29 @@ ast_node!{
     }
 }
 
+ast_node!{
+    pub struct ParameterList {
+        pub span: FileSpan,
+        pub list: Vec<Parameter>,
+    }
+}
+
+ast_node!{
+    pub struct Parameter {
+        pub span: FileSpan,
+        pub name: Identifier,
+        pub ty: Option<Expr>,
+        pub default: Option<Expr>,
+    }
+}
+
 ast_node! {
     pub struct Def {
         pub span: FileSpan,
         pub attributes: Vec<Attribute>,
         pub bottom: ProtocolRef,
         pub name: Identifier,
-        pub params: ExprTup,
+        pub params: ParameterList,
         pub process: Process,
     }
 }
@@ -212,7 +228,7 @@ ast_node! {
         pub span: FileSpan,
         pub attributes: Vec<Attribute>,
         pub name: Identifier,
-        pub param: Expr,
+        pub params: ParameterList,
         pub dir: Expr,
         pub open: Token,
         pub entries: Vec<ProtocolEntry>,
@@ -257,7 +273,7 @@ ast_node!{
     pub struct ProtocolRef {
         pub span: FileSpan,
         pub name: Identifier,
-        pub param: Expr,
+        pub args: ExprTup,
     }
 }
 

@@ -4,6 +4,7 @@ pub(crate) mod type_expr;
 pub(crate) mod action;
 pub(crate) mod protocol;
 pub(crate) mod scope;
+pub(crate) mod parameters;
 
 pub use action::resolve_process;
 

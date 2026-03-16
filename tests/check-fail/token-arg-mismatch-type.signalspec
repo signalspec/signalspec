@@ -1,11 +1,11 @@
-//# incorrect argument on `val`
+//# incorrect argument type
 @test(#up, (9))
 with Seq(type 1..10, _) def main() = seq {
     val((9, 9))
 //      ^^^^^^ expected `1..10`, found `(9, 9)`
 }
 
-//# incorrect argument on `val`
+//# incorrect argument type
 @test(#up, (9))
 with Seq(type 1..10, _) def main() = seq {
     val(20)

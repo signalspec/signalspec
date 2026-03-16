@@ -128,6 +128,16 @@ impl<T> Tree<T> {
         }
     }
 
+    pub fn for_each_owned(self, f: &mut impl FnMut(T)) {
+        match self {
+            Tree::Leaf(i) => f(i),
+            Tree::Tuple(TupleFields { positional, named }) => {
+                positional.into_iter().for_each(|s| s.for_each_owned(f));
+                named.into_iter().for_each(|(_, s)| s.for_each_owned(f));
+            }
+        }
+    }
+
     pub fn flatten<U>(&self, f: &mut impl FnMut(&T) -> U) -> Vec<U> {
         let mut r = Vec::new();
         self.for_each(&mut |e| r.push(f(e)));

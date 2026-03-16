@@ -313,10 +313,9 @@ diagnostic_kinds! {
 
     ArgMismatchType {
         span: Span,
-        def_name: String,
         expected: String,
         found: String
-    } => "incorrect argument on `{def_name}`" at [
+    } => "incorrect argument type" at [
         Label { label: format!("expected `{expected}`, found `{found}`"), span },
     ]
 
@@ -347,6 +346,38 @@ diagnostic_kinds! {
     } => "missing named field `{name}`" at [
         Label { label: "expected additional named field".to_string(), span },
     ]
+
+    ArgTooManyPositional {
+        span: Span,
+        n: usize
+    } => "too many positional arguments" at [
+        Label { label: format!("{n} unexpected positional arguments"), span },
+    ]
+
+    ArgExtraNamed {
+        span: Span,
+        name: String
+    } => "unexpected named argument `{name}`" at [
+        Label { label: "unexpected argument".to_string(), span },
+    ]
+
+    ArgMissing {
+        span: Span,
+        name: String
+    } => "missing required argument `{name}`" at [
+        Label { label: "expected an additional argument".to_string(), span },
+    ]
+
+    PositionalArgAfterNamed {
+        span: Span,
+    } => "positional arguments must come before named arguments" at [
+        Label { label: "positional argument after named argument".to_string(), span },
+    ]
+
+    MultipleArgValues {
+        spans: Vec<Span>,
+        name: String
+    } => "multiple values for argument `{name}`" at spans.iter().map(|span| Label { label: "duplicate argument".to_string(), span })
 
     ExpectedTuple {
         span: Span,

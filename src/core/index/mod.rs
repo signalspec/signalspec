@@ -24,7 +24,7 @@ pub struct Index {
 pub(crate) struct Def {
     pub(crate) protocol: ast::ProtocolRef,
     pub(crate) name: ast::Identifier,
-    pub(crate) params: ast::ExprTup,
+    pub(crate) params: ast::ParameterList,
     pub(crate) file: Arc<FileScope>,
     pub(crate) implementation: ast::Process,
 }

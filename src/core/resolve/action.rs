@@ -4,18 +4,18 @@ use itertools::{Itertools, AllEqualValueError};
 
 use crate::{
     Value, core::{
-        ChannelId, Dir, Item, LeafItem, Scope, Shape, ShapeMsg, Type, index::FindDefError, resolve::expr::spanned_value, step::ConnectionId
-}, diagnostic::{DiagnosticContext, Span, Spanned, collect_or_err, try_push}, entitymap::EntityMap, runtime::PrimitiveProcess};
+        ChannelId, Dir, Item, LeafItem, Scope, Shape, ShapeMsg, Type, index::FindDefError, resolve::{expr::spanned_value, parameters::{check_arg_type, match_args, resolve_arg}}, step::ConnectionId
+    }, diagnostic::{DiagnosticContext, Span, Spanned, collect_or_err, try_push}, entitymap::EntityMap, runtime::PrimitiveProcess,
+};
 use crate::diagnostic::{ErrorReported};
 use crate::runtime::instantiate_primitive;
 use crate::syntax::ast::{self, AstNode};
-use crate::tree::Tree;
 use crate::{Diagnostic, Index};
 
 use super::{
     protocol,
     expr::{TryFromConstant, value, ExprKind, rexpr, rexpr_tup, constant, VarId},
-    pattern::{lexpr_tup, lexpr, zip_tuple_ast_fields, bind_field, bind_fields, bind_fields_const, Pattern, ZipTupleResult},
+    pattern::{lexpr, zip_tuple_ast_fields, bind_field, bind_fields, bind_fields_const, Pattern, ZipTupleResult},
 };
 
 pub fn resolve_process(dcx: &mut DiagnosticContext, index: &Index, scope: &Scope, shape_dn: Shape, ast: &ast::Process) -> ResolveResult {
@@ -509,13 +509,46 @@ impl<'a> Builder<'a> {
                         }
                     };
 
-                    let args = rexpr_tup(&mut self.dcx, scope, &node.args);
+                    let mut inner_scope = def.file.scope();
 
-                    let mut scope = def.file.scope();
-                    lexpr(&mut self.dcx, &mut scope, &def.protocol.param, &cs.down.shape.param);
-                    lexpr_tup(&mut self.dcx, &mut scope, &def.params, &args);
+                    // Destructure and match the `with` protocol args
+                    let protocol_ast = cs.down.shape.def.ast();
+                    for ((_, binding_ast), val) in match_args(&mut self.dcx, scope, &protocol_ast.params, &def.protocol.args).zip_eq(cs.down.shape.args.iter()) {
+                        if let Some(binding_ast) = binding_ast {
+                            // TODO: fallible pattern match
+                            lexpr(&mut self.dcx, &mut inner_scope, &binding_ast, val);
+                        }
+                    }
 
-                    self.resolve_process(&scope, cs, &def.implementation)
+                    // Evaluate the arguments and bind to the `def` params
+                    let mut vars = Vec::new();
+                    for (param, arg_ast) in match_args(&mut self.dcx, scope, &def.params, &node.args) {
+                        let mut arg = resolve_arg(&mut self.dcx, scope, &inner_scope, param, arg_ast);
+
+                        let var_span = inner_scope.span(param.name.span);
+                        arg.for_each_mut(&mut |e| {
+                            if let LeafItem::Value(ref mut v) = *e && v.contains_var() {
+                                let dirs = self.vars.try_use(&v);
+                                let var = self.vars.add(inner_scope.span(param.name.span), dirs);
+                                let e = mem::replace(v, ExprKind::Var { ty: v.get_type(), id: var });
+                                vars.push((var, Spanned { inner: e, span: var_span.clone() }))
+                            }
+                        });
+
+                        inner_scope.bind(&param.name.name, arg);
+                    }
+
+                    let (mut action, conn_up) = self.resolve_process(&inner_scope, cs, &def.implementation);
+
+                    for (var, expr) in vars.into_iter().rev() {
+                        self.vars.finish(&mut self.dcx, var, false);
+                        if self.vars.has_defining_use_up(var) {
+                            self.vars.check_use(self.dcx, &expr, Dir::Up);
+                        }
+                        action = Action::Let { var, value: expr, body: Box::new(action) };
+                    }
+
+                    (action, conn_up)
                 }
             }
 
@@ -599,35 +632,19 @@ impl<'a> Builder<'a> {
             match m {
                 ZipTupleResult::Both(arg_ast, param) => {
                     let arg = rexpr(&mut self.dcx, scope, arg_ast);
-
-                    let mut valid = true;
-                    param.ty.zip(&arg, &mut |m| { match m {
-                        crate::tree::Zip::Both(
-                            &Tree::Leaf(ref ty),
-                            &Item::Leaf(LeafItem::Value(ref v))
-                        ) if v.get_type().is_subtype(ty) => {
-                            let v = scope.span(arg_ast.span()).wrap(v.clone());
-                            self.vars.check_use(&mut self.dcx, &v, param.direction);
-                            try_push(&mut fields, Ok(v));
-                        },
-
-                        crate::tree::Zip::Both(_, Item::Leaf(LeafItem::Invalid(r))) => {
-                            fields = Err(r.clone());
-                        }
-
-                        _ => {
-                            valid = false;
-                        }
-                    }});
-
-                    if !valid {
-                        fields = Err(self.dcx.report(Diagnostic::ArgMismatchType {
-                            span: scope.span(arg_ast.span()),
-                            def_name: node.name.name.clone(),
-                            expected: format!("{}", param.ty),
-                            found: format!("{arg}")
-                        }));
-                    }
+                    check_arg_type(&mut self.dcx, scope.span(arg_ast.span()), arg, &param.ty).for_each_owned(&mut |v| {
+                        match v {
+                            LeafItem::Value(v) => {
+                                let v = scope.span(arg_ast.span()).wrap(v);
+                                self.vars.check_use(&mut self.dcx, &v, param.direction);
+                                try_push(&mut fields, Ok(v));
+                            }
+                            LeafItem::Invalid(reported) => {
+                                fields = Err(reported);
+                            }
+                            _ => unreachable!(), // Wouldn't have passed type check
+                        };
+                    });
                 }
                 ZipTupleResult::Left(_, _) => {
                     // unexpected parameter passed and already reported: ignore it

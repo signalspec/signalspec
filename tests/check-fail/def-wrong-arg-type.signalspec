@@ -1,10 +1,10 @@
-//# type error
 with Seq(type 0, _) def target(dir: #r | #w) = new Seq(type 0, dir[#r = #up, #w = #dn]) {}
-//                             ^^^^^^^^^^^^ `#x` does not match type `#r | #w`
 
 @test(#up, ())
 with Seq(type 0, _) def bad_type() = new Seq(type 0, #up) {
+//# incorrect argument type
     target(#x)
+//         ^^ expected `#r | #w`, found `#x`
 }
 
 with Seq(type 0, _) def target2(dir: #r | #w) = new Seq(type 0, dir[#r = #up, #w = #dn]) {}

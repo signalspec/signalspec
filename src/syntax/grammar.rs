@@ -50,6 +50,14 @@ peg::parser!(pub grammar signalspec() for str {
     = tok_at:TOK("@") name:IDENTIFIER() _ args:expr_tup() __
     { ast::Attribute { span, tok_at, name, args } }
 
+  rule parameter_list() -> ast::ParameterList
+    = open:tok_node("(") list:COMMASEP(<(![')'] e:parameter() {e})>) close:tok_node_or_err(")")
+        { ast::ParameterList { span, list } }
+
+    rule parameter() -> ast::Parameter
+      = name:IDENTIFIER() _ ty:(":" _ ty:expr() { ty })? default:(_ "=" _ expr:expr() { expr })?
+        { ast::Parameter { span, name, ty, default } }
+
   rule module_entry() -> ast::ModuleEntry
     = l:letstmt() { ast::ModuleEntry::Let(l) }
     / d:def() { ast::ModuleEntry::WithDef(d) }
@@ -59,16 +67,15 @@ peg::parser!(pub grammar signalspec() for str {
     rule def() -> ast::Def
       = attributes:attribute()*
         tok_with:KW("with") _ bottom:protocol_ref() _
-        tok_def:KW("def") _ name:IDENTIFIER() _  params:expr_tup() _ "=" _ process:process()
+        tok_def:KW("def") _ name:IDENTIFIER() _  params:parameter_list() _ "=" _ process:process()
 
         { ast::Def { span, attributes, bottom, name, params, process } }
 
     rule protocol() -> ast::Protocol
       = attributes:attribute()*
-        tok_protocol:KW("protocol") _ name:IDENTIFIER() _ param:expr_tup() _ dir:expr() _
+        tok_protocol:KW("protocol") _ name:IDENTIFIER() _ params:parameter_list() _ dir:expr() _
         open:tok_node("{") _ entries:protocol_entry() ** (_ "," _) _ ","? _ close:tok_node_or_err("}")
-
-        { ast::Protocol { span, attributes, name, param: param.into(), dir, open, entries, close }}
+        { ast::Protocol { span, attributes, name, params, dir, open, entries, close }}
 
       rule protocol_entry() -> ast::ProtocolEntry
         = name:IDENTIFIER() _ "(" _ params:COMMASEP(<message_param()>) _ ")" child:(_ ":" _ p:protocol_ref() {p})?
@@ -81,7 +88,7 @@ peg::parser!(pub grammar signalspec() for str {
           { ast::MessageParam { span, name, direction, expr} }
 
   rule protocol_ref() -> ast::ProtocolRef
-    = name:IDENTIFIER() _ param:expr_tup() { ast::ProtocolRef { span, name, param: param.into() } }
+    = name:IDENTIFIER() _ args:expr_tup() { ast::ProtocolRef { span, name, args } }
 
   rule block() -> ast::Block
       = open:tok_node("{") _

@@ -1,11 +1,14 @@
 with Seq(type #a|#b, dir)
-def main(a, b) = seq {
+def main(a, b = #b) = seq {
     val(a)
     val(b)
 }
 
-@test(#both, (#a, #b))
-@test(#up_fail, (#a, #a))
+@test(#both, (#a, #b, #a, #b, #a, #b, #a, #b))
+@test(#up_fail, (#a, #a, #a, #a, #a, #a, #a, #a))
 with Seq(type #a|#b, dir) def test_main() = seq {
     main(#a, #b)
+    main(#a)
+    main(b = #b, a = #a)
+    main(a = #a)
 }
