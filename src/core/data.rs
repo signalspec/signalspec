@@ -67,7 +67,7 @@ impl NumberType {
     pub fn max(&self) -> i64 { self.max }
     pub fn range(&self) -> Range<i64> { self.min..self.max }
 
-    pub fn iter(&self) -> impl Iterator<Item = Rational> {
+    pub fn iter(&self) -> impl Iterator<Item = Rational> + use<> {
         let scale = self.scale;
         (self.min..self.max).map(move |v| Rational::from(v) * scale)
     }

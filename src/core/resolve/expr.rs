@@ -628,7 +628,7 @@ pub fn zip_tuple_ast<'a, 't, T: Display>(
     file: &Arc<SourceFile>,
     tup_ast: &'a ast::ExprTup,
     tree: &'t Tree<T>,
-) -> impl Iterator<Item = ZipTupleResult<&'a ast::Expr, &'t Tree<T>>> {
+) -> impl Iterator<Item = ZipTupleResult<&'a ast::Expr, &'t Tree<T>>> + use<'a, 't, T> {
     enum IterRes<A, B> {
         A(A),
         B(B),
@@ -679,7 +679,7 @@ pub fn zip_tuple_ast_fields<'a, 't, T>(
     file: &Arc<SourceFile>,
     tup_ast: &'a ast::ExprTup,
     f: &'t TupleFields<T>,
-) -> impl Iterator<Item = ZipTupleResult<&'a ast::Expr, &'t T>> {
+) -> impl Iterator<Item = ZipTupleResult<&'a ast::Expr, &'t T>> + use<'a, 't, T> {
     let ast_positional_count = tup_ast.positional().count();
 
     if ast_positional_count < f.positional.len() {
