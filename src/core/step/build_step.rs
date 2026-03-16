@@ -1,4 +1,5 @@
 use num_traits::Signed;
+use itertools::Itertools;
 
 use crate::{
     Diagnostic, DiagnosticContext, Shape, Value, core::{
@@ -9,13 +10,14 @@ use crate::{
 pub fn build_step_tree(
     dcx: &mut DiagnosticContext,
     vars: &EntityMap<VarId, ()>,
-    connections: EntityMap<ConnectionId, Shape>,
+    connections: &EntityMap<ConnectionId, Shape>,
     action: &Action,
 ) -> (StepBuilder, StepId) {
     let mut builder = Builder {
         dcx,
         expr_lower: ExprLower::new(&vars),
-        steps: StepBuilder::new(connections),
+        steps: StepBuilder::new(),
+        connections,
     };
 
     let root = builder.build(action);
@@ -23,13 +25,15 @@ pub fn build_step_tree(
     (builder.steps, root)
 }
 
-fn fields_of_dir<'a, T: 'a>(fields: impl IntoIterator<Item = &'a (Dir, T)>, dir: Dir) -> impl Iterator<Item = &'a T> {
-    fields.into_iter().filter_map(move |(d, f)| (*d == dir).then_some(f))
+fn fields_of_dir<'a, T: 'a>(shape: &Shape, tag: usize, fields: impl IntoIterator<Item = &'a T>, dir: Dir) -> impl Iterator<Item = &'a T> {
+    let msg = shape.message_with_tag(tag).unwrap();
+    msg.fields.iter().zip_eq(fields.into_iter()).filter_map(move |(d, f)| (d.direction == dir).then_some(f))
 }
 
 struct Builder<'a> {
     dcx: &'a mut DiagnosticContext,
     expr_lower: ExprLower,
+    connections: &'a EntityMap<ConnectionId, Shape>,
     steps: StepBuilder,
 }
 
@@ -99,12 +103,13 @@ impl<'a> Builder<'a> {
                 ref fields,
                 has_body,
             } => {
-                let mode = self.steps.connections[conn].mode;
+                let shape = &self.connections[conn];
+                let mode = shape.mode;
 
-                let dn = fields_of_dir(fields, Dir::Dn).map(|f| self.use_dn(f)).collect();
+                let dn = fields_of_dir(shape, tag, fields, Dir::Dn).map(|f| self.use_dn(f)).collect();
 
                 let up_src = self.add_value_src();
-                let up_predicates = fields_of_dir(fields, Dir::Up)
+                let up_predicates = fields_of_dir(shape, tag, fields, Dir::Up)
                     .zip(up_src.fields())
                     .map(|(f, s)| {
                         let v = self.steps.ecx.variable(s);
@@ -142,10 +147,11 @@ impl<'a> Builder<'a> {
                 ref body,
                 token_has_body,
             } => {
-                let mode = self.steps.connections[conn].mode;
+                let shape = &self.connections[conn];
+                let mode = shape.mode;
 
                 let dn_src = self.add_value_src();
-                let dn_predicates = fields_of_dir(fields, Dir::Dn)
+                let dn_predicates = fields_of_dir(shape, tag, fields, Dir::Dn)
                     .zip(dn_src.fields())
                     .map(|(f, i)| {
                         let v = self.steps.ecx.variable(i);
@@ -153,13 +159,13 @@ impl<'a> Builder<'a> {
                     })
                     .collect();
 
-                for f in fields_of_dir(fields, Dir::Up) {
+                for f in fields_of_dir(shape, tag, fields, Dir::Up) {
                     self.define_up(f, Predicate::Any)
                 }
 
                 let inner = self.build(body);
 
-                let up = fields_of_dir(fields, Dir::Up).map(|f| self.consume_up(f)).collect();
+                let up = fields_of_dir(shape, tag, fields, Dir::Up).map(|f| self.consume_up(f)).collect();
 
                 let receive = if mode.has_dn_channel() {
                     self.steps.receive(conn.dn(), tag, dn_src, dn_predicates)

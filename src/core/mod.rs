@@ -26,7 +26,7 @@ pub use self::item::{Item, LeafItem};
 pub use self::function::{ PrimitiveFn, FunctionDef, Func };
 pub use self::value::Value;
 pub use self::data::{ Type, TypeTree };
-pub use self::shape::{ ShapeMode, Shape, ShapeMsg, ShapeMsgParam };
+pub use self::shape::{ ShapeMode, Shape, ShapeMsg, MessageField, ShapeMsgParam };
 pub(crate) use self::derivs::Derivatives;
 
 pub(crate) use step::{ChannelId, ConnectionId, ProcId, SubProc};
@@ -92,7 +92,7 @@ pub fn compile_process(index: &Index, scope: &Scope, shape_dn: Shape, ast: &ast:
         return Err(dcx.diagnostics());
     }
 
-    let (mut steps, root) = step::build_step_tree(&mut dcx, &resolved.vars, resolved.connections, &resolved.action);
+    let (mut steps, root) = step::build_step_tree(&mut dcx, &resolved.vars, &resolved.connections, &resolved.action);
 
     if log_enabled!(log::Level::Debug) {
         let mut buf = String::new();
@@ -104,7 +104,7 @@ pub fn compile_process(index: &Index, scope: &Scope, shape_dn: Shape, ast: &ast:
         return Err(dcx.diagnostics());
     }
 
-    let (fsm, accepting) = steps.fsm(root);
+    let (fsm, accepting) = steps.fsm(&resolved.connections, root);
 
     if dcx.has_errors() {
         return Err(dcx.diagnostics());
@@ -117,7 +117,7 @@ pub fn compile_process(index: &Index, scope: &Scope, shape_dn: Shape, ast: &ast:
         conn_dn: resolved.conn_dn,
         up: resolved.up,
         exprs: steps.ecx,
-        connections: steps.connections,
+        connections: resolved.connections,
         processes: steps.processes,
     })
 }

@@ -129,14 +129,14 @@ pub enum Action {
     On {
         conn: ConnectionId,
         tag: usize,
-        fields: Vec<(Dir, Pattern)>,
+        fields: Vec<Pattern>,
         body: Box<Action>,
         token_has_body: bool,
     },
     Token {
         conn: ConnectionId,
         tag: usize,
-        fields: Vec<(Dir, ExprKind)>,
+        fields: Vec<ExprKind>,
         has_body: bool,
     },
     Seq(Vec<Action>),
@@ -301,7 +301,7 @@ impl<'a> Builder<'a> {
                     match m {
                         ZipTupleResult::Both(expr, param) => {
                             bind_fields(&mut self.dcx, &mut self.vars, &mut body_scope, expr, &param.ty, param.direction, &mut |field| {
-                                try_push(&mut fields, field.map(|f| (param.direction, f)));
+                                try_push(&mut fields, field);
                             });
                         },
                         ZipTupleResult::Left(expr, reported) => {
@@ -328,7 +328,7 @@ impl<'a> Builder<'a> {
                     Action::Seq(Vec::new())
                 };
 
-                for (_, pat) in fields.as_deref().unwrap_or_default() {
+                for pat in fields.as_deref().unwrap_or_default() {
                     self.vars.finish_pattern(&mut self.dcx, &pat);
                 }
 
@@ -616,7 +616,7 @@ impl<'a> Builder<'a> {
         }
     }
 
-    fn resolve_token(&mut self, msg_def: &ShapeMsg, scope: &Scope, node: &ast::ProcessCall) -> Result<Vec<(Dir, ExprKind)>, ErrorReported> {
+    fn resolve_token(&mut self, msg_def: &ShapeMsg, scope: &Scope, node: &ast::ProcessCall) -> Result<Vec<ExprKind>, ErrorReported> {
         let mut fields = Ok(Vec::new());
 
         for m in zip_tuple_ast_fields(&mut self.dcx, &scope.file, &node.args, &msg_def.params) {
@@ -632,7 +632,7 @@ impl<'a> Builder<'a> {
                         ) if v.get_type().is_subtype(ty) => {
                             let v = v.clone().inner();
                             self.vars.check_use(&mut self.dcx, scope.span(arg_ast.span()), &v, param.direction);
-                            try_push(&mut fields, Ok((param.direction, v)));
+                            try_push(&mut fields, Ok(v));
                         },
 
                         crate::tree::Zip::Both(_, Item::Leaf(LeafItem::Invalid(r))) => {

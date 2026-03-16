@@ -2,7 +2,7 @@ use std::fmt::Display;
 
 use indexmap::IndexMap;
 
-use crate::{Value, tree::TupleFields};
+use crate::{Type, Value, tree::TupleFields};
 
 use super::{Dir, Item, ProtocolRef, TypeTree, TryFromConstant};
 
@@ -129,12 +129,19 @@ pub struct ShapeMsg {
     pub name: String,
     pub tag: usize,
     pub params: TupleFields<ShapeMsgParam>,
+    pub fields: Vec<MessageField>,
     pub child: Option<Shape>,
 }
 
 #[derive(Clone, Debug)]
 pub struct ShapeMsgParam {
     pub ty: TypeTree,
+    pub direction: Dir,
+}
+
+#[derive(Clone, Debug)]
+pub struct MessageField {
+    pub ty: Type,
     pub direction: Dir,
 }
 
@@ -159,5 +166,10 @@ impl Shape {
     pub fn child_named(&self, name: &str) -> Option<&Shape> {
         self.children.get(name)
     }
-}
 
+    pub fn message_with_tag(&self, tag: usize) -> Option<&ShapeMsg> {
+        self.messages.iter().find(|m| m.tag == tag)
+            .or_else(|| self.children.values().find_map(|c| c.message_with_tag(tag)))
+            .or_else(|| self.messages.iter().flat_map(|m| m.child.as_ref()).find_map(|c| c.message_with_tag(tag)))
+    }
+}

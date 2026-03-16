@@ -16,13 +16,14 @@ use crate::TypeTree;
 use crate::core::ShapeMode;
 use crate::diagnostic::DiagnosticContext;
 use crate::diagnostic::Diagnostics;
+use crate::tree::Tree;
 use crate::tree::TupleFields;
 use crate::{ Scope, ShapeMsg };
 use crate::syntax::{ SourceFile, parse_process, ast };
 pub use channel::{ Channel, ChannelMessage };
 use indexmap::IndexMap;
 
-use crate::core::{ Dir, Index, Item, Shape, compile_process, ShapeMsgParam};
+use crate::core::{ Dir, Index, Item, Shape, compile_process, ShapeMsgParam, MessageField};
 
 pub struct Handle<'a> {
     shape: Option<Shape>,
@@ -152,6 +153,7 @@ fn seq_shape(index: &Index, type_tree: &TypeTree, dir: Dir) -> Result<Shape, ()>
                 name: "val".into(),
                 tag: 1,
                 params: vec![ShapeMsgParam { ty: type_tree.clone(), direction: dir }].into(),
+                fields: type_tree.flatten(&mut |t| MessageField { ty: t.clone(), direction: dir }),
                 child: None,
             }
         ],

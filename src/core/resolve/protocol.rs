@@ -2,10 +2,11 @@ use indexmap::IndexMap;
 
 use crate::diagnostic::ErrorReported;
 use crate::syntax::ast::{self, AstNode};
-use crate::{Index, Dir, DiagnosticContext, Diagnostic};
+use crate::tree::{Tree, TupleFields};
+use crate::{Diagnostic, DiagnosticContext, Dir, Index, TypeTree};
 use crate::core::resolve::{expr::constant, type_expr::type_tree};
-use crate::core::shape::ShapeMode;
-use crate::core::{ Scope, Shape, ShapeMsg, ShapeMsgParam, Item };
+use crate::core::shape::{MessageField, ShapeMode, ShapeMsgParam};
+use crate::core::{ Scope, Shape, ShapeMsg, Item };
 use super::{lexpr, rexpr};
 
 pub fn resolve(
@@ -69,7 +70,7 @@ pub fn instantiate(
                     });
                 }
 
-                let params = params.iter().map(|p| {
+                let params: TupleFields<ShapeMsgParam> = params.iter().map(|p| {
                     let name = p.name.as_ref().map(|n| n.name.clone());
                     let direction = constant::<Dir>(dcx, &scope, &p.direction)?;
 
@@ -84,6 +85,11 @@ pub fn instantiate(
                     let ty = type_tree(dcx, &scope, &p.expr)?;
                     Ok((name, ShapeMsgParam { ty, direction }))
                 }).collect::<Result<_, InstantiateProtocolError>>()?;
+
+                let mut fields = vec![];
+                for (_, param) in params.iter() {
+                    param.ty.for_each(&mut |t| fields.push(MessageField { ty: t.clone(), direction: param.direction }));
+                }
 
                 let tag = next_tag;
 
@@ -104,7 +110,7 @@ pub fn instantiate(
                 } else { None };
 
                 debug!("Assigning tag {tag} to {name}", name = name.name);
-                messages.push(ShapeMsg { name: name.name.clone(), params, tag, child });
+                messages.push(ShapeMsg { name: name.name.clone(), params, fields, tag, child });
                 next_tag += 1;
             }
             ast::ProtocolEntry::Child(ref node) => {

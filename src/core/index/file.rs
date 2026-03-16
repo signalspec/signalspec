@@ -79,6 +79,10 @@ impl ProtocolRef {
     pub fn file(&self) -> &Arc<FileScope> {
         &self.file
     }
+
+    pub fn name(&self) -> &str {
+        &self.ast().name.name
+    }
 }
 
 impl PartialEq<ProtocolRef> for ProtocolRef {

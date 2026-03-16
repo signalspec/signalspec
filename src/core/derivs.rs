@@ -2,7 +2,13 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use indexmap::indexset;
 
+use crate::{Shape, core::ConnectionId, entitymap::EntityMap};
+
 use super::{step::{ProcId, StepBuilder, ChannelId, Predicate, Step, StepId, ExprDnId, ValueSrc, ValueSrcId}, Dir};
+
+struct Context<'a> {
+    connections: &'a EntityMap<ConnectionId, Shape>,
+}
 
 #[derive(Debug)]
 pub(crate) enum Derivatives {
@@ -153,14 +159,14 @@ impl StepBuilder {
         }
     }
 
-    fn derivative(&mut self, step: StepId) -> Derivatives {
+    fn derivative(&mut self, ctx: &Context<'_>, step: StepId) -> Derivatives {
         match self.steps[step] {
             Step::Fail | Step::Accept => Derivatives::End,
             Step::Pass => todo!(),
             Step::Stack { lo, conn, hi } => {
-                let control_dir = self.connections[conn].mode.control_dir();
-                let dlo = self.derivative(lo);
-                let dhi = self.derivative(hi);
+                let control_dir = ctx.connections[conn].mode.control_dir();
+                let dlo = self.derivative(ctx, lo);
+                let dhi = self.derivative(ctx, hi);
 
                 match (dlo, dhi) {
                     // paired: transfer
@@ -182,7 +188,7 @@ impl StepBuilder {
                         let other = self.stack(lo, conn, other);
 
                         if arms.is_empty() {
-                            self.derivative(other)
+                            self.derivative(ctx, other)
                         } else {
                             Derivatives::Switch { src: dn, arms, other }
                         }
@@ -206,7 +212,7 @@ impl StepBuilder {
                         let other = self.stack(other, conn, hi);
 
                         if arms.is_empty() {
-                            self.derivative(other)
+                            self.derivative(ctx, other)
                         } else {
                             Derivatives::Switch { src: dn, arms, other }
                         }
@@ -265,12 +271,12 @@ impl StepBuilder {
                 Derivatives::Process { id, next: StepId::ACCEPT, err: StepId::FAIL }
             }
             Step::Seq(a, b) => {
-                let da = self.derivative(a);
+                let da = self.derivative(ctx, a);
                 let d = self.then(da, b);
                 if !self.nullable(a) {
                     d
                 } else {
-                    self.or(d, b)
+                    self.or(ctx, d, b)
                 }
             }
             Step::Assign(var, ref val) => {
@@ -281,14 +287,14 @@ impl StepBuilder {
                 Derivatives::Switch { src: vec![val.clone()], arms, other: StepId::FAIL }
             }
             Step::Repeat(inner, _) => {
-                let d = self.derivative(inner);
+                let d = self.derivative(ctx, inner);
                 let next = self.repeat(inner, true);
                 self.then(d, next)
             }
             Step::Alt(ref arms) => {
                 let mut d = Derivatives::End;
                 for &s in arms.clone().iter() {
-                    d = self.or(d, s);
+                    d = self.or(ctx, d, s);
                 }
                 d
             }
@@ -299,8 +305,8 @@ impl StepBuilder {
         a.map_follow(|s| self.seq(s, b))
     }
 
-    fn or(&mut self, da: Derivatives, b: StepId) -> Derivatives {
-        let db = self.derivative(b);
+    fn or(&mut self, ctx: &Context<'_>, da: Derivatives, b: StepId) -> Derivatives {
+        let db = self.derivative(ctx, b);
 
         match (da, db) {
             (Derivatives::End, x) | (x, Derivatives::End) => x,
@@ -394,7 +400,8 @@ impl StepBuilder {
         }
     }
 
-    pub(crate) fn fsm(&mut self, start: StepId) -> (BTreeMap<StepId, Derivatives>, BTreeSet<StepId>) {
+    pub(crate) fn fsm(&mut self, connections: &EntityMap<ConnectionId, Shape>, start: StepId) -> (BTreeMap<StepId, Derivatives>, BTreeSet<StepId>) {
+        let context = &Context { connections };
         let mut queue = indexset![start];
         let mut known = BTreeMap::new();
         let mut accepting = BTreeSet::new();
@@ -408,7 +415,7 @@ impl StepBuilder {
                 log::info!("Derivatives of \n{buf}");
             }
 
-            let mut d = self.derivative(s);
+            let mut d = self.derivative(context, s);
 
             d.rename_assigned_vars(&mut |var, next| {
                 let new_var = self.ecx.fresh_var();

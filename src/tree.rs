@@ -29,6 +29,14 @@ impl<T> TupleFields<T> {
         }
         write!(f, ")")
     }
+
+    pub fn iter(&self) -> impl Iterator<Item = (Option<&str>, &T)> {
+        self.positional.iter().map(|v| (None, v)).chain(self.named.iter().map(|(k, v)| (Some(k.as_str()), v)))
+    }
+
+    pub fn into_iter(self) -> impl Iterator<Item = (Option<String>, T)> {
+        self.positional.into_iter().map(|v| (None, v)).chain(self.named.into_iter().map(|(k, v)| (Some(k), v)))
+    }
 }
 
 impl<T> Default for TupleFields<T> {

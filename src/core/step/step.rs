@@ -91,12 +91,11 @@ pub enum Step {
 pub(crate) struct StepBuilder {
     pub ecx: ExprCtx,
     pub steps: EntityIntern<StepId, Step>,
-    pub connections: EntityMap<ConnectionId, Shape>,
     pub processes: EntityMap<ProcId, SubProc>,
 }
 
 impl StepBuilder {
-    pub(crate) fn new(connections: EntityMap<ConnectionId, Shape>) -> Self {
+    pub(crate) fn new() -> Self {
         let ecx = ExprCtx::new();
         let mut steps = EntityIntern::new();
         assert_eq!(steps.insert(Step::Fail), StepId::FAIL);
@@ -105,7 +104,6 @@ impl StepBuilder {
         Self {
             ecx,
             steps,
-            connections,
             processes: EntityMap::new(),
         }
     }
