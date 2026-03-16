@@ -2,8 +2,9 @@ use core::slice;
 use std::fmt;
 use std::default::Default;
 use std::sync::Arc;
+use num_traits::ToPrimitive;
 
-use crate::{Value, tree::{Tree, TupleFields}, TypeTree, diagnostic::ErrorReported, Type};
+use crate::{TypeTree, Value, diagnostic::ErrorReported, syntax::Number, tree::{Tree, TupleFields}};
 use super::{ resolve::Expr, FunctionDef };
 
 /// Non-tuple Item
@@ -108,6 +109,12 @@ impl From<Expr> for Item {
     }
 }
 
+impl From<Value> for Item {
+    fn from(value: Value) -> Self {
+        Item::Leaf(LeafItem::Value(Expr::Const(value)))
+    }
+}
+
 impl<T: Into<Item>> From<Result<T, ErrorReported>> for Item {
     fn from(value: Result<T, ErrorReported>) -> Self {
         match value {
@@ -117,7 +124,15 @@ impl<T: Into<Item>> From<Result<T, ErrorReported>> for Item {
     }
 }
 
-impl<'a> TryFrom<Item> for Value {
+impl TryFrom<Item> for Expr {
+    type Error = &'static str;
+
+    fn try_from(i: Item) -> Result<Self, Self::Error> {
+        if let Item::Leaf(LeafItem::Value(v)) = i { Ok(v) } else { Err("expected value") }
+    }
+}
+
+impl TryFrom<Item> for Value {
     type Error = &'static str;
 
     fn try_from(i: Item) -> Result<Self, Self::Error> {
@@ -125,7 +140,27 @@ impl<'a> TryFrom<Item> for Value {
     }
 }
 
-impl<'a> TryFrom<Item> for String {
+impl TryFrom<Item> for Number {
+    type Error = &'static str;
+
+    fn try_from(i: Item) -> Result<Self, Self::Error> {
+        if let Item::Leaf(LeafItem::Value(Expr::Const(Value::Number(v)))) = i {
+            Ok(v)
+        } else { Err("expected constant number") }
+    }
+}
+
+impl TryFrom<Item> for u32 {
+    type Error = &'static str;
+
+    fn try_from(i: Item) -> Result<Self, Self::Error> {
+        if let Item::Leaf(LeafItem::Value(Expr::Const(Value::Number(v)))) = i && let Some(u) = v.to_u32() {
+            Ok(u)
+        } else { Err("expected constant integer") }
+    }
+}
+
+impl TryFrom<Item> for String {
     type Error = &'static str;
 
     fn try_from(i: Item) -> Result<Self, Self::Error> {

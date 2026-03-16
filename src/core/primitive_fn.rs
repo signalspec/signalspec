@@ -1,11 +1,8 @@
 use std::{collections::HashMap, sync::Arc};
 use num_complex::Complex;
-use num_traits::ToPrimitive;
 
-use crate::{core::{resolve::{ExprKind, Expr}, FunctionDef, PrimitiveFn}, Item, LeafItem, Type, Value};
-
+use crate::{Item, LeafItem, Type, Value, core::{FunctionDef, PrimitiveFn, resolve::{Expr, ExprKind}}, syntax::Number};
 use super::op::{self, SignMode, UnaryOp};
-
 
 pub fn expr_prelude() -> HashMap<String, Item> {
     let mut prelude = HashMap::new();
@@ -39,66 +36,52 @@ fn fn_signed(arg: Item) -> Result<Item, &'static str> {
 }
 
 fn fn_signed_unsigned(arg: Item, signed: SignMode) -> Result<Item, &'static str> {
-    match <(Item, Item)>::try_from(arg) {
-        Ok((Item::Leaf(LeafItem::Value(Expr::Const(Value::Number(width)))), Item::Leaf(LeafItem::Value(v)))) => {
-            let width = width.to_u32().ok_or("width must be a constant integer")?;
+    let (width, v) = arg.try_into().map_err(|_| "invalid arguments: expected (width, value)")?;
+    let width = u32::try_from(width)?;
+    let v = Expr::try_from(v)?;
 
-            match v {
-                Expr::Const(Value::Number(i)) => {
-                    Ok(Expr::Const(op::eval_int_to_bits(width, i)).into())
-                }
-
-                Expr::Expr(Type::Number(..), e) => {
-                    let op = ExprKind::Unary(Box::new(e), UnaryOp::IntToBits {width, signed });
-                    let ty = Type::bits(width);
-                    Ok(Expr::Expr(ty, op).into())
-                }
-
-                _ => Err("value must be a number")
-            }
+    match v {
+        Expr::Const(Value::Number(i)) => {
+            Ok(Expr::Const(op::eval_int_to_bits(width, i)).into())
         }
-        _ => Err("invalid arguments to signed()")
+
+        Expr::Expr(Type::Number(..), e) => {
+            let op = ExprKind::Unary(Box::new(e), UnaryOp::IntToBits {width, signed });
+            let ty = Type::bits(width);
+            Ok(Expr::Expr(ty, op).into())
+        }
+
+        _ => Err("value must be a number")
     }
 }
 
 fn fn_chunks(arg: Item) -> Result<Item, &'static str> {
-    match <(Item, Item)>::try_from(arg) {
-        Ok((Item::Leaf(LeafItem::Value(Expr::Const(Value::Number(width)))), Item::Leaf(LeafItem::Value(v)))) => {
-            let width = width.to_u32().ok_or("width must be a constant integer")?;
+    let (width, v) = arg.try_into().map_err(|_| "invalid arguments: expected (width, value)")?;
+    let width = u32::try_from(width)?;
+    let v = Expr::try_from(v)?;
 
-            match v {
-                Expr::Const(Value::Vector(c)) => {
-                    Ok(Expr::Const(op::eval_chunks(width, c)).into())
-                },
-                Expr::Expr(Type::Vector(c, t), e) => {
-                    let op = ExprKind::Unary(Box::new(e), UnaryOp::Chunks { width });
-                    let ty = Type::Vector(c/width, Box::new(Type::Vector(width, t)));
-                    Ok(Expr::Expr(ty, op).into())
-                },
-                _ => Err("value must be a vector")
-            }
-        }
-        _ => Err("invalid arguments to chunks()")
+    match v {
+        Expr::Const(Value::Vector(c)) => {
+            Ok(Expr::Const(op::eval_chunks(width, c)).into())
+        },
+        Expr::Expr(Type::Vector(c, t), e) => {
+            let op = ExprKind::Unary(Box::new(e), UnaryOp::Chunks { width });
+            let ty = Type::Vector(c/width, Box::new(Type::Vector(width, t)));
+            Ok(Expr::Expr(ty, op).into())
+        },
+        _ => Err("value must be a vector")
     }
 }
 
 fn fn_complex(arg: Item) -> Result<Item, &'static str> {
-    match <(Item, Item)>::try_from(arg) {
-        Ok((
-            Item::Leaf(LeafItem::Value(Expr::Const(Value::Number(re)))),
-            Item::Leaf(LeafItem::Value(Expr::Const(Value::Number(im))))
-         )) => {
-            Ok(Item::Leaf(LeafItem::Value(Expr::Const(Value::Complex(Complex::new(re, im))))))
-        }
-        _ => Err("invalid arguments to complex(re, im): expected two number constants")
-    }
+    let (re, im) = arg.try_into().map_err(|_| "invalid arguments: expected (re, im)")?;
+    let re = Number::try_from(re)?;
+    let im = Number::try_from(im)?;
+    Ok(Value::Complex(Complex::new(re, im)).into())
 }
 
 fn fn_bits(arg: Item) -> Result<Item, &'static str> {
-    let Item::Leaf(LeafItem::Value(Expr::Const(Value::Number(width)))) = arg else {
-        return Err("invalid arguments to bits(): expected constant integer");
-    };
-    let width = width.to_u32().ok_or("width must be a constant integer")?;
+    let width = u32::try_from(arg).map_err(|_| "invalid argument: expected width as a constant integer")?;
     let ty = Type::bits(width);
     Ok(LeafItem::Type(ty.into()).into())
 }
