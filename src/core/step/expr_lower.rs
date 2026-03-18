@@ -1,5 +1,3 @@
-use std::collections::BTreeSet;
-
 use crate::{core::{op::ConcatElem, resolve::{expr::{Pattern, VarId}, ExprKind}, step::{ExprCtx, ExprDnId, Predicate}}, entitymap::EntityMap};
 
 pub struct ExprLower {
@@ -33,7 +31,7 @@ impl ExprLower {
     pub fn define_dn(&mut self, ecx: &mut ExprCtx, pat: &Pattern, v: ExprDnId) -> Predicate {
         match *pat {
             Pattern::Ignored => Predicate::Any,
-            Pattern::Const(ref value) => Predicate::from_value(value).unwrap(),
+            Pattern::Const(ref value) => Predicate::from_value(value),
             Pattern::Var(var_id) => {
                 self.vars[var_id] = VarState { dn: Some(v), up: None, predicate: None };
                 Predicate::Any
@@ -95,7 +93,7 @@ impl ExprLower {
 
     pub fn use_dn(&mut self, ecx: &mut ExprCtx, expr: &ExprKind) -> Option<ExprDnId> {
         match *expr {
-            ExprKind::Ignored | ExprKind::Range(..) | ExprKind::Union(..) => None,
+            ExprKind::Ignored | ExprKind::Range(..) | ExprKind::Enum(..) => None,
             ExprKind::Var(var) => self.vars[var].dn,
             ExprKind::Const(ref v) => Some(ecx.constant(v.clone())),
             ExprKind::Flip(ref d, _) => self.use_dn(ecx, d),
@@ -115,7 +113,7 @@ impl ExprLower {
     pub fn use_up(&mut self, ecx: &mut ExprCtx, expr: &ExprKind, v: ExprDnId) -> bool {
         match *expr {
             ExprKind::Ignored | ExprKind::Const(_)
-             | ExprKind::Range(_, _) | ExprKind::Union(..) => false,
+             | ExprKind::Range(_, _) | ExprKind::Enum(..) => false,
             ExprKind::Var(id) => {
                 self.vars[id].up = Some(v);
                 true
@@ -149,17 +147,10 @@ impl ExprLower {
             ExprKind::Ignored => Some(Predicate::Any),
             ExprKind::Var(var_id) => self.vars[var_id].predicate.clone(),
             ExprKind::Flip(_, ref up) => self.predicate(up),
-            ExprKind::Const(ref v) => Predicate::from_value(v),
+            ExprKind::Const(ref v) => Some(Predicate::from_value(v)),
             ExprKind::Range(lo, hi) => Some(Predicate::Range(lo, hi)),
-            ExprKind::Union(ref u) => {
-                let mut set = BTreeSet::new();
-                for e in u {
-                    match self.predicate(e)? {
-                        Predicate::SymbolSet(s) => set.extend(s),
-                        _ => return None,
-                    }
-                }
-                Some(Predicate::SymbolSet(set))
+            ExprKind::Enum(ref set) => {
+                Some(Predicate::AnyOf(set.iter().cloned().collect()))
             },
             ExprKind::Concat(ref parts) => {
                 Some(Predicate::vector(parts.iter().map(|c| c.map_elem(|e| self.predicate(e).unwrap()))))

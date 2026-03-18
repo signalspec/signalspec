@@ -195,8 +195,12 @@ impl<'a> Builder<'a> {
             } => {
                 let (_, max) = match self.predicate(count) {
                     Predicate::Any => (0, None),
-                    Predicate::Number(n) if n.is_integer() && !n.is_negative() => {
-                        (*n.numer(), Some(*n.numer() + 1))
+                    Predicate::AnyOf(s) => {
+                        if s.len() == 1 && let Value::Number(n) = &s[0] && n.is_integer() && !n.is_negative() {
+                            (*n.numer(), Some(*n.numer() + 1))
+                        } else {
+                            todo!()
+                        }
                     }
                     Predicate::Range(min, max)
                         if min.is_integer() && !min.is_negative() && max.is_integer() =>

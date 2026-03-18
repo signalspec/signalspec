@@ -1,9 +1,9 @@
 use std::cmp::{min, max};
-use std::collections::BTreeSet;
 use std::fmt::Display;
 use std::ops::Range;
 
 use indexmap::IndexSet;
+use itertools::Itertools;
 use num_traits::{One, Signed};
 
 use crate::{Diagnostic, Value, DiagnosticContext};
@@ -96,9 +96,8 @@ impl NumberType {
 /// A type represents a set of possible values
 #[derive(Debug, PartialEq, Clone)]
 pub enum Type {
-    Symbol(IndexSet<String>),
+    Enum(IndexSet<Value>),
     Number(NumberType),
-    NumberSet(BTreeSet<Rational>),
     Complex, // TODO: bounds?
     Vector(u32, Box<Type>),
 
@@ -124,7 +123,7 @@ impl Type {
         use self::Type::*;
         match (t1, t2) {
             (Ignored, x) | (x, Ignored) => Ok(x),
-            (Symbol(a), Symbol(b)) => Ok(Symbol(a.union(&b).cloned().collect())),
+            (Enum(a), Enum(b)) => Ok(Enum(a.union(&b).cloned().collect())),
             (Vector(n1, t1), Vector(n2, t2)) => {
                 if n1 == n2 {
                     Ok(Vector(n1, Box::new(Type::union(*t1, *t2)?)))
@@ -139,16 +138,17 @@ impl Type {
                     Err(IncompatibleTypes(Number(n1), Number(n2)))
                 }
             }
-            (NumberSet(s1), NumberSet(s2)) => {
-                Ok(NumberSet(s1.union(&s2).cloned().collect()))
-            }
-            (NumberSet(ref c), Number(ref n)) | (Number(ref n), NumberSet(ref c)) => {
-                c.iter().try_fold(n.clone(), |n, v| {
-                    let v = v / n.scale();
-                    if v.is_integer() {
-                        Ok(NumberType::new(n.scale(), min(n.min(), *v.numer()), max(n.max(), *v.numer())))
+            (Number(range), Enum(set)) | (Enum(set), Number(range)) => {
+                set.iter().try_fold(range.clone(), |n, v| {
+                    if let Value::Number(nv) = v {
+                        let v = nv / n.scale();
+                        if v.is_integer() {
+                            Ok(NumberType::new(n.scale(), min(n.min(), *v.numer()), max(n.max(), *v.numer())))
+                        } else {
+                            Err(IncompatibleTypes(Enum(set.clone()), Number(n)))
+                        }
                     } else {
-                        Err(IncompatibleTypes(NumberSet(c.clone()), Number(n)))
+                        Err(IncompatibleTypes(Enum(set.clone()), Number(n)))
                     }
                 }).map(Type::Number)
             }
@@ -168,9 +168,7 @@ impl Type {
             (Type::Complex, Value::Number(_)) => true,
             (Type::Complex, Value::Complex(_)) => true,
             (Type::Number(nt), Value::Number(n)) => nt.contains(*n),
-            (Type::NumberSet(s), Value::Number(n)) => s.contains(n),
-            (Type::Symbol(s), Value::Symbol(v)) =>
-                s.contains(v),
+            (Type::Enum(s), v) => s.contains(v),
             (Type::Vector(w, t), Value::Vector(v)) =>
                 v.len() == *w as usize && v.iter().all(|x| t.test(x)),
             _ => false,
@@ -181,12 +179,11 @@ impl Type {
         match (self, other) {
             (_, Type::Ignored) => true,
             (Type::Ignored, _) => true,
-            (Type::Symbol(s1), Type::Symbol(s2)) => s1.is_subset(s2),
+            (Type::Enum(s1), Type::Enum(s2)) => s1.is_subset(s2),
+            (Type::Enum(s1), other) => s1.iter().all(|v| other.test(v)),
+            (Type::Number(range), Type::Enum(set)) => range.iter().all(|v| set.contains(&Value::Number(v))),
             (Type::Number(n1), Type::Number(n2)) =>
                 n1.scale() == n2.scale() && n2.min() <= n1.min() && n1.max() <= n2.max(),
-            (Type::NumberSet(s1), Type::NumberSet(s2)) => s1.is_subset(s2),
-            (Type::NumberSet(s), Type::Number(n)) => s.iter().all(|v| n.contains(*v)),
-            (Type::Number(n), Type::NumberSet(s)) => n.iter().all(|v| s.contains(&v)),
             (Type::Number { .. }, Type::Complex) => true,
             (Type::Complex, Type::Complex) => true,
             (Type::Vector(w1, t1), Type::Vector(w2, t2)) => w1 == w2 && t1.is_subtype(t2),
@@ -207,7 +204,7 @@ impl Type {
     pub fn is_natural_number(&self) -> bool {
         match self {
             Type::Number(nt) => nt.is_integer() && !nt.min().is_negative(),
-            Type::NumberSet(s) => s.iter().all(|v| v.is_integer() && !v.is_negative()),
+            Type::Enum(s) => s.iter().all(|v| matches!(v, Value::Number(n) if n.is_integer() && !n.is_negative())),
             Type::Ignored => true,
             _ => false
         }
@@ -217,30 +214,13 @@ impl Type {
 impl Display for Type {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Type::Symbol(symbols) => {
-                for (i, s) in symbols.iter().enumerate() {
-                    if i != 0 {
-                        write!(f, " | ")?;
-                    }
-                    write!(f, "#{s}")?;
-                }
-                Ok(())
-            }
+            Type::Enum(values) => values.iter().join(" | ").fmt(f),
             Type::Number(n) => {
                 if n.scale().is_one() {
                     write!(f, "{lo}..{hi}", lo = n.scaled_min(), hi = n.scaled_max())
                 } else {
                     write!(f, "{lo}..{hi} by {scale}", lo = n.scaled_min(), hi = n.scaled_max(), scale = n.scale())
                 }
-            }
-            Type::NumberSet(set) => {
-                for (i, s) in set.iter().enumerate() {
-                    if i != 0 {
-                        write!(f, " | ")?;
-                    }
-                    write!(f, "{s}")?;
-                }
-                Ok(())
             }
             Type::Complex => write!(f, "<complex>"),
             Type::Vector(l, t) => write!(f, "[{t}; {l}]"),
@@ -258,3 +238,39 @@ impl IncompatibleTypes {
 }
 
 pub type TypeTree = Tree<Type>;
+
+#[track_caller]
+#[cfg(test)]
+pub fn test_type_parse(e: &str) -> Type {
+    use std::sync::Arc;
+    use crate::diagnostic::{DiagnosticContext, print_diagnostics};
+    use crate::syntax::{parse_expr, SourceFile};
+    use crate::core::Scope;
+
+    let mut dcx = DiagnosticContext::new();
+
+    let scope = Scope {
+        file: Arc::new(SourceFile::new("<tests>".into(), "".into())),
+        names: crate::core::primitive_fn::expr_prelude()
+    };
+
+    let ast = parse_expr(e).unwrap();
+    crate::diagnostic::report_parse_errors(&mut dcx, &scope.file, &ast);
+    let t = crate::core::resolve::type_expr::type_expr(&mut dcx, &scope, &ast);
+
+    print_diagnostics(dcx.diagnostics());
+
+    t.unwrap()
+}
+
+#[test]
+fn test_subtype() {
+    assert!(test_type_parse("0|1").is_subtype(&Type::bit()));
+    assert!(Type::bit().is_subtype(&test_type_parse("0|1")));
+
+    assert!(test_type_parse("0..10").is_subtype(&test_type_parse("0..100")));
+    assert!(!test_type_parse("0..100").is_subtype(&test_type_parse("0..10")));
+
+    assert!(test_type_parse("#a|#b|#c").is_subtype(&test_type_parse("#a|#b|#c|#d")));
+    assert!(!test_type_parse("#a|#b|#c|#d").is_subtype(&test_type_parse("#a|#b|#c")));
+}

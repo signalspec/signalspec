@@ -1,5 +1,3 @@
-let bit = type 0 | 1
-
 with Seq(type [bit; 3], dir)
 def test_signed() = new Seq(type -4..3, dir) {
     on val(x) { val(signed(3, x)) }

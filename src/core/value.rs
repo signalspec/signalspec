@@ -70,9 +70,8 @@ impl Value {
 
     pub fn get_type(&self) -> Type {
         match *self {
-            Value::Number(v) => Type::NumberSet([v].into()),
+            Value::Number(_) | Value::Symbol(_) => Type::Enum([self.clone()].into_iter().collect()),
             Value::Complex(_) => Type::Complex,
-            Value::Symbol(ref v) => Type::Symbol([v.clone()].into()),
             Value::Vector(ref n) => {
                 let len = n.len() as u32;
                 let Ok(inner) = Type::union_iter(n.iter().map(Value::get_type)) else {

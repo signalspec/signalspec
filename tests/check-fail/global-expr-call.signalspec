@@ -16,6 +16,6 @@ let f2 = (a = a, b = b) => #x
 
 let t2 = f2(a = #a, z = #z)
 
-//# function error: invalid arguments to signed()
+//# function error: invalid arguments: expected (width, value)
 let t2 = unsigned(#not_number)
 //       ^^^^^^^^^^^^^^^^^^^^^ call site

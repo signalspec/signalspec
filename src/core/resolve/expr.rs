@@ -1,5 +1,6 @@
 use std::{fmt::{self, Display}, iter, sync::Arc};
 
+use indexmap::IndexSet;
 use itertools::{Itertools, EitherOrBoth};
 
 use crate::{
@@ -25,7 +26,7 @@ pub enum ExprKind {
     Const(Value),
     Var(VarId),
     Range(Number, Number),
-    Union(Vec<ExprKind>),
+    Enum(IndexSet<Value>),
     Flip(Box<ExprKind>, Box<ExprKind>),
     Concat(Vec<ConcatElem<ExprKind>>),
     Unary(Box<ExprKind>, UnaryOp),
@@ -72,7 +73,7 @@ impl ExprKind {
             ExprKind::Ignored => false,
             ExprKind::Const(_) => true,
             ExprKind::Var(var_id) => with_var(var_id),
-            ExprKind::Range(..) | ExprKind::Union(_) => false,
+            ExprKind::Range(..) | ExprKind::Enum(_) => false,
             ExprKind::Flip(ref d, _) => d.check_use_dn(with_var),
             ExprKind::Concat(ref concat_elems) => {
                 let mut result = true;
@@ -90,7 +91,7 @@ impl ExprKind {
             ExprKind::Ignored => false,
             ExprKind::Const(_) => false,
             ExprKind::Var(var_id) => with_var(var_id),
-            ExprKind::Range(..) | ExprKind::Union(..) => false,
+            ExprKind::Range(..) | ExprKind::Enum(..) => false,
             ExprKind::Flip(_, ref u) => u.check_use_up(with_var),
             ExprKind::Concat(ref concat_elems) => {
                 let mut result = false;
@@ -307,14 +308,30 @@ fn resolve_expr_typed(dcx: &mut DiagnosticContext, scope: &Scope, node: &ast::Ex
 }
 
 fn resolve_expr_union(dcx: &mut DiagnosticContext, scope: &Scope, node: &ast::ExprUnion) -> Item {
-    let opts: Vec<_> = try_item!(
-        collect_or_err(node.items.iter().map(|i| value(dcx, scope, i)))
-    );
+    let mut opts = IndexSet::new();
+    let mut err = Ok(());
+    for e in &node.items {
+        let opt = value(dcx, scope, e);
+        match opt {
+            Ok(Expr::Const(c)) => { opts.insert(c); },
+            Ok(Expr::Expr(_, ExprKind::Const(c))) => { opts.insert(c); },
+            Ok(Expr::Expr(_, ExprKind::Enum(cs))) => { opts.extend(cs); },
+            Ok(Expr::Expr(other, _)) => {
+                err = Err(dcx.report(Diagnostic::ExpectedConst {
+                    span: scope.span(e.span()),
+                    found: format!("{other}"),
+                    expected: "constant".to_string(),
+                }));
+            }
+            Err(r) => {
+                err = Err(r);
+            }
+        }
+    }
+    try_item!(err);
 
-    let ty = Type::union_iter(opts.iter().map(|x| x.get_type()));
-    let ty = try_item!(ty.map_err(|err| err.report_at(dcx, scope.span(node.span))));
-
-    Expr::Expr(ty, ExprKind::Union(opts.into_iter().map(|x| x.inner()).collect())).into()
+    let ty = Type::Enum(opts.clone());
+    Expr::Expr(ty, ExprKind::Enum(opts).into()).into()
 }
 
 fn resolve_expr_choose(dcx: &mut DiagnosticContext, scope: &Scope, node: &ast::ExprChoose) -> Item {
@@ -520,8 +537,24 @@ fn resolve_expr_binary(dcx: &mut DiagnosticContext, scope: &Scope, node: &ast::E
                 }).into(),
             })
         }
-        (Type::NumberSet(ls), Value::Number(c)) => {
-            Type::NumberSet(ls.into_iter().map(|l| op.eval(l, c)).collect())
+        (Type::Enum(vs), Value::Number(c)) => {
+            let res: Result<IndexSet<Value>, ()> = vs.iter().map(|v| match v {
+                Value::Number(n) => Ok(Value::Number(op.eval(n, c))),
+                _ => Err(())
+            }).collect();
+
+            let Ok(res) = res else {
+                return dcx.report(
+                    Diagnostic::BinaryInvalidType {
+                        span1: scope.span(expr_span),
+                        ty1: Type::Enum(vs),
+                        span2: scope.span(val_span),
+                        ty2: val.get_type(),
+                     }
+                ).into()
+            };
+
+            Type::Enum(res)
         }
         (Type::Complex, Value::Number(..)) => Type::Complex,
         (Type::Number(..), Value::Complex(..)) => Type::Complex,
@@ -994,7 +1027,7 @@ pub fn bind_field(dcx: &mut DiagnosticContext, vars: &mut Vars, scope: &mut Scop
     }
 }
 
-
+#[track_caller]
 #[cfg(test)]
 pub fn test_expr_parse(e: &str) -> Expr {
     use crate::diagnostic::{DiagnosticContext, print_diagnostics};
@@ -1009,23 +1042,25 @@ pub fn test_expr_parse(e: &str) -> Expr {
     };
 
     let ast = parse_expr(e).unwrap();
-    let v = value(&mut dcx, &scope, &ast).unwrap();
+    crate::diagnostic::report_parse_errors(&mut dcx, &scope.file, &ast);
+    let v = value(&mut dcx, &scope, &ast);
 
     print_diagnostics(dcx.diagnostics());
 
-    v
+    v.unwrap()
 }
 
 #[test]
 fn test_number_const() {
     let two = test_expr_parse("2");
-    assert_eq!(two.get_type(), Type::NumberSet([Number::new(2, 1)].into()));
+    assert_eq!(two.get_type(), Type::Enum([Number::new(2, 1)].into_iter().map(Value::Number).collect()));
 
     let decimal = test_expr_parse("1.023");
-    assert_eq!(decimal.get_type(), Type::NumberSet([Number::new(1023, 1000)].into()));
+    assert_eq!(decimal.get_type(), Type::Enum([Number::new(1023, 1000)].into_iter().map(Value::Number).collect()));
 
     let four = test_expr_parse("2 + 2");
-    assert_eq!(four.get_type(), Type::NumberSet([Number::new(4, 1)].into()));
+    assert_eq!(four.get_type(), Type::Enum([Number::new(4, 1)].into_iter().map(Value::Number).collect()));
+
 }
 
 #[test]
@@ -1058,25 +1093,25 @@ fn test_number_range() {
 #[test]
 fn test_number_set() {
     let range = test_expr_parse("0 | 1.5");
-    assert_eq!(range.get_type(), Type::NumberSet([Number::new(0, 1), Number::new(3, 2)].into()));
+    assert_eq!(range.get_type(), Type::Enum([Number::new(0, 1), Number::new(3, 2)].into_iter().map(Value::Number).collect()));
 
     let sum = test_expr_parse("(0|1) + 2");
-    assert_eq!(sum.get_type(), Type::NumberSet([Number::new(2, 1), Number::new(3, 1)].into()));
+    assert_eq!(sum.get_type(), Type::Enum([Number::new(2, 1), Number::new(3, 1)].into_iter().map(Value::Number).collect()));
 
     let sub = test_expr_parse("(100 | 200) - 2");
-    assert_eq!(sub.get_type(), Type::NumberSet([Number::new(98, 1), Number::new(198, 1)].into()));
+    assert_eq!(sub.get_type(), Type::Enum([Number::new(98, 1), Number::new(198, 1)].into_iter().map(Value::Number).collect()));
 
     let sub_swap = test_expr_parse("5 - (1 | 7)");
-    assert_eq!(sub_swap.get_type(), Type::NumberSet([Number::new(4, 1), Number::new(-2, 1)].into()));
+    assert_eq!(sub_swap.get_type(), Type::Enum([Number::new(4, 1), Number::new(-2, 1)].into_iter().map(Value::Number).collect()));
 
     let mul = test_expr_parse("(-1 | 2) * 5");
-    assert_eq!(mul.get_type(), Type::NumberSet([Number::new(-5, 1), Number::new(10, 1)].into()));
+    assert_eq!(mul.get_type(), Type::Enum([Number::new(-5, 1), Number::new(10, 1)].into_iter().map(Value::Number).collect()));
 
     let div = test_expr_parse("(64 | 32) / 8");
-    assert_eq!(div.get_type(), Type::NumberSet([Number::new(8, 1), Number::new(4, 1)].into()));
+    assert_eq!(div.get_type(), Type::Enum([Number::new(8, 1), Number::new(4, 1)].into_iter().map(Value::Number).collect()));
 
     let div_swap = test_expr_parse("128 / (64 | 32)");
-    assert_eq!(div_swap.get_type(), Type::NumberSet([Number::new(2, 1), Number::new(4, 1)].into()));
+    assert_eq!(div_swap.get_type(), Type::Enum([Number::new(2, 1), Number::new(4, 1)].into_iter().map(Value::Number).collect()));
 }
 
 #[test]
@@ -1088,18 +1123,18 @@ fn exprs() {
     assert_eq!(two_two_i.get_type(), Type::Complex);
 
     let choose = test_expr_parse("(#a | #b)[#a = #x, #b = #y]");
-    assert_eq!(choose.get_type(), Type::Symbol(["x".into(), "y".into()].into_iter().collect()));
+    assert_eq!(choose.get_type(), Type::Enum(["x".into(), "y".into()].into_iter().map(Value::Symbol).collect()));
 
     let concat = test_expr_parse("[(#a|#b), #c, _, 2:[(#a | #c), _], #a]");
     assert_eq!(concat.get_type(), Type::Vector(6, Box::new(
-        Type::Symbol(["a".into(), "b".into(), "c".into()].into_iter().collect())
+        Type::Enum(["a".into(), "b".into(), "c".into()].into_iter().map(Value::Symbol).collect())
     )));
 
     let ignore = test_expr_parse("_");
     assert_eq!(ignore.get_type(), Type::Ignored);
 
     let down = test_expr_parse("<: #h");
-    assert_eq!(down.get_type(), Type::Symbol(Some("h".to_string()).into_iter().collect()));
+    assert_eq!(down.get_type(), Type::Enum(["h".into()].into_iter().map(Value::Symbol).collect()));
 
     let bound1 = test_expr_parse("_ : (0..10)");
     assert_eq!(bound1.get_type(), Type::Number(NumberType::new(Number::new(1, 1), 0, 10)));
@@ -1108,7 +1143,7 @@ fn exprs() {
     assert_eq!(bound2.get_type(), Type::Number(NumberType::new(Number::new(1, 1), 0, 2)));
 
     let fncall = test_expr_parse("((a) => a+3.0)(2.0)");
-    assert_eq!(fncall.get_type(), Type::NumberSet([Number::new(5, 1)].into()));
+    assert_eq!(fncall.get_type(), Type::Enum([Number::new(5, 1)].into_iter().map(Value::Number).collect()));
 }
 
 #[test]

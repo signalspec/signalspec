@@ -1,6 +1,3 @@
-
-use std::collections::BTreeSet;
-
 use crate::{Value, core::op::ConcatElem, syntax::Number};
 
 use itertools::Itertools;
@@ -13,26 +10,20 @@ pub enum Predicate {
     /// Number: in range (bottom inclusive, top-exclusive)
     Range(Number, Number),
 
-    /// Number: equal
-    /// Used for matching a single number, since range is exclusive
-    Number(Number),
-
-    /// Symbol: in set
-    SymbolSet(BTreeSet<String>),
+    /// Value in set
+    AnyOf(Vec<Value>),
 
     /// Vector: test each slice / element
     Vector(Vec<Predicate>),
 }
 
 impl Predicate {
-    pub fn from_value(v: &Value) -> Option<Predicate> {
-        match *v {
-            Value::Number(n) => Some(Predicate::Number(n)),
-            Value::Symbol(ref s) => Some(Predicate::SymbolSet([s.clone()].into())),
-            Value::Vector(ref v) => v.iter()
+    pub fn from_value(v: &Value) -> Predicate {
+        match v {
+            Value::Vector(v) => Predicate::Vector(v.iter()
                 .map(|v| Predicate::from_value(v))
-                .collect::<Option<Vec<_>>>().map(Predicate::Vector),
-            Value::Complex(_) => None,
+                .collect::<Vec<_>>()),
+            v => Predicate::AnyOf([v.clone()].into_iter().collect())
         }
     }
 
@@ -57,8 +48,7 @@ impl Predicate {
         match (self, v) {
             (Predicate::Any, _) => true,
             (Predicate::Range(lo, hi), Value::Number(n)) => n>=lo && n<hi,
-            (Predicate::Number(x), Value::Number(n)) => x == n,
-            (Predicate::SymbolSet(set), Value::Symbol(s)) => set.contains(s),
+            (Predicate::AnyOf(set), v) => set.contains(v),
             (Predicate::Vector(components), Value::Vector(vec)) => {
                 vec.iter().zip_eq(components.iter()).all(|(elem, component)| {
                     component.test(elem)
@@ -72,10 +62,7 @@ impl Predicate {
         match (self, other) {
             (Predicate::Any, _) | (_, Predicate::Any) => false,
             (Predicate::Range(lo1, hi1), Predicate::Range(lo2, hi2)) => hi1 <= lo2 || hi2 <= lo1,
-            (Predicate::Range(lo, hi), Predicate::Number(n))
-            | (Predicate::Number(n), Predicate::Range(lo, hi))  => n < lo || n >= hi,
-            (Predicate::Number(n1), Predicate::Number(n2)) => n1 != n2,
-            (Predicate::SymbolSet(s1), Predicate::SymbolSet(s2)) => s1.is_disjoint(s2),
+            (Predicate::AnyOf(set), other) | (other, Predicate::AnyOf(set)) => set.iter().all(|v| !other.test(v)),
             (Predicate::Vector(c1), Predicate::Vector(c2)) => {
                c1.iter().zip_eq(c2.iter()).any(|(p1, p2)| p1.excludes(p2))
             },
@@ -123,9 +110,9 @@ fn test_predicate() {
     assert_eq!(range.excludes(&Predicate::Range(3.into(), 5.into())), false);
     assert_eq!(range.excludes(&Predicate::Range(0.into(), 5.into())), false);
     assert_eq!(range.excludes(&Predicate::Range(5.into(), 20.into())), false);
-    assert_eq!(range.excludes(&Predicate::Number(10.into())), true);
-    assert_eq!(range.excludes(&Predicate::Number(0.into())), true);
-    assert_eq!(range.excludes(&Predicate::Number(5.into())), false);
+    assert_eq!(range.excludes(&Predicate::from_value(&Value::Number(10.into()))), true);
+    assert_eq!(range.excludes(&Predicate::from_value(&Value::Number(0.into()))), true);
+    assert_eq!(range.excludes(&Predicate::from_value(&Value::Number(5.into()))), false);
 
     let any = c.predicate(&test_expr_parse("<: 5").inner()).unwrap();
     assert_eq!(any, Predicate::Any);
@@ -133,23 +120,23 @@ fn test_predicate() {
     assert_eq!(any.excludes(&Predicate::Range(5.into(), 20.into())), false);
 
     let int = c.predicate(&test_expr_parse(":> 5").inner()).unwrap();
-    assert_eq!(int, Predicate::Number(5.into()));
+    assert_eq!(int, Predicate::from_value(&Value::Number(5.into())));
     assert_eq!(int.test(&Value::Number(5.into())), true);
     assert_eq!(int.test(&Value::Number(4.into())), false);
     assert_eq!(int.excludes(&int), false);
-    assert_eq!(int.excludes(&Predicate::Number(0.into())), true);
+    assert_eq!(int.excludes(&Predicate::from_value(&Value::Number(0.into()))), true);
 
     let sym = c.predicate(&test_expr_parse("#h | #l").inner()).unwrap();
-    assert_eq!(sym, Predicate::SymbolSet(["h".into(), "l".into()].into()));
+    assert_eq!(sym, Predicate::AnyOf(["h".into(), "l".into()].into_iter().map(Value::Symbol).collect()));
     assert_eq!(sym.test(&Value::Symbol("h".into())), true);
     assert_eq!(sym.test(&Value::Symbol("z".into())), false);
-    assert_eq!(sym.excludes(&Predicate::SymbolSet(["h".into(), "x".into()].into())), false);
-    assert_eq!(sym.excludes(&Predicate::SymbolSet(["z".into(), "x".into()].into())), true);
+    assert_eq!(sym.excludes(&Predicate::AnyOf(["h".into(), "x".into()].into_iter().map(Value::Symbol).collect())), false);
+    assert_eq!(sym.excludes(&Predicate::AnyOf(["z".into(), "x".into()].into_iter().map(Value::Symbol).collect())), true);
 
     let vec = c.predicate(&test_expr_parse("[0..2, 2, 3:_]").inner()).unwrap();
     assert_eq!(vec, Predicate::Vector(vec![
         Predicate::Range(0.into(), 2.into()),
-        Predicate::Number(2.into()),
+        Predicate::AnyOf([Value::Number(2.into())].into()),
         Predicate::Any,
         Predicate::Any,
         Predicate::Any,
