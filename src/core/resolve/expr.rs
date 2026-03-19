@@ -906,7 +906,7 @@ pub fn test_expr_parse(e: &str) -> ExprKind {
         names: crate::core::primitive_fn::expr_prelude()
     };
 
-    let ast = parse_expr(e).unwrap();
+    let ast = parse_expr(e);
     crate::diagnostic::report_parse_errors(&mut dcx, &scope.file, &ast);
     let v = value(&mut dcx, &scope, &ast);
 

@@ -71,7 +71,7 @@ impl<'a> Handle<'a> {
         let scope = Scope::new(file.clone());
 
         let mut dcx = DiagnosticContext::new();
-        let ast = parse_process(file.source()).expect("parser failed");
+        let ast = parse_process(file.source());
         crate::diagnostic::report_parse_errors(&mut dcx, &file, &ast);
 
         if dcx.has_errors() {

@@ -41,7 +41,7 @@ fn main() {
 
     if let Some(dump_ast) = dump_ast {
         let file = signalspec::syntax::SourceFile::load(&dump_ast).unwrap();
-        let ast = signalspec::syntax::parse_module(file.source()).unwrap();
+        let ast = signalspec::syntax::parse_module(file.source());
         signalspec::syntax::dump_tree(&mut std::io::stdout(), &file, &ast, 0).unwrap();
         process::exit(0);
     } if let Some(path) = test {

@@ -2,7 +2,7 @@ protocol Test() #up {
     foo(
         a: #a|#b is #up,
         x: 0..100 is #up,
-        y: bits(8) is #up
+        y: bits(8) is #up,
     )
 }
 

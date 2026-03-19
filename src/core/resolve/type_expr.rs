@@ -156,7 +156,7 @@ pub fn test_type_parse(e: &str) -> Type {
         names: crate::core::primitive_fn::expr_prelude()
     };
 
-    let ast = parse_expr(e).unwrap();
+    let ast = parse_expr(e);
     crate::diagnostic::report_parse_errors(&mut dcx, &scope.file, &ast);
     let t = crate::core::resolve::type_expr::type_expr(&mut dcx, &scope, &ast);
 
