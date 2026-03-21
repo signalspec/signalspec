@@ -1133,7 +1133,7 @@ fn exprs() {
     let ignore = test_expr_parse("_");
     assert_eq!(ignore.get_type(), Type::Ignored);
 
-    let down = test_expr_parse("<: #h");
+    let down = test_expr_parse("~#h");
     assert_eq!(down.get_type(), Type::Enum(["h".into()].into_iter().map(Value::Symbol).collect()));
 
     let bound1 = test_expr_parse("_ : (0..10)");

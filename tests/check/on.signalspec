@@ -4,7 +4,7 @@ def main() = new Seq(type 0..10, dir) {
     on val(2) {}
     on val(a) {
         val(a)
-        val(<: a)
+        val(~a)
     }
 }
 
@@ -15,7 +15,7 @@ with Seq(type (0..10, 0..10), dir)
 def tuple() = new Seq(type (0..10, 0..10), dir) {
     on val((a, b)) {
         val((a, b))
-        val((<: a, <: b))
+        val((~a, ~b))
     }
 
     on val(x) {

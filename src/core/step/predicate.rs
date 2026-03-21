@@ -114,17 +114,10 @@ fn test_predicate() {
     assert_eq!(range.excludes(&Predicate::from_value(&Value::Number(0.into()))), true);
     assert_eq!(range.excludes(&Predicate::from_value(&Value::Number(5.into()))), false);
 
-    let any = c.predicate(&test_expr_parse("<: 5").inner()).unwrap();
+    let any = c.predicate(&test_expr_parse("~5").inner()).unwrap();
     assert_eq!(any, Predicate::Any);
     assert_eq!(any.test(&Value::Number(1.into())), true);
     assert_eq!(any.excludes(&Predicate::Range(5.into(), 20.into())), false);
-
-    let int = c.predicate(&test_expr_parse(":> 5").inner()).unwrap();
-    assert_eq!(int, Predicate::from_value(&Value::Number(5.into())));
-    assert_eq!(int.test(&Value::Number(5.into())), true);
-    assert_eq!(int.test(&Value::Number(4.into())), false);
-    assert_eq!(int.excludes(&int), false);
-    assert_eq!(int.excludes(&Predicate::from_value(&Value::Number(0.into()))), true);
 
     let sym = c.predicate(&test_expr_parse("#h | #l").inner()).unwrap();
     assert_eq!(sym, Predicate::AnyOf(["h".into(), "l".into()].into_iter().map(Value::Symbol).collect()));

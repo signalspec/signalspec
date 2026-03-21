@@ -165,8 +165,7 @@ If max is omitted (`min..`), it defaults to Infinity.
 **down:** Down-evaluation of `x`.  
 **up:** Up-evaluate `y` with the pushed value.
 
-`<: x` - Syntactic sugar for `x ! _`  
-`:> y` - Syntactic sugar for `_ ! y`  
+`~ x` - Syntactic sugar for `x ! _`  
 
 This is used to output a specific value when used as an output, but accept different values on input.
 
@@ -261,4 +260,3 @@ A token is received from the top signal and destructured into `expr`, binding do
   * Synthesis for FPGA via [Yosys](https://github.com/YosysHQ/yosys) / [SymbiFlow](https://symbiflow.github.io/).
   * Hardware interfaces via [SoapySDR](https://github.com/pothosware/SoapySDR) and [Sigrok](https://sigrok.org/).
   * Jupyter-style notebook UI for interactive exploration.
-  

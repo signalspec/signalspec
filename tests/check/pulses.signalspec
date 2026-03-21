@@ -3,7 +3,7 @@ def pulses() = new Seq(type 1..10, dir) {
     repeat {
         on val(len) {
             val(#l)
-            repeat dir <: 0 {
+            repeat dir ~0 {
                 val(#l)
             }
             val(#h)
