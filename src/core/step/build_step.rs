@@ -1,19 +1,17 @@
 use itertools::Itertools;
 
 use crate::{
-    Diagnostic, DiagnosticContext, Shape, Value, core::{
+    Shape, Value, core::{
         Dir, op::{ConcatElem, UnaryOp}, resolve::{action::{Action}, expr::{ExprKind, Pattern, VarId}}, step::{ConnectionId, ExprDn, ExprDnId, Predicate, StepBuilder, StepId, ValueSrc, ValueSrcId, expr_lower::ExprLower}
     }, entitymap::EntityMap, syntax::BinOp
 };
 
 pub fn build_step_tree(
-    dcx: &mut DiagnosticContext,
     vars: &EntityMap<VarId, ()>,
     connections: &EntityMap<ConnectionId, Shape>,
     action: &Action,
 ) -> (StepBuilder, StepId) {
     let mut builder = Builder {
-        dcx,
         expr_lower: ExprLower::new(&vars),
         steps: StepBuilder::new(),
         connections,
@@ -30,18 +28,12 @@ fn fields_of_dir<'a, T: 'a>(shape: &Shape, tag: usize, fields: impl IntoIterator
 }
 
 struct Builder<'a> {
-    dcx: &'a mut DiagnosticContext,
     expr_lower: ExprLower,
     connections: &'a EntityMap<ConnectionId, Shape>,
     steps: StepBuilder,
 }
 
 impl<'a> Builder<'a> {
-    fn err_step(&mut self, diag: Diagnostic) -> StepId {
-        let r = self.dcx.report(diag);
-        self.steps.invalid(r)
-    }
-
     fn add_value_src(&mut self) -> ValueSrcId {
         self.steps.ecx.fresh_var()
     }
@@ -223,7 +215,7 @@ impl<'a> Builder<'a> {
 
             Action::Repeat {
                 dir: Dir::Dn,
-                range,
+                range: _,
                 ref count,
                 ref body,
             } => {

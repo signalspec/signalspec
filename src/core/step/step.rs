@@ -4,7 +4,7 @@ use std::sync::Arc;
 use crate::diagnostic::ErrorReported;
 use crate::entitymap::{entity_key, EntityIntern, EntityMap};
 use crate::runtime::PrimitiveProcess;
-use crate::{ Dir, Shape};
+use crate:: Dir;
 use super::expr_dn::{ExprCtx, ExprDnId};
 use super::{Predicate, ValueSrcId};
 

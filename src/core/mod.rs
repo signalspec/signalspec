@@ -92,7 +92,7 @@ pub fn compile_process(index: &Index, scope: &Scope, shape_dn: Shape, ast: &ast:
         return Err(dcx.diagnostics());
     }
 
-    let (mut steps, root) = step::build_step_tree(&mut dcx, &resolved.vars, &resolved.connections, &resolved.action);
+    let (mut steps, root) = step::build_step_tree(&resolved.vars, &resolved.connections, &resolved.action);
 
     if log_enabled!(log::Level::Debug) {
         let mut buf = String::new();

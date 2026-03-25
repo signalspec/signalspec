@@ -42,10 +42,6 @@ impl ExprCtx {
         }
     }
 
-    pub fn invalid(&self) -> ExprDnId {
-        ExprDnId::INVALID
-    }
-
     pub fn constant(&mut self, v: Value) -> ExprDnId {
         self.exprs.insert(ExprDn::Const(v))
     }

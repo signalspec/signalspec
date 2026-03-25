@@ -126,7 +126,7 @@ impl Derivatives {
     fn rename_assigned_vars(&mut self, f: &mut impl FnMut(&mut ValueSrcId, &mut StepId)) {
         match self {
             Derivatives::End | Derivatives::Process { .. } | Derivatives::Send { .. } | Derivatives::Switch { .. } => {}
-            Derivatives::Assign { var, next, .. } => {} // f(var, next),
+            Derivatives::Assign { .. } => {}
             Derivatives::Receive { arms, .. } => {
                 for arm in arms {
                     f(&mut arm.var, &mut arm.next);

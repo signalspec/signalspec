@@ -2,8 +2,8 @@ use indexmap::IndexMap;
 
 use crate::diagnostic::ErrorReported;
 use crate::syntax::ast::{self, AstNode};
-use crate::tree::{Tree, TupleFields};
-use crate::{Diagnostic, DiagnosticContext, Dir, Index, TypeTree};
+use crate::tree::TupleFields;
+use crate::{Diagnostic, DiagnosticContext, Dir, Index};
 use crate::core::resolve::{expr::constant, type_expr::type_tree};
 use crate::core::shape::{MessageField, ShapeMode, ShapeMsgParam};
 use crate::core::{ Scope, Shape, ShapeMsg, Item };
