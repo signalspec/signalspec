@@ -9,25 +9,25 @@ with Seq(type #x, _) def main() = seq {
 
 @test(#up, ())
 with Seq(type #x, _) def main() = seq {
-//# repeat count must be a positive integer
+//# repeat count must be a non-negative integer
     repeat #up (-1) {
 //             ^^^^ found `-1`
 
     }
 
-//# repeat count must be a positive integer
+//# repeat count must be a non-negative integer
     repeat #up #a {
 //             ^^ found `#a`
 
     }
 
-//# repeat count predicate must be representable as an integer range
+//# repeat count must be a non-negative integer
     repeat #up (1|4|5) {
-//             ^^^^^^^ unsupported
+//             ^^^^^^^ found `<1 | 4 | 5>`
 
     }
 
-//# repeat count must be a positive integer
+//# repeat count must be a non-negative integer
     repeat #dn #a {
 //             ^^ found `#a`
 

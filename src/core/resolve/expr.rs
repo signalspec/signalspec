@@ -52,6 +52,14 @@ impl Expr {
     pub fn ignored() -> Self {
         Expr::Expr(Type::Ignored, ExprKind::Ignored)
     }
+
+    pub fn as_natural_number_range(&self, dir: Dir) -> Option<(u64, Option<u64>)> {
+        match self {
+            Expr::Const(Value::Number(n)) if n.is_integer() && *n.numer() >= 0 => Some((*n.numer() as u64, Some(*n.numer() as u64 + 1))),
+            Expr::Const(_) => None,
+            Expr::Expr(ty, e) => e.as_natural_number_range(dir, ty),
+        }
+    }
 }
 
 
@@ -68,6 +76,25 @@ impl fmt::Display for Expr {
 }
 
 impl ExprKind {
+    pub fn as_natural_number_range(&self, dir: Dir, ty: &Type) -> Option<(u64, Option<u64>)> {
+        match self {
+            ExprKind::Ignored => Some((0, None)),
+            ExprKind::Flip(dn, up) => match dir {
+                Dir::Dn => dn.as_natural_number_range(Dir::Dn, ty),
+                Dir::Up => up.as_natural_number_range(Dir::Up, ty),
+            }
+
+            ExprKind::Const(Value::Number(n)) if n.is_integer() && *n.numer() >= 0 => Some((*n.numer() as u64, Some(*n.numer() as u64 + 1))),
+
+            ExprKind::Range(min, max) if min.is_integer() && *min.numer() >= 0 && max.is_integer() => {
+                Some((*min.numer() as u64, Some(*max.numer() as u64)))
+            }
+
+            // TODO: should also check that the predicate is unrestricted
+            _ => ty.as_natural_number_range(),
+        }
+    }
+
     pub fn check_use_dn(&self, with_var: &mut impl FnMut(VarId) -> bool) -> bool {
         match *self {
             ExprKind::Ignored => false,

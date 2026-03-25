@@ -1,9 +1,8 @@
-use num_traits::Signed;
 use itertools::Itertools;
 
 use crate::{
     Diagnostic, DiagnosticContext, Shape, Value, core::{
-        Dir, op::{ConcatElem, UnaryOp}, resolve::{action::{Action, RepeatMode}, expr::{ExprKind, Pattern, VarId}}, step::{ConnectionId, ExprDn, ExprDnId, Predicate, StepBuilder, StepId, ValueSrc, ValueSrcId, expr_lower::ExprLower}
+        Dir, op::{ConcatElem, UnaryOp}, resolve::{action::{Action}, expr::{ExprKind, Pattern, VarId}}, step::{ConnectionId, ExprDn, ExprDnId, Predicate, StepBuilder, StepId, ValueSrc, ValueSrcId, expr_lower::ExprLower}
     }, entitymap::EntityMap, syntax::BinOp
 };
 
@@ -189,35 +188,14 @@ impl<'a> Builder<'a> {
             }
 
             Action::Repeat {
-                dir: RepeatMode::Up(nullable),
+                dir: Dir::Up,
+                range: (range_lo, range_hi),
                 ref count,
                 ref body,
             } => {
-                let (_, max) = match self.predicate(count) {
-                    Predicate::Any => (0, None),
-                    Predicate::AnyOf(s) => {
-                        if s.len() == 1 && let Value::Number(n) = &s[0] && n.is_integer() && !n.is_negative() {
-                            (*n.numer(), Some(*n.numer() + 1))
-                        } else {
-                            todo!()
-                        }
-                    }
-                    Predicate::Range(min, max)
-                        if min.is_integer() && !min.is_negative() && max.is_integer() =>
-                    {
-                        (*min.numer(), Some(*max.numer()))
-                    }
-                    _ => {
-                        //return self.err_step(Diagnostic::InvalidRepeatCountPredicate {
-                        //    span: sb.scope.span(count_span),
-                        //});
-                        todo!()
-                    }
-                };
-
                 let (count_src, count_used) = self.up_value_src(&count);
 
-                let (init, increment, exit_guard) = if count_used || max.is_some() {
+                let (init, increment, exit_guard) = if count_used || range_hi.is_some() {
                     let zero = self.steps.ecx.constant(Value::Number(0.into()));
                     let init = self.steps.assign(count_src, zero);
                     let count_var = self.steps.ecx.variable(ValueSrc(count_src, 0));
@@ -239,12 +217,13 @@ impl<'a> Builder<'a> {
                 let inner = self.build(&body);
 
                 let body = self.steps.seq(inner, increment);
-                let repeat = self.steps.repeat(body, nullable);
+                let repeat = self.steps.repeat(body, range_lo == 0);
                 self.steps.seq_from([init, repeat, exit_guard])
             }
 
             Action::Repeat {
-                dir: RepeatMode::Dn,
+                dir: Dir::Dn,
+                range,
                 ref count,
                 ref body,
             } => {

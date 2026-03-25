@@ -18,9 +18,12 @@ with Seq(type T, _) def test1() = main(0)
 @test(#both, (#a, #b, #c, #d, #a))
 with Seq(type T, _) def test2() = main(1)
 
-@test(#both, (#a, #b, #c, #d, #c, #d, #a))
+@test(#dn, (#a, #b, #c, #d, #c, #d, #a))
 with Seq(type T, _) def test3() = main(2)
 
 @test(#up_fail, (#a, #b, #c, #a))
 @test(#up_fail, (#a, #b, #c, #d))
+@test(#up, (#a, #b, #c, #d, #a))
+@test(#up, (#a, #b, #c, #d, #c, #d, #a))
+@test(#up, (#a, #b, #c, #d, #c, #d, #c, #d, #a))
 with Seq(type T, _) def test4() = main(_)

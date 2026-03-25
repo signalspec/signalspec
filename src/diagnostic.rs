@@ -368,17 +368,18 @@ diagnostic_kinds! {
         Label { label: format!("not allowed in type position"), span },
     ]
 
-    InvalidRepeatCountType {
+    InvalidRepeatCount {
         span: Span,
-        found: Type
-    } => "repeat count must be a positive integer" at [
+        found: String,
+    } => "repeat count must be a non-negative integer" at [
         Label { label: format!("found `{found}`"), span },
     ]
 
-    InvalidRepeatCountPredicate {
-        span: Span
-    } => "repeat count predicate must be representable as an integer range" at [
-        Label { label: "unsupported".to_string(), span },
+    RepeatCountMin {
+        span: Span,
+        found: u64,
+    } => "repeat count lower bound must be 0 or 1" at [
+        Label { label: format!("expression has lower bound of {found}"), span },
     ]
 
     IncompatibleTypes {

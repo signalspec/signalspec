@@ -140,7 +140,7 @@ pub enum Action {
         has_body: bool,
     },
     Seq(Vec<Action>),
-    Repeat { dir: RepeatMode, count: ExprKind, body: Box<Action> },
+    Repeat { dir: Dir, range: (u64, Option<u64>), count: ExprKind, body: Box<Action> },
     For { count: u32, vars: Vec<ForVar> , body: Box<Action> },
     Alt { dir: Dir, scrutinee: ExprKind, arms: Vec<AltArm> },
     Any { arms: Vec<Action> },
@@ -179,29 +179,6 @@ impl TryFrom<Value> for AltMode {
 
 impl TryFromConstant for AltMode {
     const EXPECTED_MSG: &'static str = "#up | #dn | #const";
-}
-
-#[derive(Clone, Copy)]
-pub enum RepeatMode {
-    Up(bool),
-    Dn,
-}
-
-impl TryFrom<Value> for RepeatMode {
-    type Error = ();
-
-    fn try_from(value: Value) -> Result<Self, ()> {
-        match value.as_symbol() {
-            Some("dn") => Ok(RepeatMode::Dn),
-            Some("up") => Ok(RepeatMode::Up(true)),
-            Some("up1") => Ok(RepeatMode::Up(false)),
-            _ => Err(()),
-        }
-    }
-}
-
-impl TryFromConstant for RepeatMode {
-    const EXPECTED_MSG: &'static str = "#up | #dn | #up1";
 }
 
 #[derive(Clone, Copy)]
@@ -366,31 +343,34 @@ impl<'a> Builder<'a> {
             ast::Action::Repeat(node) => {
                 let inner = self.resolve_seq(sb, &node.block);
 
-                let (dir, count) = match &node.dir_count {
+                let (dir, range, count) = match &node.dir_count {
                     Some((dir_ast, count_ast)) => {
-                        let dir = try_action!(constant::<RepeatMode>(&mut self.dcx, sb.scope, dir_ast));
+                        let dir = try_action!(constant::<Dir>(&mut self.dcx, sb.scope, dir_ast));
                         let count = try_action!(value(&mut self.dcx, sb.scope, count_ast));
 
-                        let count_ty = count.get_type();
-                        if !count_ty.is_natural_number() {
-                            self.dcx.report(Diagnostic::InvalidRepeatCountType {
+                        let Some(range) = count.as_natural_number_range(dir) else {
+                            return Action::Error(self.dcx.report(Diagnostic::InvalidRepeatCount {
                                 span: sb.scope.span(count_ast.span()),
-                                found: count_ty,
-                            });
+                                found: count.to_string(),
+                            }));
+                        };
+
+                        if dir == Dir::Up && range.0 > 1 {
+                            return Action::Error(self.dcx.report(Diagnostic::RepeatCountMin {
+                                span: sb.scope.span(count_ast.span()),
+                                found: range.0,
+                            }));
                         }
 
                         let count = count.inner();
-                        self.vars.check_use(self.dcx, sb.scope.span(count_ast.span()), &count, match dir {
-                            RepeatMode::Dn => Dir::Dn,
-                            RepeatMode::Up(_) => Dir::Up,
-                        });
+                        self.vars.check_use(self.dcx, sb.scope.span(count_ast.span()), &count, dir);
 
-                        (dir, Ok(count))
+                        (dir, range, count)
                     }
-                    None => (RepeatMode::Up(true), Ok(ExprKind::Ignored))
+                    None => (Dir::Up, (0, None), ExprKind::Ignored)
                 };
 
-                Action::Repeat { dir, count: try_action!(count), body: Box::new(inner) }
+                Action::Repeat { dir, range,count, body: Box::new(inner) }
             }
 
             ast::Action::For(node) => {

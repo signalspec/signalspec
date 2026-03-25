@@ -209,6 +209,21 @@ impl Type {
             _ => false
         }
     }
+
+    pub fn as_natural_number_range(&self) -> Option<(u64, Option<u64>)> {
+        match self {
+            Type::Ignored => Some((0, None)),
+            Type::Number(nt) if nt.is_integer() && !nt.min().is_negative() => Some((nt.min() as u64, Some(nt.max() as u64))),
+            Type::Enum(v) if v.len() == 1 => {
+                if let Value::Number(n) = v.iter().next().unwrap() && n.is_integer() && !n.is_negative() {
+                    Some((*n.numer() as u64, Some(*n.numer() as u64 + 1)))
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
+    }
 }
 
 impl Display for Type {
