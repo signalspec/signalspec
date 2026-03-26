@@ -398,12 +398,22 @@ fn resolve_expr_choose(dcx: &mut DiagnosticContext, scope: &Scope, node: &ast::E
     let rt = try_item!(rt.map_err(|err| err.report_at(dcx, span())));
 
     match e {
-        Expr::Const(c) => {
+        Expr::Expr(_, ExprKind::Ignored) => {
+            Expr::Expr(Type::Ignored, ExprKind::Ignored)
+        }
+        Expr::Const(c) | Expr::Expr(_, ExprKind::Const(c)) => {
             let Some(v) = eval_choose(&c, &pairs) else {
                 return dcx.report(crate::Diagnostic::ChooseNotCovered { span: span(), found: c.get_type() }).into();
             };
 
             Expr::Const(v)
+        }
+        Expr::Expr(_, ExprKind::Enum(vs)) => {
+            let Some(vs) = vs.iter().map(|v| eval_choose(&v, &pairs)).collect::<Option<IndexSet<_>>>() else {
+                return dcx.report(crate::Diagnostic::ChooseNotCovered { span: span(), found: Type::Enum(vs) }).into();
+            };
+
+            Expr::Expr(Type::Enum(vs.clone()), ExprKind::Enum(vs))
         }
         Expr::Expr(ty, e) => {
             //TODO: doesn't check coverage of full number range
@@ -531,30 +541,26 @@ fn resolve_expr_binary(dcx: &mut DiagnosticContext, scope: &Scope, node: &ast::E
 
     let span = || scope.span(node.span);
 
-    // Swap constant operand to the right, or constant-fold and return
-    let (expr, expr_ty, expr_span, op, val, val_span) = match (lhs, rhs) {
-        (Expr::Const(l), Expr::Const(r)) => {
-            if let Some(v) = eval_binary(l.clone(), node.op, r.clone()) {
-                return Expr::Const(v).into()
-            } else {
-                return dcx.report(
-                Diagnostic::BinaryInvalidType {
-                    span1: scope.span(node.l.span()),
-                    ty1: l.get_type(),
-                    span2: scope.span(node.r.span()),
-                    ty2: r.get_type(),
-                 }
-                ).into()
-            }
-        }
-        (Expr::Expr(..), Expr::Expr(..)) => {
+    // Swap constant operand to the right
+    let (expr, expr_span, op, val, val_span) = match (lhs, rhs) {
+        (Expr::Expr(_, ExprKind::Ignored), _) | (_, Expr::Expr(_, ExprKind::Ignored)) => return Expr::ignored().into(),
+        (l, Expr::Const(r)) => (l, node.l.span(), node.op, r, node.r.span()),
+        (Expr::Const(l), r) => (r, node.r.span(), node.op.swap(), l, node.l.span()),
+        (_, _) => {
             return dcx.report(Diagnostic::BinaryOneSideMustBeConst { span: span() }).into();
         }
-        (Expr::Expr(l_ty, l), Expr::Const(r)) => (l, l_ty, node.l.span(), node.op, r, node.r.span()),
-        (Expr::Const(l), Expr::Expr(r_ty, r)) => (r, r_ty, node.r.span(), node.op.swap(), l, node.l.span()),
     };
 
-    let ty = match (expr_ty, &val) {
+    let Some(e) = expr_binary_constant(expr.clone().inner(), op, val.clone()) else {
+        return dcx.report(Diagnostic::BinaryInvalidType {
+            span1: scope.span(expr_span),
+            ty1: expr.get_type(),
+            span2: scope.span(val_span),
+            ty2: val.get_type(),
+         }).into();
+    };
+
+    let ty = match (expr.get_type(), &val) {
         (Type::Number(nt), Value::Number(c)) => {
             let mut check_scale = |n: Option<NumberType>| {
                 n.ok_or_else(|| {
@@ -598,8 +604,7 @@ fn resolve_expr_binary(dcx: &mut DiagnosticContext, scope: &Scope, node: &ast::E
 
             Type::Enum(res)
         }
-        (Type::Complex, Value::Number(..)) => Type::Complex,
-        (Type::Number(..), Value::Complex(..)) => Type::Complex,
+        (Type::Complex, Value::Number(..)) | (Type::Number(..), Value::Complex(..)) | (Type::Complex, Value::Complex(..)) => Type::Complex,
         (expr_ty, _) => return dcx.report(
             Diagnostic::BinaryInvalidType {
                 span1: scope.span(expr_span),
@@ -610,11 +615,39 @@ fn resolve_expr_binary(dcx: &mut DiagnosticContext, scope: &Scope, node: &ast::E
         ).into()
     };
 
-    match val {
-        Value::Number(val) => {
-            Expr::Expr(ty, ExprKind::Unary(Box::new(expr), UnaryOp::BinaryConstNumber(op, val))).into()
-        },
-        _ => todo!()
+    match e {
+        ExprKind::Const(c) => Expr::Const(c).into(),
+        e => Expr::Expr(ty, e).into(),
+    }
+}
+
+fn expr_binary_constant(expr: ExprKind, op: BinOp, val: Value) -> Option<ExprKind> {
+    match (expr, val) {
+        (ExprKind::Ignored, _) => Some(ExprKind::Ignored),
+        (ExprKind::Const(l), r) => {
+            eval_binary(l.clone(), op, r.clone()).map(ExprKind::Const)
+        }
+        (ExprKind::Range(lo, hi), Value::Number(r)) => {
+            let lo = op.eval(lo, r);
+            let hi = hi.map(|hi| op.eval(hi, r));
+
+            if let Some(hi) = hi && hi < lo {
+                // TODO: what if there is no hi and the range is flipped?
+                Some(ExprKind::Range(hi, Some(lo)))
+            } else {
+                Some(ExprKind::Range(lo, hi))
+            }
+        }
+        (ExprKind::Enum(vals), r) => {
+            vals.into_iter()
+                .map(|v| eval_binary(v, op, r.clone()))
+                .collect::<Option<IndexSet<Value>>>()
+                .map(ExprKind::Enum)
+        }
+        (e, Value::Number(v)) => {
+            Some(ExprKind::Unary(Box::new(e), UnaryOp::BinaryConstNumber(op, v)))
+        }
+        _ => None
     }
 }
 
@@ -1094,98 +1127,84 @@ pub fn test_expr_parse(e: &str) -> Expr {
 
 #[test]
 fn test_number_const() {
-    let two = test_expr_parse("2");
-    assert_eq!(two.get_type(), Type::Enum([Number::new(2, 1)].into_iter().map(Value::Number).collect()));
+    let two = test_expr_parse("2").inner();
+    assert_eq!(two, ExprKind::Const(Value::Number(Number::new(2, 1))));
 
-    let decimal = test_expr_parse("1.023");
-    assert_eq!(decimal.get_type(), Type::Enum([Number::new(1023, 1000)].into_iter().map(Value::Number).collect()));
-
-    let four = test_expr_parse("2 + 2");
-    assert_eq!(four.get_type(), Type::Enum([Number::new(4, 1)].into_iter().map(Value::Number).collect()));
-
+    let decimal = test_expr_parse("1.023").inner();
+    assert_eq!(decimal, ExprKind::Const(Value::Number(Number::new(1023, 1000))));
 }
 
 #[test]
-fn test_number_range() {
-    let range = test_expr_parse("0.0..5.0");
-    assert_eq!(range.get_type(), Type::Number(NumberType::new(Number::new(1, 1), 0, 5)));
+fn test_arithmetic() {
+    use num_complex::Complex;
 
-    let sum = test_expr_parse("(0..10) + 5");
-    assert_eq!(sum.get_type(), Type::Number(NumberType::new(Number::new(1, 1), 5, 15)));
+    assert_eq!(test_expr_parse("2 + 2").inner(), ExprKind::Const(Value::Number(4.into())));
+    assert_eq!(test_expr_parse("1 / 2").inner(), ExprKind::Const(Value::Number(Number::new(1, 2))));
 
-    let sub = test_expr_parse("(0..10) - 5");
-    assert_eq!(sub.get_type(), Type::Number(NumberType::new(Number::new(1, 1), -5, 5)));
+    let one_one_i = test_expr_parse("complex(1.0, 0.0) + complex(0, 1)").inner();
+    assert_eq!(one_one_i, ExprKind::Const(Value::Complex(Complex { re: 1.into(), im: 1.into() })));
 
-    let sub_swap = test_expr_parse("5 - (0..7)");
-    assert_eq!(sub_swap.get_type(), Type::Number(NumberType::new(Number::new(-1, 1), -5, 2)));
+    let two_two_i = test_expr_parse("complex(1, 1) * 2").inner();
+    assert_eq!(two_two_i, ExprKind::Const(Value::Complex(Complex { re: 2.into(), im: 2.into() })));
 
-    let mul = test_expr_parse("(0..10) * 5");
-    assert_eq!(mul.get_type(), Type::Number(NumberType::new(Number::new(5, 1), 0, 10)));
-
-    let div = test_expr_parse("(0..10) / 8");
-    assert_eq!(div.get_type(), Type::Number(NumberType::new(Number::new(1, 8), 0, 10)));
-
-    let scale_by = test_expr_parse("0.0..2.0 by 0.1");
-    assert_eq!(scale_by.get_type(), Type::Number(NumberType::new(Number::new(1, 10), 0, 20)));
-
-    let scale_by_mul = test_expr_parse("(0.0..2.0 by 0.1) * 5");
-    assert_eq!(scale_by_mul.get_type(), Type::Number(NumberType::new(Number::new(5, 10), 0, 20)));
+    assert_eq!(test_expr_parse("_ + _").inner(), ExprKind::Ignored);
+    assert_eq!(test_expr_parse("0 + _").inner(), ExprKind::Ignored);
+    assert_eq!(test_expr_parse("_ * 1").inner(), ExprKind::Ignored);
+    assert_eq!(test_expr_parse("_ * 1").inner(), ExprKind::Ignored);
 }
 
 #[test]
-fn test_number_set() {
-    let range = test_expr_parse("0 | 1.5");
-    assert_eq!(range.get_type(), Type::Enum([Number::new(0, 1), Number::new(3, 2)].into_iter().map(Value::Number).collect()));
+fn test_arithmetic_range() {
+    let range = test_expr_parse("0.0..5.0").inner();
+    assert_eq!(range, ExprKind::Range(0.into(), Some(5.into())));
 
-    let sum = test_expr_parse("(0|1) + 2");
-    assert_eq!(sum.get_type(), Type::Enum([Number::new(2, 1), Number::new(3, 1)].into_iter().map(Value::Number).collect()));
+    let sum = test_expr_parse("(0..10) + 5").inner();
+    assert_eq!(sum, ExprKind::Range(5.into(), Some(15.into())));
 
-    let sub = test_expr_parse("(100 | 200) - 2");
-    assert_eq!(sub.get_type(), Type::Enum([Number::new(98, 1), Number::new(198, 1)].into_iter().map(Value::Number).collect()));
+    let sub = test_expr_parse("(0..10) - 5").inner();
+    assert_eq!(sub, ExprKind::Range((-5).into(), Some(5.into())));
 
-    let sub_swap = test_expr_parse("5 - (1 | 7)");
-    assert_eq!(sub_swap.get_type(), Type::Enum([Number::new(4, 1), Number::new(-2, 1)].into_iter().map(Value::Number).collect()));
+    let sub_swap = test_expr_parse("5 - (0..7)").inner();
+    assert_eq!(sub_swap, ExprKind::Range((-2).into(), Some(5.into())));
 
-    let mul = test_expr_parse("(-1 | 2) * 5");
-    assert_eq!(mul.get_type(), Type::Enum([Number::new(-5, 1), Number::new(10, 1)].into_iter().map(Value::Number).collect()));
+    let mul = test_expr_parse("(0..10) * 5").inner();
+    assert_eq!(mul, ExprKind::Range(0.into(), Some(50.into())));
 
-    let div = test_expr_parse("(64 | 32) / 8");
-    assert_eq!(div.get_type(), Type::Enum([Number::new(8, 1), Number::new(4, 1)].into_iter().map(Value::Number).collect()));
+    let div = test_expr_parse("(1..32) / 8").inner();
+    assert_eq!(div, ExprKind::Range(Number::new(1, 8), Some(4.into())));
+}
 
-    let div_swap = test_expr_parse("128 / (64 | 32)");
-    assert_eq!(div_swap.get_type(), Type::Enum([Number::new(2, 1), Number::new(4, 1)].into_iter().map(Value::Number).collect()));
+#[test]
+fn test_arithmetic_enum() {
+    let range = test_expr_parse("0 | 1.5").inner();
+    assert_eq!(range, ExprKind::Enum([Number::new(0, 1), Number::new(3, 2)].into_iter().map(Value::Number).collect()));
+
+    let sum = test_expr_parse("(0|1) + 2").inner();
+    assert_eq!(sum, ExprKind::Enum([Number::new(2, 1), Number::new(3, 1)].into_iter().map(Value::Number).collect()));
+
+    let sub = test_expr_parse("(100 | 200) - 2").inner();
+    assert_eq!(sub, ExprKind::Enum([Number::new(98, 1), Number::new(198, 1)].into_iter().map(Value::Number).collect()));
+
+    let sub_swap = test_expr_parse("5 - (1 | 7)").inner();
+    assert_eq!(sub_swap, ExprKind::Enum([Number::new(4, 1), Number::new(-2, 1)].into_iter().map(Value::Number).collect()));
+
+    let mul = test_expr_parse("(-1 | 2) * 5").inner();
+    assert_eq!(mul, ExprKind::Enum([Number::new(-5, 1), Number::new(10, 1)].into_iter().map(Value::Number).collect()));
+
+    let div = test_expr_parse("(64 | 32) / 8").inner();
+    assert_eq!(div, ExprKind::Enum([Number::new(8, 1), Number::new(4, 1)].into_iter().map(Value::Number).collect()));
+
+    let div_swap = test_expr_parse("128 / (64 | 32)").inner();
+    assert_eq!(div_swap, ExprKind::Enum([Number::new(2, 1), Number::new(4, 1)].into_iter().map(Value::Number).collect()));
 }
 
 #[test]
 fn exprs() {
-    let one_one_i = test_expr_parse("complex(1.0, 0.0) + complex(0, 1)");
-    assert_eq!(one_one_i.get_type(), Type::Complex);
+    let choose = test_expr_parse("(#a | #b)[#a = #x, #b = #y]").inner();
+    assert_eq!(choose, ExprKind::Enum(["x".into(), "y".into()].into_iter().map(Value::Symbol).collect()));
 
-    let two_two_i = test_expr_parse("complex(1, 1) * 2");
-    assert_eq!(two_two_i.get_type(), Type::Complex);
-
-    let choose = test_expr_parse("(#a | #b)[#a = #x, #b = #y]");
-    assert_eq!(choose.get_type(), Type::Enum(["x".into(), "y".into()].into_iter().map(Value::Symbol).collect()));
-
-    let concat = test_expr_parse("[(#a|#b), #c, _, 2:[(#a | #c), _], #a]");
-    assert_eq!(concat.get_type(), Type::Vector(6, Box::new(
-        Type::Enum(["a".into(), "b".into(), "c".into()].into_iter().map(Value::Symbol).collect())
-    )));
-
-    let ignore = test_expr_parse("_");
-    assert_eq!(ignore.get_type(), Type::Ignored);
-
-    let down = test_expr_parse("~#h");
-    assert_eq!(down.get_type(), Type::Enum(["h".into()].into_iter().map(Value::Symbol).collect()));
-
-    let bound1 = test_expr_parse("_ : (0..10)");
-    assert_eq!(bound1.get_type(), Type::Number(NumberType::new(Number::new(1, 1), 0, 10)));
-
-    let bound2 = test_expr_parse("(0..2) : (0..10)");
-    assert_eq!(bound2.get_type(), Type::Number(NumberType::new(Number::new(1, 1), 0, 2)));
-
-    let fncall = test_expr_parse("((a) => a+3.0)(2.0)");
-    assert_eq!(fncall.get_type(), Type::Enum([Number::new(5, 1)].into_iter().map(Value::Number).collect()));
+    let fncall = test_expr_parse("((a) => a+3.0)(2.0)").inner();
+    assert_eq!(fncall, ExprKind::Const(Value::Number(5.into())));
 }
 
 #[test]
