@@ -8,12 +8,12 @@ use num_traits::{One, Signed};
 
 use crate::{Diagnostic, Value, DiagnosticContext};
 use crate::diagnostic::{Span, ErrorReported};
-use crate::syntax::Number as Rational;
+use crate::syntax::Number;
 use crate::tree::Tree;
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub struct NumberType {
-    scale: Rational,
+    scale: Number,
     min: i64,
     max: i64,
 }
@@ -25,7 +25,7 @@ pub enum NumberTypeError {
 }
 
 impl NumberType {
-    pub fn new(scale: Rational, min: i64, max: i64) -> NumberType {
+    pub fn new(scale: Number, min: i64, max: i64) -> NumberType {
         assert!(min < max);
         assert!(scale != 0.into());
         NumberType { scale, min, max }
@@ -39,7 +39,7 @@ impl NumberType {
         Self::integer(0, 2)
     }
 
-    pub(crate) fn from_scaled(min: Rational, max: Rational, step: Rational) -> Result<NumberType, NumberTypeError> {
+    pub(crate) fn from_scaled(min: Number, max: Number, step: Number) -> Result<NumberType, NumberTypeError> {
         if step == 0.into() {
             return Err(NumberTypeError::StepIsZero)
         }
@@ -59,28 +59,28 @@ impl NumberType {
     }
 
     pub fn is_integer(&self) -> bool {
-        self.scale == Rational::new(1, 1)
+        self.scale == Number::new(1, 1)
     }
 
-    pub fn scale(&self) -> Rational { self.scale }
+    pub fn scale(&self) -> Number { self.scale }
     pub fn min(&self) -> i64 { self.min }
     pub fn max(&self) -> i64 { self.max }
     pub fn range(&self) -> Range<i64> { self.min..self.max }
 
-    pub fn iter(&self) -> impl Iterator<Item = Rational> + use<> {
+    pub fn iter(&self) -> impl Iterator<Item = Number> + use<> {
         let scale = self.scale;
-        (self.min..self.max).map(move |v| Rational::from(v) * scale)
+        (self.min..self.max).map(move |v| Number::from(v) * scale)
     }
 
-    pub fn scaled_min(&self) -> Rational { self.scale * Rational::new(self.min, 1) }
-    pub fn scaled_max(&self) -> Rational { self.scale * Rational::new(self.max, 1) }
+    pub fn scaled_min(&self) -> Number { self.scale * Number::new(self.min, 1) }
+    pub fn scaled_max(&self) -> Number { self.scale * Number::new(self.max, 1) }
 
-    pub fn contains(&self, n: Rational) -> bool {
+    pub fn contains(&self, n: Number) -> bool {
         let v = n / self.scale;
         *v.denom() == 1 && self.range().contains(v.numer())
     }
 
-    pub(crate) fn add(&self, c: Rational) -> Option<NumberType> {
+    pub(crate) fn add(&self, c: Number) -> Option<NumberType> {
         let v = c / self.scale;
         if v.is_integer() {
             Some(NumberType { min: self.min + v.numer(), max: self.max + v.numer(), ..*self })
@@ -88,7 +88,7 @@ impl NumberType {
             None
         }
     }
-    pub(crate) fn mul(&self, c: Rational) -> NumberType {
+    pub(crate) fn mul(&self, c: Number) -> NumberType {
         NumberType { scale: self.scale*c, ..*self }
     }
 }
@@ -276,6 +276,12 @@ pub fn test_type_parse(e: &str) -> Type {
     print_diagnostics(dcx.diagnostics());
 
     t.unwrap()
+}
+
+#[test]
+fn test_type_expr() {
+    let range1 = test_type_parse("0.0..2.0 by 0.1");
+    assert_eq!(range1, Type::Number(NumberType::new(Number::new(1, 10), 0, 20)));
 }
 
 #[test]
