@@ -1,7 +1,7 @@
 use std::{collections::HashMap, sync::Arc};
 use num_complex::Complex;
 
-use crate::{Item, LeafItem, Type, Value, core::{FunctionDef, PrimitiveFn, resolve::{Expr, ExprKind}}, syntax::Number};
+use crate::{Item, LeafItem, Type, Value, core::{FunctionDef, PrimitiveFn, resolve::ExprKind}, syntax::Number};
 use super::op::{self, SignMode, UnaryOp};
 
 pub fn expr_prelude() -> HashMap<String, Item> {
@@ -38,36 +38,42 @@ fn fn_signed(arg: Item) -> Result<Item, &'static str> {
 fn fn_signed_unsigned(arg: Item, signed: SignMode) -> Result<Item, &'static str> {
     let (width, v) = arg.try_into().map_err(|_| "invalid arguments: expected (width, value)")?;
     let width = u32::try_from(width)?;
-    let v = Expr::try_from(v)?;
+    let v = ExprKind::try_from(v)?;
 
     match v {
-        Expr::Const(Value::Number(i)) => {
-            Ok(Expr::Const(op::eval_int_to_bits(width, i)).into())
+        ExprKind::Const(Value::Number(i)) => {
+            Ok(ExprKind::Const(op::eval_int_to_bits(width, i)).into())
         }
 
-        Expr::Expr(Type::Number(..), e) => {
-            let op = ExprKind::Unary(Box::new(e), UnaryOp::IntToBits {width, signed });
+        ExprKind::Ignored => {
+            Ok(ExprKind::Ignored.into())
+        }
+
+        e => {
+            // TODO: check type of `e`
             let ty = Type::bits(width);
-            Ok(Expr::Expr(ty, op).into())
+            Ok(ExprKind::Unary { ty, expr: Box::new(e), op: UnaryOp::IntToBits {width, signed} }.into())
         }
-
-        _ => Err("value must be a number")
     }
 }
 
 fn fn_chunks(arg: Item) -> Result<Item, &'static str> {
     let (width, v) = arg.try_into().map_err(|_| "invalid arguments: expected (width, value)")?;
     let width = u32::try_from(width)?;
-    let v = Expr::try_from(v)?;
+    let v = ExprKind::try_from(v)?;
 
     match v {
-        Expr::Const(Value::Vector(c)) => {
-            Ok(Expr::Const(op::eval_chunks(width, c)).into())
-        },
-        Expr::Expr(Type::Vector(c, t), e) => {
-            let op = ExprKind::Unary(Box::new(e), UnaryOp::Chunks { width });
+        ExprKind::Const(Value::Vector(c)) => {
+            Ok(ExprKind::Const(op::eval_chunks(width, c)).into())
+        }
+
+        ExprKind::Ignored => {
+            Ok(ExprKind::Ignored.into())
+        }
+
+        e if let Type::Vector(c, t) = e.get_type() => {
             let ty = Type::Vector(c/width, Box::new(Type::Vector(width, t)));
-            Ok(Expr::Expr(ty, op).into())
+            Ok(ExprKind::Unary { ty, expr: Box::new(e), op: UnaryOp::Chunks { width } }.into())
         },
         _ => Err("value must be a vector")
     }

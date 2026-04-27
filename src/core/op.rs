@@ -1,7 +1,7 @@
 use std::borrow::Borrow;
 
 use num_complex::Complex;
-use num_traits::ToPrimitive;
+use num_traits::{Signed, ToPrimitive};
 
 use crate::syntax::{BinOp, Number};
 
@@ -126,6 +126,18 @@ pub fn eval_binary(l: Value, op: BinOp, r: Value) -> Option<Value> {
     })
 }
 
+pub fn eval_binary_on_range(lo: Option<Number>, hi: Option<Number>, op: BinOp, c: Number) -> Result<(Option<Number>, Option<Number>), ()> {
+    match op {
+        BinOp::Add => Ok((lo.map(|l| l + c), hi.map(|h| h + c))),
+        BinOp::Sub => Ok((lo.map(|l| l - c), hi.map(|h| h - c))),
+        BinOp::SubSwap => Ok((hi.map(|h| c - h), lo.map(|l| c - l))),
+        BinOp::Mul if c.is_negative() => Ok((hi.map(|h| h * c), lo.map(|l| l * c))),
+        BinOp::Mul => Ok((lo.map(|l| l * c), hi.map(|h| h * c))),
+        BinOp::Div if c.is_negative() => Ok((hi.map(|h| h * c.recip()), lo.map(|l| l * c.recip()))),
+        BinOp::Div => Ok((lo.map(|l| l * c.recip()), hi.map(|h| h * c.recip()))),
+        BinOp::DivSwap => Err(()),
+    }
+}
 
 /// Element of Expr::Concat
 #[derive(PartialEq, Eq, Hash, Debug, Clone)]

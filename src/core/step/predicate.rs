@@ -105,7 +105,7 @@ fn test_predicate() {
 
     let c = ExprLower::new(&EntityMap::new());
 
-    let range = c.predicate(&test_expr_parse("1 ! 1..10").inner()).unwrap();
+    let range = c.predicate(&test_expr_parse("1 ! 1..10")).unwrap();
     assert_eq!(range, Predicate::Range(1.into(), 10.into()));
     assert_eq!(range.test(&Value::Number(1.into())), true);
     assert_eq!(range.test(&Value::Number(2.into())), true);
@@ -122,19 +122,19 @@ fn test_predicate() {
     assert_eq!(range.excludes(&Predicate::AtLeast(9.into())), false);
     assert_eq!(range.excludes(&Predicate::AtLeast(10.into())), true);
 
-    let any = c.predicate(&test_expr_parse("~5").inner()).unwrap();
+    let any = c.predicate(&test_expr_parse("~5")).unwrap();
     assert_eq!(any, Predicate::Any);
     assert_eq!(any.test(&Value::Number(1.into())), true);
     assert_eq!(any.excludes(&Predicate::Range(5.into(), 20.into())), false);
 
-    let sym = c.predicate(&test_expr_parse("#h | #l").inner()).unwrap();
+    let sym = c.predicate(&test_expr_parse("#h | #l")).unwrap();
     assert_eq!(sym, Predicate::AnyOf(["h".into(), "l".into()].into_iter().map(Value::Symbol).collect()));
     assert_eq!(sym.test(&Value::Symbol("h".into())), true);
     assert_eq!(sym.test(&Value::Symbol("z".into())), false);
     assert_eq!(sym.excludes(&Predicate::AnyOf(["h".into(), "x".into()].into_iter().map(Value::Symbol).collect())), false);
     assert_eq!(sym.excludes(&Predicate::AnyOf(["z".into(), "x".into()].into_iter().map(Value::Symbol).collect())), true);
 
-    let vec = c.predicate(&test_expr_parse("[0..2, 2, 3:_]").inner()).unwrap();
+    let vec = c.predicate(&test_expr_parse("[0..2, 2, 3:_]")).unwrap();
     assert_eq!(vec, Predicate::Vector(vec![
         Predicate::Range(0.into(), 2.into()),
         Predicate::AnyOf([Value::Number(2.into())].into()),
@@ -157,11 +157,11 @@ fn test_predicate() {
         Value::Number(9.into()),
     ])), false);
     assert_eq!(vec.excludes(&vec), false);
-    assert_eq!(vec.excludes(&c.predicate(&test_expr_parse("[0..5, 9, 3:_]").inner()).unwrap()), true);
-    assert_eq!(vec.excludes(&c.predicate(&test_expr_parse("[_, _, 3:_]").inner()).unwrap()), false);
-    assert_eq!(vec.excludes(&c.predicate(&test_expr_parse("[5:_]").inner()).unwrap()), false);
+    assert_eq!(vec.excludes(&c.predicate(&test_expr_parse("[0..5, 9, 3:_]")).unwrap()), true);
+    assert_eq!(vec.excludes(&c.predicate(&test_expr_parse("[_, _, 3:_]")).unwrap()), false);
+    assert_eq!(vec.excludes(&c.predicate(&test_expr_parse("[5:_]")).unwrap()), false);
 
-    let nested_vec = c.predicate(&test_expr_parse("[3:[2:[#a, #b], #c], #d]").inner()).unwrap();
+    let nested_vec = c.predicate(&test_expr_parse("[3:[2:[#a, #b], #c], #d]")).unwrap();
     assert_eq!(nested_vec.test(&Value::Vector(vec![
         Value::Symbol("a".into()),
         Value::Symbol("b".into()),

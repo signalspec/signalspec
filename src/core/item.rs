@@ -4,14 +4,13 @@ use std::default::Default;
 use std::sync::Arc;
 use num_traits::ToPrimitive;
 
-use crate::{TypeTree, Value, diagnostic::ErrorReported, syntax::Number, tree::{Tree, TupleFields}};
-use super::{ resolve::Expr, FunctionDef };
+use crate::{TypeTree, Value, core::resolve::ExprKind, core::FunctionDef, diagnostic::ErrorReported, syntax::Number, tree::{Tree, TupleFields}};
 
 /// Non-tuple Item
 #[derive(Clone)]
 pub enum LeafItem {
     /// Expression for a (possibly runtime-variable) value
-    Value(Expr),
+    Value(ExprKind),
 
     /// Function closure
     Func(Arc<FunctionDef>),
@@ -31,7 +30,7 @@ pub type Item = Tree<LeafItem>;
 
 impl Item {
     pub fn value(v: Value) -> Item {
-        Item::Leaf(LeafItem::Value(Expr::Const(v)))
+        Item::Leaf(LeafItem::Value(ExprKind::Const(v)))
     }
 
     pub fn symbol(s: &str) -> Item {
@@ -47,7 +46,7 @@ impl Item {
 
     pub fn as_constant(&self) -> Option<&Value> {
         match *self {
-            Item::Leaf(LeafItem::Value(Expr::Const(ref c))) => Some(c),
+            Item::Leaf(LeafItem::Value(ExprKind::Const(ref c))) => Some(c),
             _ => None
         }
     }
@@ -103,15 +102,15 @@ impl From<ErrorReported> for Item {
     }
 }
 
-impl From<Expr> for Item {
-    fn from(value: Expr) -> Self {
+impl From<ExprKind> for Item {
+    fn from(value: ExprKind) -> Self {
         Item::Leaf(LeafItem::Value(value))
     }
 }
 
 impl From<Value> for Item {
     fn from(value: Value) -> Self {
-        Item::Leaf(LeafItem::Value(Expr::Const(value)))
+        Item::Leaf(LeafItem::Value(ExprKind::Const(value)))
     }
 }
 
@@ -124,7 +123,7 @@ impl<T: Into<Item>> From<Result<T, ErrorReported>> for Item {
     }
 }
 
-impl TryFrom<Item> for Expr {
+impl TryFrom<Item> for ExprKind {
     type Error = &'static str;
 
     fn try_from(i: Item) -> Result<Self, Self::Error> {
@@ -136,7 +135,7 @@ impl TryFrom<Item> for Value {
     type Error = &'static str;
 
     fn try_from(i: Item) -> Result<Self, Self::Error> {
-        if let Item::Leaf(LeafItem::Value(Expr::Const(v))) = i { Ok(v) } else { Err("expected constant value") }
+        if let Item::Leaf(LeafItem::Value(ExprKind::Const(v))) = i { Ok(v) } else { Err("expected constant value") }
     }
 }
 
@@ -144,7 +143,7 @@ impl TryFrom<Item> for Number {
     type Error = &'static str;
 
     fn try_from(i: Item) -> Result<Self, Self::Error> {
-        if let Item::Leaf(LeafItem::Value(Expr::Const(Value::Number(v)))) = i {
+        if let Item::Leaf(LeafItem::Value(ExprKind::Const(Value::Number(v)))) = i {
             Ok(v)
         } else { Err("expected constant number") }
     }
@@ -154,7 +153,7 @@ impl TryFrom<Item> for u32 {
     type Error = &'static str;
 
     fn try_from(i: Item) -> Result<Self, Self::Error> {
-        if let Item::Leaf(LeafItem::Value(Expr::Const(Value::Number(v)))) = i && let Some(u) = v.to_u32() {
+        if let Item::Leaf(LeafItem::Value(ExprKind::Const(Value::Number(v)))) = i && let Some(u) = v.to_u32() {
             Ok(u)
         } else { Err("expected constant integer") }
     }

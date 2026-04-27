@@ -94,17 +94,17 @@ impl ExprLower {
     pub fn use_dn(&mut self, ecx: &mut ExprCtx, expr: &ExprKind) -> Option<ExprDnId> {
         match *expr {
             ExprKind::Ignored | ExprKind::Range(..) | ExprKind::Enum(..) => None,
-            ExprKind::Var(var) => self.vars[var].dn,
+            ExprKind::Var { id, ..} => self.vars[id].dn,
             ExprKind::Const(ref v) => Some(ecx.constant(v.clone())),
             ExprKind::Flip(ref d, _) => self.use_dn(ecx, d),
-            ExprKind::Concat(ref c) => {
+            ExprKind::Concat(_, _, ref c) => {
                 let parts = c.iter()
                     .map(|l| l.map_elem_opt(|e| self.use_dn(ecx, e)))
                     .collect::<Option<Vec<_>>>()?;
                 Some(ecx.concat(parts.into_boxed_slice()))
             },
-            ExprKind::Unary(ref e, ref op) => {
-                let e = self.use_dn(ecx, e)?;
+            ExprKind::Unary { ref expr, ref op, .. } => {
+                let e = self.use_dn(ecx, expr)?;
                 Some(ecx.unary(e, op.clone()))
             }
         }
@@ -114,12 +114,12 @@ impl ExprLower {
         match *expr {
             ExprKind::Ignored | ExprKind::Const(_)
              | ExprKind::Range(_, _) | ExprKind::Enum(..) => false,
-            ExprKind::Var(id) => {
+            ExprKind::Var { id, .. } => {
                 self.vars[id].up = Some(v);
                 true
             }
             ExprKind::Flip(_, ref up) => self.use_up(ecx, up, v),
-            ExprKind::Concat(ref concat) => {
+            ExprKind::Concat(_, _, ref concat) => {
                 let mut used = false;
                 for (offset, c) in ConcatElem::enumerate(concat.iter()) {
                     match c {
@@ -135,9 +135,9 @@ impl ExprLower {
                 }
                 used
             }
-            ExprKind::Unary(ref e, ref op) => {
+            ExprKind::Unary { ref expr, ref op, .. } => {
                 let v2 = ecx.unary(v, op.invert());
-                self.use_up(ecx, e, v2)
+                self.use_up(ecx, expr, v2)
             }
         }
     }
@@ -145,7 +145,7 @@ impl ExprLower {
     pub fn predicate(&self, expr: &ExprKind) -> Option<Predicate> {
         match *expr {
             ExprKind::Ignored => Some(Predicate::Any),
-            ExprKind::Var(var_id) => self.vars[var_id].predicate.clone(),
+            ExprKind::Var { id, .. } => self.vars[id].predicate.clone(),
             ExprKind::Flip(_, ref up) => self.predicate(up),
             ExprKind::Const(ref v) => Some(Predicate::from_value(v)),
             ExprKind::Range(lo, Some(hi)) => Some(Predicate::Range(lo, hi)),
@@ -153,11 +153,11 @@ impl ExprLower {
             ExprKind::Enum(ref set) => {
                 Some(Predicate::AnyOf(set.iter().cloned().collect()))
             },
-            ExprKind::Concat(ref parts) => {
+            ExprKind::Concat(_, _, ref parts) => {
                 Some(Predicate::vector(parts.iter().map(|c| c.map_elem(|e| self.predicate(e).unwrap()))))
             }
-            ExprKind::Unary(ref e, _) => {
-                match self.predicate(e) {
+            ExprKind::Unary { ref expr, .. } => {
+                match self.predicate(expr) {
                     Some(Predicate::Any) => Some(Predicate::Any),
                     _ => None
                 }

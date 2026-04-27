@@ -1,7 +1,7 @@
 use std::{cell::{RefCell, RefMut}, rc::Rc, task::{Poll, Context, Waker}, collections::VecDeque, future::Future, io, pin::Pin};
 use futures_lite::{ AsyncRead, AsyncWrite };
 
-use crate::{Item, LeafItem, Shape, TypeTree, Value, core::resolve::Expr, tree::Zip};
+use crate::{Item, LeafItem, Shape, TypeTree, Value, core::resolve::ExprKind, tree::Zip};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ChannelMessage {
@@ -171,7 +171,7 @@ pub(crate) fn item_to_msgs(ty: &TypeTree, seq: &Item) -> Result<Vec<ChannelMessa
         let mut valid = true;
 
         ty.zip(i, &mut |m| match m {
-            Zip::Both(_, &Item::Leaf(LeafItem::Value(Expr::Const(ref c)))) => {
+            Zip::Both(_, &Item::Leaf(LeafItem::Value(ExprKind::Const(ref c)))) => {
                 msg.push(c.clone());
             },
             _ => {

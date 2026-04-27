@@ -12,7 +12,7 @@ use crate::syntax::ast::{self, AstNode};
 use crate::tree::Tree;
 use crate::{Diagnostic, Index};
 
-use super::expr::{TryFromConstant, value, lexpr_tup, zip_tuple_ast_fields, lexpr, Expr, ExprKind, rexpr, rexpr_tup, constant, bind_field, bind_fields, bind_fields_const, VarId};
+use super::expr::{TryFromConstant, value, lexpr_tup, zip_tuple_ast_fields, lexpr, ExprKind, rexpr, rexpr_tup, constant, bind_field, bind_fields, bind_fields_const, VarId};
 use super::protocol;
 
 pub fn resolve_process(dcx: &mut DiagnosticContext, index: &Index, scope: &Scope, shape_dn: Shape, ast: &ast::Process) -> ResolveResult {
@@ -362,7 +362,6 @@ impl<'a> Builder<'a> {
                             }));
                         }
 
-                        let count = count.inner();
                         self.vars.check_use(self.dcx, sb.scope.span(count_ast.span()), &count, dir);
 
                         (dir, range, count)
@@ -395,10 +394,9 @@ impl<'a> Builder<'a> {
                         }
                     };
 
-                    let outer_expr = outer_expr.map(|e| e.inner());
                     let dirs = self.vars.try_use(&outer_expr);
                     let var = self.vars.add(body_scope.span(name.span), dirs);
-                    body_scope.bind(&name.name, Item::Leaf(LeafItem::Value(Expr::Expr(ty, ExprKind::Var(var)))));
+                    body_scope.bind(&name.name, Item::Leaf(LeafItem::Value(ExprKind::Var { ty, id: var })));
                     Ok(ForVar { outer: outer_expr?, outer_span: sb.scope.span(expr.span()), var })
                 }));
 
@@ -450,7 +448,6 @@ impl<'a> Builder<'a> {
                     AltMode::Var(dir) => {
                         let scrutinee = value(&mut self.dcx, sb.scope, &node.expr);
                         let ty = scrutinee.as_ref().map_or(Type::Ignored, |t| t.get_type());
-                        let scrutinee = scrutinee.map(|e| e.inner());
 
                         if let Ok(scrutinee) = &scrutinee {
                             self.vars.check_use(self.dcx, sb.scope.span(node.expr.span()), scrutinee, dir);
@@ -610,9 +607,8 @@ impl<'a> Builder<'a> {
                             &Tree::Leaf(ref ty),
                             &Item::Leaf(LeafItem::Value(ref v))
                         ) if v.get_type().is_subtype(ty) => {
-                            let v = v.clone().inner();
-                            self.vars.check_use(&mut self.dcx, scope.span(arg_ast.span()), &v, param.direction);
-                            try_push(&mut fields, Ok(v));
+                            self.vars.check_use(&mut self.dcx, scope.span(arg_ast.span()), v, param.direction);
+                            try_push(&mut fields, Ok(v.clone()));
                         },
 
                         crate::tree::Zip::Both(_, Item::Leaf(LeafItem::Invalid(r))) => {

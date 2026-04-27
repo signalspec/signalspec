@@ -23,7 +23,7 @@ with Seq(type #x, _) def main() = seq {
 
 //# repeat count must be a non-negative integer
     repeat #up (1|4|5) {
-//             ^^^^^^^ found `<1 | 4 | 5>`
+//             ^^^^^^^ found `(1 | 4 | 5)`
 
     }
 

@@ -2,91 +2,62 @@ use std::{fmt::{self, Display}, iter, sync::Arc};
 
 use indexmap::IndexSet;
 use itertools::{Itertools, EitherOrBoth};
-use num_traits::Signed;
 
 use crate::{
     Dir, SourceFile, Type, TypeTree, Value, core::{
         Func, FunctionDef, Item, LeafItem, Scope,
-        data::{NumberType, NumberTypeError},
-        op::{ConcatElem, UnaryOp, eval_binary, eval_choose},
+        data::NumberType,
+        op::{ConcatElem, UnaryOp, eval_binary, eval_binary_on_range, eval_choose},
         resolve::{action::Vars, type_expr::{type_expr, type_tree}},
     }, diagnostic::{Diagnostic, DiagnosticContext, ErrorReported, Span, collect_or_err}, entitymap::entity_key, syntax::{
         Number, ast::{self, AstNode, BinOp}
     }, tree::{Tree, TupleFields}
 };
 
-#[derive(PartialEq, Debug, Clone)]
-pub enum Expr {
-    Const(Value),
-    Expr(Type, ExprKind),
-}
-
 entity_key!(pub VarId);
+
+impl Display for VarId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "var{}", self.0)
+    }
+}
 
 /// An expression representing a runtime computation
 #[derive(PartialEq, Debug, Clone)]
 pub enum ExprKind {
     Ignored,
     Const(Value),
-    Var(VarId),
     Range(Number, Option<Number>),
     Enum(IndexSet<Value>),
+    Var { ty: Type, id: VarId },
     Flip(Box<ExprKind>, Box<ExprKind>),
-    Concat(Vec<ConcatElem<ExprKind>>),
-    Unary(Box<ExprKind>, UnaryOp),
+    Concat(Type, u32, Vec<ConcatElem<ExprKind>>),
+    Unary { ty: Type, expr: Box<ExprKind>, op: UnaryOp },
 }
 
-impl Expr {
-    /// Return the `Type` for the set of possible values this expression may down-evaluate to or
-    /// match on up-evaluation.
-    pub fn get_type(&self) -> Type {
-        match self {
-            Expr::Const(c) => c.get_type(),
-            Expr::Expr(t, _) => t.clone(),
-        }
-    }
-
-    pub(crate) fn inner(self) -> ExprKind {
-        match self {
-            Expr::Const(v) => ExprKind::Const(v),
-            Expr::Expr(_, k) => k,
-        }
-    }
-
-    pub fn ignored() -> Self {
-        Expr::Expr(Type::Ignored, ExprKind::Ignored)
-    }
-
-    pub fn as_natural_number_range(&self, dir: Dir) -> Option<(u64, Option<u64>)> {
-        match self {
-            Expr::Const(Value::Number(n)) if n.is_integer() && *n.numer() >= 0 => Some((*n.numer() as u64, Some(*n.numer() as u64 + 1))),
-            Expr::Const(_) => None,
-            Expr::Expr(ty, e) => e.as_natural_number_range(dir, ty),
-        }
-    }
-}
-
-
-impl fmt::Display for Expr {
+impl fmt::Display for ExprKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Expr::Const(c) => c.fmt(f),
-            Expr::Expr(_, ExprKind::Ignored) => write!(f, "_"),
-            Expr::Expr(_, ExprKind::Const(p)) => write!(f, "{}", p),
-            Expr::Expr(_, ExprKind::Range(a, Some(b))) => write!(f, "{}..{}", a, b),
-            Expr::Expr(_, ExprKind::Range(a, None)) => write!(f, "{}..", a),
-            Expr::Expr(ty, _) => write!(f, "<{ty}>"),
+            ExprKind::Ignored => write!(f, "_"),
+            ExprKind::Const(p) => write!(f, "{}", p),
+            ExprKind::Var { id, ty } => write!(f, "<{id}: {ty}>"),
+            ExprKind::Range(a, Some(b)) => write!(f, "{}..{}", a, b),
+            ExprKind::Range(a, None) => write!(f, "{}..", a),
+            ExprKind::Enum(s) => write!(f, "({})", s.iter().format(" | ")),
+            ExprKind::Flip(dn, up) => write!(f, "{} ! {}", dn, up),
+            ExprKind::Concat(_, _, es) => write!(f, "[{:?}]", es),
+            ExprKind::Unary { expr, op, .. } => write!(f, "{:?}({})", op, expr),
         }
     }
 }
 
 impl ExprKind {
-    pub fn as_natural_number_range(&self, dir: Dir, ty: &Type) -> Option<(u64, Option<u64>)> {
+    pub fn as_natural_number_range(&self, dir: Dir) -> Option<(u64, Option<u64>)> {
         match self {
             ExprKind::Ignored => Some((0, None)),
             ExprKind::Flip(dn, up) => match dir {
-                Dir::Dn => dn.as_natural_number_range(Dir::Dn, ty),
-                Dir::Up => up.as_natural_number_range(Dir::Up, ty),
+                Dir::Dn => dn.as_natural_number_range(Dir::Dn),
+                Dir::Up => up.as_natural_number_range(Dir::Up),
             }
 
             ExprKind::Const(Value::Number(n)) if n.is_integer() && *n.numer() >= 0 => Some((*n.numer() as u64, Some(*n.numer() as u64 + 1))),
@@ -96,7 +67,49 @@ impl ExprKind {
             }
 
             // TODO: should also check that the predicate is unrestricted
-            _ => ty.as_natural_number_range(),
+            _ => self.get_type().as_natural_number_range(),
+        }
+    }
+
+    pub fn check_type(&self, expected: &Type) -> bool {
+        match self {
+            ExprKind::Ignored => true,
+            ExprKind::Const(value) => expected.test(value),
+            ExprKind::Range(lo, hi) => {
+                match expected {
+                    // TODO: Is it a type error if the range doesn't overlap, or just a predicate that never matches?
+                    Type::Number(nt) => nt.contains(*lo) && hi.is_none_or(|h| nt.contains(h)),
+                    _ => false
+                }
+            }
+            ExprKind::Enum(set) => set.iter().all(|v| expected.test(v)),
+            ExprKind::Var { ty, .. } | ExprKind::Unary { ty, .. } => ty.is_subtype(expected),
+            ExprKind::Flip(dn, up) => {
+                dn.check_type(expected) && up.check_type(expected)
+            }
+            ExprKind::Concat(_, _, elems) => {
+                match *expected {
+                    Type::Vector(w, ref elem_ty) => {
+                        let elem_ty_check = elems.iter().all(|e| e.inner().check_type(elem_ty));
+                        let len_check = elems.iter().map(|e| e.elem_count()).sum::<u32>() == w;
+                        elem_ty_check && len_check
+                    }
+                    _ => false
+                }
+            }
+        }
+    }
+
+    pub fn get_type(&self) -> Type {
+        match *self {
+            ExprKind::Ignored => Type::Ignored,
+            ExprKind::Const(ref v) => v.get_type(),
+            ExprKind::Range(lo, hi) => Type::RangeBounds(Some(lo), hi),
+            ExprKind::Enum(ref e) => Type::Enum(e.clone()),
+            ExprKind::Var { ref ty, .. } => ty.clone(),
+            ExprKind::Unary { ref ty, .. } => ty.clone(),
+            ExprKind::Flip(ref dn, _) => dn.get_type(),
+            ExprKind::Concat(ref elem_ty, len, _) => Type::Vector(len, Box::new(elem_ty.clone())),
         }
     }
 
@@ -104,17 +117,17 @@ impl ExprKind {
         match *self {
             ExprKind::Ignored => false,
             ExprKind::Const(_) => true,
-            ExprKind::Var(var_id) => with_var(var_id),
+            ExprKind::Var { id, .. } => with_var(id),
             ExprKind::Range(..) | ExprKind::Enum(_) => false,
             ExprKind::Flip(ref d, _) => d.check_use_dn(with_var),
-            ExprKind::Concat(ref concat_elems) => {
+            ExprKind::Concat(_, _, ref concat_elems) => {
                 let mut result = true;
                 for elem in concat_elems {
                     result &= elem.inner().check_use_dn(with_var);
                 }
                 result
             }
-            ExprKind::Unary(ref e, _) => e.check_use_dn(with_var),
+            ExprKind::Unary { ref expr, .. } => expr.check_use_dn(with_var),
         }
     }
 
@@ -122,22 +135,22 @@ impl ExprKind {
         match *self {
             ExprKind::Ignored => false,
             ExprKind::Const(_) => false,
-            ExprKind::Var(var_id) => with_var(var_id),
+            ExprKind::Var { id, .. } => with_var(id),
             ExprKind::Range(..) | ExprKind::Enum(..) => false,
             ExprKind::Flip(_, ref u) => u.check_use_up(with_var),
-            ExprKind::Concat(ref concat_elems) => {
+            ExprKind::Concat(_, _, ref concat_elems) => {
                 let mut result = false;
                 for elem in concat_elems {
                     result |= elem.inner().check_use_up(with_var);
                 }
                 result
             }
-            ExprKind::Unary(ref e, _) => e.check_use_up(with_var),
+            ExprKind::Unary { ref expr, .. } => expr.check_use_up(with_var),
         }
     }
 }
 
-pub fn value(dcx: &mut DiagnosticContext, scope: &Scope, e: &ast::Expr) -> Result<Expr, ErrorReported> {
+pub fn value(dcx: &mut DiagnosticContext, scope: &Scope, e: &ast::Expr) -> Result<ExprKind, ErrorReported> {
     match rexpr(dcx, scope, e) {
         Item::Leaf(LeafItem::Value(v)) => Ok(v),
         Item::Leaf(LeafItem::Invalid(r)) => Err(r),
@@ -172,7 +185,7 @@ pub fn constant<'a, T: TryFromConstant>(dcx: &mut DiagnosticContext, scope: &Sco
     let found = item.to_string();
 
     match item {
-        Item::Leaf(LeafItem::Value(Expr::Const(v))) => {
+        Item::Leaf(LeafItem::Value(ExprKind::Const(v))) => {
             if let Ok(r) = T::try_from(v) {
                 return Ok(r);
             }
@@ -250,9 +263,8 @@ pub fn rexpr(dcx: &mut DiagnosticContext, scope: &Scope, e: &ast::Expr) -> Item 
             resolve_function_call(dcx, || scope.span(node.span), func, arg)
         }
 
-        ast::Expr::Value(node) => Expr::Const(Value::from_literal(&node.value)).into(),
-        ast::Expr::Ignore(_) => Expr::ignored().into(),
-
+        ast::Expr::Value(node) => ExprKind::Const(Value::from_literal(&node.value)).into(),
+        ast::Expr::Ignore(_) => ExprKind::Ignored.into(),
         ast::Expr::Typed(node) => resolve_expr_typed(dcx, scope, node),
         ast::Expr::Flip(node) => resolve_expr_flip(dcx, scope, node),
         ast::Expr::Range(node) => resolve_expr_range(dcx, scope, node),
@@ -267,17 +279,15 @@ pub fn rexpr(dcx: &mut DiagnosticContext, scope: &Scope, e: &ast::Expr) -> Item 
 }
 
 fn resolve_expr_flip(dcx: &mut DiagnosticContext, scope: &Scope, node: &ast::ExprFlip) -> Item {
-    let dn = node.dn.as_ref().map_or(Ok(Expr::ignored()),  |dn| value(dcx, scope, dn));
-    let up = node.up.as_ref().map_or(Ok(Expr::ignored()),  |up| value(dcx, scope, up));
+    let dn = node.dn.as_ref().map_or(Ok(ExprKind::Ignored), |dn| value(dcx, scope, dn));
+    let up = node.up.as_ref().map_or(Ok(ExprKind::Ignored), |up| value(dcx, scope, up));
 
     let dn = try_item!(dn);
     let up = try_item!(up);
 
-    let ty = Type::union(dn.get_type(), up.get_type())
-        .map_err(|err| err.report_at(dcx, scope.span(node.span)));
-    let ty = try_item!(ty);
+    // TODO: check type compatibility
 
-    Expr::Expr(ty, ExprKind::Flip(Box::new(dn.inner()), Box::new(up.inner()))).into()
+    ExprKind::Flip(Box::new(dn), Box::new(up)).into()
 }
 
 fn resolve_expr_range(dcx: &mut DiagnosticContext, scope: &Scope, node: &ast::ExprRange) -> Item {
@@ -302,7 +312,7 @@ fn resolve_expr_range(dcx: &mut DiagnosticContext, scope: &Scope, node: &ast::Ex
         ).into();
     }
 
-    Expr::Expr(Type::RangeBounds(Some(min), max), ExprKind::Range(min, max)).into()
+    ExprKind::Range(min, max).into()
 }
 
 fn resolve_expr_typed(dcx: &mut DiagnosticContext, scope: &Scope, node: &ast::ExprTyped) -> Item {
@@ -313,21 +323,10 @@ fn resolve_expr_typed(dcx: &mut DiagnosticContext, scope: &Scope, node: &ast::Ex
     let bound = try_item!(bound);
     let span = || scope.span(node.span);
 
-    match expr {
-        Expr::Const(c) => {
-            if bound.test(&c) {
-                Expr::Const(c).into()
-            } else {
-                dcx.report(Diagnostic::TypeConstraint { span: span(), found: c.get_type(), bound }).into()
-            }
-        },
-        Expr::Expr(t, e) => {
-            match t.bound(bound) {
-                Ok(new_t) => Expr::Expr(new_t, e).into(),
-                Err((t, bound)) =>
-                    dcx.report(Diagnostic::TypeConstraint { span: span(), found: t, bound }).into(),
-            }
-        },
+    if expr.check_type(&bound) {
+        expr.into()
+    } else {
+        dcx.report(Diagnostic::TypeConstraint { span: span(), found: expr.get_type(), bound }).into()
     }
 }
 
@@ -337,10 +336,9 @@ fn resolve_expr_union(dcx: &mut DiagnosticContext, scope: &Scope, node: &ast::Ex
     for e in &node.items {
         let opt = value(dcx, scope, e);
         match opt {
-            Ok(Expr::Const(c)) => { opts.insert(c); },
-            Ok(Expr::Expr(_, ExprKind::Const(c))) => { opts.insert(c); },
-            Ok(Expr::Expr(_, ExprKind::Enum(cs))) => { opts.extend(cs); },
-            Ok(Expr::Expr(other, _)) => {
+            Ok(ExprKind::Const(c)) => { opts.insert(c); },
+            Ok(ExprKind::Enum(cs)) => { opts.extend(cs); },
+            Ok(other) => {
                 err = Err(dcx.report(Diagnostic::ExpectedConst {
                     span: scope.span(e.span()),
                     found: format!("{other}"),
@@ -354,8 +352,7 @@ fn resolve_expr_union(dcx: &mut DiagnosticContext, scope: &Scope, node: &ast::Ex
     }
     try_item!(err);
 
-    let ty = Type::Enum(opts.clone());
-    Expr::Expr(ty, ExprKind::Enum(opts).into()).into()
+    ExprKind::Enum(opts).into()
 }
 
 fn resolve_expr_choose(dcx: &mut DiagnosticContext, scope: &Scope, node: &ast::ExprChoose) -> Item {
@@ -380,30 +377,31 @@ fn resolve_expr_choose(dcx: &mut DiagnosticContext, scope: &Scope, node: &ast::E
     let rt = try_item!(rt.map_err(|err| err.report_at(dcx, span())));
 
     match e {
-        Expr::Expr(_, ExprKind::Ignored) => {
-            Expr::Expr(Type::Ignored, ExprKind::Ignored)
+        ExprKind::Ignored => {
+            ExprKind::Ignored
         }
-        Expr::Const(c) | Expr::Expr(_, ExprKind::Const(c)) => {
+        ExprKind::Const(c) => {
             let Some(v) = eval_choose(&c, &pairs) else {
                 return dcx.report(crate::Diagnostic::ChooseNotCovered { span: span(), found: c.get_type() }).into();
             };
 
-            Expr::Const(v)
+            ExprKind::Const(v)
         }
-        Expr::Expr(_, ExprKind::Enum(vs)) => {
+        ExprKind::Enum(vs) => {
             let Some(vs) = vs.iter().map(|v| eval_choose(&v, &pairs)).collect::<Option<IndexSet<_>>>() else {
                 return dcx.report(crate::Diagnostic::ChooseNotCovered { span: span(), found: Type::Enum(vs) }).into();
             };
 
-            Expr::Expr(Type::Enum(vs.clone()), ExprKind::Enum(vs))
+            ExprKind::Enum(vs)
         }
-        Expr::Expr(ty, e) => {
+        e => {
             //TODO: doesn't check coverage of full number range
+            let ty = e.get_type();
             if !(ty.is_subtype(&lt) && lt.is_subtype(&ty)) {
                 return dcx.report(crate::Diagnostic::ChooseNotCovered { span: span(), found: ty }).into();
             }
 
-            Expr::Expr(rt, ExprKind::Unary(Box::new(e), UnaryOp::Mapping(pairs)))
+            ExprKind::Unary { ty: rt, expr: Box::new(e), op: UnaryOp::Mapping(pairs) }
         }
     }.into()
 }
@@ -453,7 +451,7 @@ fn resolve_expr_concat(dcx: &mut DiagnosticContext, scope: &Scope, node: &ast::E
 
         if let Some(w) = width {
             match elem {
-                Expr::Const(Value::Vector(vs)) if w as usize == vs.len() => {
+                ExprKind::Const(Value::Vector(vs)) if w as usize == vs.len() => {
                     for c in vs {
                         elem_ty.union_with(c.get_type()).map_err(|err| err.report_at(dcx, span()))?;
                         elems.push_const(c);
@@ -461,24 +459,24 @@ fn resolve_expr_concat(dcx: &mut DiagnosticContext, scope: &Scope, node: &ast::E
                     }
                 }
 
-                Expr::Expr(Type::Vector(w1, ty), e) if w == w1 => {
+                ExprKind::Ignored => {
+                    len += w;
+                    elems.push(ConcatElem::Slice(ExprKind::Ignored, w));
+                }
+
+                e if let Type::Vector(w1, ty) = e.get_type() && w == w1 => {
                     len += w;
                     elem_ty.union_with(*ty).map_err(|err| err.report_at(dcx, span()))?;
 
                     match e {
                         // Flatten nested slice
-                        ExprKind::Concat(es) => {
+                        ExprKind::Concat(_, _, es) => {
                             elems.extend(es.into_iter());
                         }
                         e => {
                             elems.push(ConcatElem::Slice(e, w))
                         }
                     }
-                }
-
-                Expr::Expr(Type::Ignored, e) => {
-                    len += w;
-                    elems.push(ConcatElem::Slice(e, w));
                 }
 
                 other => Err(dcx.report(Diagnostic::ExpectedVector {
@@ -489,13 +487,13 @@ fn resolve_expr_concat(dcx: &mut DiagnosticContext, scope: &Scope, node: &ast::E
             Ok(())
         } else {
             match elem {
-                Expr::Const(c) => {
+                ExprKind::Const(c) => {
                     elem_ty.union_with(c.get_type()).map_err(|err| err.report_at(dcx, span()))?;
                     len += 1;
                     elems.push_const(c);
                 }
-                Expr::Expr(ty, e) => {
-                    elem_ty.union_with(ty).map_err(|err| err.report_at(dcx, span()))?;
+                e => {
+                    elem_ty.union_with(e.get_type()).map_err(|err| err.report_at(dcx, span()))?;
                     len += 1;
                     elems.push(ConcatElem::Elem(e))
                 }
@@ -506,11 +504,8 @@ fn resolve_expr_concat(dcx: &mut DiagnosticContext, scope: &Scope, node: &ast::E
     try_item!(collect_or_err::<(), ()>(it));
 
     match elems {
-        ConcatBuilder::Const(v) => Expr::Const(Value::Vector(v)),
-        ConcatBuilder::Expr(e) => Expr::Expr(
-            Type::Vector(len, Box::new(elem_ty)),
-            ExprKind::Concat(e)
-        ),
+        ConcatBuilder::Const(v) => ExprKind::Const(Value::Vector(v)),
+        ConcatBuilder::Expr(e) => ExprKind::Concat(elem_ty, len, e),
     }.into()
 }
 
@@ -525,125 +520,122 @@ fn resolve_expr_binary(dcx: &mut DiagnosticContext, scope: &Scope, node: &ast::E
 
     // Swap constant operand to the right
     let (expr, expr_span, op, val, val_span) = match (lhs, rhs) {
-        (Expr::Expr(_, ExprKind::Ignored), _) | (_, Expr::Expr(_, ExprKind::Ignored)) => return Expr::ignored().into(),
-        (l, Expr::Const(r)) => (l, node.l.span(), node.op, r, node.r.span()),
-        (Expr::Const(l), r) => (r, node.r.span(), node.op.swap(), l, node.l.span()),
+        (ExprKind::Ignored, _ ) | (_, ExprKind::Ignored) => return ExprKind::Ignored.into(),
+        (l, ExprKind::Const(r)) => (l, node.l.span(), node.op, r, node.r.span()),
+        (ExprKind::Const(l), r) => (r, node.r.span(), node.op.swap(), l, node.l.span()),
         (_, _) => {
             return dcx.report(Diagnostic::BinaryOneSideMustBeConst { span: span() }).into();
         }
     };
 
-    let Some(e) = expr_binary_constant(expr.clone().inner(), op, val.clone()) else {
-        return dcx.report(Diagnostic::BinaryInvalidType {
+    let mut report_invalid_type = |expr: ExprKind, val: Value| {
+        dcx.report(Diagnostic::BinaryInvalidType {
             span1: scope.span(expr_span),
             ty1: expr.get_type(),
             span2: scope.span(val_span),
             ty2: val.get_type(),
-         }).into();
+         }).into()
     };
 
-    let ty = match (expr.get_type(), &val) {
-        (Type::Number(nt), Value::Number(c)) => {
-            let mut check_scale = |n: Option<NumberType>| {
-                n.ok_or_else(|| {
-                    dcx.report(Diagnostic::OperandNotMultipleOfScale {
-                        const_span: scope.span(val_span),
-                        const_val: *c,
-                        var_span: scope.span(expr_span),
-                        var_scale: nt.scale(),
-                    })
-                })
-            };
-
-            Type::Number(match op {
-                BinOp::Add => try_item!(check_scale(nt.add(*c))),
-                BinOp::Sub => try_item!(check_scale(nt.add(-c))),
-                BinOp::SubSwap => try_item!(check_scale(nt.mul(Number::new(-1,1)).add(*c))),
-
-                BinOp::Mul => nt.mul(*c),
-                BinOp::Div => nt.mul(c.recip()),
-                BinOp::DivSwap => return dcx.report(Diagnostic::DivisionMustBeConst {
-                    span: scope.span(expr_span),
-                }).into(),
-            })
-        }
-        (Type::RangeBounds(lo, hi), Value::Number(c)) => {
-            match op {
-                BinOp::Add => Type::RangeBounds(lo.map(|l| l + c), hi.map(|h| h + c)),
-                BinOp::Sub => Type::RangeBounds(lo.map(|l| l - c), hi.map(|h| h - c)),
-                BinOp::SubSwap => Type::RangeBounds(hi.map(|h| c - h), lo.map(|l| c - l)),
-                BinOp::Mul if c.is_negative() => Type::RangeBounds(hi.map(|h| h * c), lo.map(|l| l * c)),
-                BinOp::Mul => Type::RangeBounds(lo.map(|l| l * c), hi.map(|h| h * c)),
-                BinOp::Div if c.is_negative() => Type::RangeBounds(hi.map(|h| h * c.recip()), lo.map(|l| l * c.recip())),
-                BinOp::Div => Type::RangeBounds(lo.map(|l| l * c.recip()), hi.map(|h| h * c.recip())),
-                BinOp::DivSwap => return dcx.report(Diagnostic::DivisionMustBeConst {
-                    span: scope.span(expr_span),
-                }).into(),
+    match (&expr, &val) {
+        (ExprKind::Ignored, _) => ExprKind::Ignored.into(),
+        (ExprKind::Const(l), r) => {
+            if let Some(v) = eval_binary(l.clone(), op, r.clone()) {
+                ExprKind::Const(v).into()
+            } else {
+                report_invalid_type(expr, val)
             }
         }
-        (Type::Enum(vs), Value::Number(c)) => {
-            let res: Result<IndexSet<Value>, ()> = vs.iter().map(|v| match v {
-                Value::Number(n) => Ok(Value::Number(op.eval(n, c))),
-                _ => Err(())
-            }).collect();
-
-            let Ok(res) = res else {
-                return dcx.report(
-                    Diagnostic::BinaryInvalidType {
-                        span1: scope.span(expr_span),
-                        ty1: Type::Enum(vs),
-                        span2: scope.span(val_span),
-                        ty2: val.get_type(),
-                     }
-                ).into()
-            };
-
-            Type::Enum(res)
-        }
-        (Type::Complex, Value::Number(..)) | (Type::Number(..), Value::Complex(..)) | (Type::Complex, Value::Complex(..)) => Type::Complex,
-        (expr_ty, _) => return dcx.report(
-            Diagnostic::BinaryInvalidType {
-                span1: scope.span(expr_span),
-                ty1: expr_ty,
-                span2: scope.span(val_span),
-                ty2: val.get_type(),
-             }
-        ).into()
-    };
-
-    match e {
-        ExprKind::Const(c) => Expr::Const(c).into(),
-        e => Expr::Expr(ty, e).into(),
-    }
-}
-
-fn expr_binary_constant(expr: ExprKind, op: BinOp, val: Value) -> Option<ExprKind> {
-    match (expr, val) {
-        (ExprKind::Ignored, _) => Some(ExprKind::Ignored),
-        (ExprKind::Const(l), r) => {
-            eval_binary(l.clone(), op, r.clone()).map(ExprKind::Const)
-        }
         (ExprKind::Range(lo, hi), Value::Number(r)) => {
-            let lo = op.eval(lo, r);
-            let hi = hi.map(|hi| op.eval(hi, r));
-
-            if let Some(hi) = hi && hi < lo {
-                // TODO: what if there is no hi and the range is flipped?
-                Some(ExprKind::Range(hi, Some(lo)))
-            } else {
-                Some(ExprKind::Range(lo, hi))
+            match eval_binary_on_range(Some(*lo), *hi, op, *r) {
+                Ok((Some(lo), hi)) => ExprKind::Range(lo, hi).into(),
+                Ok((None, _)) => todo!(),
+                Err(()) => {
+                    return dcx.report(Diagnostic::DivisionMustBeConst {
+                        span: scope.span(expr_span),
+                    }).into()
+                }
             }
         }
         (ExprKind::Enum(vals), r) => {
-            vals.into_iter()
-                .map(|v| eval_binary(v, op, r.clone()))
+            if let Some(vals) = vals.iter()
+                .map(|v| eval_binary(v.clone(), op, r.clone()))
                 .collect::<Option<IndexSet<Value>>>()
-                .map(ExprKind::Enum)
+            {
+                ExprKind::Enum(vals).into()
+            } else {
+                report_invalid_type(expr, val)
+            }
         }
-        (e, Value::Number(v)) => {
-            Some(ExprKind::Unary(Box::new(e), UnaryOp::BinaryConstNumber(op, v)))
+        (expr, Value::Number(v)) => {
+            let ty = match (expr.get_type(), &val) {
+                (Type::Number(nt), Value::Number(c)) => {
+                    let mut check_scale = |n: Option<NumberType>| {
+                        n.ok_or_else(|| {
+                            dcx.report(Diagnostic::OperandNotMultipleOfScale {
+                                const_span: scope.span(val_span),
+                                const_val: *c,
+                                var_span: scope.span(expr_span),
+                                var_scale: nt.scale(),
+                            })
+                        })
+                    };
+
+                    Type::Number(match op {
+                        BinOp::Add => try_item!(check_scale(nt.add(*c))),
+                        BinOp::Sub => try_item!(check_scale(nt.add(-c))),
+                        BinOp::SubSwap => try_item!(check_scale(nt.mul(Number::new(-1,1)).add(*c))),
+
+                        BinOp::Mul => nt.mul(*c),
+                        BinOp::Div => nt.mul(c.recip()),
+                        BinOp::DivSwap => return dcx.report(Diagnostic::DivisionMustBeConst {
+                            span: scope.span(expr_span),
+                        }).into(),
+                    })
+                }
+                (Type::RangeBounds(lo, hi), Value::Number(c)) => {
+                    match eval_binary_on_range(lo, hi, op, *c) {
+                        Ok((lo, hi)) => Type::RangeBounds(lo, hi),
+                        Err(()) => {
+                            return dcx.report(Diagnostic::DivisionMustBeConst {
+                                span: scope.span(expr_span),
+                            }).into()
+                        }
+                    }
+                }
+                (Type::Enum(vs), Value::Number(c)) => {
+                    let res: Result<IndexSet<Value>, ()> = vs.iter().map(|v| match v {
+                        Value::Number(n) => Ok(Value::Number(op.eval(n, c))),
+                        _ => Err(())
+                    }).collect();
+
+                    let Ok(res) = res else {
+                        return dcx.report(
+                            Diagnostic::BinaryInvalidType {
+                                span1: scope.span(expr_span),
+                                ty1: Type::Enum(vs),
+                                span2: scope.span(val_span),
+                                ty2: val.get_type(),
+                                }
+                        ).into()
+                    };
+
+                    Type::Enum(res)
+                }
+                (Type::Complex, Value::Number(..)) | (Type::Number(..), Value::Complex(..)) | (Type::Complex, Value::Complex(..)) => Type::Complex,
+                (expr_ty, _) => return dcx.report(
+                    Diagnostic::BinaryInvalidType {
+                        span1: scope.span(expr_span),
+                        ty1: expr_ty,
+                        span2: scope.span(val_span),
+                        ty2: val.get_type(),
+                        }
+                ).into()
+            };
+
+            ExprKind::Unary { ty, expr: Box::new(expr.clone()), op: UnaryOp::BinaryConstNumber(op, *v) }.into()
         }
-        _ => None
+        _ => report_invalid_type(expr, val)
     }
 }
 
@@ -685,7 +677,7 @@ pub fn lvalue_const(
 ) -> Result<bool, ErrorReported> {
     match pat {
         ast::Expr::Var(name) => {
-            scope.bind(&name.name, Item::Leaf(LeafItem::Value(Expr::Const(val.clone()))));
+            scope.bind(&name.name, Item::Leaf(LeafItem::Value(ExprKind::Const(val.clone()))));
             Ok(true)
         }
 
@@ -861,13 +853,12 @@ pub fn lexpr(dcx: &mut DiagnosticContext, scope: &mut Scope, pat: &ast::Expr, r:
 
             match r {
                 Item::Leaf(LeafItem::Value(rv)) => {
-                    let found = rv.get_type();
-                    if found.is_subtype(&ty) {
+                    if rv.check_type(&ty) {
                         lexpr(dcx, scope, &node.expr, r)
                     } else {
                         let reported = dcx.report(Diagnostic::TypeConstraint {
                             span: scope.span(node.span),
-                            found,
+                            found: rv.get_type(),
                             bound: ty,
                         });
                         lexpr(dcx, scope, &node.expr, &Tree::Leaf(LeafItem::Invalid(reported)));
@@ -888,7 +879,7 @@ pub fn lexpr(dcx: &mut DiagnosticContext, scope: &mut Scope, pat: &ast::Expr, r:
         ast::Expr::Value(lv) => {
             let lval = Value::from_literal(&lv.value);
             match r {
-                Item::Leaf(LeafItem::Value(Expr::Const(rv))) if lval == *rv => {},
+                Item::Leaf(LeafItem::Value(ExprKind::Const(rv))) if lval == *rv => {},
                 Item::Leaf(LeafItem::Invalid(_)) => {},
                 non_match => {
                     dcx.report(Diagnostic::ExpectedConst {
@@ -943,7 +934,7 @@ pub fn bind_fields_const(
             scope.bind(&name.name, t.clone());
             true
         }
-        (pat, Tree::Leaf(LeafItem::Value(Expr::Const(c)))) => {
+        (pat, Tree::Leaf(LeafItem::Value(ExprKind::Const(c)))) => {
             match lvalue_const(dcx, scope, pat, c) {
                 Ok(p) => p,
                 Err(_) => false,
@@ -1021,7 +1012,7 @@ pub fn bind_fields(
             scope.bind(&name.name, ty.map_leaf(&mut |ty| {
                 let var = vars.add(scope.span(name.span), dir.into());
                 add_field(Ok(Pattern::Var(var)));
-                LeafItem::Value(Expr::Expr(ty.clone(), ExprKind::Var(var)))
+                LeafItem::Value(ExprKind::Var { ty: ty.clone(), id: var })
             }));
         }
         (pat, Tree::Leaf(ty)) => {
@@ -1044,7 +1035,7 @@ pub fn bind_field(dcx: &mut DiagnosticContext, vars: &mut Vars, scope: &mut Scop
     match pat {
         ast::Expr::Var(name) => {
             let var = vars.add(scope.span(name.span), dir.into());
-            scope.bind(&name.name, Item::Leaf(LeafItem::Value(Expr::Expr(ty.clone(), ExprKind::Var(var)))));
+            scope.bind(&name.name, Item::Leaf(LeafItem::Value(ExprKind::Var { ty: ty.clone(), id: var })));
             Ok(Pattern::Var(var))
         }
 
@@ -1100,7 +1091,7 @@ pub fn bind_field(dcx: &mut DiagnosticContext, vars: &mut Vars, scope: &mut Scop
 
 #[track_caller]
 #[cfg(test)]
-pub fn test_expr_parse(e: &str) -> Expr {
+pub fn test_expr_parse(e: &str) -> ExprKind {
     use crate::diagnostic::{DiagnosticContext, print_diagnostics};
     use crate::syntax::{parse_expr, SourceFile};
     use crate::core::Scope;
@@ -1123,10 +1114,10 @@ pub fn test_expr_parse(e: &str) -> Expr {
 
 #[test]
 fn test_number_const() {
-    let two = test_expr_parse("2").inner();
+    let two = test_expr_parse("2");
     assert_eq!(two, ExprKind::Const(Value::Number(Number::new(2, 1))));
 
-    let decimal = test_expr_parse("1.023").inner();
+    let decimal = test_expr_parse("1.023");
     assert_eq!(decimal, ExprKind::Const(Value::Number(Number::new(1023, 1000))));
 }
 
@@ -1134,75 +1125,75 @@ fn test_number_const() {
 fn test_arithmetic() {
     use num_complex::Complex;
 
-    assert_eq!(test_expr_parse("2 + 2").inner(), ExprKind::Const(Value::Number(4.into())));
-    assert_eq!(test_expr_parse("1 / 2").inner(), ExprKind::Const(Value::Number(Number::new(1, 2))));
+    assert_eq!(test_expr_parse("2 + 2"), ExprKind::Const(Value::Number(4.into())));
+    assert_eq!(test_expr_parse("1 / 2"), ExprKind::Const(Value::Number(Number::new(1, 2))));
 
-    let one_one_i = test_expr_parse("complex(1.0, 0.0) + complex(0, 1)").inner();
+    let one_one_i = test_expr_parse("complex(1.0, 0.0) + complex(0, 1)");
     assert_eq!(one_one_i, ExprKind::Const(Value::Complex(Complex { re: 1.into(), im: 1.into() })));
 
-    let two_two_i = test_expr_parse("complex(1, 1) * 2").inner();
+    let two_two_i = test_expr_parse("complex(1, 1) * 2");
     assert_eq!(two_two_i, ExprKind::Const(Value::Complex(Complex { re: 2.into(), im: 2.into() })));
 
-    assert_eq!(test_expr_parse("_ + _").inner(), ExprKind::Ignored);
-    assert_eq!(test_expr_parse("0 + _").inner(), ExprKind::Ignored);
-    assert_eq!(test_expr_parse("_ * 1").inner(), ExprKind::Ignored);
-    assert_eq!(test_expr_parse("_ * 1").inner(), ExprKind::Ignored);
+    assert_eq!(test_expr_parse("_ + _"), ExprKind::Ignored);
+    assert_eq!(test_expr_parse("0 + _"), ExprKind::Ignored);
+    assert_eq!(test_expr_parse("_ * 1"), ExprKind::Ignored);
+    assert_eq!(test_expr_parse("_ * 1"), ExprKind::Ignored);
 }
 
 #[test]
 fn test_arithmetic_range() {
-    let range = test_expr_parse("0.0..5.0").inner();
+    let range = test_expr_parse("0.0..5.0");
     assert_eq!(range, ExprKind::Range(0.into(), Some(5.into())));
 
-    let sum = test_expr_parse("(0..10) + 5").inner();
+    let sum = test_expr_parse("(0..10) + 5");
     assert_eq!(sum, ExprKind::Range(5.into(), Some(15.into())));
 
-    let sub = test_expr_parse("(0..10) - 5").inner();
+    let sub = test_expr_parse("(0..10) - 5");
     assert_eq!(sub, ExprKind::Range((-5).into(), Some(5.into())));
 
-    let sub_swap = test_expr_parse("5 - (0..7)").inner();
+    let sub_swap = test_expr_parse("5 - (0..7)");
     assert_eq!(sub_swap, ExprKind::Range((-2).into(), Some(5.into())));
 
-    let mul = test_expr_parse("(0..10) * 5").inner();
+    let mul = test_expr_parse("(0..10) * 5");
     assert_eq!(mul, ExprKind::Range(0.into(), Some(50.into())));
 
-    let mul = test_expr_parse("(0..10) * -5").inner();
+    let mul = test_expr_parse("(0..10) * -5");
     assert_eq!(mul, ExprKind::Range((-50).into(), Some(0.into())));
 
-    let div = test_expr_parse("(1..32) / 8").inner();
+    let div = test_expr_parse("(1..32) / 8");
     assert_eq!(div, ExprKind::Range(Number::new(1, 8), Some(4.into())));
 }
 
 #[test]
 fn test_arithmetic_enum() {
-    let range = test_expr_parse("0 | 1.5").inner();
+    let range = test_expr_parse("0 | 1.5");
     assert_eq!(range, ExprKind::Enum([Number::new(0, 1), Number::new(3, 2)].into_iter().map(Value::Number).collect()));
 
-    let sum = test_expr_parse("(0|1) + 2").inner();
+    let sum = test_expr_parse("(0|1) + 2");
     assert_eq!(sum, ExprKind::Enum([Number::new(2, 1), Number::new(3, 1)].into_iter().map(Value::Number).collect()));
 
-    let sub = test_expr_parse("(100 | 200) - 2").inner();
+    let sub = test_expr_parse("(100 | 200) - 2");
     assert_eq!(sub, ExprKind::Enum([Number::new(98, 1), Number::new(198, 1)].into_iter().map(Value::Number).collect()));
 
-    let sub_swap = test_expr_parse("5 - (1 | 7)").inner();
+    let sub_swap = test_expr_parse("5 - (1 | 7)");
     assert_eq!(sub_swap, ExprKind::Enum([Number::new(4, 1), Number::new(-2, 1)].into_iter().map(Value::Number).collect()));
 
-    let mul = test_expr_parse("(-1 | 2) * 5").inner();
+    let mul = test_expr_parse("(-1 | 2) * 5");
     assert_eq!(mul, ExprKind::Enum([Number::new(-5, 1), Number::new(10, 1)].into_iter().map(Value::Number).collect()));
 
-    let div = test_expr_parse("(64 | 32) / 8").inner();
+    let div = test_expr_parse("(64 | 32) / 8");
     assert_eq!(div, ExprKind::Enum([Number::new(8, 1), Number::new(4, 1)].into_iter().map(Value::Number).collect()));
 
-    let div_swap = test_expr_parse("128 / (64 | 32)").inner();
+    let div_swap = test_expr_parse("128 / (64 | 32)");
     assert_eq!(div_swap, ExprKind::Enum([Number::new(2, 1), Number::new(4, 1)].into_iter().map(Value::Number).collect()));
 }
 
 #[test]
 fn exprs() {
-    let choose = test_expr_parse("(#a | #b)[#a = #x, #b = #y]").inner();
+    let choose = test_expr_parse("(#a | #b)[#a = #x, #b = #y]");
     assert_eq!(choose, ExprKind::Enum(["x".into(), "y".into()].into_iter().map(Value::Symbol).collect()));
 
-    let fncall = test_expr_parse("((a) => a+3.0)(2.0)").inner();
+    let fncall = test_expr_parse("((a) => a+3.0)(2.0)");
     assert_eq!(fncall, ExprKind::Const(Value::Number(5.into())));
 }
 
@@ -1210,7 +1201,7 @@ fn exprs() {
 fn vec_const_fold() {
     assert_eq!(
         test_expr_parse("[1, 2, 2:[3, 1:[4]], 5]"),
-        Expr::Const(Value::Vector(vec![1i64.into(), 2i64.into(), 3i64.into(), 4i64.into(), 5i64.into()])),
+        ExprKind::Const(Value::Vector(vec![1i64.into(), 2i64.into(), 3i64.into(), 4i64.into(), 5i64.into()])),
     );
 
     assert_eq!(

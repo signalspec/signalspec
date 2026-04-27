@@ -1,6 +1,5 @@
 use std::cmp::{min, max};
 use std::fmt::Display;
-use std::hint;
 use std::ops::Range;
 
 use indexmap::IndexSet;
