@@ -10,7 +10,7 @@ members = ["cli", "lsp"]
 [dependencies]
 log = "0.4.14"
 num-complex = "0.4"
-peg = "0.8.5"
+peg = "0.8.6"
 futures-lite = "2.6.0"
 async-fs = "2.1.2"
 num-rational = { version = "0.4.1", default-features = false }
