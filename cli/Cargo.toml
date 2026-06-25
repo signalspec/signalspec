@@ -7,9 +7,9 @@ edition = "2024"
 [dependencies]
 signalspec = { path = "../" }
 log = "0.4.14"
-env_logger = "0.10.0"
+env_logger = "0.11.0"
 argparse = "0.2.1"
-codespan-reporting = "0.11.1"
+codespan-reporting = "0.13"
 num-traits = "0.2"
 
 [[bin]]
