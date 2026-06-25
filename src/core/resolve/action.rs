@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use itertools::Itertools;
+use itertools::{Itertools, AllEqualValueError};
 
 use crate::{
     Value, core::{
@@ -415,8 +415,8 @@ impl<'a> Builder<'a> {
 
                 let count = match count_spans.iter().map(|(c, _)| *c).all_equal_value() {
                     Ok(c) => c,
-                    Err(None) => 0,
-                    Err(Some(_)) => {
+                    Err(AllEqualValueError(None)) => 0,
+                    Err(AllEqualValueError(Some(_))) => {
                         self.dcx.report(Diagnostic::ForLoopVectorWidthMismatch { count_spans });
                         0
                     }
