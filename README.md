@@ -12,11 +12,11 @@ Applications include analysis and generation of digital, analog, and radio signa
 
    * Limited influence of state on conditionals and loops - control flow is readily represented as a finite state machine on FPGAs and microcontrollers.
    * No dynamically sized types or recursion - all memory is allocated statically at compile time.
-   * Expressions are invertable - able to capture the symmetry between transmitter and receiver.
+   * Expressions are invertible - able to capture the symmetry between transmitter and receiver.
 
 Signalspec is written in [Rust](https://rust-lang.org) and is open source software under the [Mozilla Public License, version 2.0](LICENSE).
 
-_It's a work in progress and isn't very useful yet. This document refers to many unimplmented features in present tense. If a section sounds hand-wavy, it's probably because it's not fully figured out yet. It'll probably be easier to explain once more complete examples can be used to demonstrate._
+_It's a work in progress and isn't very useful yet. This document refers to many unimplemented features in present tense. If a section sounds hand-wavy, it's probably because it's not fully figured out yet. It'll probably be easier to explain once more complete examples can be used to demonstrate._
 
 # Conceptual overview
 
@@ -93,15 +93,15 @@ Because the data direction in processes is flexible and the signals are not link
 
 Signals implement protocols to define the data types of their tokens and determine which processes can be stacked on top. Protocols fill a role like Rust's traits.
 
-The simplest and most common protocol is `Seq(T)`. It has a single token variant `val`, carrying one element of type `T`.
+The simplest and most common protocol is `Seq(T, dir)`. It has a single token variant `val`, carrying one element of type `T` in the direction specified.
 
 An example of a protocol with multiple variants is `I2C`, with token variants `start(addr: byte)`, `data(dir: #r|#w, d: byte)`, `stop()`. 
 
 These token variants are exposed as processes that transact the single token. Compound processes are defined for signals implementing a particular protocol, and process calls are resolved based on the protocol of the signal below them. The process definition determines the protocol of its top signal.
 
-Protocols can be parameterized to carry contextual metadata about the signal. For example,`Sampled(T, rate)` extends `Seq(T)` but carries a sample rate, allowing processes like `constant(value, time)` or `sine(amplitude, frequency)` to be defined with a way to relate samples to time.
+Protocols can be parameterized to carry contextual metadata about the signal. For example, `Sampled(T, rate, dir)` extends `Seq(T, dir)` but carries a sample rate, allowing processes like `constant(value, time)` or `sine(amplitude, frequency)` to be defined with a way to relate samples to time.
 
-Protocol parameters can also represent requrements about the configuration of the underlying process stack. The `SPI` protocol has parameters representing the clock speed and mode of the SPI device. Processes defined atop `SPI` can require particular values for these parameters.
+Protocol parameters can also represent requirements about the configuration of the underlying process stack. The `SPI` protocol has parameters representing the clock speed and mode of the SPI device. Processes defined atop `SPI` can require particular values for these parameters.
 
 ## Expressions: Bidirectional Evaluation
 
@@ -111,14 +111,14 @@ Evaluation of expressions can occur in two directions: **Up** and **down** the a
 
 **Down-evaluation** works like evaluation in traditional programming languages: return value is a function of one or more subexpressions. Down-evaluation is functionally pure.
 
-**Up-evaluation** can be thought of as pushing a value into the expression from the "return" side, which then pushes values into its subexpressions. The evaluation either "matches" or "fails". It has semantics similar to the pattern in a Rust `match` arm, destructuring a value and testing or binding its compoenents.
+**Up-evaluation** can be thought of as pushing a value into the expression from the "return" side, which then pushes values into its subexpressions. The evaluation either "matches" or "fails". It has semantics similar to the pattern in a Rust `match` arm, destructuring a value and testing or binding its components.
 
 ### Literals
 
 number literals: `42.1`  
 unit literals: `3.3V`
 integer literals: `42`
-bit literals: `'b1010`, `'xAA55` - Produces a vector of integer 1 and 0.  
+bit literals: `'b1010`, `'xAA55` - Produces a vector of integers 1 and 0.
 symbol literals: `#abc` - Symbols are discrete named values internally represented by integers.
 
 **down:** Evaluates to the literal value.  
@@ -133,15 +133,12 @@ a-b
 a/b
 ```
 
-**down:** Down-evaluate both arguments and perform operation.  
+**down:** Down-evaluate both arguments and perform the operation.
 **up:** If one argument is constant, perform the inverse operation with the pushed value and the constant and up-evaluate the non-constant argument with the result.
 
 ### Ignore
 
-```
-_
-```
-(underscore `_` or `ignore`)
+`_` (underscore)
 
 **up:** Pushed value is discarded, match always succeeds.
 
@@ -152,15 +149,14 @@ min..max
 ```
 
 **down:** It is an error if a range is in a position where it is down-evaluated (must appear on the right-hand side of `!`).  
-**up:** Down-evaluate numbers `min` and `max`. Match if the pushed value is between `min` (inclusive) and `max` (exclusive), or fail if it is outside the range.
+**up:** Match if the pushed value is between the constants `min` (inclusive) and `max` (exclusive), or fail if it is outside the range.
 
-If min is omitted (`..max`), it defaults to -Infinity.
-If max is omitted (`min..`), it defaults to Infinity.
-
+If min is omitted (`..max`), the lower bound is unbounded.
+If max is omitted (`min..`), the upper bound is unbounded.
 
 ### Switch
 
-`x!y`  
+`x!y`  or `~x`
 
 **down:** Down-evaluation of `x`.  
 **up:** Up-evaluate `y` with the pushed value.
@@ -197,7 +193,7 @@ Example:
 Vectors combine multiple values of the same type.
 
 **down:** Down-evaluate each part. Components without the `*`, like `v1`, are treated as length 1, and the value is inserted directly into the vector. Return the concatenation of `a1` + [`v1`] + `a2` + ... + `an`.  
-**up:** Split the data into parts using the lengths of the component parts. Up-evaluate each `a1`...`an` field with the respective part. Components without the `*` are treated as length 1, and the expression up-evaluated with the element at that position.
+**up:** Split the data into parts using the lengths of the component parts. Up-evaluate each `a1`...`an` field with the respective part. Components without the `*` are treated as length 1, and the expression is up-evaluated with the element at that position.
 
 ### Tuples
 
@@ -217,18 +213,17 @@ The amount of ambiguity is to be determined. Fully nondeterministic bidirectiona
 
 A series of statements separated by newlines or semicolons are matched in order.
 
-The process `val(#a) ; val(#b) ; val(#c)`, matches exactly the series of symbol tokens `#a`, `#b`, `#c`, and generates the same series of tokens.
+The process `val(#a) ; val(#b) ; val(#c)` matches exactly the series of symbol tokens `#a`, `#b`, `#c`, and generates the same series of tokens.
 
 ### `repeat`
 
-<code><b>repeat</b> <var>n</var> <b>{ </b> <var>(first) ; [rest]</var> <b>};</b> <var>(follow...)</var></code>
+<code><b>repeat(</b><var>dir</var><b>)</b> <var>n</var> <b>{ </b> <var>[body]</var> <b>}</b></code>
 
-As a heuristic for determining the data direction of the count expression: if the body of the loop
-contains no tokens where data is used in the up direction, the count is down-evaluated and the loop
-is executed that number of times. Otherwise, it counts number of times the loop matches, and
-up-evaulates the count with that number.
+`dir` is a constant `#up` or `#dn` representing the data direction of the loop counter `n`. If `dir` is `#dn`, `n` is down-evaluated and the body runs that number of times. If `dir` is `#up`, `n` must have an integer range type with a lower bound of 0 or 1. The body is run as many times as it matches, up to the upper bound of `n`'s type, and `n` is up-evaluated with the number of iterations.
 
 In sampled signals, this is used to measure and set the time duration of signal features.
+
+A bare <code><b>repeat { </b> <var>[body]</var> <b>}</b></code> is equivalent to `repeat(#up) _ { ... }` where the body is repeated indefinitely as long as it matches.
 
 ### `for`
 
@@ -238,12 +233,21 @@ In sampled signals, this is used to measure and set the time duration of signal 
 
 `v1`, `v2`, ... `vn` must be vectors with the same length `x`. The body is executed `x` times (`i` from `0` to `x`), with `e1`, `e2` ... `en` bidirectionally bound to the `i`th element of the corresponding vector.
 
+### `any`
+
+<code><b>any { </b> <var>body1</var>; <var>body2</var> ; <var>body3</var> <b>}</b></code>
+
+Any of the alternatives `body1`, `body2` etc. can match. To preserve causality, the alternatives must send the same values on output signals until the point where they make mutually exclusive matches against input signals.
 
 ### `alt`
 
-<code><b>alt</b> <var>expr</var> <b> { </b> <var>expr1</var> <b>=> { </b><var>body1</var><b> } </b> <var>expr2</var> <b>=> { </b><var>body2</var><b> }</b> <var>...</var> <b>}</b></code>
+<code><b>alt(</b> <var>dir</var> <b>)</b> <var>expr</var> <b> { </b> <var>expr1</var> <b>=> { </b><var>body1</var><b> } </b> <var>expr2</var> <b>=> { </b><var>body2</var><b> }</b> <var>...</var> <b>}</b></code>
 
-Just like `repeat`, as a heuristic for determining the data direction of the expression: if the body of all cases contain no tokens where data is used in the up direction, the count is down-evaluated and the appropriate branch is chosen. Otherwise, the expression is up-evaluated with the value corresponding to the branch that matches.
+Like `any` but with an expression controlling or capturing which arm matches. `dir` is a constant `#up` or `#dn` representing the data direction of `expr`.
+
+If `dir` is `#dn`, `expr` is down-evaluated and matched against the cases, and the arm associated with the first matching case is executed.
+
+If `dir` is `#up`, all of the arms are matched, and `expr` is up-evaluated with the value associated with the first arm to match completely.
 
 ### `on`
 
