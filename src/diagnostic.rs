@@ -382,6 +382,12 @@ diagnostic_kinds! {
         Label { label: format!("expression has lower bound of {found}"), span },
     ]
 
+    RangeStepOnExpr {
+        span: Span,
+    } => "range step can only be specified on types" at [
+        Label { label: "step not allowed here".to_string(), span },
+    ]
+
     RangeTypeMissingMax {
         span: Span
     } => "range types require an upper bound" at [

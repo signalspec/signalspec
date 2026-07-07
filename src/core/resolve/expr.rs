@@ -2,6 +2,7 @@ use std::{fmt::{self, Display}, iter, sync::Arc};
 
 use indexmap::IndexSet;
 use itertools::{Itertools, EitherOrBoth};
+use num_traits::Signed;
 
 use crate::{
     Dir, SourceFile, Type, TypeTree, Value, core::{
@@ -282,47 +283,26 @@ fn resolve_expr_flip(dcx: &mut DiagnosticContext, scope: &Scope, node: &ast::Exp
 fn resolve_expr_range(dcx: &mut DiagnosticContext, scope: &Scope, node: &ast::ExprRange) -> Item {
     let min = constant::<Number>(dcx, scope, &node.lo);
     let max = node.hi.as_ref().map(|h| constant::<Number>(dcx, scope, h)).transpose();
-    let step = node.step.as_ref().map(|s| constant::<Number>(dcx, scope, s)).transpose();
+
+    if let Some(step) = &node.step {
+        return dcx.report(
+            Diagnostic::RangeStepOnExpr { span: scope.span(step.span()) }
+        ).into();
+    }
 
     let min = try_item!(min);
     let max = try_item!(max);
-    let step = try_item!(step).unwrap_or(Number::new(1, 1));
 
-    let nt = if let Some(max) = max {
-        match NumberType::from_scaled(min, max, step) {
-            Ok(t) => t,
-            Err(NumberTypeError::BoundsNotMultipleOfStep) => return dcx.report(
-                Diagnostic::RangeNotMultipleOfStep {
-                    min, min_span: scope.span(node.lo.span()),
-                    max, max_span: scope.span(node.hi.as_ref().unwrap().span()),
-                    step
-                }
-            ).into(),
-            Err(NumberTypeError::Order) => return dcx.report(
-                Diagnostic::RangeOrder {
-                    min, min_span: scope.span(node.lo.span()),
-                    max, max_span: scope.span(node.hi.as_ref().unwrap().span()),
-                }).into(),
-            Err(NumberTypeError::StepIsZero) => return dcx.report(
-                Diagnostic::RangeStepZero {
-                    step, step_span: scope.span(node.step.as_ref().unwrap().span()),
-                }).into(),
-        }
-    } else {
-        if step == 0.into() {
-            return dcx.report(
-                Diagnostic::RangeStepZero {
-                    step, step_span: scope.span(node.step.as_ref().unwrap().span()),
-                }
-            ).into();
-        }
+    if let Some(max) = max && min > max {
+        return dcx.report(
+            Diagnostic::RangeOrder {
+                min, min_span: scope.span(node.lo.span()),
+                max, max_span: scope.span(node.hi.as_ref().unwrap().span()),
+            }
+        ).into();
+    }
 
-        let min = min / step;
-
-        NumberType::new(step, *min.numer(), i64::MAX)
-    };
-
-    Expr::Expr(Type::Number(nt), ExprKind::Range(min, max)).into()
+    Expr::Expr(Type::RangeBounds(Some(min), max), ExprKind::Range(min, max)).into()
 }
 
 fn resolve_expr_typed(dcx: &mut DiagnosticContext, scope: &Scope, node: &ast::ExprTyped) -> Item {
@@ -586,6 +566,20 @@ fn resolve_expr_binary(dcx: &mut DiagnosticContext, scope: &Scope, node: &ast::E
                     span: scope.span(expr_span),
                 }).into(),
             })
+        }
+        (Type::RangeBounds(lo, hi), Value::Number(c)) => {
+            match op {
+                BinOp::Add => Type::RangeBounds(lo.map(|l| l + c), hi.map(|h| h + c)),
+                BinOp::Sub => Type::RangeBounds(lo.map(|l| l - c), hi.map(|h| h - c)),
+                BinOp::SubSwap => Type::RangeBounds(hi.map(|h| c - h), lo.map(|l| c - l)),
+                BinOp::Mul if c.is_negative() => Type::RangeBounds(hi.map(|h| h * c), lo.map(|l| l * c)),
+                BinOp::Mul => Type::RangeBounds(lo.map(|l| l * c), hi.map(|h| h * c)),
+                BinOp::Div if c.is_negative() => Type::RangeBounds(hi.map(|h| h * c.recip()), lo.map(|l| l * c.recip())),
+                BinOp::Div => Type::RangeBounds(lo.map(|l| l * c.recip()), hi.map(|h| h * c.recip())),
+                BinOp::DivSwap => return dcx.report(Diagnostic::DivisionMustBeConst {
+                    span: scope.span(expr_span),
+                }).into(),
+            }
         }
         (Type::Enum(vs), Value::Number(c)) => {
             let res: Result<IndexSet<Value>, ()> = vs.iter().map(|v| match v {
@@ -1171,6 +1165,9 @@ fn test_arithmetic_range() {
 
     let mul = test_expr_parse("(0..10) * 5").inner();
     assert_eq!(mul, ExprKind::Range(0.into(), Some(50.into())));
+
+    let mul = test_expr_parse("(0..10) * -5").inner();
+    assert_eq!(mul, ExprKind::Range((-50).into(), Some(0.into())));
 
     let div = test_expr_parse("(1..32) / 8").inner();
     assert_eq!(div, ExprKind::Range(Number::new(1, 8), Some(4.into())));

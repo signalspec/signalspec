@@ -1,5 +1,6 @@
 use std::cmp::{min, max};
 use std::fmt::Display;
+use std::hint;
 use std::ops::Range;
 
 use indexmap::IndexSet;
@@ -102,6 +103,9 @@ pub enum Type {
 
     /// The type of the Ignore expression `_`. No-op union with any type.
     Ignored,
+
+    /// A range min..max without a defined step.
+    RangeBounds(Option<Number>, Option<Number>),
 }
 
 impl Type {
@@ -137,6 +141,14 @@ impl Type {
                     Err(IncompatibleTypes(Number(n1), Number(n2)))
                 }
             }
+            (RangeBounds(lo1, hi1), RangeBounds(lo2, hi2)) => {
+                Ok(RangeBounds([lo1, lo2].into_iter().flatten().min(), [hi1, hi2].into_iter().flatten().max()))
+            }
+            (RangeBounds(Some(lo1), Some(hi1)), Number(n2))
+            | (Number(n2), RangeBounds(Some(lo1), Some(hi1)))
+            if let Some(lo1) = as_integer(lo1 / n2.scale()) && let Some(hi1) = as_integer(hi1 / n2.scale()) => {
+                Ok(Number(NumberType::new(n2.scale(), min(lo1, n2.min()), max(hi1, n2.max()))))
+            }
             (Number(range), Enum(set)) | (Enum(set), Number(range)) => {
                 set.iter().try_fold(range.clone(), |n, v| {
                     if let Value::Number(nv) = v {
@@ -149,6 +161,15 @@ impl Type {
                         Err(IncompatibleTypes(Enum(set.clone()), Number(n)))
                     }
                 }).map(Type::Number)
+            }
+            (RangeBounds(lo, hi), Enum(set)) | (Enum(set), RangeBounds(lo, hi)) => {
+                set.iter().try_fold((lo, hi), |(lo, hi), v| {
+                    if let Value::Number(nv) = v {
+                        Ok((lo.map(|lo| min(lo, *nv)), hi.map(|hi| max(hi, *nv))))
+                    } else {
+                        Err(IncompatibleTypes(Enum(set.clone()), RangeBounds(lo, hi)))
+                    }
+                }).map(|(lo, hi)| Type::RangeBounds(lo, hi))
             }
             (Complex, Complex) => Ok(Complex),
             (t1, t2) => Err(IncompatibleTypes(t1, t2))
@@ -166,6 +187,9 @@ impl Type {
             (Type::Complex, Value::Number(_)) => true,
             (Type::Complex, Value::Complex(_)) => true,
             (Type::Number(nt), Value::Number(n)) => nt.contains(*n),
+            (Type::RangeBounds(lo, hi), Value::Number(n)) => {
+                lo.is_none_or(|l| *n >= l) && hi.is_none_or(|h| *n < h)
+            }
             (Type::Enum(s), v) => s.contains(v),
             (Type::Vector(w, t), Value::Vector(v)) =>
                 v.len() == *w as usize && v.iter().all(|x| t.test(x)),
@@ -212,6 +236,9 @@ impl Type {
         match self {
             Type::Ignored => Some((0, None)),
             Type::Number(nt) if nt.is_integer() && !nt.min().is_negative() => Some((nt.min() as u64, Some(nt.max() as u64))),
+            Type::RangeBounds(Some(lo), hi) if lo.is_integer() && !lo.is_negative() && hi.is_none_or(|h| h.is_integer() && !h.is_negative()) => {
+                Some((*lo.numer() as u64, hi.map(|h| *h.numer() as u64)))
+            }
             Type::Enum(v) if v.len() == 1 => {
                 if let Value::Number(n) = v.iter().next().unwrap() && n.is_integer() && !n.is_negative() {
                     Some((*n.numer() as u64, Some(*n.numer() as u64 + 1)))
@@ -234,6 +261,16 @@ impl Display for Type {
                 } else {
                     write!(f, "{lo}..{hi} by {scale}", lo = n.scaled_min(), hi = n.scaled_max(), scale = n.scale())
                 }
+            }
+            Type::RangeBounds(lo, hi) => {
+                if let Some(lo) = lo {
+                    write!(f, "{lo}")?;
+                }
+                write!(f, "..")?;
+                if let Some(hi) = hi {
+                    write!(f, "{hi}")?;
+                }
+                Ok(())
             }
             Type::Complex => write!(f, "<complex>"),
             Type::Vector(l, t) => write!(f, "[{t}; {l}]"),
