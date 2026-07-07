@@ -24,6 +24,10 @@ pub enum NumberTypeError {
     StepIsZero,
 }
 
+fn as_integer(n: Number) -> Option<i64> {
+    n.is_integer().then_some(*n.numer())
+}
+
 impl NumberType {
     pub fn new(scale: Number, min: i64, max: i64) -> NumberType {
         assert!(min < max);
@@ -39,23 +43,20 @@ impl NumberType {
         Self::integer(0, 2)
     }
 
-    pub(crate) fn from_scaled(min: Number, max: Number, step: Number) -> Result<NumberType, NumberTypeError> {
-        if step == 0.into() {
+    pub(crate) fn from_scaled(min: Number, max: Number, scale: Number) -> Result<NumberType, NumberTypeError> {
+        if scale == 0.into() {
             return Err(NumberTypeError::StepIsZero)
         }
 
-        let min = min / step;
-        let max = max / step;
-
-        if !min.is_integer() || !max.is_integer() {
+        let (Some(min), Some(max)) = (as_integer(min / scale), as_integer(max / scale)) else {
             return Err(NumberTypeError::BoundsNotMultipleOfStep);
-        }
+        };
 
-        if min.numer() > max.numer() {
+        if min > max {
             return Err(NumberTypeError::Order);
         }
 
-        Ok(NumberType { scale: step, min: *min.numer(), max: *max.numer() })
+        Ok(NumberType { scale, min, max })
     }
 
     pub fn is_integer(&self) -> bool {
@@ -76,14 +77,12 @@ impl NumberType {
     pub fn scaled_max(&self) -> Number { self.scale * Number::new(self.max, 1) }
 
     pub fn contains(&self, n: Number) -> bool {
-        let v = n / self.scale;
-        *v.denom() == 1 && self.range().contains(v.numer())
+        as_integer(n / self.scale).is_some_and(|v| self.range().contains(&v))
     }
 
     pub(crate) fn add(&self, c: Number) -> Option<NumberType> {
-        let v = c / self.scale;
-        if v.is_integer() {
-            Some(NumberType { min: self.min + v.numer(), max: self.max + v.numer(), ..*self })
+        if let Some(v) = as_integer(c / self.scale()) {
+            Some(NumberType { min: self.min + v, max: self.max + v, ..*self })
         } else {
             None
         }
@@ -141,9 +140,8 @@ impl Type {
             (Number(range), Enum(set)) | (Enum(set), Number(range)) => {
                 set.iter().try_fold(range.clone(), |n, v| {
                     if let Value::Number(nv) = v {
-                        let v = nv / n.scale();
-                        if v.is_integer() {
-                            Ok(NumberType::new(n.scale(), min(n.min(), *v.numer()), max(n.max(), *v.numer())))
+                        if let Some(v) = as_integer(nv / n.scale()) {
+                            Ok(NumberType::new(n.scale(), min(n.min(), v), max(n.max(), v)))
                         } else {
                             Err(IncompatibleTypes(Enum(set.clone()), Number(n)))
                         }
