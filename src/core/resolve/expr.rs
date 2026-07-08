@@ -5,7 +5,10 @@ use itertools::{Itertools, EitherOrBoth};
 
 use crate::{
     Dir, SourceFile, Type, TypeTree, Value, core::{
-        Func, FunctionDef, Item, LeafItem, Scope, data::{NumberType, NumberTypeError}, op::{ConcatElem, UnaryOp, eval_binary, eval_choose}, resolve::{action::Vars, type_expr::type_tree}
+        Func, FunctionDef, Item, LeafItem, Scope,
+        data::{NumberType, NumberTypeError},
+        op::{ConcatElem, UnaryOp, eval_binary, eval_choose},
+        resolve::{action::Vars, type_expr::{type_expr, type_tree}},
     }, diagnostic::{Diagnostic, DiagnosticContext, ErrorReported, Span, collect_or_err}, entitymap::entity_key, syntax::{
         Number, ast::{self, AstNode, BinOp}
     }, tree::{Tree, TupleFields}
@@ -324,11 +327,10 @@ fn resolve_expr_range(dcx: &mut DiagnosticContext, scope: &Scope, node: &ast::Ex
 
 fn resolve_expr_typed(dcx: &mut DiagnosticContext, scope: &Scope, node: &ast::ExprTyped) -> Item {
     let expr = value(dcx, scope, &node.expr);
-    let bound_expr = value(dcx, scope, &node.ty);
+    let bound = type_expr(dcx, scope, &node.ty);
 
     let expr = try_item!(expr);
-    let bound = try_item!(bound_expr).get_type();
-
+    let bound = try_item!(bound);
     let span = || scope.span(node.span);
 
     match expr {
@@ -856,8 +858,8 @@ pub fn lexpr(dcx: &mut DiagnosticContext, scope: &mut Scope, pat: &ast::Expr, r:
         }
 
         ast::Expr::Typed(node) => {
-            let ty = match value(dcx, scope, &node.ty) {
-                Ok(v) => v.get_type(),
+            let ty = match type_expr(dcx, scope, &node.ty) {
+                Ok(ty) => ty,
                 Err(reported) => {
                     return lexpr(dcx, scope, &node.expr, &Tree::Leaf(LeafItem::Invalid(reported)));
                 }

@@ -46,12 +46,17 @@ pub fn type_tree(dcx: &mut DiagnosticContext, scope: &Scope, e: &ast::Expr) -> R
         }
 
         ast::Expr::Tup(node) => {
-            Ok(TypeTree::Tuple(node.fields.iter()
-                .map(|f| Ok::<_, ErrorReported>((
-                    f.name.as_ref().map(|n| n.name.clone()),
-                    type_tree(dcx, scope, &f.expr)?
-                ))).collect::<Result<TupleFields<TypeTree>, ErrorReported>>()?
-            ))
+            if node.fields.len() == 1 && node.fields[0].name.is_none() {
+                // Unwrap singleton tuple
+                type_tree(dcx, scope, &node.fields[0].expr)
+            } else {
+                Ok(TypeTree::Tuple(node.fields.iter()
+                    .map(|f| Ok::<_, ErrorReported>((
+                        f.name.as_ref().map(|n| n.name.clone()),
+                        type_tree(dcx, scope, &f.expr)?
+                    ))).collect::<Result<TupleFields<TypeTree>, ErrorReported>>()?
+                ))
+            }
         }
         ast::Expr::Value(node) => Ok(Value::from_literal(&node.value).get_type().into()),
         ast::Expr::Ignore(_) => Ok(Type::Ignored.into()),
