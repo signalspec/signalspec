@@ -12,4 +12,7 @@ with Seq(type #a|#b|#c, dir) def triple() = new Seq(type (#a|#b|#c, #a|#b|#c, #a
 }
 
 @test(#both, (#a, #b, #c, #c, #b, #a))
+with Seq(type #a|#b|#c, dir) def stack2() = triple() | seq { val((#a, #b, #c)); val((#c, #b, #a)) }
+
+@test(#both, (#a, #b, #c, #c, #b, #a))
 with Seq(type #a|#b|#c, dir) def test_triple() = passthru() | triple() | seq { val((#a, #b, #c)); val((#c, #b, #a)) }

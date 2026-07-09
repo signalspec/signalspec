@@ -16,7 +16,7 @@ def pkt() = new Packets(type #a, dir) {
     }
 }
 
-@xtest(#both, (#a, #a, #end, #end, #a, #end))
+@test(#both, (#a, #a, #end, #end, #a, #end))
 with Seq(type #a|#end, _)
 def t1() = pkt() | seq {
     packet() | seq {
