@@ -225,7 +225,7 @@ peg::parser!(pub grammar signalspec() for str {
     / expected!("integer")
 
   rule NUMBER() -> Number
-    = quiet!{ int:$("-"?['0'..='9']+) frac:("." !"." f:$(['0'..='9']*) {f})? {?
+    = quiet!{ int:$("-"?['0'..='9']+) frac:("." f:$(['0'..='9']+) {f})? {?
       const EXPECTED: &'static str = "number that fits in a 64-bit fraction";
       let int: i64 = int.parse().map_err(|_| EXPECTED)?;
       let pow: i64 = frac.map_or(Some(1), |s| 10i64.checked_pow(s.len() as u32)).ok_or(EXPECTED)?;
