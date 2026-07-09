@@ -14,7 +14,7 @@ with I2C(role) def MMA845xQ() = device(ADDR) | MMA845xQ()
 
 with I2CDevice(role)
 def MMA845xQ() = new Seq((-4.0..4.0 by 1/16384.0, -4.0..4.0 by 1/16384.0 , -4.0..4.0 by 1/16384.0), #up) {
-    write_read([WHO_AM_I], <:['h2a]);
+    write_read([WHO_AM_I], ~['h2a]);
     write([CTRL_REG1, 'h31]);
     write([XYZ_DATA_CFG, 'h00]);
     write([CTRL_REG4, 'h01]);
@@ -28,4 +28,3 @@ def MMA845xQ() = new Seq((-4.0..4.0 by 1/16384.0, -4.0..4.0 by 1/16384.0 , -4.0.
         }
     }
 }
-
