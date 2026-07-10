@@ -1,4 +1,4 @@
-use crate::{core::{op::ConcatElem, resolve::{expr::{Pattern, VarId}, ExprKind}, step::{ExprCtx, ExprDnId, Predicate}}, entitymap::EntityMap};
+use crate::{core::{op::ConcatElem, resolve::{expr::{VarId, ExprKind}, pattern::Pattern}, step::{ExprCtx, ExprDnId, Predicate}}, entitymap::EntityMap};
 
 pub struct ExprLower {
     vars: EntityMap<VarId, VarState>,

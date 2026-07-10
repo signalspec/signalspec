@@ -2,7 +2,7 @@ use itertools::Itertools;
 
 use crate::{
     Shape, Value, core::{
-        Dir, op::{ConcatElem, UnaryOp}, resolve::{action::{Action}, expr::{ExprKind, Pattern, VarId}}, step::{ConnectionId, ExprDn, ExprDnId, Predicate, StepBuilder, StepId, ValueSrc, ValueSrcId, expr_lower::ExprLower}
+        Dir, op::{ConcatElem, UnaryOp}, resolve::{action::{Action}, expr::{ExprKind, VarId}, pattern::Pattern}, step::{ConnectionId, ExprDn, ExprDnId, Predicate, StepBuilder, StepId, ValueSrc, ValueSrcId, expr_lower::ExprLower}
     }, entitymap::EntityMap, syntax::BinOp
 };
 

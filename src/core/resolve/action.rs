@@ -4,7 +4,7 @@ use itertools::{Itertools, AllEqualValueError};
 
 use crate::{
     Value, core::{
-        ChannelId, Dir, Item, LeafItem, Scope, Shape, ShapeMsg, Type, index::FindDefError, resolve::expr::{Pattern, ZipTupleResult}, step::ConnectionId
+        ChannelId, Dir, Item, LeafItem, Scope, Shape, ShapeMsg, Type, index::FindDefError, step::ConnectionId
 }, diagnostic::{DiagnosticContext, Span, collect_or_err, try_push}, entitymap::EntityMap, runtime::PrimitiveProcess};
 use crate::diagnostic::{ErrorReported};
 use crate::runtime::instantiate_primitive;
@@ -12,8 +12,11 @@ use crate::syntax::ast::{self, AstNode};
 use crate::tree::Tree;
 use crate::{Diagnostic, Index};
 
-use super::expr::{TryFromConstant, value, lexpr_tup, zip_tuple_ast_fields, lexpr, ExprKind, rexpr, rexpr_tup, constant, bind_field, bind_fields, bind_fields_const, VarId};
-use super::protocol;
+use super::{
+    protocol,
+    expr::{TryFromConstant, value, ExprKind, rexpr, rexpr_tup, constant, VarId},
+    pattern::{lexpr_tup, lexpr, zip_tuple_ast_fields, bind_field, bind_fields, bind_fields_const, Pattern, ZipTupleResult},
+};
 
 pub fn resolve_process(dcx: &mut DiagnosticContext, index: &Index, scope: &Scope, shape_dn: Shape, ast: &ast::Process) -> ResolveResult {
     let mut builder = Builder::new(dcx, index);
