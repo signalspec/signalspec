@@ -3,9 +3,7 @@ use crate::{
     FileSpan, SourceFile, Type,
 };
 use std::{
-    fmt::{Debug, Display},
-    ptr,
-    sync::Arc,
+    fmt::{Debug, Display}, ops::Deref, ptr, sync::Arc
 };
 
 pub type Diagnostics = Vec<Diagnostic>;
@@ -80,12 +78,42 @@ impl Span {
             span,
         }
     }
+
+    pub fn wrap<T>(self, inner: T) -> Spanned<T> {
+        Spanned { inner, span: self }
+    }
 }
 
 impl Debug for Span {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let start_line = self.file.byte_to_line(self.span.start);
         write!(f, "{}:{}", self.file.name(), start_line + 1,)
+    }
+}
+
+#[derive(Clone)]
+pub struct Spanned<T> {
+    pub inner: T,
+    pub span: Span,
+}
+
+impl<T> Deref for Spanned<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+impl<T: PartialEq> PartialEq for Spanned<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.inner == other.inner
+    }
+}
+
+impl<T: Debug> Debug for Spanned<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self.inner)
     }
 }
 

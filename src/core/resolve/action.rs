@@ -4,8 +4,8 @@ use itertools::{Itertools, AllEqualValueError};
 
 use crate::{
     Value, core::{
-        ChannelId, Dir, Item, LeafItem, Scope, Shape, ShapeMsg, Type, index::FindDefError, step::ConnectionId
-}, diagnostic::{DiagnosticContext, Span, collect_or_err, try_push}, entitymap::EntityMap, runtime::PrimitiveProcess};
+        ChannelId, Dir, Item, LeafItem, Scope, Shape, ShapeMsg, Type, index::FindDefError, resolve::expr::spanned_value, step::ConnectionId
+}, diagnostic::{DiagnosticContext, Span, Spanned, collect_or_err, try_push}, entitymap::EntityMap, runtime::PrimitiveProcess};
 use crate::diagnostic::{ErrorReported};
 use crate::runtime::instantiate_primitive;
 use crate::syntax::ast::{self, AstNode};
@@ -100,17 +100,17 @@ impl Vars {
         VarDirs { dn, up }
     }
 
-    fn check_use(&mut self, dcx: &mut DiagnosticContext, span: Span, expr: &ExprKind, dir: Dir) {
+    fn check_use(&mut self, dcx: &mut DiagnosticContext, expr: &Spanned<ExprKind>, dir: Dir) {
         match dir {
             Dir::Dn => {
                 if !expr.check_use_dn(&mut |var_id| self.vars[var_id].dirs.dn) {
-                    dcx.report(Diagnostic::RequiredDownValue{ span });
+                    dcx.report(Diagnostic::RequiredDownValue{ span: expr.span.clone() });
                 }
             }
             Dir::Up => {
                 expr.check_use_up(&mut |var_id| {
                     // TODO: keep span of variable use site in Expr::Var?
-                    self.vars[var_id].up_spans.push(span.clone());
+                    self.vars[var_id].up_spans.push(expr.span.clone());
                     self.vars[var_id].dirs.up
                 });
             }
@@ -139,21 +139,20 @@ pub enum Action {
     Token {
         conn: ConnectionId,
         tag: usize,
-        fields: Vec<ExprKind>,
+        fields: Vec<Spanned<ExprKind>>,
         has_body: bool,
     },
     Seq(Vec<Action>),
-    Repeat { dir: Dir, range: (u64, Option<u64>), count: ExprKind, body: Box<Action> },
+    Repeat { dir: Dir, range: (u64, Option<u64>), count: Spanned<ExprKind>, body: Box<Action> },
     For { count: u32, vars: Vec<ForVar> , body: Box<Action> },
-    Alt { dir: Dir, scrutinee: ExprKind, arms: Vec<AltArm> },
+    Alt { dir: Dir, scrutinee: Spanned<ExprKind>, arms: Vec<AltArm> },
     Any { arms: Vec<Action> },
     Error(ErrorReported),
     Pass,
 }
 
 pub struct ForVar {
-    pub outer: ExprKind,
-    pub outer_span: Span,
+    pub outer: Spanned<ExprKind>,
     pub var: VarId,
 }
 
@@ -349,30 +348,30 @@ impl<'a> Builder<'a> {
                 let (dir, range, count) = match &node.dir_count {
                     Some((dir_ast, count_ast)) => {
                         let dir = try_action!(constant::<Dir>(&mut self.dcx, sb.scope, dir_ast));
-                        let count = try_action!(value(&mut self.dcx, sb.scope, count_ast));
+                        let count = try_action!(spanned_value(&mut self.dcx, sb.scope, count_ast));
 
                         let Some(range) = count.as_natural_number_range(dir) else {
                             return Action::Error(self.dcx.report(Diagnostic::InvalidRepeatCount {
-                                span: sb.scope.span(count_ast.span()),
-                                found: count.to_string(),
+                                span: count.span,
+                                found: count.inner.to_string(),
                             }));
                         };
 
                         if dir == Dir::Up && range.0 > 1 {
                             return Action::Error(self.dcx.report(Diagnostic::RepeatCountMin {
-                                span: sb.scope.span(count_ast.span()),
+                                span: count.span,
                                 found: range.0,
                             }));
                         }
 
-                        self.vars.check_use(self.dcx, sb.scope.span(count_ast.span()), &count, dir);
+                        self.vars.check_use(self.dcx, &count, dir);
 
                         (dir, range, count)
                     }
-                    None => (Dir::Up, (0, None), ExprKind::Ignored)
+                    None => (Dir::Up, (0, None), sb.scope.span(node.span).wrap(ExprKind::Ignored))
                 };
 
-                Action::Repeat { dir, range,count, body: Box::new(inner) }
+                Action::Repeat { dir, range, count, body: Box::new(inner) }
             }
 
             ast::Action::For(node) => {
@@ -400,7 +399,7 @@ impl<'a> Builder<'a> {
                     let dirs = self.vars.try_use(&outer_expr);
                     let var = self.vars.add(body_scope.span(name.span), dirs);
                     body_scope.bind(&name.name, Item::Leaf(LeafItem::Value(ExprKind::Var { ty, id: var })));
-                    Ok(ForVar { outer: outer_expr?, outer_span: sb.scope.span(expr.span()), var })
+                    Ok(ForVar { outer: sb.scope.span(expr.span()).wrap(outer_expr?), var })
                 }));
 
                 let body = self.resolve_seq(sb.with_scope(&body_scope), &node.block);
@@ -410,7 +409,7 @@ impl<'a> Builder<'a> {
                 for for_var in vars.iter() {
                     self.vars.finish(&mut self.dcx, for_var.var, false);
                     if self.vars.has_defining_use_up(for_var.var) {
-                        self.vars.check_use(self.dcx, for_var.outer_span.clone(), &for_var.outer, Dir::Up);
+                        self.vars.check_use(self.dcx, &for_var.outer, Dir::Up);
                     }
                 }
 
@@ -449,11 +448,11 @@ impl<'a> Builder<'a> {
                         })
                     }
                     AltMode::Var(dir) => {
-                        let scrutinee = value(&mut self.dcx, sb.scope, &node.expr);
+                        let scrutinee = spanned_value(&mut self.dcx, sb.scope, &node.expr);
                         let ty = scrutinee.as_ref().map_or(Type::Ignored, |t| t.get_type());
 
                         if let Ok(scrutinee) = &scrutinee {
-                            self.vars.check_use(self.dcx, sb.scope.span(node.expr.span()), scrutinee, dir);
+                            self.vars.check_use(self.dcx, scrutinee, dir);
                         }
 
                         let arms = try_action!(collect_or_err(node.arms.iter().map(|arm| {
@@ -596,7 +595,7 @@ impl<'a> Builder<'a> {
         }
     }
 
-    fn resolve_token(&mut self, msg_def: &ShapeMsg, scope: &Scope, node: &ast::ProcessCall) -> Result<Vec<ExprKind>, ErrorReported> {
+    fn resolve_token(&mut self, msg_def: &ShapeMsg, scope: &Scope, node: &ast::ProcessCall) -> Result<Vec<Spanned<ExprKind>>, ErrorReported> {
         let mut fields = Ok(Vec::new());
 
         for m in zip_tuple_ast_fields(&mut self.dcx, &scope.file, &node.args, &msg_def.params) {
@@ -610,8 +609,9 @@ impl<'a> Builder<'a> {
                             &Tree::Leaf(ref ty),
                             &Item::Leaf(LeafItem::Value(ref v))
                         ) if v.get_type().is_subtype(ty) => {
-                            self.vars.check_use(&mut self.dcx, scope.span(arg_ast.span()), v, param.direction);
-                            try_push(&mut fields, Ok(v.clone()));
+                            let v = scope.span(arg_ast.span()).wrap(v.clone());
+                            self.vars.check_use(&mut self.dcx, &v, param.direction);
+                            try_push(&mut fields, Ok(v));
                         },
 
                         crate::tree::Zip::Both(_, Item::Leaf(LeafItem::Invalid(r))) => {

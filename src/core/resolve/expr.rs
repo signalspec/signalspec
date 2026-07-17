@@ -9,7 +9,7 @@ use crate::{
         data::NumberType,
         op::{ConcatElem, UnaryOp, eval_binary, eval_binary_on_range, eval_choose},
         resolve::{lexpr, type_expr::{type_expr, type_tree}},
-    }, diagnostic::{Diagnostic, DiagnosticContext, ErrorReported, Span, collect_or_err}, entitymap::entity_key, syntax::{
+    }, diagnostic::{Diagnostic, DiagnosticContext, ErrorReported, Span, Spanned, collect_or_err}, entitymap::entity_key, syntax::{
         Number, ast::{self, AstNode, BinOp}
     }
 };
@@ -161,6 +161,11 @@ pub fn value(dcx: &mut DiagnosticContext, scope: &Scope, e: &ast::Expr) -> Resul
             }
         )),
     }
+}
+
+pub fn spanned_value(dcx: &mut DiagnosticContext, scope: &Scope, e: &ast::Expr) -> Result<Spanned<ExprKind>, ErrorReported> {
+    let expr = value(dcx, scope, e)?;
+    Ok(scope.span(e.span()).wrap(expr))
 }
 
 pub trait TryFromConstant: TryFrom<Value> {
