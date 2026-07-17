@@ -80,13 +80,6 @@ impl From<FileSpan> for Range<usize> {
 }
 
 
-/// Associate a Span with a value of arbitrary type (e.g. an AST node).
-#[derive(Clone, PartialEq, Eq, Hash, Debug, Copy)]
-pub struct Spanned<T> {
-    pub node: T,
-    pub span: FileSpan,
-}
-
 struct LineIndex {
     line_starts: Vec<FilePos>,
     len: FilePos,

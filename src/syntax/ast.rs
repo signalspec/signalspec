@@ -1,5 +1,5 @@
 use super::Number;
-pub use super::{ BinOp, FileSpan, Spanned, AstNode };
+pub use super::{ BinOp, FileSpan, AstNode };
 
 /// Helper trait for iterating AST children in macro
 trait AstWalk {

@@ -1,4 +1,4 @@
-use super::{ ast, BinOp, FilePos, FileSpan, Spanned, Number };
+use super::{ ast, BinOp, FilePos, FileSpan, Number };
 use std::char;
 
 peg::parser!(pub grammar signalspec() for str {
@@ -7,9 +7,6 @@ peg::parser!(pub grammar signalspec() for str {
   inject span(_input, lpos, rpos) -> FileSpan {
     FileSpan { start: FilePos(lpos as u32), end: FilePos(rpos as u32) }
   }
-
-  rule spanned<T>(inner: rule<T>) -> Spanned<T>
-    = node:inner() { Spanned { node, span } }
 
   rule tok_node(s: &str) -> ast::Token
     = span: TOK(s) { ast::Token { span } }

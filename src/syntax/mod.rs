@@ -6,7 +6,7 @@ mod span;
 
 pub use ast_node::{ AstNode, enclosing, dump_tree };
 pub use self::binop::BinOp;
-pub use self::span::{ SourceFile, FilePos, FileSpan, Spanned };
+pub use self::span::{ SourceFile, FilePos, FileSpan };
 
 pub type Number = num_rational::Rational64;
 
