@@ -71,6 +71,19 @@ impl<'a> Builder<'a> {
 
     fn build(&mut self, action: &Action) -> StepId {
         match *action {
+            Action::Let { var, ref value, ref body } => {
+                let dn = self.expr_lower.use_dn(&mut self.steps.ecx, value);
+                let predicate = self.expr_lower.predicate(value);
+                self.expr_lower.set(var, dn, predicate);
+
+                let body = self.build(body);
+
+                if let Some(up) = self.expr_lower.take_up(var) {
+                    self.use_up(value, up);
+                }
+
+                body
+            }
             Action::Process {
                 ref proc,
                 ref channels,

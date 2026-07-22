@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use crate::core::resolve::rexpr;
 use crate::diagnostic::{DiagnosticContext, Diagnostics};
 use crate::syntax::{ ast, parse_module, SourceFile };
 use crate::core::Scope;
@@ -23,11 +24,9 @@ impl FileScope {
         crate::diagnostic::report_parse_errors(&mut dcx, &scope.file, &ast);
 
         for entry in &ast.entries {
-            match entry {
-                ast::ModuleEntry::Let(letdef) => {
-                    crate::core::resolve::action::resolve_letdef(&mut dcx, &mut scope, &letdef);
-                }
-                _ => {}
+            if let ast::ModuleEntry::Let(ast::LetDef { name, expr, .. }) = entry {
+                let item = rexpr(&mut dcx, &scope, expr);
+                scope.bind(&name.name, item);
             }
         }
 

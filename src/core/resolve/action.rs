@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{mem, sync::Arc};
 
 use itertools::{Itertools, AllEqualValueError};
 
@@ -90,11 +90,7 @@ impl Vars {
         var.dirs.up && !var.up_spans.is_empty()
     }
 
-    fn try_use(&self, expr: &Result<ExprKind, ErrorReported>) -> VarDirs {
-        let Ok(expr) = expr else {
-            // The most conservative assumption to avoid reporting further errors
-            return VarDirs { dn: true, up: false };
-        };
+    fn try_use(&self, expr: &ExprKind) -> VarDirs {
         let dn = expr.check_use_dn(&mut |var_id| self.vars[var_id].dirs.dn);
         let up = expr.check_use_up(&mut |var_id| self.vars[var_id].dirs.up);
         VarDirs { dn, up }
@@ -127,6 +123,7 @@ pub struct ResolveResult {
 }
 
 pub enum Action {
+    Let { var: VarId, value: Spanned<ExprKind>, body: Box<Action> },
     Process { proc: Arc<dyn PrimitiveProcess>, channels: Vec<ChannelId> },
     Stack { lo: Box<Action>, conn: ConnectionId, hi: Box<Action> },
     On {
@@ -396,7 +393,12 @@ impl<'a> Builder<'a> {
                         }
                     };
 
-                    let dirs = self.vars.try_use(&outer_expr);
+                    let dirs = if let Ok(expr) = &outer_expr {
+                        self.vars.try_use(&expr)
+                    } else {
+                        // The most conservative assumption to avoid reporting further errors
+                        VarDirs { dn: true, up: false }
+                    };
                     let var = self.vars.add(body_scope.span(name.span), dirs);
                     body_scope.bind(&name.name, Item::Leaf(LeafItem::Value(ExprKind::Var { ty, id: var })));
                     Ok(ForVar { outer: sb.scope.span(expr.span()).wrap(outer_expr?), var })
@@ -648,22 +650,41 @@ impl<'a> Builder<'a> {
     }
 
     fn resolve_seq(&mut self, sb: ResolveCx<'_>, block: &ast::Block) -> Action {
-        let mut scope = sb.scope.child();
+        self.resolve_letdefs(&sb.scope, &block.lets, |slf, scope| {
+            Action::Seq(block.actions.iter().map(|action| {
+                slf.resolve_action(sb.with_scope(&scope), &action)
+            }).collect())
+        })
+    }
 
-        for ld in &block.lets {
-            resolve_letdef(&mut self.dcx, &mut scope, &ld);
+    fn resolve_letdefs(&mut self, scope: &Scope, ld: &[ast::LetDef], body: impl FnOnce(&mut Self, &mut Scope) -> Action) -> Action {
+        let mut scope = scope.child();
+        let mut vars = Vec::new();
+        for ast::LetDef { name, expr, .. } in ld {
+            let mut item = rexpr(&mut self.dcx, &scope, expr);
+
+            // If the expression contains a runtime variable, give it a fresh ID
+            // so that its uses are attributed to this let binding
+            item.for_each_mut(&mut |e| {
+                if let LeafItem::Value(ref mut v) = *e && v.contains_var() {
+                    let dirs = self.vars.try_use(&v);
+                    let var = self.vars.add(scope.span(name.span), dirs);
+                    let e = mem::replace(v, ExprKind::Var { ty: v.get_type(), id: var });
+                    vars.push((var, Spanned { inner: e, span: scope.span(expr.span()) }))
+                }
+            });
+
+            scope.bind(&name.name, item);
         }
 
-        let steps: Vec<_> = block.actions.iter().map(|action| {
-            self.resolve_action(sb.with_scope(&scope), &action)
-        }).collect();
-
-        Action::Seq(steps)
+        let mut res = body(self, &mut scope);
+        for (var, expr) in vars.into_iter().rev() {
+            self.vars.finish(&mut self.dcx, var, false);
+            if self.vars.has_defining_use_up(var) {
+                self.vars.check_use(self.dcx, &expr, Dir::Up);
+            }
+            res = Action::Let { var, value: expr, body: Box::new(res) };
+        }
+        res
     }
-}
-
-pub fn resolve_letdef(dcx: &mut DiagnosticContext, scope: &mut Scope, ld: &ast::LetDef) {
-    let &ast::LetDef { ref name, ref expr, .. } = ld;
-    let item = rexpr(dcx, scope, expr);
-    scope.bind(&name.name, item);
 }

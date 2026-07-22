@@ -31,6 +31,32 @@ with Seq(type 1..10, _) def main() = new Seq(type [1..10; 2], #up) {
 }
 
 @test(#up, (9))
+with Seq(type 1..10, _) def main() = new Seq(type 1..10, #up) {
+    on val(xy) {
+//# value for up-direction variable provided multiple times
+        let ab = xy
+//          ^^ must be up-evaluated exactly once in this block
+        val(ab)
+//          ^^ up-evaluated here
+        val(ab)
+//          ^^ up-evaluated here
+    }
+}
+
+@test(#up, (9))
+with Seq(type 1..10, _) def main() = new Seq(type 1..10, #up) {
+//# value for up-direction variable provided multiple times
+    on val(xy) {
+//         ^^ must be up-evaluated exactly once in this block
+        let ab = xy
+//               ^^ up-evaluated here
+        val(ab)
+        val(xy)
+//          ^^ up-evaluated here
+    }
+}
+
+@test(#up, (9))
 with Seq(type 1..10, _) def main() = seq {
 //# no value for up-direction variable provided
     alt #up _ {

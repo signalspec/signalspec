@@ -148,6 +148,20 @@ impl ExprKind {
             ExprKind::Unary { ref expr, .. } => expr.check_use_up(with_var),
         }
     }
+
+    pub fn contains_var(&self) -> bool {
+        match *self {
+            ExprKind::Ignored => false,
+            ExprKind::Const(_) => false,
+            ExprKind::Var { .. } => true,
+            ExprKind::Range(..) | ExprKind::Enum(..) => false,
+            ExprKind::Flip(ref l, ref r) => l.contains_var() | r.contains_var(),
+            ExprKind::Concat(_, _, ref concat_elems) => {
+                concat_elems.iter().any(|elem| elem.inner().contains_var())
+            }
+            ExprKind::Unary { ref expr, .. } => expr.contains_var(),
+        }
+    }
 }
 
 pub fn value(dcx: &mut DiagnosticContext, scope: &Scope, e: &ast::Expr) -> Result<ExprKind, ErrorReported> {
