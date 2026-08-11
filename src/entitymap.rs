@@ -155,10 +155,12 @@ impl <K:EntityKey, V: Hash + Eq> EntityIntern<K, V> {
         Self { k: PhantomData, v: IndexSet::new() }
     }
 
+    #[expect(dead_code)]
     pub fn with_capacity(cap: usize) -> Self {
         Self { k: PhantomData, v: IndexSet::with_capacity(cap) }
     }
 
+    #[expect(dead_code)]
     pub fn len(&self) -> usize {
         self.v.len()
     }
@@ -167,6 +169,7 @@ impl <K:EntityKey, V: Hash + Eq> EntityIntern<K, V> {
         K::new(self.v.insert_full(v).0)
     }
 
+    #[expect(dead_code)]
     pub fn keys(&self) -> Keys<K> {
         (0..self.len()).map(K::new)
     }

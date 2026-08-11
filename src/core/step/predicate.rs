@@ -62,6 +62,7 @@ impl Predicate {
         }
     }
 
+    #[cfg_attr(not(test), expect(dead_code))]
     pub fn excludes(&self, other: &Self) -> bool {
         match (self, other) {
             (Predicate::Any, _) | (_, Predicate::Any) => false,

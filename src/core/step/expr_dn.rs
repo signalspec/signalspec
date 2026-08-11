@@ -141,6 +141,7 @@ impl ExprCtx {
         }
     }
 
+    #[expect(dead_code)]
     pub fn substitute_var(&mut self, e: ExprDnId, var: ValueSrcId, new_var: ValueSrcId) -> ExprDnId {
         match self.exprs[e] {
             ExprDn::Const(_) => e,
