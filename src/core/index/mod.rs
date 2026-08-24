@@ -82,7 +82,7 @@ impl Index {
         self.protocols_by_name.get(name)
     }
 
-    pub(crate) fn find_def(&self, shape: &Shape, name: &str) -> Result<&Def, FindDefError> {
+    pub(crate) fn find_def(&self, shape: &Shape, name: &str) -> Option<&Def> {
         let mut found = None;
         for entry in &self.defs {
             // TODO: resolve protocol.name in its file and make sure they refer to the same protocol
@@ -100,7 +100,7 @@ impl Index {
                 panic!("Multiple definition of `{}`", name);
             }
         }
-        found.ok_or(FindDefError::NoDefinitionWithName)
+        found
     }
 
     pub fn add_file(&mut self, file: Arc<FileScope>) {
@@ -158,8 +158,4 @@ impl Index {
             Err(diagnostics)
         }
     }
-}
-
-pub enum FindDefError {
-    NoDefinitionWithName,
 }

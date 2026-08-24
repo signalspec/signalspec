@@ -4,7 +4,7 @@ use itertools::{Itertools, AllEqualValueError};
 
 use crate::{
     Value, core::{
-        ChannelId, Dir, Item, LeafItem, Scope, Shape, ShapeMsg, Type, index::FindDefError, resolve::{expr::spanned_value, parameters::{check_arg_type, match_args, resolve_arg}}, step::ConnectionId
+        ChannelId, Dir, Item, LeafItem, Scope, Shape, ShapeMsg, Type, resolve::{expr::spanned_value, parameters::{check_arg_type, match_args, resolve_arg}}, step::ConnectionId
     }, diagnostic::{DiagnosticContext, Span, Spanned, collect_or_err, try_push}, entitymap::EntityMap, runtime::PrimitiveProcess,
 };
 use crate::diagnostic::{ErrorReported};
@@ -482,74 +482,7 @@ impl<'a> Builder<'a> {
     fn resolve_process(&mut self, scope: &Scope, cs: Connections<'_>, process_ast: &ast::Process) -> (Action, Option<(Shape, ConnectionId)>) {
         match process_ast {
             ast::Process::Call(node) => {
-                if let Some(msg_def) = cs.down.shape.variant_named(&node.name.name) {
-                    let action = match self.resolve_token(msg_def, scope, &node) {
-                        Ok(fields) => Action::Token {
-                            conn: cs.down.conn,
-                            tag: msg_def.tag,
-                            fields,
-                            has_body: msg_def.child.is_some(),
-                        },
-                        Err(r) => Action::Error(r),
-                    };
-
-                    let top = msg_def.child.as_ref().map(|child_shape| (child_shape.clone(), cs.down.conn));
-
-                    (action, top)
-                } else {
-                    let def = match self.index.find_def(cs.down.shape, &node.name.name) {
-                        Ok(res) => res,
-                        Err(FindDefError::NoDefinitionWithName) => {
-                            let step = self.err(Diagnostic::NoDefNamed {
-                                span: scope.span(node.name.span),
-                                protocol_name: cs.down.shape.def.ast().name.name.to_owned(),
-                                def_name: node.name.name.to_owned(),
-                            });
-                            return (step, None)
-                        }
-                    };
-
-                    let mut inner_scope = def.file.scope();
-
-                    // Destructure and match the `with` protocol args
-                    let protocol_ast = cs.down.shape.def.ast();
-                    for ((_, binding_ast), val) in match_args(&mut self.dcx, scope, &protocol_ast.params, &def.protocol.args).zip_eq(cs.down.shape.args.iter()) {
-                        if let Some(binding_ast) = binding_ast {
-                            // TODO: fallible pattern match
-                            lexpr(&mut self.dcx, &mut inner_scope, &binding_ast, val);
-                        }
-                    }
-
-                    // Evaluate the arguments and bind to the `def` params
-                    let mut vars = Vec::new();
-                    for (param, arg_ast) in match_args(&mut self.dcx, scope, &def.params, &node.args) {
-                        let mut arg = resolve_arg(&mut self.dcx, scope, &inner_scope, param, arg_ast);
-
-                        let var_span = inner_scope.span(param.name.span);
-                        arg.for_each_mut(&mut |e| {
-                            if let LeafItem::Value(ref mut v) = *e && v.contains_var() {
-                                let dirs = self.vars.try_use(&v);
-                                let var = self.vars.add(inner_scope.span(param.name.span), dirs);
-                                let e = mem::replace(v, ExprKind::Var { ty: v.get_type(), id: var });
-                                vars.push((var, Spanned { inner: e, span: var_span.clone() }))
-                            }
-                        });
-
-                        inner_scope.bind(&param.name.name, arg);
-                    }
-
-                    let (mut action, conn_up) = self.resolve_process(&inner_scope, cs, &def.implementation);
-
-                    for (var, expr) in vars.into_iter().rev() {
-                        self.vars.finish(&mut self.dcx, var, false);
-                        if self.vars.has_defining_use_up(var) {
-                            self.vars.check_use(self.dcx, &expr, Dir::Up);
-                        }
-                        action = Action::Let { var, value: expr, body: Box::new(action) };
-                    }
-
-                    (action, conn_up)
-                }
+                self.resolve_call(scope, cs, node)
             }
 
             ast::Process::Child(node) => {
@@ -625,7 +558,73 @@ impl<'a> Builder<'a> {
         }
     }
 
-    fn resolve_token(&mut self, msg_def: &ShapeMsg, scope: &Scope, node: &ast::ProcessCall) -> Result<Vec<Spanned<ExprKind>>, ErrorReported> {
+    fn resolve_call(&mut self, scope: &Scope, cs: Connections<'_>, node: &ast::ProcessCall) -> (Action, Option<(Shape, ConnectionId)>) {
+        if let Some(msg_def) = cs.down.shape.variant_named(&node.name.name) {
+            let action = match self.resolve_token_fields(msg_def, scope, &node) {
+                Ok(fields) => Action::Token {
+                    conn: cs.down.conn,
+                    tag: msg_def.tag,
+                    fields,
+                    has_body: msg_def.child.is_some(),
+                },
+                Err(r) => Action::Error(r),
+            };
+
+            let top = msg_def.child.as_ref().map(|child_shape| (child_shape.clone(), cs.down.conn));
+
+            (action, top)
+        } else if let Some(def) = self.index.find_def(cs.down.shape, &node.name.name) {
+            let mut inner_scope = def.file.scope();
+
+            // Destructure and match the `with` protocol args
+            let protocol_ast = cs.down.shape.def.ast();
+            for ((_, binding_ast), val) in match_args(&mut self.dcx, scope, &protocol_ast.params, &def.protocol.args).zip_eq(cs.down.shape.args.iter()) {
+                if let Some(binding_ast) = binding_ast {
+                    // TODO: fallible pattern match
+                    lexpr(&mut self.dcx, &mut inner_scope, &binding_ast, val);
+                }
+            }
+
+            // Evaluate the arguments and bind to the `def` params
+            let mut vars = Vec::new();
+            for (param, arg_ast) in match_args(&mut self.dcx, scope, &def.params, &node.args) {
+                let mut arg = resolve_arg(&mut self.dcx, scope, &inner_scope, param, arg_ast);
+
+                let var_span = inner_scope.span(param.name.span);
+                arg.for_each_mut(&mut |e| {
+                    if let LeafItem::Value(ref mut v) = *e && v.contains_var() {
+                        let dirs = self.vars.try_use(&v);
+                        let var = self.vars.add(inner_scope.span(param.name.span), dirs);
+                        let e = mem::replace(v, ExprKind::Var { ty: v.get_type(), id: var });
+                        vars.push((var, Spanned { inner: e, span: var_span.clone() }))
+                    }
+                });
+
+                inner_scope.bind(&param.name.name, arg);
+            }
+
+            let (mut action, conn_up) = self.resolve_process(&inner_scope, cs, &def.implementation);
+
+            for (var, expr) in vars.into_iter().rev() {
+                self.vars.finish(&mut self.dcx, var, false);
+                if self.vars.has_defining_use_up(var) {
+                    self.vars.check_use(self.dcx, &expr, Dir::Up);
+                }
+                action = Action::Let { var, value: expr, body: Box::new(action) };
+            }
+
+            (action, conn_up)
+        } else {
+            let step = self.err(Diagnostic::NoDefNamed {
+                span: scope.span(node.name.span),
+                protocol_name: cs.down.shape.def.ast().name.name.to_owned(),
+                def_name: node.name.name.to_owned(),
+            });
+            return (step, None)
+        }
+    }
+
+    fn resolve_token_fields(&mut self, msg_def: &ShapeMsg, scope: &Scope, node: &ast::ProcessCall) -> Result<Vec<Spanned<ExprKind>>, ErrorReported> {
         let mut fields = Ok(Vec::new());
 
         for m in zip_tuple_ast_fields(&mut self.dcx, &scope.file, &node.args, &msg_def.params) {
