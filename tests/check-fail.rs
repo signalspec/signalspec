@@ -1,3 +1,4 @@
+use itertools::Itertools;
 use signalspec::{self, SourceFile, Diagnostic, FileSpan, Label, Index};
 use env_logger;
 use std::{process, fs, path::Path, sync::Arc, cell::RefCell};
@@ -6,19 +7,20 @@ fn main() {
     env_logger::init();
 
     let mut success = true;
-    for entry in fs::read_dir("tests/check-fail").unwrap() {
-        let path = entry.unwrap().path();
-        if path.to_str().unwrap().ends_with(".signalspec") {
-            success &= check_file(&path);
-        }
-    }
+    fs::read_dir("tests/check-fail").unwrap()
+        .map(|e| e.unwrap().path())
+        .filter(|p| p.extension().is_some_and(|e| e == "signalspec"))
+        .sorted()
+        .for_each(|p| {
+            success &= check_file(&p);
+        });
 
     process::exit( if success { 0 } else { 1 } );
 }
 
 fn check_file(fname: &Path) -> bool {
     println!("Running tests for {}", fname.to_string_lossy());
-    
+
     let file = match SourceFile::load(fname) {
         Ok(file) => Arc::new(file),
         Err(err) => {
@@ -48,7 +50,7 @@ fn check_errors(f: &SourceFile, errors: &[Diagnostic]) -> bool {
     for line_num in 0..f.num_lines() {
         let line_span = f.line_span(line_num).unwrap();
         let line_text = f.slice(line_span);
-        
+
         match check_line::line(line_text).expect("comment line parse failed") {
             Some(CheckLine::Message(s)) => {
                 if let Some(p) = messages.iter().position(|m| m.contains(s)) {

@@ -3,6 +3,8 @@ use std::sync::Arc;
 use std::fs;
 use std::path::Path;
 
+use itertools::Itertools;
+
 use crate::diagnostic::Diagnostics;
 use crate::{ Handle, ChannelMessage, DiagnosticContext };
 use crate::runtime::channel::item_to_msgs;
@@ -25,12 +27,14 @@ pub fn run(show_diagnostics: &dyn Fn(Diagnostics), index: &Index, fname: &Path) 
         },
         Ok(ref meta) if meta.is_dir() => {
             let mut success = true;
-            for entry in fs::read_dir(fname).unwrap() {
-                let path = entry.unwrap().path();
-                if path.to_str().unwrap().ends_with(".signalspec") {
+
+            fs::read_dir(fname).unwrap()
+                .map(|e| e.unwrap().path())
+                .filter(|p| p.extension().is_some_and(|e| e == "signalspec"))
+                .sorted()
+                .for_each(|path| {
                     success &= run(show_diagnostics, index, &path);
-                }
-            }
+                });
             success
         }
         _ => {
