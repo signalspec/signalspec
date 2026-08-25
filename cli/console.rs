@@ -41,29 +41,22 @@ impl<'a> Display for FormatMessage<'a> {
 }
 
 fn format_message_item<'a>(f: &mut std::fmt::Formatter<'_>, values: &mut impl Iterator<Item=&'a Value>, shape_msg: &TypeTree) -> std::fmt::Result {
-    match shape_msg {
-        TypeTree::Tuple(t) => {
-            t.format(f, |v, f| {
-                format_message_item(f, values, v)
-            })
-        }
-        TypeTree::Leaf(t) => {
-            let v = values.next().expect("message doesn't match shape");
+    shape_msg.format(f, &mut |t, f| {
+        let v = values.next().expect("message doesn't match shape");
 
-            match (t, v) {
-                (Type::Number(nt), Value::Number(v)) => {
-                    let value = v.to_f64().unwrap_or(f64::NAN);
-                    let scale = nt.scale().to_f64().unwrap_or(1.0);
-                    let signed = nt.min() < 0;
-                    let max = nt.max() as f64 * scale;
-                    let digits = max.log10().max(0.0).ceil() as usize;
-                    let decimals = scale.log10().min(0.0).neg().ceil() as usize;
-                    let width = digits + decimals + if decimals > 0 { 1 } else { 0 } + if signed { 1 } else { 0 };
+        match (t, v) {
+            (Type::Number(nt), Value::Number(v)) => {
+                let value = v.to_f64().unwrap_or(f64::NAN);
+                let scale = nt.scale().to_f64().unwrap_or(1.0);
+                let signed = nt.min() < 0;
+                let max = nt.max() as f64 * scale;
+                let digits = max.log10().max(0.0).ceil() as usize;
+                let decimals = scale.log10().min(0.0).neg().ceil() as usize;
+                let width = digits + decimals + if decimals > 0 { 1 } else { 0 } + if signed { 1 } else { 0 };
 
-                    write!(f, "{value:width$.*}", decimals)
-                }
-                (_, v) => write!(f, "{}", v)
+                write!(f, "{value:width$.*}", decimals)
             }
+            (_, v) => write!(f, "{}", v)
         }
-    }
+    })
 }

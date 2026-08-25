@@ -2,96 +2,22 @@ use std::fmt::{Debug, Display};
 
 use indexmap::IndexMap;
 
-#[derive(Clone, Debug)]
-pub struct TupleFields<T> {
-    pub positional: Vec<T>,
-    pub named: IndexMap<String, T>,
-}
-
-impl<T> TupleFields<T> {
-    pub fn format(&self, f: &mut std::fmt::Formatter<'_>, mut fmt_item: impl FnMut(&T, &mut std::fmt::Formatter<'_>) -> std::fmt::Result) -> std::fmt::Result {
-        write!(f, "(")?;
-        let mut first = true;
-        for e in &self.positional {
-            if !first {
-                write!(f, ", ")?;
-            }
-            first = false;
-            fmt_item(e, f)?;
-        }
-        for (k, e) in &self.named {
-            if !first {
-                write!(f, ", ")?;
-            }
-            first = false;
-            write!(f, "{k}=")?;
-            fmt_item(e, f)?;
-        }
-        write!(f, ")")
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = (Option<&str>, &T)> {
-        self.positional.iter().map(|v| (None, v)).chain(self.named.iter().map(|(k, v)| (Some(k.as_str()), v)))
-    }
-
-    pub fn into_iter(self) -> impl Iterator<Item = (Option<String>, T)> {
-        self.positional.into_iter().map(|v| (None, v)).chain(self.named.into_iter().map(|(k, v)| (Some(k), v)))
-    }
-}
-
-impl<T> Default for TupleFields<T> {
-    fn default() -> Self {
-        Self { positional: Default::default(), named: Default::default() }
-    }
-}
-
-impl<T> From<Vec<T>> for TupleFields<T> {
-    fn from(positional: Vec<T>) -> Self {
-        TupleFields { positional, named: Default::default() }
-    }
-}
-
-impl<T> FromIterator<(Option<String>, T)> for TupleFields<T> {
-    fn from_iter<I: IntoIterator<Item = (Option<String>, T)>>(iter: I) -> Self {
-        let mut t = TupleFields::default();
-
-        for (name, value) in iter {
-            if let Some(name) = name {
-                t.named.insert(name, value);
-            } else {
-                t.positional.push(value);
-            }
-        }
-
-        t
-    }
-}
-
 #[derive(Clone)]
 pub enum Tree<T> {
     Leaf(T),
-    Tuple(TupleFields<Tree<T>>),
+    Positional(Vec<Tree<T>>),
+    Named(IndexMap<String, Tree<T>>),
 }
 
 impl<T> Display for Tree<T> where T: Display {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Tree::Leaf(t) => t.fmt(f),
-            Tree::Tuple(fields) => {
-                fields.format(f, Display::fmt)
-            }
-        }
+        self.format(f, &mut Display::fmt)
     }
 }
 
 impl<T> Debug for Tree<T> where T: Debug {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Tree::Leaf(t) => t.fmt(f),
-            Tree::Tuple(fields) => {
-                fields.format(f, Debug::fmt)
-            }
-        }
+        self.format(f, &mut Debug::fmt)
     }
 }
 
@@ -111,30 +37,24 @@ impl<T> Tree<T> {
     pub fn for_each(&self, f: &mut impl FnMut(&T)) {
         match self {
             Tree::Leaf(i) => f(i),
-            Tree::Tuple(TupleFields { positional, named }) => {
-                positional.iter().for_each(|s| s.for_each(f));
-                named.values().for_each(|s| s.for_each(f));
-            }
+            Tree::Positional(c) => c.iter().for_each(|s| s.for_each(f)),
+            Tree::Named(c) => c.values().for_each(|s| s.for_each(f)),
         }
     }
 
     pub fn for_each_mut(&mut self, f: &mut impl FnMut(&mut T)) {
         match self {
             Tree::Leaf(i) => f(i),
-            Tree::Tuple(TupleFields { positional, named }) => {
-                positional.iter_mut().for_each(|s| s.for_each_mut(f));
-                named.values_mut().for_each(|s| s.for_each_mut(f));
-            }
+            Tree::Positional(c) => c.iter_mut().for_each(|s| s.for_each_mut(f)),
+            Tree::Named(c) => c.values_mut().for_each(|s| s.for_each_mut(f)),
         }
     }
 
     pub fn for_each_owned(self, f: &mut impl FnMut(T)) {
         match self {
             Tree::Leaf(i) => f(i),
-            Tree::Tuple(TupleFields { positional, named }) => {
-                positional.into_iter().for_each(|s| s.for_each_owned(f));
-                named.into_iter().for_each(|(_, s)| s.for_each_owned(f));
-            }
+            Tree::Positional(c) => c.into_iter().for_each(|s| s.for_each_owned(f)),
+            Tree::Named(c) => c.into_iter().for_each(|(_, s)| s.for_each_owned(f)),
         }
     }
 
@@ -147,32 +67,24 @@ impl<T> Tree<T> {
     pub fn map_leaf<U>(&self, f: &mut impl FnMut(&T) -> U) -> Tree<U> {
         match self {
             Tree::Leaf(i) => Tree::Leaf(f(i)),
-            Tree::Tuple(TupleFields { positional, named }) => {
-                Tree::Tuple(TupleFields {
-                    positional: positional.iter().map(|s| s.map_leaf(f)).collect(),
-                    named: named.iter().map(|(k, v)| (k.clone(), v.map_leaf(f))).collect()
-                })
-            }
+            Tree::Positional(c) => Tree::Positional(c.iter().map(|s| s.map_leaf(f)).collect()),
+            Tree::Named(c) => Tree::Named(c.iter().map(|(k, v)| (k.clone(), v.map_leaf(f))).collect()),
         }
     }
 
     pub fn try_map_leaf<U, E>(&self, f: &mut impl FnMut(&T) -> Result<U, E>) -> Result<Tree<U>, E> {
         match self {
             Tree::Leaf(i) => Ok(Tree::Leaf(f(i)?)),
-            Tree::Tuple(t) => {
-                Ok(Tree::Tuple(TupleFields {
-                    positional: t.positional.iter().map(|s| s.try_map_leaf(f)).collect::<Result<_,_>>()?,
-                    named: t.named.iter().map(|(k, v)| Ok((k.clone(), v.try_map_leaf(f)?))).collect::<Result<_,_>>()?,
-                 }))
-            }
+            Tree::Positional(c) => Ok(Tree::Positional(c.iter().map(|s| s.try_map_leaf(f)).collect::<Result<_,_>>()?)),
+            Tree::Named(c) => Ok(Tree::Named(c.iter().map(|(k, v)| Ok((k.clone(), v.try_map_leaf(f)?))).collect::<Result<_,_>>()?)),
         }
     }
 
     pub fn zip<U>(&self, other: &Tree<U>, f: &mut impl FnMut(Zip<T, U>)) {
         match (self, other) {
-            (Tree::Tuple(l), Tree::Tuple(r)) => {
-                let mut lp = l.positional.iter();
-                let mut rp = r.positional.iter();
+            (Tree::Positional(l), Tree::Positional(r)) => {
+                let mut lp = l.iter();
+                let mut rp = r.iter();
                 loop {
                     match (lp.next(), rp.next()) {
                         (None, None) => break,
@@ -181,20 +93,49 @@ impl<T> Tree<T> {
                         (Some(li), None) => f(Zip::Left(li)),
                     }
                 }
-                for (k, lv) in &l.named {
-                    if let Some(rv) = r.named.get(k) {
+            }
+            (Tree::Named(l), Tree::Named(r)) => {
+                for (k, lv) in l {
+                    if let Some(rv) = r.get(k) {
                         lv.zip(rv, f)
                     } else {
                         f(Zip::Left(lv))
                     }
                 }
-                for (k, rv) in &r.named {
-                    if !l.named.contains_key(k) {
+                for (k, rv) in r {
+                    if !l.contains_key(k) {
                         f(Zip::Right(rv))
                     }
                 }
             }
             (l, r) => f(Zip::Both(l, r)),
+        }
+    }
+
+    pub fn format(&self, f: &mut std::fmt::Formatter<'_>, fmt_item: &mut impl FnMut(&T, &mut std::fmt::Formatter<'_>) -> std::fmt::Result) -> std::fmt::Result {
+        match self {
+            Tree::Leaf(n) => fmt_item(n, f),
+            Tree::Positional(c) => {
+                write!(f, "(")?;
+                for (i, e) in c.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    e.format(f, fmt_item)?;
+                }
+                write!(f, ")")
+            }
+            Tree::Named(c) => {
+                write!(f, "(")?;
+                for (i, (k, e)) in Box::new(c.iter()).enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{k}=")?;
+                    e.format(f, fmt_item)?;
+                }
+                write!(f, ")")
+            }
         }
     }
 }

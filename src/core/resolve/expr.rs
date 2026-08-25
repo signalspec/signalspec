@@ -234,16 +234,20 @@ macro_rules! try_item {
 }
 
 pub fn rexpr_tup(dcx: &mut DiagnosticContext, scope: &Scope, node: &ast::ExprTup) -> Item {
-    if node.fields.len() == 1 && node.fields[0].name.is_none() {
+    let has_named = node.has_named();
+    let has_positional = node.has_positional();
+    if node.fields.len() == 1 && !has_named {
         // Unwrap singleton tuple
         rexpr(dcx, scope, &node.fields[0].expr)
+    } else if !has_named {
+        Item::Positional(node.fields.iter().map(|f| rexpr(dcx, scope, &f.expr)).collect())
+    } else if !has_positional {
+        Item::Named(node.fields.iter().map(|f| (
+            f.name.as_ref().map(|n| n.name.clone()).unwrap(),
+            rexpr(dcx, scope, &f.expr)
+        )).collect())
     } else {
-        Item::Tuple(node.fields.iter()
-            .map(|f| (
-                f.name.as_ref().map(|n| n.name.clone()),
-                rexpr(dcx, scope, &f.expr)
-            )).collect()
-        )
+        dcx.report(Diagnostic::TupleMixedNamedPositional { span: scope.span(node.span) }).into()
     }
 }
 

@@ -1,0 +1,3 @@
+//# all tuple fields must be either named or positional
+let t = (5, a = 6)
+//      ^^^^^^^^^^ contains both named and positional fields

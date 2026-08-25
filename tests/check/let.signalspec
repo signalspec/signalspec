@@ -1,5 +1,5 @@
 let x = #x
-let nested = (1, 2, a=3, b=(x=#x, y=#y))
+let nested = (1, 2, (x=#x, y=#y))
 
 with Seq(type #x|#y|#z, dir)
 def main(a) = seq {

@@ -471,6 +471,14 @@ ast_node!{
 }
 
 impl ExprTup {
+    pub fn has_named(&self) -> bool {
+        self.fields.iter().any(|i| i.name.is_some())
+    }
+
+    pub fn has_positional(&self) -> bool {
+        self.fields.iter().any(|i| i.name.is_none())
+    }
+
     pub fn positional(&self) -> impl Iterator<Item = &Expr> {
         self.fields.iter().filter(|i| i.name.is_none()).map(|i| &i.expr)
     }

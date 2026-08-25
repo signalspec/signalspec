@@ -1,0 +1,32 @@
+
+@test(#up, ())
+with Seq(type _, _) def main() = new Seq(type (a = #x | #y), #up) {
+//# invalid item not matched
+    on val(#x) {}
+//         ^^ found `(a=#x | #y)`, incompatible with pattern
+
+//# expected tuple with named fields
+    on val((#x, #y)) {}
+//         ^^^^^^^^ found positional fields
+
+//# unexpected named field `b` passed
+//# missing named field `a`
+    on val((b = #b)) {}
+//          ^^^^^^ unexpected field
+//                ^ expected additional named fiel
+}
+
+@test(#up, ())
+with Seq(type _, _) def main() = new Seq(type (#x | #y, #a, #b), #up) {
+//# expected tuple with positional fields
+    on val((b = #b)) {}
+//         ^^^^^^^^ found named fields
+
+//# too few positional fields
+    on val((#x, #a)) {}
+//                ^ expected 1 more positional fields
+
+//# too many positional fields
+    on val((#x, #a, #b, #c)) {}
+//                      ^^ 1 unexpected positional fields
+}

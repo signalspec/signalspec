@@ -17,8 +17,8 @@ def t2() = seq {
 }
 
 with Seq(type 0..16, dir)
-def flatten() = new Seq(type ((0..16, 0..16), v=(x=0..16, y=0..16, z=0..16)), dir) {
-    on val(((a, b), v=(x=x, y=y, z=z))) {
+def flatten() = new Seq(type ((0..16, 0..16), (x=0..16, y=0..16, z=0..16)), dir) {
+    on val(((a, b), (x=x, y=y, z=z))) {
         val(a)
         val(b)
         val(x)
@@ -29,4 +29,4 @@ def flatten() = new Seq(type ((0..16, 0..16), v=(x=0..16, y=0..16, z=0..16)), di
 
 @test(#both, (1, 2, 3, 4, 5))
 with Seq(type 0..16, _)
-def test_flatten() = flatten() | seq { val(((1, 2), v=(x=3, y=4, z=5))) }
+def test_flatten() = flatten() | seq { val(((1, 2), (x=3, y=4, z=5))) }

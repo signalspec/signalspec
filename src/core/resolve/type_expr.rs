@@ -2,7 +2,7 @@ use crate::{
     FileSpan, Type, TypeTree, Value, core::{
         Item, LeafItem, Scope, data::{NumberType, NumberTypeError}, resolve::{expr::constant, rexpr}
     }, diagnostic::{Diagnostic, DiagnosticContext, ErrorReported, collect_or_err}, syntax::{Number,
-        ast::{self, AstNode}}, tree::{Tree, TupleFields}
+        ast::{self, AstNode}}, tree::Tree
 };
 
 fn type_from_item(dcx: &mut DiagnosticContext, scope: &Scope, span: FileSpan, item: Item) -> Result<TypeTree, ErrorReported> {
@@ -46,16 +46,22 @@ pub fn type_tree(dcx: &mut DiagnosticContext, scope: &Scope, e: &ast::Expr) -> R
         }
 
         ast::Expr::Tup(node) => {
-            if node.fields.len() == 1 && node.fields[0].name.is_none() {
+            let has_named = node.has_named();
+            let has_positional = node.has_positional();
+            if node.fields.len() == 1 && !has_named {
                 // Unwrap singleton tuple
                 type_tree(dcx, scope, &node.fields[0].expr)
-            } else {
-                Ok(TypeTree::Tuple(node.fields.iter()
+            } else if !has_named {
+                Ok(TypeTree::Positional(node.fields.iter().map(|f| type_tree(dcx, scope, &f.expr)).collect::<Result<_, _>>()?))
+            } else if !has_positional {
+                Ok(TypeTree::Named(node.fields.iter()
                     .map(|f| Ok::<_, ErrorReported>((
-                        f.name.as_ref().map(|n| n.name.clone()),
+                        f.name.as_ref().map(|n| n.name.clone()).unwrap(),
                         type_tree(dcx, scope, &f.expr)?
-                    ))).collect::<Result<TupleFields<TypeTree>, ErrorReported>>()?
+                    ))).collect::<Result<_, _>>()?
                 ))
+            } else {
+                Err(dcx.report(Diagnostic::TupleMixedNamedPositional { span: scope.span(node.span) }))
             }
         }
         ast::Expr::Value(node) => Ok(Value::from_literal(&node.value).get_type().into()),

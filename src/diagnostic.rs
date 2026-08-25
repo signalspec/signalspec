@@ -319,6 +319,12 @@ diagnostic_kinds! {
         Label { label: format!("expected `{expected}`, found `{found}`"), span },
     ]
 
+    TupleMixedNamedPositional {
+        span: Span,
+    } => "all tuple fields must be either named or positional" at [
+        Label { label: "contains both named and positional fields".to_string(), span },
+    ]
+
     TupleTooManyPositional {
         span: Span,
         n: usize
@@ -345,6 +351,18 @@ diagnostic_kinds! {
         name: String
     } => "missing named field `{name}`" at [
         Label { label: "expected additional named field".to_string(), span },
+    ]
+
+    TupleExpectedPositional {
+        span: Span,
+    } => "expected tuple with positional fields" at [
+        Label { label: "found named fields".to_string(), span },
+    ]
+
+    TupleExpectedNamed {
+        span: Span,
+    } => "expected tuple with named fields" at [
+        Label { label: "found positional fields".to_string(), span },
     ]
 
     ArgTooManyPositional {

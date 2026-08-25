@@ -7,3 +7,11 @@ def main() = seq {
     val((#a, #b))
     val((#c, #d))
 }
+
+@test(#both, ((a = #a, b = #b), (a = #c, b = #d)))
+@test(#up_fail, ((a = #a, b = #d), (a = #c, b = #b)))
+with Seq(type (a = T, b = T), _)
+def main() = seq {
+    val((a = #a, b = #b))
+    val((a = #c, b = #d))
+}
