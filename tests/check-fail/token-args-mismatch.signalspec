@@ -1,0 +1,43 @@
+protocol Test() #up {
+    foo(
+        a: #a|#b is #up,
+        x: 0..100 is #up,
+        y: bits(8) is #up
+    )
+}
+
+@test(#up, ())
+with Seq(type 0..10, _) def main() = seq {
+    new Test() {} | seq {
+//# missing required argument `y`
+        foo(#a, x = 1)
+//                   ^ expected an additional argument
+
+//# missing required argument `x`
+        foo(#a, y = '00000000)
+//                           ^ expected an additional argument
+
+//# unexpected named argument `z`
+        foo(#a, x = 1, y = '00000000, z = #foo)
+//                                    ^^^^^^^^ unexpected argument
+
+//# multiple values for argument `x`
+        foo(#a, 99, x = 1, y = '00000000)
+//              ^^ duplicate argument
+//                      ^ duplicate argument
+
+//# too many positional arguments
+        foo(#a, 99, '00000000, #b, 3)
+//                             ^^^^^ 2 unexpected positional arguments
+
+//# missing required argument `a`
+        foo(x = 1, y = '00000000)
+//                              ^ expected an additional argument
+
+//# incorrect argument type
+//# incorrect argument type
+        foo(1, 1, y = #a)
+//          ^ expected `#a | #b`, found `1`
+//                    ^^ expected `[0..2; 8]`, found `#a`
+    }
+}

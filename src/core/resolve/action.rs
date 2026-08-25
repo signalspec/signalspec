@@ -4,7 +4,7 @@ use itertools::{Itertools, AllEqualValueError};
 
 use crate::{
     Value, core::{
-        ChannelId, Dir, Item, LeafItem, Scope, Shape, ShapeMsg, Type, resolve::{expr::spanned_value, parameters::{check_arg_type, match_args, resolve_arg}}, step::ConnectionId
+        ChannelId, Dir, Item, LeafItem, Scope, Shape, ShapeMsg, Type, resolve::{expr::spanned_value, parameters::{MatchedArg, check_arg_type, match_args, resolve_arg}}, step::ConnectionId
     }, diagnostic::{DiagnosticContext, Span, Spanned, collect_or_err, try_push}, entitymap::EntityMap, runtime::PrimitiveProcess,
 };
 use crate::diagnostic::{ErrorReported};
@@ -15,7 +15,7 @@ use crate::{Diagnostic, Index};
 use super::{
     protocol,
     expr::{TryFromConstant, value, ExprKind, rexpr, rexpr_tup, constant, VarId},
-    pattern::{lexpr, zip_tuple_ast_fields, bind_field, bind_fields, bind_fields_const, Pattern, ZipTupleResult},
+    pattern::{lexpr, bind_field, bind_fields, bind_fields_const, Pattern},
 };
 
 pub fn resolve_process(dcx: &mut DiagnosticContext, index: &Index, scope: &Scope, shape_dn: Shape, ast: &ast::Process) -> ResolveResult {
@@ -268,22 +268,21 @@ impl<'a> Builder<'a> {
 
                 let mut fields = Ok(Vec::new());
 
-                for m in zip_tuple_ast_fields(&mut self.dcx, &scope.file, &args, &msg_def.params) {
-                    match m {
-                        ZipTupleResult::Both(expr, param) => {
-                            bind_fields(&mut self.dcx, &mut self.vars, &mut body_scope, expr, &param.ty, param.direction, &mut |field| {
+                let (matched, unexpected) = match_args(&mut self.dcx, &scope, &msg_def.params, &args);
+                for (param, arg_ast) in matched {
+                    match arg_ast {
+                        MatchedArg::Ok(arg_ast) => {
+                            bind_fields(&mut self.dcx, &mut self.vars, &mut body_scope, arg_ast, &param.ty, param.direction, &mut |field| {
                                 try_push(&mut fields, field);
                             });
-                        },
-                        ZipTupleResult::Left(expr, reported) => {
-                            // unexpected param: declare its variables with invalid
-                            lexpr(&mut self.dcx, &mut body_scope, expr, &reported.into());
-                        },
-                        ZipTupleResult::Right(reported, _) => {
-                            // missing param: Bind an invalid parameter
-                            fields = Err(reported);
                         }
+                        MatchedArg::Default => unreachable!(), // MessageParam doesn't have defaults
+                        MatchedArg::Missing(reported) => fields = Err(reported),
                     }
+                }
+                for expr in unexpected {
+                    // unexpected param: declare its variables with invalid to avoid further errors
+                    lexpr(&mut self.dcx, &mut body_scope, expr, &ErrorReported::error_reported().into());
                 }
 
                 let inner_sb = if let &Some(ref child_shape) = &msg_def.child {
@@ -578,16 +577,24 @@ impl<'a> Builder<'a> {
 
             // Destructure and match the `with` protocol args
             let protocol_ast = cs.down.shape.def.ast();
-            for ((_, binding_ast), val) in match_args(&mut self.dcx, scope, &protocol_ast.params, &def.protocol.args).zip_eq(cs.down.shape.args.iter()) {
-                if let Some(binding_ast) = binding_ast {
+
+            let (matched, unexpected) = match_args(&mut self.dcx, scope, &protocol_ast.params.list, &def.protocol.args);
+            for ((_, binding_ast), val) in matched.zip_eq(cs.down.shape.args.iter()) {
+                if let MatchedArg::Ok(binding_ast) = binding_ast {
                     // TODO: fallible pattern match
                     lexpr(&mut self.dcx, &mut inner_scope, &binding_ast, val);
                 }
+                // TODO: arguments that don't match the params could be bound with Invalid to not report further errors
+            }
+
+            for expr in unexpected {
+                // unexpected param: declare its variables with invalid to avoid further errors
+                lexpr(&mut self.dcx, &mut inner_scope, expr, &ErrorReported::error_reported().into());
             }
 
             // Evaluate the arguments and bind to the `def` params
             let mut vars = Vec::new();
-            for (param, arg_ast) in match_args(&mut self.dcx, scope, &def.params, &node.args) {
+            for (param, arg_ast) in match_args(&mut self.dcx, scope, &def.params.list, &node.args).0 {
                 let mut arg = resolve_arg(&mut self.dcx, scope, &inner_scope, param, arg_ast);
 
                 let var_span = inner_scope.span(param.name.span);
@@ -627,32 +634,33 @@ impl<'a> Builder<'a> {
     fn resolve_token_fields(&mut self, msg_def: &ShapeMsg, scope: &Scope, node: &ast::ProcessCall) -> Result<Vec<Spanned<ExprKind>>, ErrorReported> {
         let mut fields = Ok(Vec::new());
 
-        for m in zip_tuple_ast_fields(&mut self.dcx, &scope.file, &node.args, &msg_def.params) {
-            match m {
-                ZipTupleResult::Both(arg_ast, param) => {
+        for (param, arg) in match_args(&mut self.dcx, &scope, &msg_def.params, &node.args).0 {
+            let (arg, span) = match arg {
+                MatchedArg::Ok(arg_ast) => {
                     let arg = rexpr(&mut self.dcx, scope, arg_ast);
-                    check_arg_type(&mut self.dcx, scope.span(arg_ast.span()), arg, &param.ty).for_each_owned(&mut |v| {
-                        match v {
-                            LeafItem::Value(v) => {
-                                let v = scope.span(arg_ast.span()).wrap(v);
-                                self.vars.check_use(&mut self.dcx, &v, param.direction);
-                                try_push(&mut fields, Ok(v));
-                            }
-                            LeafItem::Invalid(reported) => {
-                                fields = Err(reported);
-                            }
-                            _ => unreachable!(), // Wouldn't have passed type check
-                        };
-                    });
+                    let arg = check_arg_type(&mut self.dcx, scope.span(arg_ast.span()), arg, &param.ty);
+                    (arg, scope.span(arg_ast.span()))
                 }
-                ZipTupleResult::Left(_, _) => {
-                    // unexpected parameter passed and already reported: ignore it
-                }
-                ZipTupleResult::Right(reported, _) => {
-                    // missing expected parameter
+                MatchedArg::Default => unreachable!(),
+                MatchedArg::Missing(reported) => {
                     fields = Err(reported);
-                },
+                    continue;
+                }
             };
+
+            arg.for_each_owned(&mut |v| {
+                match v {
+                    LeafItem::Value(v) => {
+                        let v = span.clone().wrap(v);
+                        self.vars.check_use(&mut self.dcx, &v, param.direction);
+                        try_push(&mut fields, Ok(v));
+                    }
+                    LeafItem::Invalid(reported) => {
+                        fields = Err(reported);
+                    }
+                    _ => unreachable!(), // Wouldn't have passed type check
+                };
+            });
         }
 
         assert!(fields.as_ref().map_or(true, |f| f.is_empty()) || msg_def.child.is_none());

@@ -1,20 +1,20 @@
 @test(#up, ())
 with Seq(type _, _) def main() = new Seq(type #x, #up) {
-//# too many positional fields
+//# too many positional arguments
     on val(x, y) {
-//            ^ 1 unexpected positional fields
+//            ^ 1 unexpected positional arguments
         val(x)
         val(y)
     }
 
-//# unexpected named field `y` passed
+//# unexpected named argument `y`
     on val(x, y = #y) {
-//            ^^^^^^ unexpected field
+//            ^^^^^^ unexpected argument
         val(x)
     }
 
-//# too few positional fields
+//# missing required argument `val`
     on val() {}
-//         ^ expected 1 more positional fields
+//         ^ expected an additional argument
 
 }

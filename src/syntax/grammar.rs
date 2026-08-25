@@ -84,8 +84,8 @@ peg::parser!(pub grammar signalspec() for str {
           { ast::ProtocolEntry::Child(ast::ProtocolChild { span, name, child_protocol }) }
 
       rule message_param() -> ast::MessageParam
-        = name:(name: IDENTIFIER() _ "=" _ {name})? "var" _ "(" _ direction:expr() _ ")" _ expr:expr()
-          { ast::MessageParam { span, name, direction, expr} }
+        = name: IDENTIFIER() _ ":" _ ty:expr() _ "is" _ direction:expr()
+          { ast::MessageParam { span, name, direction, ty } }
 
   rule protocol_ref() -> ast::ProtocolRef
     = name:IDENTIFIER() _ args:expr_tup() { ast::ProtocolRef { span, name, args } }

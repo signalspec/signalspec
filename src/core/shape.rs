@@ -2,7 +2,7 @@ use std::fmt::Display;
 
 use indexmap::IndexMap;
 
-use crate::{Type, Value, tree::TupleFields};
+use crate::{Type, Value};
 
 use super::{Dir, Item, ProtocolRef, TypeTree, TryFromConstant};
 
@@ -128,13 +128,14 @@ impl From<Dir> for ShapeMode {
 pub struct ShapeMsg {
     pub name: String,
     pub tag: usize,
-    pub params: TupleFields<ShapeMsgParam>,
+    pub params: Vec<ShapeMsgParam>,
     pub fields: Vec<MessageField>,
     pub child: Option<Shape>,
 }
 
 #[derive(Clone, Debug)]
 pub struct ShapeMsgParam {
+    pub name: String,
     pub ty: TypeTree,
     pub direction: Dir,
 }

@@ -3,7 +3,6 @@ use indexmap::IndexMap;
 use crate::core::resolve::parameters::{match_args, resolve_arg};
 use crate::diagnostic::{ErrorReported, collect_or_err};
 use crate::syntax::ast::{self, AstNode};
-use crate::tree::TupleFields;
 use crate::{Diagnostic, DiagnosticContext, Dir, Index};
 use crate::core::resolve::{expr::constant, type_expr::type_tree};
 use crate::core::shape::{MessageField, ShapeMode, ShapeMsgParam};
@@ -27,7 +26,7 @@ pub fn resolve(
     let mut args = Vec::with_capacity(protocol_ast.params.list.len());
     let mut body_scope = protocol.file().scope();
 
-    for (param, arg_ast) in match_args(dcx, caller_scope, &protocol_ast.params, &ast.args) {
+    for (param, arg_ast) in match_args(dcx, caller_scope, &protocol_ast.params.list, &ast.args).0 {
         let arg = resolve_arg(dcx, caller_scope, &body_scope, param, arg_ast);
         body_scope.bind(&param.name.name, arg.clone());
         args.push(arg);
@@ -48,8 +47,8 @@ pub fn resolve(
                     });
                 }
 
-                let params: TupleFields<ShapeMsgParam> = collect_or_err(params.iter().map(|p| {
-                    let name = p.name.as_ref().map(|n| n.name.clone());
+                let params: Vec<ShapeMsgParam> = collect_or_err(params.iter().map(|p| {
+                    let name = p.name.name.clone();
                     let direction = constant::<Dir>(dcx, &body_scope, &p.direction)?;
 
                     if !mode.allows_data(direction) {
@@ -60,12 +59,12 @@ pub fn resolve(
                         }))?;
                     }
 
-                    let ty = type_tree(dcx, &body_scope, &p.expr)?;
-                    Ok((name, ShapeMsgParam { ty, direction }))
+                    let ty = type_tree(dcx, &body_scope, &p.ty)?;
+                    Ok(ShapeMsgParam { name, ty, direction })
                 }))?;
 
                 let mut fields = vec![];
-                for (_, param) in params.iter() {
+                for param in &params {
                     param.ty.for_each(&mut |t| fields.push(MessageField { ty: t.clone(), direction: param.direction }));
                 }
 

@@ -26,12 +26,14 @@ impl<'a> Display for FormatMessage<'a> {
             let mut values = self.message.values.iter();
 
             write!(f, "{}", variant.name)?;
-            variant.params.format(f, |param, f| {
+            for param in &variant.params {
                 match param.direction {
-                    Dir::Dn => write!(f, "_"),
-                    Dir::Up => format_message_item(f, &mut values, &param.ty),
+                    Dir::Dn => write!(f, "_")?,
+                    Dir::Up => format_message_item(f, &mut values, &param.ty)?,
                 }
-            })
+            }
+
+            Ok(())
         } else {
             write!(f, "{:?}", self.message)
         }

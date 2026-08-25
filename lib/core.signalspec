@@ -2,10 +2,10 @@ protocol Base() #null {
 
 }
 
-protocol Seq(T, mode) mode[#up=#up, #dn=#dn, #pull=#sync] {
-    val(var(mode[#up=#up, #dn=#dn, #pull=#up]) T)
+protocol Seq(T, mode: #up | #dn | #pull) mode[#up=#up, #dn=#dn, #pull=#sync] {
+    val(val: T is mode[#up=#up, #dn=#dn, #pull=#up])
 }
 
-protocol Bytes(dir) dir {
-    byte(var(dir) byte)
+protocol Bytes(dir: #up | #dn | #pull) mode[#up=#up, #dn=#dn, #pull=#sync] {
+    val(val: byte is mode[#up=#up, #dn=#dn, #pull=#up])
 }

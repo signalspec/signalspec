@@ -1,7 +1,7 @@
 protocol Foo() #dn {
 //# protocol message with child protocol cannot have arguments
-    foo(var(#dn) #a): Seq(type #a, #dn)
-//  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ has arguments and child protocol
+    foo(foo: #a is #dn): Seq(type #a, #dn)
+//  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ has arguments and child protocol
 }
 
 @test(#dn, ())

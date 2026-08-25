@@ -1,63 +1,105 @@
 use itertools::Itertools;
 
-use crate::{DiagnosticContext, Item, LeafItem, Scope, TypeTree, core::resolve::{rexpr, type_expr::type_tree}, diagnostic::{Diagnostic, ErrorReported, Span}, syntax::ast::{self, AstNode, Identifier}, tree::{Tree, Zip}};
+use crate::{DiagnosticContext, Item, LeafItem, Scope, TypeTree, core::{ShapeMsgParam, resolve::{rexpr, type_expr::type_tree}}, diagnostic::{Diagnostic, ErrorReported, Span}, syntax::ast::{self, AstNode}, tree::{Tree, Zip}};
+
+pub trait Parameter {
+    fn name(&self) -> &str;
+    fn has_default(&self) -> bool;
+}
+
+impl Parameter for ast::Parameter {
+    fn name(&self) -> &str {
+        &self.name.name
+    }
+
+    fn has_default(&self) -> bool {
+        self.default.is_some()
+    }
+}
+
+impl Parameter for ShapeMsgParam {
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    fn has_default(&self) -> bool {
+        false
+    }
+}
 
 fn get_arg<'a>(
     positional_args: &'a [ast::TupleField],
     named_args: &'a [ast::TupleField],
     i: usize,
-    name: &'a Identifier,
-) -> impl Iterator<Item = &'a ast::Expr> + use<'a> {
+    name: &'a str,
+) -> impl Iterator<Item = &'a ast::Expr> + Clone + use<'a> {
     positional_args.get(i).into_iter()
-        .chain(named_args.iter().filter(|a| a.name.as_ref().is_some_and(|n| n.name == name.name)))
+        .chain(named_args.iter().filter(move |a| a.name.as_ref().is_some_and(|n| n.name == name)))
         .map(|a| &a.expr)
 }
 
+pub enum MatchedArg<'a> {
+    Ok(&'a ast::Expr),
+    Default,
+    Missing(ErrorReported),
+}
+
 /// Match arguments against a parameter list and report errors for missing / extraneous arguments
-pub fn match_args<'a>(
+pub fn match_args<'a, P: Parameter>(
     dcx: &mut DiagnosticContext,
     caller_scope: &Scope,
-    def_params: &'a ast::ParameterList,
+    def_params: &'a [P],
     args: &'a ast::ExprTup
-) -> impl Iterator<Item = (&'a ast::Parameter, Option<&'a ast::Expr>)> + use<'a> {
+) -> (impl Iterator<Item = (&'a P, MatchedArg<'a>)> + use<'a, P>, impl Iterator<Item = &'a ast::Expr> + use<'a, P>) {
     let end_positional = args.fields.iter().position(|f| f.name.is_some()).unwrap_or(args.fields.len());
     let (positional_args, named_args) = args.fields.split_at(end_positional);
 
-    if positional_args.len() > def_params.list.len() {
-        let n = positional_args.len() - def_params.list.len();
-        let span = positional_args[def_params.list.len()].span()
-            .to(positional_args.last().unwrap().span());
+    let mut unexpected_args = Vec::new();
+
+    if let Some(unexpected_positional) = positional_args.get(def_params.len()..) && !unexpected_positional.is_empty() {
+        let n = unexpected_positional.len();
+        let span = unexpected_positional[0].span().to(unexpected_positional.last().unwrap().span());
+        unexpected_args.extend(unexpected_positional.iter().map(|a| &a.expr));
         dcx.report(Diagnostic::ArgTooManyPositional { span: Span::new(&caller_scope.file, span), n });
     }
 
     for arg in named_args {
         if let Some(name) = &arg.name {
-            if !def_params.list.iter().any(|p| p.name.name == name.name) {
+            if !def_params.iter().any(|p| p.name() == name.name) {
+                unexpected_args.push(&arg.expr);
                 dcx.report(Diagnostic::ArgExtraNamed { span: Span::new(&caller_scope.file, arg.span), name: name.name.clone() });
             }
         } else {
+            unexpected_args.push(&arg.expr);
             dcx.report(Diagnostic::PositionalArgAfterNamed { span: Span::new(&caller_scope.file, arg.span) });
         }
     }
 
-    for (i, param) in def_params.list.iter().enumerate() {
-        match get_arg(positional_args, named_args, i, &param.name).at_most_one() {
-            Ok(None) if param.default.is_none() => {
+    for (i, param) in def_params.iter().enumerate() {
+        match get_arg(positional_args, named_args, i, param.name()).at_most_one() {
+            Ok(None) if !param.has_default() => {
                 let span = args.close.as_ref().map(|a| a.span).unwrap_or(args.span);
-                dcx.report(Diagnostic::ArgMissing { span: Span::new(&caller_scope.file, span), name: param.name.name.clone() });
+                dcx.report(Diagnostic::ArgMissing { span: Span::new(&caller_scope.file, span), name: param.name().to_owned() });
             }
             Ok(_) => {}
             Err(dups) => {
-                let spans = dups.map(|a| Span::new(&caller_scope.file, a.span())).collect();
-                dcx.report(Diagnostic::MultipleArgValues { spans, name: param.name.name.clone() });
+                let spans = dups.clone().map(|a| Span::new(&caller_scope.file, a.span())).collect();
+                unexpected_args.extend(dups.skip(1));
+                dcx.report(Diagnostic::MultipleArgValues { spans, name: param.name().to_owned() });
             }
         }
     }
 
-    def_params.list.iter().enumerate().map(|(i, param)| {
-        let arg = get_arg(positional_args, named_args, i, &param.name).next();
+    let pairs = def_params.iter().enumerate().map(|(i, param)| {
+        let arg = match get_arg(positional_args, named_args, i, param.name()).next() {
+            Some(arg_ast) => MatchedArg::Ok(arg_ast),
+            None if param.has_default() => MatchedArg::Default,
+            None => MatchedArg::Missing(ErrorReported::error_reported()),
+        };
         (param, arg)
-    })
+    });
+
+    (pairs, unexpected_args.into_iter())
 }
 
 /// Resolve an argument value or default and check its type
@@ -66,15 +108,13 @@ pub fn resolve_arg(
     caller_scope: &Scope,
     body_scope: &Scope,
     param: &ast::Parameter,
-    arg_ast: Option<&ast::Expr>,
+    arg_ast: MatchedArg,
 ) -> Item {
-    if let Some(arg_ast) = arg_ast {
-        resolve_arg_val(dcx, &arg_ast, caller_scope, param, body_scope)
-    } else if let Some(default) = &param.default {
-        resolve_arg_val(dcx, default, body_scope, param, body_scope)
-    } else {
-        // missing arg reported in `match_args`
-        ErrorReported::error_reported().into()
+    match arg_ast {
+        MatchedArg::Ok(arg_ast) => resolve_arg_val(dcx, arg_ast, caller_scope, param, body_scope),
+        MatchedArg::Default if let Some(default) = &param.default => resolve_arg_val(dcx, default, body_scope, param, body_scope),
+        MatchedArg::Default => unreachable!(),
+        MatchedArg::Missing(r) => r.into(),
     }
 }
 

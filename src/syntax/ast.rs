@@ -255,9 +255,9 @@ ast_node!{
 ast_node!{
     pub struct MessageParam {
         pub span: FileSpan,
-        pub name: Option<Identifier>,
+        pub name: Identifier,
+        pub ty: Expr,
         pub direction: Expr,
-        pub expr: Expr,
     }
 }
 

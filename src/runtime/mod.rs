@@ -150,7 +150,7 @@ fn seq_shape(index: &Index, type_tree: &TypeTree, dir: Dir) -> Result<Shape, ()>
             ShapeMsg {
                 name: "val".into(),
                 tag: 1,
-                params: vec![ShapeMsgParam { ty: type_tree.clone(), direction: dir }].into(),
+                params: vec![ShapeMsgParam { name: "val".into(), ty: type_tree.clone(), direction: dir }],
                 fields: type_tree.flatten(&mut |t| MessageField { ty: t.clone(), direction: dir }),
                 child: None,
             }

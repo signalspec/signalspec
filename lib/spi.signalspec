@@ -4,8 +4,8 @@ protocol SPI(role: #controller | #async_controller | #monitor | #generate) role[
 
 protocol SPITransaction(role: #controller | #async_controller | #monitor | #generate) role[#controller = #sync, #async_controller = #async, #monitor = #up, #generate=#dn] {
   data(
-    var(role[#controller = #dn, #async_controller = #dn, #monitor = #up, #generate = #dn]) byte,
-    var(role[#controller = #up, #async_controller = #up, #monitor = #up, #generate = #dn]) byte,
+    data_out: byte is role[#controller = #dn, #async_controller = #dn, #monitor = #up, #generate = #dn],
+    data_in: byte is role[#controller = #up, #async_controller = #up, #monitor = #up, #generate = #dn],
   )
 }
 
