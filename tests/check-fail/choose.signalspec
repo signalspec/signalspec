@@ -1,0 +1,17 @@
+@test(#dn, ())
+with Seq(type #a | #b, _) def main() = new Seq(type 1..10, #dn) {
+    on val(v) {
+//# expected enum type for choose operator
+        val(v[1 = #x])
+//          ^ found `1..10`
+    }
+}
+
+@test(#dn, ())
+with Seq(type #a | #b, _) def main() = new Seq(type #x | #y, #dn) {
+    on val(v) {
+//# choices do not cover all values of type
+        val(v[#x = #a])
+//          ^^^^^^^^^^ additional cases required: `#y`
+    }
+}

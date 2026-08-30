@@ -11,7 +11,7 @@ use crate::{
         resolve::{lexpr, type_expr::{type_expr, type_tree}},
     }, diagnostic::{Diagnostic, DiagnosticContext, ErrorReported, Span, Spanned, collect_or_err}, entitymap::entity_key, syntax::{
         Number, ast::{self, AstNode, BinOp}
-    }
+    }, util::IterUtil
 };
 
 entity_key!(pub VarId);
@@ -380,51 +380,48 @@ fn resolve_expr_union(dcx: &mut DiagnosticContext, scope: &Scope, node: &ast::Ex
 
 fn resolve_expr_choose(dcx: &mut DiagnosticContext, scope: &Scope, node: &ast::ExprChoose) -> Item {
     let e = value(dcx, scope, &node.e);
-    let pairs: Result<Vec<_>, _> = collect_or_err(
-        node.choices.iter().map(|&(ref le, ref re)| {
-            let l = constant::<Value>(dcx, scope, le);
-            let r = constant::<Value>(dcx, scope, re);
-            Ok((l?, r?))
-        }
-    ));
+    let l_set = collect_or_err::<_, Vec<_>>(node.choices.iter().map(|&(ref le, _)| {
+        constant::<Value>(dcx, scope, le)
+    }));
+    let r_set = collect_or_err::<_, Vec<_>>(node.choices.iter().map(|&(_, ref re)| {
+        constant::<Value>(dcx, scope, re)
+    }));
 
     let e = try_item!(e);
-    let pairs = try_item!(pairs).into_boxed_slice();
+    let l_set = try_item!(l_set).into_boxed_slice();
+    let r_set = try_item!(r_set).into_boxed_slice();
 
     let span = || scope.span(node.span);
-
-    let lt = Type::union_iter(pairs.iter().map(|x| x.0.get_type()));
-    let rt = Type::union_iter(pairs.iter().map(|x| x.1.get_type()));
-
-    let lt = try_item!(lt.map_err(|err| err.report_at(dcx, span())));
-    let rt = try_item!(rt.map_err(|err| err.report_at(dcx, span())));
 
     match e {
         ExprKind::Ignored => {
             ExprKind::Ignored
         }
         ExprKind::Const(c) => {
-            let Some(v) = eval_choose(&c, &pairs) else {
-                return dcx.report(crate::Diagnostic::ChooseNotCovered { span: span(), found: c.get_type() }).into();
+            let Some(v) = eval_choose(&c, &l_set, &r_set) else {
+                return dcx.report(crate::Diagnostic::ChooseNotCovered { span: span(), missing: vec![c.to_string()] }).into();
             };
 
             ExprKind::Const(v)
         }
         ExprKind::Enum(vs) => {
-            let Some(vs) = vs.iter().map(|v| eval_choose(&v, &pairs)).collect::<Option<IndexSet<_>>>() else {
-                return dcx.report(crate::Diagnostic::ChooseNotCovered { span: span(), found: Type::Enum(vs) }).into();
+            let Some(vs) = vs.iter().map(|v| eval_choose(&v, &l_set, &r_set)).collect::<Option<IndexSet<_>>>() else {
+                return dcx.report(crate::Diagnostic::ChooseNotCovered { span: span(), missing: vs.iter().filter(|&v| !l_set.contains(v)).map(|v| v.to_string()).collect() }).into();
             };
 
             ExprKind::Enum(vs)
         }
         e => {
-            //TODO: doesn't check coverage of full number range
-            let ty = e.get_type();
-            if !(ty.is_subtype(&lt) && lt.is_subtype(&ty)) {
-                return dcx.report(crate::Diagnostic::ChooseNotCovered { span: span(), found: ty }).into();
+            let e_ty = e.get_type();
+            let Type::Enum(e_set) = e_ty else {
+                return dcx.report(crate::Diagnostic::ChooseInvalidType { span: scope.span(node.e.span()), found: e_ty.to_string() }).into();
+            };
+
+            if let Some(missing) = e_set.iter().filter(|&v| !l_set.contains(v)).at_least_one() {
+                return dcx.report(crate::Diagnostic::ChooseNotCovered { span: span(), missing: missing.map(|e| e.to_string()).collect() }).into();
             }
 
-            ExprKind::Unary { ty: rt, expr: Box::new(e), op: UnaryOp::Mapping(pairs) }
+            ExprKind::Unary { ty: Type::Enum(r_set.iter().cloned().collect()), expr: Box::new(e), op: UnaryOp::Mapping(l_set, r_set) }
         }
     }.into()
 }

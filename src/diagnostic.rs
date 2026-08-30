@@ -1,3 +1,5 @@
+use itertools::Itertools;
+
 use crate::{
     syntax::{ast, AstNode, Number},
     FileSpan, SourceFile, Type,
@@ -494,11 +496,18 @@ diagnostic_kinds! {
         Label { label: format!("`{found}` does not match type `{bound}`"), span },
     ]
 
+    ChooseInvalidType {
+        span: Span,
+        found: String,
+    } => "expected enum type for choose operator" at [
+        Label { label: format!("found `{found}`"), span },
+    ]
+
     ChooseNotCovered {
         span: Span,
-        found: Type
-    } => "choices do not cover all values of type `{found}`" at [
-        Label { label: "additional cases required".to_string(), span },
+        missing: Vec<String>,
+    } => "choices do not cover all values of type" at [
+        Label { label: format!("additional cases required: {missing}", missing = missing.iter().format_with(", ", |e, f| f(&format_args!("`{e}`")))), span },
     ]
 
     BinaryOneSideMustBeConst {

@@ -6,6 +6,7 @@ pub mod runtime;
 mod entitymap;
 mod tree;
 pub mod diagnostic;
+mod util;
 
 pub use crate::syntax::{ SourceFile, FileSpan };
 pub use crate::core::{ Index, Scope, FileScope, Item, Value, Type, TypeTree, LeafItem, Dir, Shape, ShapeMsg };

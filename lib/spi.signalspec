@@ -1,8 +1,8 @@
-protocol SPI(role: #controller | #async_controller | #monitor | #generate) role[#controller = #sync, #async_controller = #sync, #monitor = #up, #generate=#dn] {
+protocol SPI(role: #controller | #async_controller | #monitor | #generate) role[#controller = #sync, #async_controller = #sync, #monitor = #up, #generate = #dn] {
   transaction() : SPITransaction(role)
 }
 
-protocol SPITransaction(role: #controller | #async_controller | #monitor | #generate) role[#controller = #sync, #async_controller = #async, #monitor = #up, #generate=#dn] {
+protocol SPITransaction(role: #controller | #async_controller | #monitor | #generate) role[#controller = #sync, #async_controller = #async, #monitor = #up, #generate = #dn] {
   data(
     data_out: byte is role[#controller = #dn, #async_controller = #dn, #monitor = #up, #generate = #dn],
     data_in: byte is role[#controller = #up, #async_controller = #up, #monitor = #up, #generate = #dn],

@@ -1,7 +1,7 @@
-//# choices do not cover all values of type `#x`
+//# choices do not cover all values of type
 let x = #x[#a = #b, #c = #d]
-//      ^^^^^^^^^^^^^^^^^^^^ additional cases required
+//      ^^^^^^^^^^^^^^^^^^^^ additional cases required: `#x`
 
-//# choices do not cover all values of type `#x | #y`
+//# choices do not cover all values of type
 let x = (#x | #y)[#a = #b, #c = #d]
-//      ^^^^^^^^^^^^^^^^^^^^^^^^^^^ additional cases required
+//      ^^^^^^^^^^^^^^^^^^^^^^^^^^^ additional cases required: `#x`, `#y`

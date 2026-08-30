@@ -10,7 +10,7 @@ use crate::Value;
 #[derive(PartialEq, Eq, Hash, Debug, Clone)]
 pub enum UnaryOp {
     BinaryConstNumber(BinOp, Number),
-    Mapping(Box<[(Value, Value)]>),
+    Mapping(Box<[Value]>, Box<[Value]>),
     IntToBits { width: u32, signed: SignMode },
     BitsToInt { width: u32, signed: SignMode },
     Chunks { width: u32 },
@@ -32,8 +32,8 @@ impl UnaryOp {
                     l => panic!("Invalid types {} {} in BinaryConst", l, r)
                 }
             }
-            UnaryOp::Mapping(ref m) => {
-                eval_choose(&v, m).unwrap()
+            UnaryOp::Mapping(ref l, ref r) => {
+                eval_choose(&v, l, r).unwrap()
             }
             UnaryOp::IntToBits { width, .. } => {
                 match v {
@@ -91,8 +91,8 @@ impl UnaryOp {
             UnaryOp::BinaryConstNumber(op, r) => {
                 UnaryOp::BinaryConstNumber(op.invert(), r)
             }
-            UnaryOp::Mapping(ref m) => {
-                UnaryOp::Mapping(m.iter().map(|(v1,v2)| (v2.clone(), v1.clone())).collect())
+            UnaryOp::Mapping(ref l, ref r) => {
+                UnaryOp::Mapping(r.clone(), l.clone())
             }
             UnaryOp::IntToBits { width, signed } => UnaryOp::BitsToInt { width, signed },
             UnaryOp::BitsToInt { width, signed } => UnaryOp::IntToBits { width, signed },
@@ -110,10 +110,8 @@ pub(crate) fn eval_int_to_bits(width: u32, i: Number) -> Value {
     Value::Vector((0..width).rev().map(|bit| Value::Number((((i.to_i64().unwrap()) >> bit) & 1).into()) ).collect())
 }
 
-pub fn eval_choose(v: &Value, choices: &[(Value, Value)]) -> Option<Value> {
-    choices.iter()
-        .find(|& &(ref a, _)|{ a == v })
-        .map(|&(_, ref b)| b.clone())
+pub fn eval_choose(v: &Value, l_set: &[Value], r_set: &[Value]) -> Option<Value> {
+    r_set.get(l_set.iter().position(|l| l == v)?).cloned()
 }
 
 pub fn eval_binary(l: Value, op: BinOp, r: Value) -> Option<Value> {
