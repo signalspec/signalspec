@@ -1,13 +1,11 @@
-use std::cmp::{min, max};
 use std::fmt::Display;
 use std::ops::Range;
 
 use indexmap::IndexSet;
 use itertools::Itertools;
-use num_traits::{One, Signed};
+use num_traits::One;
 
-use crate::{Diagnostic, Value, DiagnosticContext};
-use crate::diagnostic::{Span, ErrorReported};
+use crate::Value;
 use crate::syntax::Number;
 use crate::tree::Tree;
 
@@ -76,6 +74,7 @@ impl NumberType {
         as_integer(n / self.scale).is_some_and(|v| self.range().contains(&v))
     }
 
+    #[expect(unused)]
     pub(crate) fn add(&self, c: Number) -> Option<NumberType> {
         if let Some(v) = as_integer(c / self.scale()) {
             Some(NumberType { min: self.min + v, max: self.max + v, ..*self })
@@ -83,6 +82,8 @@ impl NumberType {
             None
         }
     }
+
+    #[expect(unused)]
     pub(crate) fn mul(&self, c: Number) -> NumberType {
         NumberType { scale: self.scale*c, ..*self }
     }
@@ -95,12 +96,6 @@ pub enum Type {
     Number(NumberType),
     Complex, // TODO: bounds?
     Vector(u32, Box<Type>),
-
-    /// The type of the Ignore expression `_`. No-op union with any type.
-    Ignored,
-
-    /// A range min..max without a defined step.
-    RangeBounds(Option<Number>, Option<Number>),
 }
 
 impl Type {
@@ -112,136 +107,16 @@ impl Type {
         Type::Vector(width, Box::new(Type::bit()))
     }
 
-    pub fn union_with(&mut self, other: Self) -> Result<(), IncompatibleTypes> {
-        *self = Type::union(self.clone(), other)?;
-        Ok(())
-    }
-
-    pub fn union(t1: Type, t2: Type) -> Result<Type, IncompatibleTypes> {
-        use self::Type::*;
-        match (t1, t2) {
-            (Ignored, x) | (x, Ignored) => Ok(x),
-            (Enum(a), Enum(b)) => Ok(Enum(a.union(&b).cloned().collect())),
-            (Vector(n1, t1), Vector(n2, t2)) => {
-                if n1 == n2 {
-                    Ok(Vector(n1, Box::new(Type::union(*t1, *t2)?)))
-                } else {
-                    Err(IncompatibleTypes(*t1, *t2))
-                }
-            }
-            (Number(n1), Number(n2)) => {
-                if n1.scale() == n2.scale() {
-                    Ok(Number(NumberType::new(n1.scale(), min(n1.min(), n2.min()), max(n1.max(), n2.max()))))
-                } else {
-                    Err(IncompatibleTypes(Number(n1), Number(n2)))
-                }
-            }
-            (RangeBounds(lo1, hi1), RangeBounds(lo2, hi2)) => {
-                Ok(RangeBounds([lo1, lo2].into_iter().flatten().min(), [hi1, hi2].into_iter().flatten().max()))
-            }
-            (RangeBounds(Some(lo1), Some(hi1)), Number(n2))
-            | (Number(n2), RangeBounds(Some(lo1), Some(hi1)))
-            if let Some(lo1) = as_integer(lo1 / n2.scale()) && let Some(hi1) = as_integer(hi1 / n2.scale()) => {
-                Ok(Number(NumberType::new(n2.scale(), min(lo1, n2.min()), max(hi1, n2.max()))))
-            }
-            (Number(range), Enum(set)) | (Enum(set), Number(range)) => {
-                set.iter().try_fold(range.clone(), |n, v| {
-                    if let Value::Number(nv) = v {
-                        if let Some(v) = as_integer(nv / n.scale()) {
-                            Ok(NumberType::new(n.scale(), min(n.min(), v), max(n.max(), v)))
-                        } else {
-                            Err(IncompatibleTypes(Enum(set.clone()), Number(n)))
-                        }
-                    } else {
-                        Err(IncompatibleTypes(Enum(set.clone()), Number(n)))
-                    }
-                }).map(Type::Number)
-            }
-            (RangeBounds(lo, hi), Enum(set)) | (Enum(set), RangeBounds(lo, hi)) => {
-                set.iter().try_fold((lo, hi), |(lo, hi), v| {
-                    if let Value::Number(nv) = v {
-                        Ok((lo.map(|lo| min(lo, *nv)), hi.map(|hi| max(hi, *nv))))
-                    } else {
-                        Err(IncompatibleTypes(Enum(set.clone()), RangeBounds(lo, hi)))
-                    }
-                }).map(|(lo, hi)| Type::RangeBounds(lo, hi))
-            }
-            (Complex, Complex) => Ok(Complex),
-            (t1, t2) => Err(IncompatibleTypes(t1, t2))
-        }
-    }
-
-    pub fn union_iter<T: Iterator<Item=Type>>(mut i: T) -> Result<Type, IncompatibleTypes> {
-        i.try_fold(Type::Ignored, Type::union)
-    }
-
     /// Test whether a value is a member of the type
     pub fn test(&self, v: &Value) -> bool {
         match (self, v) {
-            (Type::Ignored, _) => true,
             (Type::Complex, Value::Number(_)) => true,
             (Type::Complex, Value::Complex(_)) => true,
             (Type::Number(nt), Value::Number(n)) => nt.contains(*n),
-            (Type::RangeBounds(lo, hi), Value::Number(n)) => {
-                lo.is_none_or(|l| *n >= l) && hi.is_none_or(|h| *n < h)
-            }
             (Type::Enum(s), v) => s.contains(v),
             (Type::Vector(w, t), Value::Vector(v)) =>
                 v.len() == *w as usize && v.iter().all(|x| t.test(x)),
             _ => false,
-        }
-    }
-
-    pub fn is_subtype(&self, other: &Type) -> bool {
-        match (self, other) {
-            (_, Type::Ignored) => true,
-            (Type::Ignored, _) => true,
-            (Type::Enum(s1), Type::Enum(s2)) => s1.is_subset(s2),
-            (Type::Enum(s1), other) => s1.iter().all(|v| other.test(v)),
-            (Type::Number(range), Type::Enum(set)) => range.iter().all(|v| set.contains(&Value::Number(v))),
-            (Type::Number(n1), Type::Number(n2)) =>
-                n1.scale() == n2.scale() && n2.min() <= n1.min() && n1.max() <= n2.max(),
-            (Type::Number { .. }, Type::Complex) => true,
-            (Type::Complex, Type::Complex) => true,
-            (Type::Vector(w1, t1), Type::Vector(w2, t2)) => w1 == w2 && t1.is_subtype(t2),
-            _ => false,
-        }
-    }
-
-    pub fn bound(self, constraint: Type) -> Result<Type, (Type, Type)> {
-        match (self, constraint) {
-            (Type::Ignored, other) => Ok(other),
-            (Type::Vector(w, t), Type::Vector(wb, tb)) if w == wb =>
-                Ok(Type::Vector(w, Box::new(t.bound(*tb)?))),
-            (a, b) if a.is_subtype(&b) => Ok(a),
-            (a, b) => Err((a, b)),
-        }
-    }
-
-    pub fn is_natural_number(&self) -> bool {
-        match self {
-            Type::Number(nt) => nt.is_integer() && !nt.min().is_negative(),
-            Type::Enum(s) => s.iter().all(|v| matches!(v, Value::Number(n) if n.is_integer() && !n.is_negative())),
-            Type::Ignored => true,
-            _ => false
-        }
-    }
-
-    pub fn as_natural_number_range(&self) -> Option<(u64, Option<u64>)> {
-        match self {
-            Type::Ignored => Some((0, None)),
-            Type::Number(nt) if nt.is_integer() && !nt.min().is_negative() => Some((nt.min() as u64, Some(nt.max() as u64))),
-            Type::RangeBounds(Some(lo), hi) if lo.is_integer() && !lo.is_negative() && hi.is_none_or(|h| h.is_integer() && !h.is_negative()) => {
-                Some((*lo.numer() as u64, hi.map(|h| *h.numer() as u64)))
-            }
-            Type::Enum(v) if v.len() == 1 => {
-                if let Value::Number(n) = v.iter().next().unwrap() && n.is_integer() && !n.is_negative() {
-                    Some((*n.numer() as u64, Some(*n.numer() as u64 + 1)))
-                } else {
-                    None
-                }
-            }
-            _ => None,
         }
     }
 }
@@ -257,71 +132,10 @@ impl Display for Type {
                     write!(f, "{lo}..{hi} by {scale}", lo = n.scaled_min(), hi = n.scaled_max(), scale = n.scale())
                 }
             }
-            Type::RangeBounds(lo, hi) => {
-                if let Some(lo) = lo {
-                    write!(f, "{lo}")?;
-                }
-                write!(f, "..")?;
-                if let Some(hi) = hi {
-                    write!(f, "{hi}")?;
-                }
-                Ok(())
-            }
             Type::Complex => write!(f, "<complex>"),
             Type::Vector(l, t) => write!(f, "[{t}; {l}]"),
-            Type::Ignored => write!(f, "_"),
         }
     }
 }
 
-pub struct IncompatibleTypes(Type, Type);
-
-impl IncompatibleTypes {
-    pub fn report_at(self, dcx: &mut DiagnosticContext, span: Span) -> ErrorReported {
-        dcx.report(Diagnostic::IncompatibleTypes { span, t1: self.0, t2: self.1 })
-    }
-}
-
 pub type TypeTree = Tree<Type>;
-
-#[track_caller]
-#[cfg(test)]
-pub fn test_type_parse(e: &str) -> Type {
-    use std::sync::Arc;
-    use crate::diagnostic::{DiagnosticContext, print_diagnostics};
-    use crate::syntax::{parse_expr, SourceFile};
-    use crate::core::Scope;
-
-    let mut dcx = DiagnosticContext::new();
-
-    let scope = Scope {
-        file: Arc::new(SourceFile::new("<tests>".into(), "".into())),
-        names: crate::core::primitive_fn::expr_prelude()
-    };
-
-    let ast = parse_expr(e).unwrap();
-    crate::diagnostic::report_parse_errors(&mut dcx, &scope.file, &ast);
-    let t = crate::core::resolve::type_expr::type_expr(&mut dcx, &scope, &ast);
-
-    print_diagnostics(dcx.diagnostics());
-
-    t.unwrap()
-}
-
-#[test]
-fn test_type_expr() {
-    let range1 = test_type_parse("0.0..2.0 by 0.1");
-    assert_eq!(range1, Type::Number(NumberType::new(Number::new(1, 10), 0, 20)));
-}
-
-#[test]
-fn test_subtype() {
-    assert!(test_type_parse("0|1").is_subtype(&Type::bit()));
-    assert!(Type::bit().is_subtype(&test_type_parse("0|1")));
-
-    assert!(test_type_parse("0..10").is_subtype(&test_type_parse("0..100")));
-    assert!(!test_type_parse("0..100").is_subtype(&test_type_parse("0..10")));
-
-    assert!(test_type_parse("#a|#b|#c").is_subtype(&test_type_parse("#a|#b|#c|#d")));
-    assert!(!test_type_parse("#a|#b|#c|#d").is_subtype(&test_type_parse("#a|#b|#c")));
-}

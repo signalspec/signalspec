@@ -4,7 +4,7 @@ use itertools::{Itertools, AllEqualValueError};
 
 use crate::{
     Value, core::{
-        ChannelId, Dir, Item, LeafItem, Scope, Shape, ShapeMsg, Type, resolve::{expr::spanned_value, parameters::{MatchedArg, check_arg_type, match_args, resolve_arg}}, step::ConnectionId
+        ChannelId, Dir, Item, LeafItem, Scope, Shape, ShapeMsg, resolve::{expr::{ExprType, spanned_value}, parameters::{MatchedArg, check_arg_type, match_args, resolve_arg}}, step::ConnectionId
     }, diagnostic::{DiagnosticContext, Span, Spanned, collect_or_err, try_push}, entitymap::EntityMap, runtime::PrimitiveProcess,
 };
 use crate::diagnostic::{ErrorReported};
@@ -372,18 +372,18 @@ impl<'a> Builder<'a> {
                 let vars = collect_or_err(node.vars.iter().map(|&(ref name, ref expr)| {
                     let outer_expr = value(&mut self.dcx, scope, expr);
 
-                    let ty = match outer_expr.as_ref().map_or(Type::Ignored, |e| e.get_type()) {
-                        Type::Vector(c, ty) => {
+                    let ty = match outer_expr.as_ref().map_or(ExprType::Ignored, |e| e.get_type()) {
+                        ExprType::Vector(c, ty) => {
                             count_spans.push((c, scope.span(expr.span())));
                             *ty
                         }
-                        Type::Ignored => Type::Ignored,
+                        ExprType::Ignored => ExprType::Ignored,
                         other => {
                             self.dcx.report(Diagnostic::ExpectedVector {
                                 span: scope.span(expr.span()),
-                                found: other,
+                                found: other.to_string(),
                             });
-                            Type::Ignored
+                            ExprType::Ignored
                         }
                     };
 
@@ -445,7 +445,7 @@ impl<'a> Builder<'a> {
                     }
                     AltMode::Var(dir) => {
                         let scrutinee = spanned_value(&mut self.dcx, scope, &node.expr);
-                        let ty = scrutinee.as_ref().map_or(Type::Ignored, |t| t.get_type());
+                        let ty = scrutinee.as_ref().map_or(ExprType::Ignored, |t| t.get_type());
 
                         if let Ok(scrutinee) = &scrutinee {
                             self.vars.check_use(self.dcx, scrutinee, dir);
@@ -453,7 +453,7 @@ impl<'a> Builder<'a> {
 
                         let arms = try_action!(collect_or_err(node.arms.iter().map(|arm| {
                             let mut body_scope = scope.child();
-                            let discriminant = bind_field(&mut self.dcx, &mut self.vars, &mut body_scope, &arm.discriminant, &ty, dir);
+                            let discriminant = bind_field(&mut self.dcx, &mut self.vars, &mut body_scope, &arm.discriminant, ty.clone(), dir);
                             let body = self.resolve_seq(&body_scope, cs, &arm.block);
 
                             if let Ok(discriminant) = &discriminant {

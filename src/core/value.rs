@@ -2,7 +2,7 @@ use std::fmt;
 use num_complex::Complex;
 use num_traits::ToPrimitive;
 
-use crate::{syntax::{Number, ast::Literal}, Type};
+use crate::syntax::{Number, ast::Literal};
 
 #[derive(PartialEq, Eq, Clone, Hash)]
 pub enum Value {
@@ -65,23 +65,6 @@ impl Value {
         match self {
             Value::Symbol(v) => Some(v.as_str()),
             _ => None
-        }
-    }
-
-    pub fn get_type(&self) -> Type {
-        match *self {
-            Value::Number(_) | Value::Symbol(_) => Type::Enum([self.clone()].into_iter().collect()),
-            Value::Complex(_) => Type::Complex,
-            Value::Vector(ref n) => {
-                let len = n.len() as u32;
-                let Ok(inner) = Type::union_iter(n.iter().map(Value::get_type)) else {
-                    // Only a concatenation expression can create a vector
-                    // containing different types, and it reports an error,
-                    // so this should be unreachable.
-                    panic!("Incompatible types in vector: {self:?}")
-                };
-                Type::Vector(len, Box::new(inner))
-            }
         }
     }
 

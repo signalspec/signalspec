@@ -2,7 +2,7 @@ use itertools::Itertools;
 
 use crate::{
     syntax::{ast, AstNode, Number},
-    FileSpan, SourceFile, Type,
+    FileSpan, SourceFile,
 };
 use std::{
     fmt::{Debug, Display}, ops::Deref, ptr, sync::Arc
@@ -475,8 +475,8 @@ diagnostic_kinds! {
 
     IncompatibleTypes {
         span: Span,
-        t1: Type,
-        t2: Type
+        t1: String,
+        t2: String,
     } => "incompatible types" at [
         Label { label: format!("`{t1}` and `{t2}` cannot be combined"), span },
     ]
@@ -490,8 +490,8 @@ diagnostic_kinds! {
 
     TypeConstraint {
         span: Span,
-        found: Type,
-        bound: Type
+        found: String,
+        bound: String,
     } => "type error" at [
         Label { label: format!("`{found}` does not match type `{bound}`"), span },
     ]
@@ -534,9 +534,9 @@ diagnostic_kinds! {
 
     BinaryInvalidType {
         span1: Span,
-        ty1: Type,
+        ty1: String,
         span2: Span,
-        ty2: Type
+        ty2: String
     } => "invalid types for binary operator" at [
         Label { label: format!("found `{ty1}`"), span: &span1 },
         Label { label: format!("found `{ty2}`"), span: &span2 },
@@ -572,14 +572,14 @@ diagnostic_kinds! {
 
     ExpectedVector {
         span: Span,
-        found: Type
+        found: String
     } => "expected vector" at [
         Label { label: format!("found `{found}`"), span },
     ]
 
     PatternExpectedVector {
         span: Span,
-        expected: Type,
+        expected: String,
         found_width: u32
     } => "expected type `{expected}`" at [
         Label { label: format!("can't destructure into vector of width {found_width}"), span },

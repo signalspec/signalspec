@@ -1,16 +1,16 @@
 //# too many positional arguments
 //# incorrect argument type
 @test(#up, ())
-with Seq(type _, _) def main() = new Seq(9, 9, 9) {}
+with Seq(type 0, _) def main() = new Seq(9, 9, 9) {}
 //                                          ^ expected `#up | #dn | #pull`, found `9`
 //                                             ^ 1 unexpected positional arguments
 
 //# undefined variable `undefinedvar`
 @test(#up, ())
-with Seq(type _, _) def main() = new Seq(undefinedvar, #up) {}
+with Seq(type 0, _) def main() = new Seq(undefinedvar, #up) {}
 //                                       ^^^^^^^^^^^^ not found
 
 //# expected a value that can be resolved as a type
 //^* found `"not a type"`
 @test(#up, ())
-with Seq(type _, _) def main() = new Seq("not a type", #up) {}
+with Seq(type 0, _) def main() = new Seq("not a type", #up) {}

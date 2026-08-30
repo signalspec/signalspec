@@ -67,7 +67,6 @@ pub fn type_tree(dcx: &mut DiagnosticContext, scope: &Scope, e: &ast::Expr) -> R
             }
         }
         ast::Expr::Value(node) => Ok(TypeTree::Leaf(Type::Enum(IndexSet::from_iter([Value::from_literal(&node.value)])))),
-        ast::Expr::Ignore(_) => Ok(Type::Ignored.into()),
         ast::Expr::Range(node) => resolve_type_range(dcx, scope, node).map(TypeTree::Leaf),
         ast::Expr::Union(node) => resolve_type_union(dcx, scope, node).map(TypeTree::Leaf),
         ast::Expr::ArrayRep(node) => resolve_type_array(dcx, scope, node).map(TypeTree::Leaf),
@@ -140,4 +139,34 @@ fn resolve_type_array(dcx: &mut DiagnosticContext, scope: &Scope, node: &ast::Ex
     let elem = type_expr(dcx, scope, &node.elem);
     let count = constant::<u32>(dcx, scope, &node.count);
     Ok(Type::Vector(count?, Box::new(elem?)))
+}
+
+#[track_caller]
+#[cfg(test)]
+pub fn test_type_parse(e: &str) -> Type {
+    use std::sync::Arc;
+    use crate::diagnostic::{DiagnosticContext, print_diagnostics};
+    use crate::syntax::{parse_expr, SourceFile};
+    use crate::core::Scope;
+
+    let mut dcx = DiagnosticContext::new();
+
+    let scope = Scope {
+        file: Arc::new(SourceFile::new("<tests>".into(), "".into())),
+        names: crate::core::primitive_fn::expr_prelude()
+    };
+
+    let ast = parse_expr(e).unwrap();
+    crate::diagnostic::report_parse_errors(&mut dcx, &scope.file, &ast);
+    let t = crate::core::resolve::type_expr::type_expr(&mut dcx, &scope, &ast);
+
+    print_diagnostics(dcx.diagnostics());
+
+    t.unwrap()
+}
+
+#[test]
+fn test_type_expr() {
+    let range1 = test_type_parse("0.0..2.0 by 0.1");
+    assert_eq!(range1, Type::Number(NumberType::new(Number::new(1, 10), 0, 20)));
 }

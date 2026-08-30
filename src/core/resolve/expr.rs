@@ -1,7 +1,8 @@
-use std::{fmt::{self, Display}, sync::Arc};
+use std::{cmp::{max, min}, fmt::{self, Display}, sync::Arc};
 
 use indexmap::IndexSet;
 use itertools::Itertools;
+use num_traits::{One, Signed};
 
 use crate::{
     Dir, Type, Value, core::{
@@ -29,10 +30,10 @@ pub enum ExprKind {
     Const(Value),
     Range(Number, Option<Number>),
     Enum(IndexSet<Value>),
-    Var { ty: Type, id: VarId },
+    Var { ty: ExprType, id: VarId },
     Flip(Box<ExprKind>, Box<ExprKind>),
-    Concat(Type, u32, Vec<ConcatElem<ExprKind>>),
-    Unary { ty: Type, expr: Box<ExprKind>, op: UnaryOp },
+    Concat(ExprType, u32, Vec<ConcatElem<ExprKind>>),
+    Unary { ty: ExprType, expr: Box<ExprKind>, op: UnaryOp },
 }
 
 impl fmt::Display for ExprKind {
@@ -83,7 +84,7 @@ impl ExprKind {
                 }
             }
             ExprKind::Enum(set) => set.iter().all(|v| expected.test(v)),
-            ExprKind::Var { ty, .. } | ExprKind::Unary { ty, .. } => ty.is_subtype(expected),
+            ExprKind::Var { ty, .. } | ExprKind::Unary { ty, .. } => ty.is_subtype_of(expected),
             ExprKind::Flip(dn, up) => {
                 dn.check_type(expected) && up.check_type(expected)
             }
@@ -100,16 +101,15 @@ impl ExprKind {
         }
     }
 
-    pub fn get_type(&self) -> Type {
+    pub fn get_type(&self) -> ExprType {
         match *self {
-            ExprKind::Ignored => Type::Ignored,
-            ExprKind::Const(ref v) => v.get_type(),
-            ExprKind::Range(lo, hi) => Type::RangeBounds(Some(lo), hi),
-            ExprKind::Enum(ref e) => Type::Enum(e.clone()),
-            ExprKind::Var { ref ty, .. } => ty.clone(),
-            ExprKind::Unary { ref ty, .. } => ty.clone(),
+            ExprKind::Ignored => ExprType::Ignored,
+            ExprKind::Const(ref v) => ExprType::of_value(v),
+            ExprKind::Range(lo, hi) => ExprType::Number(ExprNumberType { lo: Some(lo), hi, step: None }),
+            ExprKind::Enum(ref e) => ExprType::Enum(e.clone()),
+            ExprKind::Var { ref ty, .. } | ExprKind::Unary { ref ty, .. } => ty.clone(),
             ExprKind::Flip(ref dn, _) => dn.get_type(),
-            ExprKind::Concat(ref elem_ty, len, _) => Type::Vector(len, Box::new(elem_ty.clone())),
+            ExprKind::Concat(ref elem_ty, len, _) => ExprType::Vector(len, Box::new(elem_ty.clone())),
         }
     }
 
@@ -161,6 +161,222 @@ impl ExprKind {
             }
             ExprKind::Unary { ref expr, .. } => expr.contains_var(),
         }
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct ExprNumberType {
+    pub lo: Option<Number>,
+    pub hi: Option<Number>,
+    pub step: Option<Number>,
+}
+
+impl From<&NumberType> for ExprNumberType {
+    fn from(n: &NumberType) -> Self {
+        ExprNumberType {
+            lo: Some(n.scaled_min()),
+            hi: Some(n.scaled_max()),
+            step: Some(n.scale()),
+        }
+    }
+}
+
+impl ExprNumberType {
+    fn add_const(&self, c: &Number) -> Option<ExprNumberType> {
+        if let Some(step) = &self.step {
+            if !(c / step).is_integer() {
+                return None;
+            }
+        }
+        Some(ExprNumberType {
+            lo: self.lo.as_ref().map(|lo| lo + c),
+            hi: self.hi.as_ref().map(|hi| hi + c),
+            step: self.step,
+        })
+    }
+
+    fn mul_const(&self, c: &Number) -> ExprNumberType {
+        ExprNumberType {
+            lo: self.lo.as_ref().map(|lo| lo * c),
+            hi: self.hi.as_ref().map(|hi| hi * c),
+            step: self.step.as_ref().map(|step| step * c),
+        }
+    }
+
+    fn contains(&self, n: &Number) -> bool {
+        self.lo.as_ref().is_none_or(|lo| lo <= n)
+            && self.hi.as_ref().is_none_or(|hi| n <= hi)
+            && self.step.as_ref().is_none_or(|step| (n / step).is_integer())
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum ExprType {
+    /// The type of the Ignore expression `_`. No-op union with any type.
+    Ignored,
+    Enum(IndexSet<Value>),
+    Number(ExprNumberType),
+    Complex,
+    Vector(u32, Box<ExprType>),
+}
+
+impl ExprType {
+    pub fn of_value(v: &Value) -> Self {
+        match *v {
+            Value::Number(_) | Value::Symbol(_) => ExprType::Enum([v.clone()].into_iter().collect()),
+            Value::Complex(_) => ExprType::Complex,
+            Value::Vector(ref n) => {
+                let len = n.len() as u32;
+                let Ok(inner) = ExprType::union_iter(n.iter().map(ExprType::of_value)) else {
+                    // Only a concatenation expression can create a vector
+                    // containing different types, and it reports an error,
+                    // so this should be unreachable.
+                    panic!("Incompatible types in vector: {v:?}")
+                };
+                ExprType::Vector(len, Box::new(inner))
+            }
+        }
+    }
+
+    pub fn bit() -> ExprType {
+        ExprType::Enum([0, 1].into_iter().map(|v| Value::Number(v.into())).collect())
+    }
+
+    pub fn bits(n: u32) -> ExprType {
+        ExprType::Vector(n, Box::new(ExprType::bit()))
+    }
+
+    pub fn from_type(ty: &Type) -> ExprType {
+        match ty {
+            Type::Enum(e) => ExprType::Enum(e.clone()),
+            Type::Number(n) => ExprType::Number(ExprNumberType::from(n)),
+            Type::Complex => ExprType::Complex,
+            Type::Vector(len, inner) => ExprType::Vector(*len, Box::new(ExprType::from_type(inner))),
+        }
+    }
+
+    /// Test whether a value is a member of the type
+    pub fn test(&self, v: &Value) -> bool {
+        match (self, v) {
+            (ExprType::Ignored, _) => true,
+            (ExprType::Complex, Value::Number(_)) => true,
+            (ExprType::Complex, Value::Complex(_)) => true,
+            (ExprType::Number(nt), Value::Number(n)) => nt.contains(n),
+            (ExprType::Enum(s), v) => s.contains(v),
+            (ExprType::Vector(w, t), Value::Vector(v)) =>
+                v.len() == *w as usize && v.iter().all(|x| t.test(x)),
+            _ => false,
+        }
+    }
+
+    pub fn is_subtype_of(&self, other: &Type) -> bool {
+        match (self, other) {
+            (ExprType::Ignored, _) => true,
+            (ExprType::Enum(s1), Type::Enum(s2)) => s1.is_subset(s2),
+            (ExprType::Enum(s1), other) => s1.iter().all(|v| other.test(v)),
+            (ExprType::Number(n1), Type::Number(n2)) =>
+                n1.step.is_none_or(|s| s == n2.scale()) && n1.lo.is_none_or(|l| n2.scaled_min() <= l) && n1.hi.is_none_or(|h| h <= n2.scaled_max()),
+            (ExprType::Number { .. }, Type::Complex) => true,
+            (ExprType::Complex, Type::Complex) => true,
+            (ExprType::Vector(w1, t1), Type::Vector(w2, t2)) => w1 == w2 && t1.is_subtype_of(t2),
+            _ => false,
+        }
+    }
+
+    pub fn union_with(&mut self, other: Self) -> Result<(), IncompatibleTypes> {
+        *self = ExprType::union(self.clone(), other)?;
+        Ok(())
+    }
+
+    pub fn union(t1: ExprType, t2: ExprType) -> Result<ExprType, IncompatibleTypes> {
+        use ExprType::*;
+        match (t1, t2) {
+            (Ignored, x) | (x, Ignored) => Ok(x),
+            (Enum(a), Enum(b)) => Ok(Enum(a.union(&b).cloned().collect())),
+            (Vector(n1, t1), Vector(n2, t2)) => {
+                if n1 == n2 {
+                    Ok(Vector(n1, Box::new(ExprType::union(*t1, *t2)?)))
+                } else {
+                    Err(IncompatibleTypes(*t1, *t2))
+                }
+            }
+            (t1 @ Number(ExprNumberType { lo: lo1, hi: hi1, step: step1 }), t2 @ Number(ExprNumberType { lo: lo2, hi: hi2, step: step2 })) => {
+                let lo = [lo1, lo2].into_iter().flatten().min();
+                let hi = [hi1, hi2].into_iter().flatten().max();
+                let step = match (step1, step2) {
+                    (Some(step1), Some(step2)) if step1 == step2 => Some(step1),
+                    (Some(_), Some(_)) => return Err(IncompatibleTypes(t1, t2)),
+                    (Some(step), _) | (_, Some(step)) => Some(step),
+                    (None, None) => None,
+                };
+
+                Ok(Number(ExprNumberType { lo, hi, step }))
+            }
+            (Number(ExprNumberType { lo, hi, step }), Enum(set)) | (Enum(set), Number(ExprNumberType { lo, hi, step })) => {
+                set.iter().try_fold((lo, hi), |(lo, hi), v| {
+                    if let Value::Number(nv) = v {
+                        Ok((lo.map(|lo| min(lo, *nv)), hi.map(|hi| max(hi, *nv))))
+                    } else {
+                        Err(IncompatibleTypes(Enum(set.clone()), Number(ExprNumberType { lo, hi, step })))
+                    }
+                }).map(|(lo, hi)| Number(ExprNumberType { lo, hi, step }))
+            }
+            (Complex, Complex) => Ok(Complex),
+            (t1, t2) => Err(IncompatibleTypes(t1, t2))
+        }
+    }
+
+    pub fn union_iter<T: Iterator<Item=ExprType>>(mut i: T) -> Result<ExprType, IncompatibleTypes> {
+        i.try_fold(ExprType::Ignored, ExprType::union)
+    }
+
+    pub fn as_natural_number_range(&self) -> Option<(u64, Option<u64>)> {
+        match self {
+            Self::Ignored => Some((0, None)),
+            Self::Number(ExprNumberType { lo: Some(lo), hi, step }) if lo.is_integer() && !lo.is_negative() && hi.is_none_or(|hi| hi.is_integer() && !hi.is_negative()) && step.is_none_or(|s| s.is_one()) => {
+                Some((*lo.numer() as u64, hi.map(|h| *h.numer() as u64)))
+            }
+            Self::Enum(v) if v.len() == 1 => {
+                if let Value::Number(n) = v.iter().next().unwrap() && n.is_integer() && !n.is_negative() {
+                    Some((*n.numer() as u64, Some(*n.numer() as u64 + 1)))
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
+    }
+}
+
+impl Display for ExprType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ExprType::Enum(values) => values.iter().join(" | ").fmt(f),
+            ExprType::Number(ExprNumberType { lo, hi, step }) => {
+                if let Some(lo) = lo {
+                    write!(f, "{lo}")?;
+                }
+                write!(f, "..")?;
+                if let Some(hi) = hi {
+                    write!(f, "{hi}")?;
+                }
+                if let Some(step) = step && !step.is_one() {
+                    write!(f, " by {step}")?;
+                }
+                Ok(())
+            }
+            ExprType::Complex => write!(f, "<complex>"),
+            ExprType::Vector(l, t) => write!(f, "[{t}; {l}]"),
+            ExprType::Ignored => write!(f, "_"),
+        }
+    }
+}
+
+pub struct IncompatibleTypes(ExprType, ExprType);
+
+impl IncompatibleTypes {
+    pub fn report_at(self, dcx: &mut DiagnosticContext, span: Span) -> ErrorReported {
+        dcx.report(Diagnostic::IncompatibleTypes { span, t1: self.0.to_string(), t2: self.1.to_string() })
     }
 }
 
@@ -349,7 +565,7 @@ fn resolve_expr_typed(dcx: &mut DiagnosticContext, scope: &Scope, node: &ast::Ex
     if expr.check_type(&bound) {
         expr.into()
     } else {
-        dcx.report(Diagnostic::TypeConstraint { span: span(), found: expr.get_type(), bound }).into()
+        dcx.report(Diagnostic::TypeConstraint { span: span(), found: expr.get_type().to_string(), bound: bound.to_string() }).into()
     }
 }
 
@@ -413,7 +629,7 @@ fn resolve_expr_choose(dcx: &mut DiagnosticContext, scope: &Scope, node: &ast::E
         }
         e => {
             let e_ty = e.get_type();
-            let Type::Enum(e_set) = e_ty else {
+            let ExprType::Enum(e_set) = e_ty else {
                 return dcx.report(crate::Diagnostic::ChooseInvalidType { span: scope.span(node.e.span()), found: e_ty.to_string() }).into();
             };
 
@@ -421,7 +637,7 @@ fn resolve_expr_choose(dcx: &mut DiagnosticContext, scope: &Scope, node: &ast::E
                 return dcx.report(crate::Diagnostic::ChooseNotCovered { span: span(), missing: missing.map(|e| e.to_string()).collect() }).into();
             }
 
-            ExprKind::Unary { ty: Type::Enum(r_set.iter().cloned().collect()), expr: Box::new(e), op: UnaryOp::Mapping(l_set, r_set) }
+            ExprKind::Unary { ty: ExprType::Enum(r_set.iter().cloned().collect()), expr: Box::new(e), op: UnaryOp::Mapping(l_set, r_set) }
         }
     }.into()
 }
@@ -461,7 +677,7 @@ fn resolve_expr_concat(dcx: &mut DiagnosticContext, scope: &Scope, node: &ast::E
         }
     }
 
-    let mut elem_ty = Type::Ignored;
+    let mut elem_ty = ExprType::Ignored;
     let mut len: u32 = 0;
     let mut elems = ConcatBuilder::Const(Vec::new());
 
@@ -473,7 +689,7 @@ fn resolve_expr_concat(dcx: &mut DiagnosticContext, scope: &Scope, node: &ast::E
             match elem {
                 ExprKind::Const(Value::Vector(vs)) if w as usize == vs.len() => {
                     for c in vs {
-                        elem_ty.union_with(c.get_type()).map_err(|err| err.report_at(dcx, span()))?;
+                        elem_ty.union_with(ExprType::of_value(&c)).map_err(|err| err.report_at(dcx, span()))?;
                         elems.push_const(c);
                         len += 1;
                     }
@@ -484,7 +700,7 @@ fn resolve_expr_concat(dcx: &mut DiagnosticContext, scope: &Scope, node: &ast::E
                     elems.push(ConcatElem::Slice(ExprKind::Ignored, w));
                 }
 
-                e if let Type::Vector(w1, ty) = e.get_type() && w == w1 => {
+                e if let ExprType::Vector(w1, ty) = e.get_type() && w == w1 => {
                     len += w;
                     elem_ty.union_with(*ty).map_err(|err| err.report_at(dcx, span()))?;
 
@@ -501,14 +717,14 @@ fn resolve_expr_concat(dcx: &mut DiagnosticContext, scope: &Scope, node: &ast::E
 
                 other => Err(dcx.report(Diagnostic::ExpectedVector {
                     span: span(),
-                    found: other.get_type(),
+                    found: other.to_string(),
                 }))?
             }
             Ok(())
         } else {
             match elem {
                 ExprKind::Const(c) => {
-                    elem_ty.union_with(c.get_type()).map_err(|err| err.report_at(dcx, span()))?;
+                    elem_ty.union_with(ExprType::of_value(&c)).map_err(|err| err.report_at(dcx, span()))?;
                     len += 1;
                     elems.push_const(c);
                 }
@@ -551,9 +767,9 @@ fn resolve_expr_binary(dcx: &mut DiagnosticContext, scope: &Scope, node: &ast::E
     let mut report_invalid_type = |expr: ExprKind, val: Value| {
         dcx.report(Diagnostic::BinaryInvalidType {
             span1: scope.span(expr_span),
-            ty1: expr.get_type(),
+            ty1: expr.to_string(),
             span2: scope.span(val_span),
-            ty2: val.get_type(),
+            ty2: val.to_string(),
          }).into()
     };
 
@@ -589,41 +805,31 @@ fn resolve_expr_binary(dcx: &mut DiagnosticContext, scope: &Scope, node: &ast::E
         }
         (expr, Value::Number(v)) => {
             let ty = match (expr.get_type(), &val) {
-                (Type::Number(nt), Value::Number(c)) => {
-                    let mut check_scale = |n: Option<NumberType>| {
+                (ExprType::Number(nt), Value::Number(c)) => {
+                    let mut check_scale = |n: Option<ExprNumberType>| {
                         n.ok_or_else(|| {
                             dcx.report(Diagnostic::OperandNotMultipleOfScale {
                                 const_span: scope.span(val_span),
                                 const_val: *c,
                                 var_span: scope.span(expr_span),
-                                var_scale: nt.scale(),
+                                var_scale: nt.step.unwrap(),
                             })
                         })
                     };
 
-                    Type::Number(match op {
-                        BinOp::Add => try_item!(check_scale(nt.add(*c))),
-                        BinOp::Sub => try_item!(check_scale(nt.add(-c))),
-                        BinOp::SubSwap => try_item!(check_scale(nt.mul(Number::new(-1,1)).add(*c))),
+                    ExprType::Number(match op {
+                        BinOp::Add => try_item!(check_scale(nt.add_const(c))),
+                        BinOp::Sub => try_item!(check_scale(nt.add_const(&-c))),
+                        BinOp::SubSwap => try_item!(check_scale(nt.mul_const(&Number::new(-1,1)).add_const(c))),
 
-                        BinOp::Mul => nt.mul(*c),
-                        BinOp::Div => nt.mul(c.recip()),
+                        BinOp::Mul => nt.mul_const(c),
+                        BinOp::Div => nt.mul_const(&c.recip()),
                         BinOp::DivSwap => return dcx.report(Diagnostic::DivisionMustBeConst {
                             span: scope.span(expr_span),
                         }).into(),
                     })
                 }
-                (Type::RangeBounds(lo, hi), Value::Number(c)) => {
-                    match eval_binary_on_range(lo, hi, op, *c) {
-                        Ok((lo, hi)) => Type::RangeBounds(lo, hi),
-                        Err(()) => {
-                            return dcx.report(Diagnostic::DivisionMustBeConst {
-                                span: scope.span(expr_span),
-                            }).into()
-                        }
-                    }
-                }
-                (Type::Enum(vs), Value::Number(c)) => {
+                (ExprType::Enum(vs), Value::Number(c)) => {
                     let res: Result<IndexSet<Value>, ()> = vs.iter().map(|v| match v {
                         Value::Number(n) => Ok(Value::Number(op.eval(n, c))),
                         _ => Err(())
@@ -633,22 +839,22 @@ fn resolve_expr_binary(dcx: &mut DiagnosticContext, scope: &Scope, node: &ast::E
                         return dcx.report(
                             Diagnostic::BinaryInvalidType {
                                 span1: scope.span(expr_span),
-                                ty1: Type::Enum(vs),
+                                ty1: ExprType::Enum(vs).to_string(),
                                 span2: scope.span(val_span),
-                                ty2: val.get_type(),
+                                ty2: val.to_string(),
                                 }
                         ).into()
                     };
 
-                    Type::Enum(res)
+                    ExprType::Enum(res)
                 }
-                (Type::Complex, Value::Number(..)) | (Type::Number(..), Value::Complex(..)) | (Type::Complex, Value::Complex(..)) => Type::Complex,
+                (ExprType::Complex, Value::Number(..)) | (ExprType::Number { .. }, Value::Complex(..)) | (ExprType::Complex, Value::Complex(..)) => ExprType::Complex,
                 (expr_ty, _) => return dcx.report(
                     Diagnostic::BinaryInvalidType {
                         span1: scope.span(expr_span),
-                        ty1: expr_ty,
+                        ty1: expr_ty.to_string(),
                         span2: scope.span(val_span),
-                        ty2: val.get_type(),
+                        ty2: val.to_string(),
                         }
                 ).into()
             };

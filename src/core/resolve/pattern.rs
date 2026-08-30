@@ -3,13 +3,10 @@ use std::{fmt::Display, sync::Arc};
 use itertools::{Itertools, EitherOrBoth};
 
 use crate::{
-    Dir, SourceFile, Type, TypeTree, Value, core::{
-        Item, LeafItem, Scope,
-        op::ConcatElem ,
-        resolve::{action::Vars, expr::{ExprKind, VarId}, type_expr::{type_expr, type_tree}},
+    Dir, SourceFile, TypeTree, Value, core::{
+        Item, LeafItem, Scope, op::ConcatElem, resolve::{action::Vars, expr::{ExprKind, ExprType, VarId}, type_expr::{type_expr, type_tree}},
     }, diagnostic::{Diagnostic, DiagnosticContext, ErrorReported, Span, collect_or_err}, syntax::
-        ast::{self, AstNode}
-    , tree::Tree
+        ast::{self, AstNode}, tree::Tree
 };
 
 /// Pattern matching for constant `alt`
@@ -211,8 +208,8 @@ pub fn lexpr(dcx: &mut DiagnosticContext, scope: &mut Scope, pat: &ast::Expr, r:
                     } else {
                         let reported = dcx.report(Diagnostic::TypeConstraint {
                             span: scope.span(node.span),
-                            found: rv.get_type(),
-                            bound: ty,
+                            found: rv.to_string(),
+                            bound: ty.to_string(),
                         });
                         lexpr(dcx, scope, &node.expr, &Tree::Leaf(LeafItem::Invalid(reported)));
                     }
@@ -365,11 +362,11 @@ pub fn bind_fields(
             scope.bind(&name.name, ty.map_leaf(&mut |ty| {
                 let var = vars.add(scope.span(name.span), dir.into());
                 add_field(Ok(Pattern::Var(var)));
-                LeafItem::Value(ExprKind::Var { ty: ty.clone(), id: var })
+                LeafItem::Value(ExprKind::Var { ty: ExprType::from_type(ty), id: var })
             }));
         }
         (pat, Tree::Leaf(ty)) => {
-            add_field(bind_field(dcx, vars, scope, pat, ty, dir));
+            add_field(bind_field(dcx, vars, scope, pat, ExprType::from_type(ty), dir));
         }
         (pat, t) => {
             let r = dcx.report(Diagnostic::InvalidItemForPattern {
@@ -384,7 +381,7 @@ pub fn bind_fields(
     }
 }
 
-pub fn bind_field(dcx: &mut DiagnosticContext, vars: &mut Vars, scope: &mut Scope, pat: &ast::Expr, ty: &Type, dir: Dir) -> Result<Pattern, ErrorReported> {
+pub fn bind_field(dcx: &mut DiagnosticContext, vars: &mut Vars, scope: &mut Scope, pat: &ast::Expr, ty: ExprType, dir: Dir) -> Result<Pattern, ErrorReported> {
     match pat {
         ast::Expr::Var(name) => {
             let var = vars.add(scope.span(name.span), dir.into());
@@ -402,8 +399,8 @@ pub fn bind_field(dcx: &mut DiagnosticContext, vars: &mut Vars, scope: &mut Scop
             if !ty.test(&val) {
                 dcx.report(Diagnostic::TypeConstraint {
                     span: scope.span(lit.span),
-                    found: val.get_type(),
-                    bound: ty.clone()
+                    found: val.to_string(),
+                    bound: ty.to_string()
                 });
             }
 
@@ -414,21 +411,21 @@ pub fn bind_field(dcx: &mut DiagnosticContext, vars: &mut Vars, scope: &mut Scop
             let pat_w: u32 = node.elems.iter().map(|&(w, _)| w.unwrap_or(1)).sum();
 
             let elem_ty = match ty {
-                Type::Vector(ty_w, elem_ty) if pat_w == *ty_w => elem_ty,
+                ExprType::Vector(ty_w, elem_ty) if pat_w == ty_w => elem_ty,
                 expected_ty => return Err(dcx.report(Diagnostic::PatternExpectedVector {
                     span: scope.span(node.span),
                     found_width: pat_w,
-                    expected: expected_ty.clone(),
+                    expected: expected_ty.to_string(),
                 }))
             };
 
             let parts = collect_or_err(node.elems.iter()
                 .map(|&(width, ref e)| {
                     if let Some(width) = width {
-                        let ty_inner = Type::Vector(width, elem_ty.clone());
-                        Ok(ConcatElem::Slice(bind_field(dcx, vars, scope, e, &ty_inner, dir)?, width))
+                        let ty_inner = ExprType::Vector(width, elem_ty.clone());
+                        Ok(ConcatElem::Slice(bind_field(dcx, vars, scope, e, ty_inner, dir)?, width))
                     } else {
-                        Ok(ConcatElem::Elem(bind_field(dcx, vars, scope, e, elem_ty, dir)?))
+                        Ok(ConcatElem::Elem(bind_field(dcx, vars, scope, e, (*elem_ty).clone(), dir)?))
                     }
                 })
             )?;

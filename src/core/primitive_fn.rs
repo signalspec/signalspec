@@ -1,7 +1,7 @@
 use std::{collections::HashMap, sync::Arc};
 use num_complex::Complex;
 
-use crate::{Item, LeafItem, Type, Value, core::{FunctionDef, PrimitiveFn, resolve::ExprKind}, syntax::Number};
+use crate::{Item, LeafItem, Type, Value, core::{FunctionDef, PrimitiveFn, resolve::{ExprKind, expr::ExprType}}, syntax::Number};
 use super::op::{self, SignMode, UnaryOp};
 
 pub fn expr_prelude() -> HashMap<String, Item> {
@@ -51,7 +51,7 @@ fn fn_signed_unsigned(arg: Item, signed: SignMode) -> Result<Item, &'static str>
 
         e => {
             // TODO: check type of `e`
-            let ty = Type::bits(width);
+            let ty = ExprType::bits(width);
             Ok(ExprKind::Unary { ty, expr: Box::new(e), op: UnaryOp::IntToBits {width, signed} }.into())
         }
     }
@@ -71,8 +71,8 @@ fn fn_chunks(arg: Item) -> Result<Item, &'static str> {
             Ok(ExprKind::Ignored.into())
         }
 
-        e if let Type::Vector(c, t) = e.get_type() => {
-            let ty = Type::Vector(c/width, Box::new(Type::Vector(width, t)));
+        e if let ExprType::Vector(c, t) = e.get_type() => {
+            let ty = ExprType::Vector(c/width, Box::new(ExprType::Vector(width, t)));
             Ok(ExprKind::Unary { ty, expr: Box::new(e), op: UnaryOp::Chunks { width } }.into())
         },
         _ => Err("value must be a vector")
