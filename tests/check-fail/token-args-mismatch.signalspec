@@ -38,6 +38,6 @@ with Seq(type 0..10, _) def main() = seq {
 //# incorrect argument type
         foo(1, 1, y = #a)
 //          ^ expected `#a | #b`, found `1`
-//                    ^^ expected `[0..2; 8]`, found `#a`
+//                    ^^ expected `[0 | 1; 8]`, found `#a`
     }
 }

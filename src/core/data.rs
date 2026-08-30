@@ -39,10 +39,6 @@ impl NumberType {
         Self::new(1.into(), min, max)
     }
 
-    pub fn bit() -> NumberType {
-        Self::integer(0, 2)
-    }
-
     pub(crate) fn from_scaled(min: Number, max: Number, scale: Number) -> Result<NumberType, NumberTypeError> {
         if scale == 0.into() {
             return Err(NumberTypeError::StepIsZero)
@@ -109,7 +105,7 @@ pub enum Type {
 
 impl Type {
     pub fn bit() -> Type {
-        Type::Number(NumberType::bit())
+        Type::Enum([Value::Number(0.into()), Value::Number(1.into())].into_iter().collect())
     }
 
     pub fn bits(width: u32) -> Type {
