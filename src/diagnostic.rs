@@ -479,6 +479,13 @@ diagnostic_kinds! {
         Label { label: format!("`{t1}` and `{t2}` cannot be combined"), span },
     ]
 
+    ExpectedEnumType {
+        span: Span,
+        found: String,
+    } => "only constants and enums can be combined with the union operator" at [
+        Label { label: format!("`{found}` is not allowed in an enum"), span },
+    ]
+
     TypeConstraint {
         span: Span,
         found: Type,
@@ -645,6 +652,8 @@ pub fn report_parse_errors(
     has_errors
 }
 
+/// Collect the items from an iterator of `Result` values if all items are `Ok`.
+///
 /// Like iter.collect::<Result<..>>() but doesn't short-circuit so errors from
 /// all subtrees are reported
 pub fn collect_or_err<T, C: FromIterator<T>>(iter: impl Iterator<Item=Result<T, ErrorReported>>) -> Result<C, ErrorReported> {
@@ -655,6 +664,21 @@ pub fn collect_or_err<T, C: FromIterator<T>>(iter: impl Iterator<Item=Result<T, 
             Err(err) => { error = Some(err); None }
         }
     }));
+    if let Some(e) = error { Err(e) } else { Ok(result) }
+}
+
+/// Flatten an iterator of `Result` values if all items are `Ok`.
+///
+/// Like iter.flat_map::<Result<..>>() but doesn't short-circuit so errors from
+/// all subtrees are reported
+pub fn flatten_or_err<T, C: FromIterator<T>>(iter: impl Iterator<Item=Result<impl IntoIterator<Item = T>, ErrorReported>>) -> Result<C, ErrorReported> {
+    let mut error = None;
+    let result = C::from_iter(iter.flat_map(|i| {
+        match i {
+            Ok(i) => Some(i),
+            Err(err) => { error = Some(err); None }
+        }
+    }).flatten());
     if let Some(e) = error { Err(e) } else { Ok(result) }
 }
 

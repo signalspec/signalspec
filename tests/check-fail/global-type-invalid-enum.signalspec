@@ -1,0 +1,3 @@
+//# only constants and enums can be combined with the union operator
+let T = type 0 | 0..100
+//               ^^^^^^ `0..100` is not allowed in an enum

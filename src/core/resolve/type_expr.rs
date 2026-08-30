@@ -1,7 +1,9 @@
+use indexmap::IndexSet;
+
 use crate::{
     FileSpan, Type, TypeTree, Value, core::{
         Item, LeafItem, Scope, data::{NumberType, NumberTypeError}, resolve::{expr::constant, rexpr}
-    }, diagnostic::{Diagnostic, DiagnosticContext, ErrorReported, collect_or_err}, syntax::{Number,
+    }, diagnostic::{Diagnostic, DiagnosticContext, ErrorReported, flatten_or_err}, syntax::{Number,
         ast::{self, AstNode}}, tree::Tree
 };
 
@@ -64,7 +66,7 @@ pub fn type_tree(dcx: &mut DiagnosticContext, scope: &Scope, e: &ast::Expr) -> R
                 Err(dcx.report(Diagnostic::TupleMixedNamedPositional { span: scope.span(node.span) }))
             }
         }
-        ast::Expr::Value(node) => Ok(Value::from_literal(&node.value).get_type().into()),
+        ast::Expr::Value(node) => Ok(TypeTree::Leaf(Type::Enum(IndexSet::from_iter([Value::from_literal(&node.value)])))),
         ast::Expr::Ignore(_) => Ok(Type::Ignored.into()),
         ast::Expr::Range(node) => resolve_type_range(dcx, scope, node).map(TypeTree::Leaf),
         ast::Expr::Union(node) => resolve_type_union(dcx, scope, node).map(TypeTree::Leaf),
@@ -118,10 +120,20 @@ fn resolve_type_range(dcx: &mut DiagnosticContext, scope: &Scope, node: &ast::Ex
 }
 
 fn resolve_type_union(dcx: &mut DiagnosticContext, scope: &Scope, node: &ast::ExprUnion) -> Result<Type, ErrorReported> {
-    let opts: Vec<_> = collect_or_err(node.items.iter().map(|i| type_expr(dcx, scope, i)))?;
+    Ok(Type::Enum(flatten_or_err(node.items.iter().map(|i| {
+        let t = type_expr(dcx, scope, i)?;
 
-    Type::union_iter(opts.into_iter())
-        .map_err(|err| err.report_at(dcx, scope.span(node.span)))
+        if let Type::Enum(values) = t {
+            Ok(values.into_iter())
+        } else {
+            Err(dcx.report(
+                Diagnostic::ExpectedEnumType {
+                    span: scope.span(i.span()),
+                    found: t.to_string(),
+                }
+            ))
+        }
+    }))?))
 }
 
 fn resolve_type_array(dcx: &mut DiagnosticContext, scope: &Scope, node: &ast::ExprArrayRep) -> Result<Type, ErrorReported> {
